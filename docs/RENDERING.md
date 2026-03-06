@@ -438,7 +438,7 @@ The engine supports pseudo-3D projection modes that transform the flat orthograp
 
 \htmlonly
 <pre class="mermaid">
-graph TB
+graph LR
     subgraph Modes["Projection Modes"]
         M1["Orthographic<br/>(flat, default)"]
         M2["Globe<br/>(barrel distortion)"]
@@ -593,7 +593,7 @@ The engine renders in a specific order for correct depth:
 
 \htmlonly
 <pre class="mermaid">
-flowchart TB
+flowchart LR
     subgraph Background
         A1["1. Clear (sky color)"]
         A2["2. Background layers"]

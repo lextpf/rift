@@ -119,7 +119,7 @@ struct ShootingStar
  */
 struct DewSparkle
 {
-    glm::vec2 position;     ///< Normalized position (0-1), constrained to lower screen
+    glm::vec2 position;     ///< Normalized position (0-1), biased to lower screen
     float phase;            ///< Animation phase offset for twinkle timing
     float brightness;       ///< Base brightness (0-1)
     float speed;            ///< Twinkle animation speed multiplier
@@ -142,7 +142,7 @@ struct DewSparkle
  * | Shooting Stars    | Night           | Random meteor streaks                |
  * | Sun Rays          | Day             | God rays from sun position           |
  * | Moon Rays         | Night           | Softer rays from moon                |
- * | Atmospheric Glow  | Always          | Soft glow around sun/moon            |
+ * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky wash        |
  * | Dawn Gradient     | Dawn            | Purple-to-orange sky gradient        |
  * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
  * | Dew Sparkles      | Morning         | Glinting ground-level sparkles       |
@@ -158,7 +158,7 @@ struct DewSparkle
  * Effects are rendered in this order (back to front):
  * 1. Dawn gradient (full-screen color overlay)
  * 2. Dawn horizon glow (bottom of screen)
- * 3. Atmospheric glow (around sun/moon)
+ * 3. Night atmospheric glow (horizon + subtle upper-sky shimmer)
  * 4. Background stars (dim, distant)
  * 5. Foreground stars (bright, twinkling)
  * 6. Shooting stars (with trails)
@@ -317,7 +317,7 @@ private:
     /**
      * @brief Generate dew sparkle positions.
      *
-     * Creates sparkle points in the lower portion of the screen.
+     * Creates sparkle points biased toward the lower portion of the screen.
      */
     void GenerateDewSparkles();
 
@@ -380,13 +380,13 @@ private:
     void RenderShootingStars(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
 
     /**
-     * @brief Render soft glow around sun or moon.
+     * @brief Render subtle nighttime atmospheric glow.
      *
-     * Creates a large, subtle glow effect centered on the current
-     * light source position.
+     * Draws a faint horizon wash and occasional top-edge shimmer while
+     * star visibility is high.
      *
      * @param renderer     Renderer interface.
-     * @param time         TimeManager for sun/moon position.
+     * @param time         TimeManager for night visibility.
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */

@@ -134,7 +134,7 @@ config:
     fontSize: 18px
   layout: elk
 ---
-flowchart TB
+flowchart LR
   classDef batch fill:#1e3a5f,stroke:#3b82f6,stroke-width:2.5px,color:#e2e8f0,font-weight:800
   classDef sort fill:#134e3a,stroke:#10b981,stroke-width:2.5px,color:#e2e8f0,font-weight:800
   classDef proj fill:#4a3520,stroke:#f59e0b,stroke-width:2.5px,color:#e2e8f0,font-weight:800
@@ -185,7 +185,7 @@ config:
     fontSize: 18px
   layout: elk
 ---
-graph TB
+graph LR
     classDef core fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef render fill:#2e1f5e,stroke:#8b5cf6,color:#e2e8f0
     classDef world fill:#134e3a,stroke:#10b981,color:#e2e8f0
@@ -341,7 +341,7 @@ config:
     fontSize: 18px
   layout: elk
 ---
-graph TB
+graph LR
     classDef guide fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef tech fill:#134e3a,stroke:#10b981,color:#e2e8f0
 

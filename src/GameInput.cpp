@@ -741,6 +741,14 @@ void Game::ProcessInput(float deltaTime)
 
                     int playerTileXFinal = currentPlayerTileX;
                     int playerTileYFinal = currentPlayerTileY;
+                    auto isValidSnapTile = [this, npcTileX, npcTileY](int tx, int ty)
+                    {
+                        if (tx < 0 || ty < 0 || tx >= m_Tilemap.GetMapWidth() || ty >= m_Tilemap.GetMapHeight())
+                            return false;
+                        if (tx == npcTileX && ty == npcTileY)
+                            return false;
+                        return !m_Tilemap.GetTileCollision(tx, ty);
+                    };
 
                     // Only snap if player is not already in a valid position
                     if (!playerAlreadyValid)
@@ -808,13 +816,12 @@ void Game::ProcessInput(float deltaTime)
                             int safeTileX = npcTileX + finalDx;
                             int safeTileY = npcTileY + finalDy;
 
-                            // Safety check, never place player on NPC's tile
-                            if (safeTileX != npcTileX || safeTileY != npcTileY)
+                            if (isValidSnapTile(safeTileX, safeTileY))
                             {
                                 playerTileXFinal = safeTileX;
                                 playerTileYFinal = safeTileY;
                             }
-                            else
+                            else if (isValidSnapTile(npcTileX, npcTileY + 1))
                             {
                                 // Fallback, use down direction if preferred would place on same tile
                                 playerTileXFinal = npcTileX;
@@ -822,16 +829,26 @@ void Game::ProcessInput(float deltaTime)
                             }
                         }
 
-                        // Final safety check, never place player on NPC's tile
-                        if (playerTileXFinal == npcTileX && playerTileYFinal == npcTileY)
+                        if (!isValidSnapTile(playerTileXFinal, playerTileYFinal))
                         {
-                            // Emergency fallback, place one tile south
-                            playerTileXFinal = npcTileX;
-                            playerTileYFinal = npcTileY + 1;
+                            if (isValidSnapTile(currentPlayerTileX, currentPlayerTileY))
+                            {
+                                playerTileXFinal = currentPlayerTileX;
+                                playerTileYFinal = currentPlayerTileY;
+                            }
+                            else
+                            {
+                                // Keep current world position if no safe snap tile is available.
+                                playerTileXFinal = -1;
+                                playerTileYFinal = -1;
+                            }
                         }
 
                         // Snap player to the chosen tile position (ensures tile center)
-                        m_Player.SetTilePosition(playerTileXFinal, playerTileYFinal);
+                        if (playerTileXFinal >= 0 && playerTileYFinal >= 0)
+                        {
+                            m_Player.SetTilePosition(playerTileXFinal, playerTileYFinal);
+                        }
                     }
                     else
                     {

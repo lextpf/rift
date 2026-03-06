@@ -6,7 +6,7 @@ This document covers the collision detection, physics, and NPC navigation system
 
 \htmlonly
 <pre class="mermaid">
-graph TB
+graph LR
     classDef map fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef entity fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef query fill:#4a3520,stroke:#f59e0b,color:#e2e8f0

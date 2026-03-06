@@ -80,6 +80,7 @@ public:
 
     /// @brief Proxy type for `map[x][y]` syntax.
     using CollisionColumn = ColumnProxy<container_type, value_type, false>;
+    using ConstCollisionColumn = ConstColumnProxy<container_type, value_type, false>;
 
     /**
      * @brief Construct an empty collision map.
@@ -177,7 +178,7 @@ public:
     [[nodiscard]] constexpr const container_type& GetData() const noexcept { return m_Collision; }
 
     /**
-     * @brief Replace all data atomically.
+     * @brief Replace all map data in one call.
      *
      * @param data   New data (must have size == w * h).
      * @param width  New width.
@@ -200,10 +201,10 @@ public:
         return CollisionColumn(&m_Collision, &m_Width, &m_Height, x);
     }
 
-    /// @brief 2D array access (const): `bool b = map[x][y]`
-    [[nodiscard]] constexpr CollisionColumn operator[](int x) const noexcept
+    /// @brief 2D array access on const-qualified map.
+    [[nodiscard]] constexpr ConstCollisionColumn operator[](int x) const noexcept
     {
-        return CollisionColumn(&m_Collision, &m_Width, &m_Height, x);
+        return ConstCollisionColumn(&m_Collision, &m_Width, &m_Height, x);
     }
 
 private:

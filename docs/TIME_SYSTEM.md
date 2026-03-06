@@ -6,7 +6,7 @@ The Wild Game Engine features a complete day/night cycle system that drives ambi
 
 \htmlonly
 <pre class="mermaid">
-graph TB
+graph LR
     classDef manager fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef renderer fill:#2e1f5e,stroke:#8b5cf6,color:#e2e8f0
     classDef output fill:#134e3a,stroke:#10b981,color:#e2e8f0
@@ -268,7 +268,7 @@ Sun and moon emit volumetric light rays:
 
 \htmlonly
 <pre class="mermaid">
-graph TB
+graph LR
     classDef source fill:#f39c12,stroke:#e67e22,color:#1a1a2e
     classDef ray fill:#f9e076,stroke:#f4d03f,color:#1a1a2e
 

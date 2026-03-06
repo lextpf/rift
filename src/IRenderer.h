@@ -147,7 +147,6 @@ public:
      * Must be called after window creation but before any rendering.
      * 
      * @par OpenGL Initialization
-     * - Load GLAD function pointers
      * - Compile sprite shader program
      * - Create VAO/VBO for quad rendering
      * - Enable blending for transparency
@@ -201,10 +200,12 @@ public:
     virtual void EndFrame() = 0;
 
     /**
-     * @brief Draw a full texture as a sprite.
+     * @brief Draw a sprite using the backend's default texture region.
      * 
-     * Renders the entire texture at the specified position.
      * Position is the **top-left corner** of the sprite.
+     * Current backend implementations call DrawSpriteRegion with
+     * `texCoord=(0,0)` and `texSize=(1,1)` in pixel units.
+     * Use DrawSpriteRegion/DrawSpriteAtlas for explicit region control.
      * 
      * @par Transformation Order
      * 1. Scale to size
@@ -232,6 +233,7 @@ public:
      * @param rotation Rotation in degrees, clockwise (default: 0).
      * @param color    RGBA color tint/modulation.
      * @param additive Use additive blending for glow effects (default: false).
+     *                 Backend support varies; Vulkan currently ignores this flag.
      */
     virtual void DrawSpriteAlpha(const Texture &texture, glm::vec2 position, glm::vec2 size,
                                  float rotation, glm::vec4 color, bool additive = false) = 0;
@@ -269,6 +271,7 @@ public:
      * @param rotation Rotation in degrees, clockwise.
      * @param color    RGBA color tint/modulation.
      * @param additive Use additive blending for glow effects.
+     *                 Backend support varies; Vulkan currently ignores this flag.
      */
     virtual void DrawSpriteAtlas(const Texture &texture, glm::vec2 position, glm::vec2 size,
                                  glm::vec2 uvMin, glm::vec2 uvMax, float rotation,
@@ -308,6 +311,7 @@ public:
      * @param size     Rectangle dimensions.
      * @param color    RGBA color (0-1 range).
      * @param additive Use additive blending for glow effects (default: false).
+     *                 Backend support varies; Vulkan currently ignores this flag.
      */
     virtual void DrawColoredRect(glm::vec2 position, glm::vec2 size, glm::vec4 color, bool additive = false) = 0;
 
@@ -386,7 +390,7 @@ public:
      * |--------------------|-------------------|-----------------|
      * |     VanishingPoint |        No         | Yes             |
      * |              Globe |        Yes        | No              |
-     * |   GlobePerspective |        Yes        | Yes             |
+     * |            Fisheye |        Yes        | Yes             |
      *
      * @par Globe Curvature (Step 1)
      * Applies spherical distortion from screen center:
@@ -650,6 +654,9 @@ public:
      * 
      * Fills the entire viewport with the specified color.
      * Should be called at the start of each frame.
+     *
+     * OpenGL uses the provided RGBA values directly. Vulkan currently performs
+     * clearing during BeginFrame() with a fixed clear value and ignores these parameters.
      * 
      * @param r Red component (0-1).
      * @param g Green component (0-1).
@@ -675,13 +682,14 @@ public:
     /**
      * @brief Draw text at the specified position.
      *
-     * Renders a text string using the loaded font atlas.
+     * Renders a text string using the backend's loaded glyph resources.
      *
      * @par Font Rendering
-     * Text is rendered using a bitmap font atlas. Each character
-     * is drawn as a textured quad with the appropriate UV coordinates.
+     * Backends may implement text differently (atlas-based or per-glyph
+     * textures), but both render each character as textured quads.
      *
-     * @param text UTF-8 text string to render.
+     * @param text Text string to render (ASCII fully supported; extended
+     *             glyph coverage depends on loaded fonts/backend).
      * @param position Top-left corner of text.
      * @param scale Text scale multiplier (default: 1.0).
      * @param color Text color (default: white).

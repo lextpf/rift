@@ -601,14 +601,14 @@ public:
     void SetElevation(int x, int y, int elevation);
     
     /**
-     * @brief Get elevation at world position with interpolation.
+     * @brief Get elevation at world position.
      *
-     * Returns the elevation at a world position, useful for smooth
-     * transitions when walking on stairs.
+     * Maps the world position to the occupied tile using the entity
+     * feet-position convention and returns that tile's elevation value.
      *
      * @param worldX World X position in pixels.
      * @param worldY World Y position in pixels.
-     * @return Interpolated elevation in pixels.
+     * @return Elevation of the mapped tile in pixels.
      */
     float GetElevationAtWorldPos(float worldX, float worldY) const;
     /** @} */
@@ -668,9 +668,10 @@ public:
      * @par JSON Structure
      * @code{.json}
      * {
-     *   "version": 2,
      *   "width": 64,
      *   "height": 64,
+     *   "tileWidth": 16,
+     *   "tileHeight": 16,
      *   "dynamicLayers": [
      *     { "name": "Ground", "renderOrder": 0, "tiles": { "index": tileID, ... } },
      *     { "name": "Ground Detail", "renderOrder": 10, "tiles": { ... } },
@@ -679,7 +680,7 @@ public:
      *   "collision": [index1, index2, ...],
      *   "navigation": [index1, index2, ...],
      *   "npcs": [
-     *     { "type": "BW2_NPC1", "x": 10, "y": 5, "dialogue": "Hello!" }
+     *     { "type": "BW2_NPC1", "tileX": 10, "tileY": 5, "dialogue": "Hello!" }
      *   ],
      *   "player": { "tileX": 5, "tileY": 5 }
      * }
@@ -698,7 +699,10 @@ public:
     /**
      * @brief Load map from JSON file.
      * 
-     * Loads all map data. If file doesn't exist, generates a default map.
+     * Loads map dimensions, layers, collision/navigation, elevation, and optional
+     * NPC/player data from JSON. Returns `false` on file open or parse failures.
+     * If dynamic layer indices do not fit the loaded map size, default map data
+     * is regenerated for layer content.
      * 
      * @param filename Input JSON file path.
      * @param npcs Optional output for loaded NPCs.
@@ -929,11 +933,11 @@ public:
      * @endcode
      *
      * @param x Tile column.
-     * @return ColumnProxy for read-only access.
+     * @return ColumnProxy for const-qualified access.
      */
-    ColumnProxy<std::vector<int>, int, -1> operator[](int x) const
+    ConstColumnProxy<std::vector<int>, int, -1> operator[](int x) const
     {
-        return ColumnProxy<std::vector<int>, int, -1>(&m_Layers[0].tiles, &m_MapWidth, &m_MapHeight, x);
+        return ConstColumnProxy<std::vector<int>, int, -1>(&m_Layers[0].tiles, &m_MapWidth, &m_MapHeight, x);
     }
     /** @} */
 
@@ -999,9 +1003,10 @@ private:
     /// @}
 
     /**
-     * @brief Generate a default map pattern.
+     * @brief Generate default tile content.
      *
-     * Creates a simple grass-filled map with border walls.
+     * Scans the loaded tileset for non-transparent tiles and fills the base
+     * layer with randomly selected valid tile IDs.
      * Called by SetTilemapSize() when generateMap is true.
      */
     void GenerateDefaultMap();

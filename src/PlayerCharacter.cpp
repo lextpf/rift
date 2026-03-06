@@ -93,8 +93,6 @@ void PlayerCharacter::SetCharacterAsset(CharacterType characterType, const std::
 
 bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 {
-    m_CharacterType = characterType;
-
     // Character type names for logging
     static const char *typeNames[] = {"BW1_MALE", "BW1_FEMALE", "BW2_MALE", "BW2_FEMALE", "CC_FEMALE"};
     int typeIdx = static_cast<int>(characterType);
@@ -114,17 +112,24 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
     };
 
     // Lambda: Attempt load with fallback to parent directory
-    auto tryLoad = [this](const std::string &path, bool (PlayerCharacter::*loadFunc)(const std::string &)) -> bool
+    auto tryLoad = [](Texture &target, const std::string &path) -> bool
     {
-        if ((this->*loadFunc)(path))
+        if (path.empty())
+            return false;
+
+        if (target.LoadFromFile(path))
             return true;
-        return (this->*loadFunc)("../" + path); // Try parent directory
+        return target.LoadFromFile("../" + path); // Try parent directory
     };
 
-    // Load all sprite sheets
-    bool walkingLoaded = tryLoad(getAssetPath("Walking"), &PlayerCharacter::LoadSpriteSheet);
-    bool runningLoaded = tryLoad(getAssetPath("Running"), &PlayerCharacter::LoadRunningSpriteSheet);
-    bool bicycleLoaded = tryLoad(getAssetPath("Bicycle"), &PlayerCharacter::LoadBicycleSpriteSheet);
+    Texture newWalking;
+    Texture newRunning;
+    Texture newBicycle;
+
+    // Load all sprite sheets into temporaries so state only changes on success
+    bool walkingLoaded = tryLoad(newWalking, getAssetPath("Walking"));
+    bool runningLoaded = tryLoad(newRunning, getAssetPath("Running"));
+    bool bicycleLoaded = tryLoad(newBicycle, getAssetPath("Bicycle"));
 
     // Validate required sprites loaded
     if (!walkingLoaded || !runningLoaded)
@@ -135,6 +140,14 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 
     if (!bicycleLoaded)
         std::cout << "Warning: Bicycle sprite not found for " << typeName << std::endl;
+
+    m_SpriteSheet = std::move(newWalking);
+    m_RunningSpriteSheet = std::move(newRunning);
+    if (bicycleLoaded)
+    {
+        m_BicycleSpriteSheet = std::move(newBicycle);
+    }
+    m_CharacterType = characterType;
 
     std::cout << "Switched to " << typeName << std::endl;
     return true;
@@ -228,7 +241,8 @@ void PlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos)
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -289,7 +303,8 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -327,7 +342,7 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
     // Bottom half: lower 16 pixels of the sprite
     // Render position is offset to show only the bottom half
     glm::vec2 bottomRenderPos = renderPos + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
-    glm::vec2 bottomSpriteCoords = spriteCoords; // Bottom of sprite in texture
+    glm::vec2 bottomSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);
@@ -352,7 +367,8 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -388,8 +404,7 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
                                                                      : m_SpriteSheet;
 
     // Top half: upper 16 pixels of the sprite (head/torso area)
-    // Sprite coords offset to get upper half from texture
-    glm::vec2 topSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
+    glm::vec2 topSpriteCoords = spriteCoords;
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);

@@ -49,7 +49,7 @@
  * | Mode     | Input          | Features                          |
  * |----------|----------------|-----------------------------------|
  * | Gameplay | WASD movement  | Player control, NPC interaction   |
- * | Dialogue | W/S + Enter    | Conversation with NPCs            |
+ * | Dialogue | W/S or Up/Down | Conversation with NPCs            |
  * | Editor   | Mouse + keys   | Tile placement, collision editing |
  *
  * Toggle editor mode with **E**. Dialogue activates on NPC interaction.
@@ -77,9 +77,9 @@
  * 10. Debug overlays (collision, navigation, layer indicators)
  * 
  * @par Viewport Configuration
- * The game uses a virtual resolution based on visible tiles:
- * - 17 tiles wide x 12 tiles tall
- * - At 16px per tile = 272x192 virtual pixels
+ * The game uses a tile-based virtual resolution:
+ * - Visible tile counts are derived from current window size.
+ * - Default startup target is 17x12 tiles (at 16px per tile = 272x192 virtual pixels).
  * - Scaled to fit window while maintaining aspect ratio
  * 
  * @htmlonly
@@ -136,8 +136,9 @@ public:
      * 3. Load tileset and create tilemap
      * 4. Load player character sprites
      * 5. Load map from JSON (or generate default)
-     * 6. Initialize NPC patrol routes
-     * 7. Set up camera position
+     * 6. Set up camera position
+     *
+     * NPC patrol routes are initialized lazily during NPC update when needed.
      * 
      * @par Error Handling
      * Returns false if any critical initialization fails.

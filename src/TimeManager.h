@@ -117,13 +117,14 @@ enum class WeatherState
  * Colors smoothly interpolate between key times:
  * | Time  | Ambient Color      | Description              |
  * |-------|--------------------|--------------------------|
- * | 00:00 | (0.15, 0.15, 0.25) | Deep night blue          |
- * | 05:30 | (0.6, 0.4, 0.5)    | Pre-dawn purple          |
- * | 06:30 | (1.0, 0.8, 0.6)    | Golden sunrise           |
- * | 08:00 | (1.0, 1.0, 1.0)    | Full daylight            |
- * | 17:00 | (1.0, 0.95, 0.9)   | Afternoon warmth         |
- * | 19:00 | (1.0, 0.6, 0.4)    | Sunset orange            |
- * | 20:30 | (0.3, 0.3, 0.5)    | Twilight blue            |
+ * | 00:00 | (0.30, 0.30, 0.45) | Deep night blue          |
+ * | 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn      |
+ * | 05:00 | (0.85, 0.75, 0.70) | Dawn warm light starts   |
+ * | 07:00 | (0.95, 0.93, 0.90) | Morning warm white       |
+ * | 10:00 | (1.00, 1.00, 0.98) | Midday neutral daylight  |
+ * | 18:00 | (0.95, 0.90, 0.82) | Afternoon to dusk warmth |
+ * | 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange        |
+ * | 22:00 | (0.50, 0.50, 0.65) | Evening blue             |
  *
  * @par Time Scale
  * Real-time to game-time conversion:
@@ -265,9 +266,7 @@ public:
      * - 4 = Full Moon (brightest)
      * - 6 = Last Quarter (half)
      *
-     * @return Phase index 0-7 when day count is non-negative.
-     *         May return negative values if day count is negative
-     *         (C++ signed modulo preserves sign).
+     * @return Phase index in range [0, 7].
      */
     int GetMoonPhase() const;
 
@@ -382,8 +381,9 @@ public:
      * - 3600s (1 hour) = realistic feel
      *
      * @param seconds Real-time seconds for one complete day.
+     *                Must be > 0. Values <= 0 are clamped to a tiny positive value.
      */
-    void SetDayDuration(float seconds) { m_DayDuration = seconds; }
+    void SetDayDuration(float seconds) { m_DayDuration = (seconds > 0.0f) ? seconds : 0.001f; }
 
     /**
      * @brief Get the day duration in real seconds.
@@ -404,9 +404,8 @@ public:
     /**
      * @brief Advance time by a specified amount.
      *
-     * Wraps time via SetTime (does not update day count for normal
-     * midnight crossings or negative advances). Only adds to day count
-     * when advancing by 24+ hours at once.
+     * Wraps across midnight and updates day count for both positive and
+     * negative advances.
      *
      * @param hours Hours to advance (can be negative to go back).
      */

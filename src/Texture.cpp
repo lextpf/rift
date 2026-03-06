@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cstring>
 #include <utility>
+#include <limits>
 
 // stb_image is a header-only library - this define tells it to include the implementation
 // Only define this in ONE .cpp file to avoid duplicate symbol errors
@@ -13,6 +14,81 @@
 #include <vulkan/vulkan.h>
 
 std::uint64_t Texture::s_CurrentOpenGLContextGeneration = 0;
+
+namespace
+{
+bool TryComputeImageByteSize(int width, int height, int channels, size_t &outSize)
+{
+    if (width <= 0 || height <= 0 || channels <= 0)
+        return false;
+
+    const size_t w = static_cast<size_t>(width);
+    const size_t h = static_cast<size_t>(height);
+    const size_t c = static_cast<size_t>(channels);
+
+    if (w > std::numeric_limits<size_t>::max() / h)
+        return false;
+    const size_t pixels = w * h;
+    if (pixels > std::numeric_limits<size_t>::max() / c)
+        return false;
+
+    outSize = pixels * c;
+    return true;
+}
+
+bool ExpandToRgba(const unsigned char *src, int width, int height, int srcChannels, std::vector<unsigned char> &outRgba)
+{
+    if (!src || width <= 0 || height <= 0 || srcChannels < 1 || srcChannels > 4)
+        return false;
+
+    size_t rgbaSize = 0;
+    if (!TryComputeImageByteSize(width, height, 4, rgbaSize))
+        return false;
+
+    outRgba.resize(rgbaSize);
+    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        const size_t srcBase = i * static_cast<size_t>(srcChannels);
+        const size_t dstBase = i * 4;
+
+        unsigned char r = 255;
+        unsigned char g = 255;
+        unsigned char b = 255;
+        unsigned char a = 255;
+
+        if (srcChannels == 1)
+        {
+            r = g = b = src[srcBase];
+        }
+        else if (srcChannels == 2)
+        {
+            r = g = b = src[srcBase];
+            a = src[srcBase + 1];
+        }
+        else if (srcChannels == 3)
+        {
+            r = src[srcBase];
+            g = src[srcBase + 1];
+            b = src[srcBase + 2];
+        }
+        else // srcChannels == 4
+        {
+            r = src[srcBase];
+            g = src[srcBase + 1];
+            b = src[srcBase + 2];
+            a = src[srcBase + 3];
+        }
+
+        outRgba[dstBase] = r;
+        outRgba[dstBase + 1] = g;
+        outRgba[dstBase + 2] = b;
+        outRgba[dstBase + 3] = a;
+    }
+
+    return true;
+}
+} // namespace
 
 Texture::Texture()
     : m_Width(0)                              // Image width in pixels (0 until loaded)
@@ -153,19 +229,50 @@ bool Texture::LoadFromFile(const std::string &path)
 
     m_ImageData.clear();
 
+    if (m_Channels < 1 || m_Channels > 4)
+    {
+        std::cerr << "Unsupported channel count (" << m_Channels << ") for texture: " << path << std::endl;
+        stbi_image_free(data);
+        return false;
+    }
+
     // Keep a CPU copy of the image data. This allows us to:
     // 1. Recreate the OpenGL texture after a context switch
     // 2. Create a Vulkan texture later (deferred creation)
     // 3. Support multiple graphics backends from the same source
-    size_t dataSize = m_Width * m_Height * m_Channels;
+    std::vector<unsigned char> normalizedData;
+    const unsigned char *sourceData = data;
+    int sourceChannels = m_Channels;
+
+    // Normalize uncommon formats (1/2 channels) to RGBA so both backends share one safe path.
+    if (sourceChannels == 1 || sourceChannels == 2)
+    {
+        if (!ExpandToRgba(data, m_Width, m_Height, sourceChannels, normalizedData))
+        {
+            std::cerr << "Failed to expand texture to RGBA: " << path << std::endl;
+            stbi_image_free(data);
+            return false;
+        }
+        sourceData = normalizedData.data();
+        sourceChannels = 4;
+    }
+
+    size_t dataSize = 0;
+    if (!TryComputeImageByteSize(m_Width, m_Height, sourceChannels, dataSize))
+    {
+        std::cerr << "Texture is too large to load safely: " << path << std::endl;
+        stbi_image_free(data);
+        return false;
+    }
     m_ImageData.resize(dataSize);
-    memcpy(m_ImageData.data(), data, dataSize);
+    memcpy(m_ImageData.data(), sourceData, dataSize);
+    m_Channels = sourceChannels;
 
     // Create OpenGL texture immediately only if a context is active.
     // In Vulkan mode there is no GL context; keep CPU data and upload later.
     if (glfwGetCurrentContext() != nullptr)
     {
-        CreateOpenGLTexture(data, true);
+        CreateOpenGLTexture(m_ImageData.data(), true);
     }
     else
     {
@@ -186,7 +293,7 @@ bool Texture::LoadFromFile(const std::string &path)
 bool Texture::LoadFromData(unsigned char *data, int width, int height, int channels, bool flipY)
 {
     // Validate input - GPU textures with zero or negative dimensions will crash
-    if (!data || width <= 0 || height <= 0 || channels <= 0)
+    if (!data || width <= 0 || height <= 0 || channels <= 0 || channels > 4)
     {
         std::cerr << "Invalid data for texture loading" << std::endl;
         return false;
@@ -198,38 +305,54 @@ bool Texture::LoadFromData(unsigned char *data, int width, int height, int chann
     m_Height = height;
     m_Channels = channels;
 
-    size_t dataSize = width * height * channels;
+    std::vector<unsigned char> normalizedData;
+    const unsigned char *sourceData = data;
+    if (channels == 1 || channels == 2)
+    {
+        if (!ExpandToRgba(data, width, height, channels, normalizedData))
+        {
+            std::cerr << "Failed to expand texture data to RGBA" << std::endl;
+            return false;
+        }
+        sourceData = normalizedData.data();
+        m_Channels = 4;
+    }
+
+    size_t dataSize = 0;
+    if (!TryComputeImageByteSize(width, height, m_Channels, dataSize))
+    {
+        std::cerr << "Texture data size overflow" << std::endl;
+        return false;
+    }
     m_ImageData.resize(dataSize);
 
     // Handle vertical flip if requested (needed for OpenGL coordinate system)
-    unsigned char *finalData = data;
-    std::vector<unsigned char> flippedData;
+    std::vector<unsigned char> finalData;
+    const size_t rowBytes = static_cast<size_t>(width) * static_cast<size_t>(m_Channels);
 
     if (flipY)
     {
         // Create a flipped copy by copying rows in reverse order
-        flippedData.resize(dataSize);
+        finalData.resize(dataSize);
         for (int y = 0; y < height; ++y)
         {
             int srcY = height - 1 - y;  // Source row from bottom
-            memcpy(flippedData.data() + y * width * channels,
-                   data + srcY * width * channels,
-                   width * channels);
+            memcpy(finalData.data() + static_cast<size_t>(y) * rowBytes,
+                   sourceData + static_cast<size_t>(srcY) * rowBytes,
+                   rowBytes);
         }
-        finalData = flippedData.data();
-        // Store the flipped version as our CPU copy
-        memcpy(m_ImageData.data(), finalData, dataSize);
+        memcpy(m_ImageData.data(), finalData.data(), dataSize);
     }
     else
     {
         // No flip needed - just copy directly
-        memcpy(m_ImageData.data(), data, dataSize);
+        memcpy(m_ImageData.data(), sourceData, dataSize);
     }
 
     // Create GL texture from the (possibly flipped) data only if a context is active.
     if (glfwGetCurrentContext() != nullptr)
     {
-        CreateOpenGLTexture(finalData, flipY);
+        CreateOpenGLTexture(m_ImageData.data(), flipY);
     }
     else
     {
@@ -243,9 +366,29 @@ bool Texture::LoadFromData(unsigned char *data, int width, int height, int chann
 
 void Texture::CreateOpenGLTexture(unsigned char *data, bool flipY)
 {
+    (void)flipY;
+
+    GLFWwindow *currentContext = glfwGetCurrentContext();
+    if (currentContext == nullptr)
+    {
+        m_OpenGLID = 0;
+        m_OpenGLContextTag = nullptr;
+        m_OpenGLContextGeneration = 0;
+        return;
+    }
+
+    // Replace existing texture when reloading in the same context generation.
+    if (m_OpenGLID != 0 &&
+        m_OpenGLContextGeneration == s_CurrentOpenGLContextGeneration &&
+        m_OpenGLContextTag == reinterpret_cast<void *>(currentContext))
+    {
+        glDeleteTextures(1, &m_OpenGLID);
+        m_OpenGLID = 0;
+    }
+
     // Generate a new texture object and bind it for configuration
     glGenTextures(1, &m_OpenGLID);
-    m_OpenGLContextTag = reinterpret_cast<void *>(glfwGetCurrentContext());
+    m_OpenGLContextTag = reinterpret_cast<void *>(currentContext);
     m_OpenGLContextGeneration = s_CurrentOpenGLContextGeneration;
     glBindTexture(GL_TEXTURE_2D, m_OpenGLID);
 
@@ -363,6 +506,28 @@ void Texture::CreateVulkanTexture(VkDevice device, VkPhysicalDevice physicalDevi
     {
         std::cerr << "Cannot create Vulkan texture: no image data" << std::endl;
         return;
+    }
+    if (m_Channels != 3 && m_Channels != 4)
+    {
+        throw std::runtime_error("Unsupported channel count for Vulkan texture (expected 3 or 4)");
+    }
+
+    size_t imageSizeBytes = 0;
+    if (!TryComputeImageByteSize(m_Width, m_Height, m_Channels, imageSizeBytes))
+    {
+        throw std::runtime_error("Vulkan texture size overflow");
+    }
+    if (m_ImageData.size() < imageSizeBytes)
+    {
+        throw std::runtime_error("Vulkan texture image data is smaller than expected");
+    }
+
+    // Re-create safely if this texture already has Vulkan resources.
+    if (m_VulkanImage != VK_NULL_HANDLE || m_VulkanImageView != VK_NULL_HANDLE ||
+        m_VulkanImageMemory != VK_NULL_HANDLE || m_VulkanSampler != VK_NULL_HANDLE)
+    {
+        VkDevice destroyDevice = (m_VulkanDevice != VK_NULL_HANDLE) ? m_VulkanDevice : device;
+        DestroyVulkanTexture(destroyDevice);
     }
 
     // Store device handle for cleanup later
@@ -484,7 +649,7 @@ void Texture::CreateVulkanTexture(VkDevice device, VkPhysicalDevice physicalDevi
     // 2. Copy pixel data to staging buffer
     // 3. Issue a GPU command to copy from staging buffer to image
 
-    VkDeviceSize imageSize = m_Width * m_Height * m_Channels;
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(imageSizeBytes);
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -656,29 +821,42 @@ void Texture::CreateVulkanTexture(VkDevice device, VkPhysicalDevice physicalDevi
 
 void Texture::DestroyVulkanTexture(VkDevice device)
 {
+    VkDevice destroyDevice = (device != VK_NULL_HANDLE) ? device : m_VulkanDevice;
+    if (destroyDevice == VK_NULL_HANDLE)
+    {
+        m_VulkanImage = VK_NULL_HANDLE;
+        m_VulkanImageMemory = VK_NULL_HANDLE;
+        m_VulkanImageView = VK_NULL_HANDLE;
+        m_VulkanSampler = VK_NULL_HANDLE;
+        m_VulkanDevice = VK_NULL_HANDLE;
+        return;
+    }
+
     // Destroy Vulkan resources in reverse creation order
     // Sampler first (depends on nothing)
     if (m_VulkanSampler != VK_NULL_HANDLE)
     {
-        vkDestroySampler(device, m_VulkanSampler, nullptr);
+        vkDestroySampler(destroyDevice, m_VulkanSampler, nullptr);
         m_VulkanSampler = VK_NULL_HANDLE;
     }
     // Image view depends on image
     if (m_VulkanImageView != VK_NULL_HANDLE)
     {
-        vkDestroyImageView(device, m_VulkanImageView, nullptr);
+        vkDestroyImageView(destroyDevice, m_VulkanImageView, nullptr);
         m_VulkanImageView = VK_NULL_HANDLE;
     }
     // Image depends on memory
     if (m_VulkanImage != VK_NULL_HANDLE)
     {
-        vkDestroyImage(device, m_VulkanImage, nullptr);
+        vkDestroyImage(destroyDevice, m_VulkanImage, nullptr);
         m_VulkanImage = VK_NULL_HANDLE;
     }
     // Memory last
     if (m_VulkanImageMemory != VK_NULL_HANDLE)
     {
-        vkFreeMemory(device, m_VulkanImageMemory, nullptr);
+        vkFreeMemory(destroyDevice, m_VulkanImageMemory, nullptr);
         m_VulkanImageMemory = VK_NULL_HANDLE;
     }
+
+    m_VulkanDevice = VK_NULL_HANDLE;
 }

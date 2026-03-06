@@ -942,7 +942,7 @@ void SkyRenderer::GenerateDewSparkles()
 
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> posDistX(0.0f, 1.0f);
-    std::uniform_real_distribution<float> posDistY(0.0f, 1.0f); // Full screen
+    std::uniform_real_distribution<float> posDistY(0.55f, 1.0f); // Lower screen band
     std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * M_PI));
     std::uniform_real_distribution<float> brightDist(0.4f, 1.0f);
     std::uniform_real_distribution<float> speedDist(1.5f, 5.0f);

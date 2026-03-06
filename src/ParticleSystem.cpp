@@ -254,13 +254,11 @@ void ParticleSystem::GenerateSunshinePixels(std::vector<unsigned char> &pixels, 
 
 void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize)
 {
-    if (!m_Zones || m_Zones->empty())
-        return;
-
     m_Time += deltaTime;
+    const bool hasZones = (m_Zones && !m_Zones->empty());
 
     // Ensure we have enough spawn timers
-    if (m_ZoneSpawnTimers.size() < m_Zones->size())
+    if (hasZones && m_ZoneSpawnTimers.size() < m_Zones->size())
     {
         m_ZoneSpawnTimers.resize(m_Zones->size(), 0.0f);
     }
@@ -279,7 +277,7 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         }
 
         // Remove particle if its zone no longer exists
-        if (p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size()))
+        if (!hasZones || p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size()))
         {
             it = m_Particles.erase(it);
             continue;
@@ -323,7 +321,7 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
             p.color.a = fadeIn * p.phase;
 
             // Check if rain has fallen below its zone
-            if (p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
+            if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
             {
                 const auto &zone = (*m_Zones)[p.zoneIndex];
 
@@ -351,7 +349,7 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
             p.rotation += rotationSpeed * deltaTime;
 
             // Check if snow has fallen below its zone
-            if (p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
+            if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
             {
                 const auto &zone = (*m_Zones)[p.zoneIndex];
                 if (p.position.y > zone.position.y + zone.size.y + 50.0f)
@@ -461,6 +459,9 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
         ++it;
     }
+
+    if (!hasZones)
+        return;
 
     // Spawn new particles for each zone
     for (size_t i = 0; i < m_Zones->size(); ++i)
@@ -963,7 +964,8 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
 
                 // Check if anchor is inside expanded 3D viewport - skip projection if outside
                 // to prevent globe wrap-around artifacts
-                float expansion = 1.0f / perspState.horizonScale;
+                float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+                float expansion = 1.0f / safeHorizonScale;
                 float expandedWidth = perspState.viewWidth * expansion * 1.5f;
                 float expandedHeight = perspState.viewHeight * expansion;
                 float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -1014,7 +1016,8 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
         else if (isNoProjection)
         {
             // Fallback if no tilemap: Simple projection only if inside expanded 3D viewport
-            float expansion = 1.0f / perspState.horizonScale;
+            float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+            float expansion = 1.0f / safeHorizonScale;
             float expandedWidth = perspState.viewWidth * expansion * 1.5f;
             float expandedHeight = perspState.viewHeight * expansion;
             float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -1056,7 +1059,7 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
     // Lambda to draw a particle using the texture atlas
     auto drawParticle = [&](const ParticleRenderData &data)
     {
-        if (m_TexturesLoaded && m_AtlasTexture.GetID() != 0)
+        if (m_TexturesLoaded)
         {
             int typeIndex = static_cast<int>(data.type);
             const AtlasRegion &region = m_AtlasRegions[typeIndex];
@@ -1124,6 +1127,9 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
 
 void ParticleSystem::OnZoneRemoved(int zoneIndex)
 {
+    if (zoneIndex < 0)
+        return;
+
     // Remove particles from the deleted zone and adjust indices for remaining particles
     for (auto it = m_Particles.begin(); it != m_Particles.end();)
     {
@@ -1141,5 +1147,10 @@ void ParticleSystem::OnZoneRemoved(int zoneIndex)
             }
             ++it;
         }
+    }
+
+    if (zoneIndex < static_cast<int>(m_ZoneSpawnTimers.size()))
+    {
+        m_ZoneSpawnTimers.erase(m_ZoneSpawnTimers.begin() + zoneIndex);
     }
 }

@@ -44,7 +44,7 @@
  * @par Batch Flow
  * @htmlonly
  * <pre class="mermaid">
- * flowchart TD
+ * flowchart LR
  * classDef add fill:#134e3a,stroke:#10b981,color:#e2e8f0
  * classDef flush fill:#7f1d1d,stroke:#ef4444,color:#e2e8f0
  * classDef check fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0

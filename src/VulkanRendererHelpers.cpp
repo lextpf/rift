@@ -107,6 +107,14 @@ VulkanRenderer::TextureResources &VulkanRenderer::GetOrCreateTexture(const Textu
     auto it = m_TextureCache.find(textureKey);
     if (it != m_TextureCache.end() && it->second.initialized)
     {
+#ifdef USE_VULKAN
+        // Refresh cached fallback entry once a real image view becomes available.
+        VkImageView liveView = texture.GetVulkanImageView();
+        if (liveView != VK_NULL_HANDLE && it->second.imageView != liveView)
+        {
+            it->second.imageView = liveView;
+        }
+#endif
         return it->second;
     }
 
@@ -148,7 +156,8 @@ VulkanRenderer::TextureResources &VulkanRenderer::GetOrCreateTexture(const Textu
     std::cerr.flush();
 #endif
 
-    // Use white texture as fallback
+    // Use white texture as fallback. Cached entries are refreshed above when
+    // a real image view becomes available on the Texture object.
     resources.image = m_WhiteTextureImage;
     resources.imageView = m_WhiteTextureImageView;
     resources.memory = m_WhiteTextureImageMemory;

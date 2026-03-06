@@ -13,6 +13,11 @@
  * Central storage for all game flags that dialogue conditions can check
  * and consequences can modify. Flags are stored as string key-value pairs.
  *
+ * @note Condition checks are presence-based by default:
+ * - `FLAG_SET` means the key exists, regardless of stored value.
+ * - `FLAG_NOT_SET` means the key does not exist.
+ * Use `FLAG_EQUALS` for value-based checks (e.g., `key == "true"`).
+ *
  * @section flag_types Flag Types
  * |    Type |     Method     | Storage    | Example            |
  * |---------|----------------|------------|--------------------|
@@ -114,12 +119,12 @@ public:
     }
 
     /**
-     * @brief Clear a flag (set to false).
+     * @brief Clear/unset a flag by removing its key.
      * @param key Flag name.
      */
     void ClearFlag(const std::string& key)
     {
-        m_Flags[key] = "false";
+        m_Flags.erase(key);
     }
 
     /**
@@ -146,7 +151,7 @@ public:
     /**
      * @brief Check if a flag exists.
      * @param key Flag name.
-     * @return True if the flag has been set.
+     * @return True if the flag key exists (value may be "false").
      */
     [[nodiscard]] bool HasFlag(const std::string& key) const
     {

@@ -27,7 +27,7 @@ struct DialogueCondition
      */
     enum class Type
     {
-        FLAG_SET,      ///< Check if flag key exists (any value)
+        FLAG_SET,      ///< Check if flag key exists (presence-based, any value)
         FLAG_NOT_SET,  ///< Check if flag key does not exist
         FLAG_EQUALS    ///< Check if flag equals a specific string value
     };
@@ -73,12 +73,12 @@ struct DialogueConsequence
     enum class Type
     {
         SET_FLAG,            ///< Set a boolean flag to true
-        CLEAR_FLAG,          ///< Remove or clear a flag
+        CLEAR_FLAG,          ///< Remove/unset a flag key
         SET_FLAG_VALUE,      ///< Set a flag to a specific string value
     };
 
     Type type = Type::SET_FLAG;  ///< The type of consequence
-    std::string key;             ///< Flag name or NPC type identifier
+    std::string key;             ///< Flag name
     std::string value;           ///< New value (for SET_FLAG_VALUE)
 
     DialogueConsequence() = default;

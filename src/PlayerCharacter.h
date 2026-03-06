@@ -21,8 +21,8 @@
 enum class AnimationType
 {
     IDLE = 0,  ///< Standing still (single frame)
-    WALK = 1,  ///< Walking animation (3-frame cycle)
-    RUN = 2    ///< Running/sprinting animation (faster 3-frame cycle)
+    WALK = 1,  ///< Walking animation (4-step sequence [1,0,2,0])
+    RUN = 2    ///< Running/sprinting animation (same sequence, faster timing)
 };
 
 /**
@@ -95,7 +95,7 @@ public:
     /**
      * @brief Load the walking/idle sprite sheet.
      *
-     * The sprite sheet should be a 4x4 grid of 32x32 pixel sprites:
+     * The sprite sheet should be a 4-row x 3-column grid of 32x32 sprites:
      * @code
      * +----+----+----+
      * | D0 | D1 | D2 |  Row 0: Down

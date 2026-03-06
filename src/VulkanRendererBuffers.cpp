@@ -62,25 +62,25 @@ void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(m_Device, &allocInfo, &commandBuffer);
+    VK_CHECK(vkAllocateCommandBuffers(m_Device, &allocInfo, &commandBuffer));
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
     VkBufferCopy copyRegion{};
     copyRegion.size = size;
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-    vkEndCommandBuffer(commandBuffer);
+    VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_GraphicsQueue);
+    VK_CHECK(vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
+    VK_CHECK(vkQueueWaitIdle(m_GraphicsQueue));
 
     vkFreeCommandBuffers(m_Device, m_CommandPool, 1, &commandBuffer);
 }
@@ -219,7 +219,7 @@ void VulkanRenderer::CreateWhiteTexture()
                  stagingBuffer, stagingBufferMemory);
 
     void *data;
-    vkMapMemory(m_Device, stagingBufferMemory, 0, imageSize, 0, &data);
+    VK_CHECK(vkMapMemory(m_Device, stagingBufferMemory, 0, imageSize, 0, &data));
     memcpy(data, whitePixel, imageSize);
     vkUnmapMemory(m_Device, stagingBufferMemory);
 
@@ -232,13 +232,13 @@ void VulkanRenderer::CreateWhiteTexture()
     cmdAllocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(m_Device, &cmdAllocInfo, &commandBuffer);
+    VK_CHECK(vkAllocateCommandBuffers(m_Device, &cmdAllocInfo, &commandBuffer));
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
     // Transition to transfer destination
     VkImageMemoryBarrier barrier{};
@@ -282,7 +282,7 @@ void VulkanRenderer::CreateWhiteTexture()
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-    vkEndCommandBuffer(commandBuffer);
+    VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
     // Submit
     VkSubmitInfo submitInfo{};
@@ -290,8 +290,8 @@ void VulkanRenderer::CreateWhiteTexture()
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_GraphicsQueue);
+    VK_CHECK(vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
+    VK_CHECK(vkQueueWaitIdle(m_GraphicsQueue));
 
     vkFreeCommandBuffers(m_Device, m_CommandPool, 1, &commandBuffer);
     vkDestroyBuffer(m_Device, stagingBuffer, nullptr);

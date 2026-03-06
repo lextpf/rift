@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <limits>
 
 VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vector<uint32_t> &code)
 {
@@ -35,11 +36,33 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string &filename)
         return {};
     }
 
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+    const std::streamoff streamSize = file.tellg();
+    if (streamSize <= 0)
+    {
+        std::cerr << "Invalid SPIR-V file size: " << filename << std::endl;
+        return {};
+    }
+    if ((streamSize % static_cast<std::streamoff>(sizeof(uint32_t))) != 0)
+    {
+        std::cerr << "SPIR-V file size is not 4-byte aligned: " << filename << std::endl;
+        return {};
+    }
+    if (streamSize > static_cast<std::streamoff>(std::numeric_limits<size_t>::max()))
+    {
+        std::cerr << "SPIR-V file is too large: " << filename << std::endl;
+        return {};
+    }
+
+    const size_t wordCount = static_cast<size_t>(streamSize / static_cast<std::streamoff>(sizeof(uint32_t)));
+    std::vector<uint32_t> buffer(wordCount);
 
     file.seekg(0);
-    file.read(reinterpret_cast<char *>(buffer.data()), fileSize);
+    file.read(reinterpret_cast<char *>(buffer.data()), streamSize);
+    if (!file)
+    {
+        std::cerr << "Failed to read full SPIR-V file: " << filename << std::endl;
+        return {};
+    }
     file.close();
 
     return buffer;

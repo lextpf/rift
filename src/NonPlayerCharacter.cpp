@@ -1,6 +1,7 @@
 #include "NonPlayerCharacter.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <iostream>
@@ -202,9 +203,13 @@ void NonPlayerCharacter::Update(float deltaTime, const Tilemap *tilemap, const g
         }
     }
 
-    const int tileSize = tilemap->GetTileWidth();
-    m_TileX = static_cast<int>(std::floor(m_Position.x / tileSize));
-    m_TileY = static_cast<int>(std::floor((m_Position.y - 0.1f) / tileSize));
+    const int tileWidth = tilemap->GetTileWidth();
+    const int tileHeight = tilemap->GetTileHeight();
+    if (tileWidth <= 0 || tileHeight <= 0)
+        return;
+
+    m_TileX = static_cast<int>(std::floor(m_Position.x / static_cast<float>(tileWidth)));
+    m_TileY = static_cast<int>(std::floor((m_Position.y - 0.1f) / static_cast<float>(tileHeight)));
 
     if (m_WaitTimer > 0.0f)
     {
@@ -229,8 +234,8 @@ void NonPlayerCharacter::Update(float deltaTime, const Tilemap *tilemap, const g
     }
 
     glm::vec2 targetPos(
-        m_TargetTileX * tileSize + tileSize * 0.5f,
-        m_TargetTileY * tileSize + static_cast<float>(tileSize));
+        m_TargetTileX * static_cast<float>(tileWidth) + static_cast<float>(tileWidth) * 0.5f,
+        m_TargetTileY * static_cast<float>(tileHeight) + static_cast<float>(tileHeight));
 
     glm::vec2 toTarget = targetPos - m_Position;
     float dist = glm::length(toTarget);
@@ -403,7 +408,8 @@ void NonPlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos) const
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -446,7 +452,8 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -463,12 +470,13 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
     // Draw lower 16 pixels (feet area)
+    glm::vec2 bottomHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
     renderer.SuspendPerspective(true);
     renderer.DrawSpriteRegion(
         m_SpriteSheet,
         renderPos + glm::vec2(0.0f, halfHeight),
         glm::vec2(spriteWidth, halfHeight),
-        spriteCoords,
+        bottomHalfCoords,
         glm::vec2(spriteWidth, halfHeight),
         0.0f,
         glm::vec3(1.0f),
@@ -491,7 +499,8 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     if (perspState.enabled)
     {
         // Calculate expanded viewport bounds for 3D mode
-        float expansion = 1.0f / perspState.horizonScale;
+        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
         float expandedWidth = perspState.viewWidth * expansion * 1.5f;
         float expandedHeight = perspState.viewHeight * expansion;
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
@@ -508,7 +517,7 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
     // Draw upper 16 pixels (head/torso area)
-    glm::vec2 topHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
+    glm::vec2 topHalfCoords = spriteCoords;
 
     renderer.SuspendPerspective(true);
     renderer.DrawSpriteRegion(

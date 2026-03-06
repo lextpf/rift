@@ -184,7 +184,7 @@ void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>
             break;
 
         case DialogueConsequence::Type::CLEAR_FLAG:
-            // Mark a boolean flag as false (e.g., "has_item")
+            // Remove/unset a flag key entirely (e.g., "has_item")
             m_StateManager->ClearFlag(cons.key);
             std::cout << "DialogueManager: Cleared flag '" << cons.key << "'" << std::endl;
             break;

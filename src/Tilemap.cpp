@@ -282,6 +282,15 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     }
 
     // Store combined data for transparency checking (don't flip for data checking)
+    if (m_TilesetData)
+    {
+        if (m_TilesetDataFromStbi)
+            stbi_image_free(m_TilesetData);
+        else
+            delete[] m_TilesetData;
+        m_TilesetData = nullptr;
+    }
+
     m_TilesetData = combinedData;
     m_TilesetDataFromStbi = false;  // Allocated with new[], must use delete[]
     m_TilesetDataWidth = combinedWidth;
@@ -2428,6 +2437,17 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     m_TileHeight = tileHeight;
     SetTilemapSize(width, height, false);
 
+    int loadWarningCount = 0;
+    constexpr int kMaxLoadWarningsToPrint = 25;
+    auto reportLoadWarning = [&](const std::string &section, const std::string &key, const std::string &message)
+    {
+        if (loadWarningCount < kMaxLoadWarningsToPrint)
+        {
+            std::cerr << "WARN: LoadMapFromJSON[" << section << "] key '" << key << "': " << message << std::endl;
+        }
+        ++loadWarningCount;
+    };
+
     // Helper to load sparse tile layer {"index": value}
     auto loadTileLayer = [&](const std::string &name, std::function<void(int, int, int)> setTile)
     {
@@ -2447,8 +2467,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setTile(x, y, tileID);
                 }
-                catch (...)
+                catch (const std::exception &e)
                 {
+                    reportLoadWarning(name, key, e.what());
                 }
             }
         }
@@ -2473,8 +2494,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setRot(x, y, rot);
                 }
-                catch (...)
+                catch (const std::exception &e)
                 {
+                    reportLoadWarning(name, key, e.what());
                 }
             }
         }
@@ -2498,8 +2520,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setFlag(x, y, true);
                 }
-                catch (...)
+                catch (const std::exception &e)
                 {
+                    reportLoadWarning(name, "[array]", e.what());
                 }
             }
         }
@@ -2552,8 +2575,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             sizeMismatch = true; // Index out of bounds for new size
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.tiles", key, e.what());
                     }
                 }
             }
@@ -2571,8 +2595,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.rotation[index] = value.get<float>();
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.rotation", key, e.what());
                     }
                 }
             }
@@ -2590,8 +2615,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.noProjection[index] = true;
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.noProjection", "[array]", e.what());
                     }
                 }
             }
@@ -2610,8 +2636,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.ySortPlus[index] = true;
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.ySortPlus", "[array]", e.what());
                     }
                 }
             }
@@ -2629,8 +2656,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.ySortMinus[index] = true;
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.ySortMinus", "[array]", e.what());
                     }
                 }
             }
@@ -2648,8 +2676,9 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.structureId[index] = value.get<int>();
                         }
                     }
-                    catch (...)
+                    catch (const std::exception &e)
                     {
+                        reportLoadWarning("dynamicLayers.structureId", key, e.what());
                     }
                 }
             }
@@ -2658,11 +2687,11 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
         }
         std::cout << "Loaded " << m_Layers.size() << " dynamic layers" << std::endl;
 
-        // If layer data doesn't match new map size, regenerate the map
+        // If layer data doesn't match new map size, keep valid tiles and report truncation.
         if (sizeMismatch)
         {
-            std::cout << "Map size changed - regenerating random map (" << width << "x" << height << ")" << std::endl;
-            GenerateDefaultMap();
+            std::cerr << "WARN: Some dynamic layer entries were out of bounds for map size "
+                      << width << "x" << height << " and were skipped." << std::endl;
         }
     }
 
@@ -2887,6 +2916,12 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
         const auto &anim = m_AnimatedTiles[i];
         std::cout << "  Animation #" << i << ": " << anim.frames.size()
                   << " frames, " << anim.frameDuration << "s/frame" << std::endl;
+    }
+
+    if (loadWarningCount > 0)
+    {
+        std::cerr << "WARN: LoadMapFromJSON skipped " << loadWarningCount
+                  << " malformed/out-of-range entries while loading " << filename << std::endl;
     }
 
     std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")" << std::endl;

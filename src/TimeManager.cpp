@@ -17,12 +17,17 @@ void TimeManager::Initialize()
     m_CurrentTime = 12.0f;
     m_DayCount = 0;
     m_TimeScale = 1.0f;
+    m_DayDuration = 24.0f;
     m_Weather = WeatherState::Clear;
+    m_Paused = false;
 }
 
 void TimeManager::Update(float deltaTime)
 {
     if (m_Paused)
+        return;
+
+    if (m_DayDuration <= 0.0f)
         return;
 
     // Convert real time to game time
@@ -101,7 +106,10 @@ float TimeManager::GetMoonArc() const
 int TimeManager::GetMoonPhase() const
 {
     // 8 phases over MOON_CYCLE_DAYS
-    return m_DayCount % MOON_CYCLE_DAYS;
+    int phase = m_DayCount % MOON_CYCLE_DAYS;
+    if (phase < 0)
+        phase += MOON_CYCLE_DAYS;
+    return phase;
 }
 
 glm::vec3 TimeManager::GetAmbientColor() const
@@ -327,10 +335,17 @@ void TimeManager::SetTime(float hours)
 
 void TimeManager::AdvanceTime(float hours)
 {
-    SetTime(m_CurrentTime + hours);
-    // Handle day count for large advances
-    if (hours >= 24.0f)
-        m_DayCount += static_cast<int>(hours / 24.0f);
+    if (hours == 0.0f)
+        return;
+
+    const float totalHours = m_CurrentTime + hours;
+    const int dayDelta = static_cast<int>(std::floor(totalHours / 24.0f));
+
+    m_CurrentTime = std::fmod(totalHours, 24.0f);
+    if (m_CurrentTime < 0.0f)
+        m_CurrentTime += 24.0f;
+
+    m_DayCount += dayDelta;
 }
 
 bool TimeManager::IsDay() const

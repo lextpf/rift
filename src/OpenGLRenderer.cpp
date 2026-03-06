@@ -908,12 +908,9 @@ void OpenGLRenderer::FlushRectBatch()
 
     // Tell shader to use per-vertex color instead of texture sampling
     // useColorOnly modes: 0=texture, 1=uniform color, 2=vertex color, 3=texture*vertex color
-    static GLint useColorOnlyLoc = -1;
-    if (useColorOnlyLoc == -1)
-    {
-        useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    }
-    glUniform1i(useColorOnlyLoc, 2);
+    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
+    if (useColorOnlyLoc >= 0)
+        glUniform1i(useColorOnlyLoc, 2);
 
     // Upload with buffer orphaning to avoid GPU sync stall
     size_t dataSize = m_RectBatchVertices.size() * sizeof(ColoredVertex);
@@ -937,7 +934,8 @@ void OpenGLRenderer::FlushRectBatch()
     ++m_DrawCallCount;
 
     // Restore shader and blend state for next batch
-    glUniform1i(useColorOnlyLoc, 0);
+    if (useColorOnlyLoc >= 0)
+        glUniform1i(useColorOnlyLoc, 0);
     if (m_RectBatchAdditive)
     {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -974,12 +972,9 @@ void OpenGLRenderer::FlushParticleBatch()
 
     // Mode 3: multiply texture color by per-vertex color
     // This allows particles to be tinted and faded individually while using a shared texture
-    static GLint useColorOnlyLoc = -1;
-    if (useColorOnlyLoc == -1)
-    {
-        useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    }
-    glUniform1i(useColorOnlyLoc, 3);
+    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
+    if (useColorOnlyLoc >= 0)
+        glUniform1i(useColorOnlyLoc, 3);
 
     // Upload particle vertices, reuses rect batch VBO since same vertex layout
     size_t dataSize = m_ParticleBatchVertices.size() * sizeof(ColoredVertex);
@@ -1004,7 +999,8 @@ void OpenGLRenderer::FlushParticleBatch()
     ++m_DrawCallCount;
 
     // Restore state
-    glUniform1i(useColorOnlyLoc, 0);
+    if (useColorOnlyLoc >= 0)
+        glUniform1i(useColorOnlyLoc, 0);
     if (m_ParticleBatchAdditive)
     {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1366,12 +1362,9 @@ void OpenGLRenderer::DrawText(const std::string &text, glm::vec2 position, float
     glUniformMatrix4fv(m_ProjectionLoc, 1, GL_FALSE, glm::value_ptr(m_Projection));
 
     // Use texture mode (mode 0) color uniform tints the white glyphs
-    static GLint useColorOnlyLoc = -1;
-    if (useColorOnlyLoc == -1)
-    {
-        useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    }
-    glUniform1i(useColorOnlyLoc, 0);
+    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
+    if (useColorOnlyLoc >= 0)
+        glUniform1i(useColorOnlyLoc, 0);
     glUniform1f(m_AlphaLoc, alpha);
     glUniform3f(m_AmbientColorLoc, m_AmbientColor.r, m_AmbientColor.g, m_AmbientColor.b);
 

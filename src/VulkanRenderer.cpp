@@ -56,6 +56,18 @@ static bool LoadVulkanLibrary()
         }                                                                                                    \
     } while (0)
 
+namespace
+{
+bool ShouldEnableValidationLayers()
+{
+#ifndef NDEBUG
+    return true;
+#else
+    return false;
+#endif
+}
+} // namespace
+
 VulkanRenderer::VulkanRenderer(GLFWwindow *window)
     : m_Instance(VK_NULL_HANDLE)
     , m_PhysicalDevice(VK_NULL_HANDLE)
@@ -70,6 +82,7 @@ VulkanRenderer::VulkanRenderer(GLFWwindow *window)
     , m_CommandPool(VK_NULL_HANDLE)
     , m_CurrentFrame(0)
     , m_ImageIndex(0)
+    , m_FrameActive(false)
     , m_Window(window)
     , m_GraphicsFamily(UINT32_MAX)
     , m_PresentFamily(UINT32_MAX)
@@ -387,6 +400,9 @@ void VulkanRenderer::CleanupSwapchain()
         vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
         m_Swapchain = VK_NULL_HANDLE;
     }
+
+    m_SwapchainImages.clear();
+    m_ImagesInFlight.clear();
 }
 
 void VulkanRenderer::RecreateSwapchain()
@@ -446,9 +462,7 @@ void VulkanRenderer::CreateInstance()
     std::cout << "CreateInstance() step 4: Checking validation layer support..." << std::endl;
     std::cout.flush();
 
-    // Disable validation layers for now to avoid crashes
-    // They can be re-enabled later if needed
-    bool enableValidationLayers = false; // Set to true to enable validation layers
+    const bool enableValidationLayers = ShouldEnableValidationLayers();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
     bool hasValidationLayers = enableValidationLayers && CheckValidationLayerSupport();
@@ -751,6 +765,7 @@ void VulkanRenderer::CreateSwapchain()
     vkGetSwapchainImagesKHR(m_Device, m_Swapchain, &imageCount, nullptr);
     m_SwapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(m_Device, m_Swapchain, &imageCount, m_SwapchainImages.data());
+    m_ImagesInFlight.assign(m_SwapchainImages.size(), VK_NULL_HANDLE);
 
     m_SwapchainImageFormat = surfaceFormat.format;
 }
@@ -1115,9 +1130,9 @@ void VulkanRenderer::CreateCommandBuffers()
 
 void VulkanRenderer::CreateSyncObjects()
 {
-    m_ImageAvailableSemaphores.resize(2);
-    m_RenderFinishedSemaphores.resize(2);
-    m_InFlightFences.resize(2);
+    m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_RenderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_InFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1126,7 +1141,7 @@ void VulkanRenderer::CreateSyncObjects()
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < 2; i++)
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         VK_CHECK(vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]));
         VK_CHECK(vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]));
@@ -1206,8 +1221,7 @@ std::vector<const char *> VulkanRenderer::GetRequiredExtensions()
     std::cout.flush();
 
     // Only add debug extension if validation layers are enabled
-    // For now, validation layers are disabled, so skip this
-    bool enableValidationLayers = false;
+    const bool enableValidationLayers = ShouldEnableValidationLayers();
     if (enableValidationLayers && CheckValidationLayerSupport())
     {
         std::cout << "GetRequiredExtensions() step 2: Validation layers available, adding debug extension" << std::endl;
@@ -1228,6 +1242,8 @@ std::vector<const char *> VulkanRenderer::GetRequiredExtensions()
 
 void VulkanRenderer::BeginFrame()
 {
+    m_FrameActive = false;
+
     // Reset vertex buffer counter and batch state at start of frame
     m_CurrentVertexCount = 0;
     m_BatchImageView = VK_NULL_HANDLE;
@@ -1269,7 +1285,17 @@ void VulkanRenderer::BeginFrame()
         return;
     }
 
-    vkResetFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame]);
+    if (m_ImageIndex >= m_ImagesInFlight.size())
+    {
+        std::cerr << "Error: ImageIndex out of bounds for image-fence tracking! ImageIndex=" << m_ImageIndex
+                  << ", ImagesInFlightCount=" << m_ImagesInFlight.size() << std::endl;
+        return;
+    }
+
+    if (m_ImagesInFlight[m_ImageIndex] != VK_NULL_HANDLE)
+    {
+        vkWaitForFences(m_Device, 1, &m_ImagesInFlight[m_ImageIndex], VK_TRUE, UINT64_MAX);
+    }
 
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
@@ -1308,6 +1334,7 @@ void VulkanRenderer::BeginFrame()
     renderPassInfo.pClearValues = &clearColor;
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    m_FrameActive = true;
 
     if (m_GraphicsPipeline != VK_NULL_HANDLE)
     {
@@ -1338,15 +1365,22 @@ void VulkanRenderer::BeginFrame()
 
 void VulkanRenderer::EndFrame()
 {
+    if (!m_FrameActive)
+    {
+        return;
+    }
+
     if (m_Device == VK_NULL_HANDLE)
     {
         std::cerr << "Error: EndFrame called but Vulkan not initialized!" << std::endl;
+        m_FrameActive = false;
         return;
     }
 
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
         std::cerr << "Error: CurrentFrame out of bounds in EndFrame!" << std::endl;
+        m_FrameActive = false;
         return;
     }
 
@@ -1359,6 +1393,7 @@ void VulkanRenderer::EndFrame()
     if (endResult != VK_SUCCESS)
     {
         std::cerr << "Error: Failed to end command buffer! Result: " << endResult << std::endl;
+        m_FrameActive = false;
         return;
     }
 
@@ -1367,6 +1402,7 @@ void VulkanRenderer::EndFrame()
         m_CurrentFrame >= m_InFlightFences.size())
     {
         std::cerr << "Error: CurrentFrame out of bounds for sync objects!" << std::endl;
+        m_FrameActive = false;
         return;
     }
 
@@ -1385,11 +1421,25 @@ void VulkanRenderer::EndFrame()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
+    VkResult resetFenceResult = vkResetFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame]);
+    if (resetFenceResult != VK_SUCCESS)
+    {
+        std::cerr << "Error: Failed to reset fence! Result: " << resetFenceResult << std::endl;
+        m_FrameActive = false;
+        return;
+    }
+
     VkResult submitResult = vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, m_InFlightFences[m_CurrentFrame]);
     if (submitResult != VK_SUCCESS)
     {
         std::cerr << "Error: Failed to submit command buffer! Result: " << submitResult << std::endl;
+        m_FrameActive = false;
         return;
+    }
+
+    if (m_ImageIndex < m_ImagesInFlight.size())
+    {
+        m_ImagesInFlight[m_ImageIndex] = m_InFlightFences[m_CurrentFrame];
     }
 
     VkPresentInfoKHR presentInfo{};
@@ -1414,7 +1464,8 @@ void VulkanRenderer::EndFrame()
         std::cerr << "Error: Failed to present swapchain image! Result: " << presentResult << std::endl;
     }
 
-    m_CurrentFrame = (m_CurrentFrame + 1) % 2;
+    m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    m_FrameActive = false;
 }
 
 void VulkanRenderer::SetViewport(int x, int y, int width, int height)
@@ -1452,6 +1503,9 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                                 glm::vec3 spriteColor, float spriteAlpha,
                                 bool useColorOnly, glm::vec4 colorOnly)
 {
+    if (!m_FrameActive)
+        return false;
+
     uint32_t maxVertices = static_cast<uint32_t>(m_VertexBufferSize / sizeof(SpriteVertex));
     if (m_CurrentVertexCount + 6 > maxVertices)
         return false;
@@ -1508,6 +1562,9 @@ void VulkanRenderer::DrawSpriteRegion(const Texture &texture, glm::vec2 position
                                       glm::vec2 texCoord, glm::vec2 texSize, float rotation,
                                       glm::vec3 color, bool flipY)
 {
+    if (!m_FrameActive)
+        return;
+
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
         std::cerr << "Warning: Attempting to draw but pipeline not ready. GraphicsPipeline="
@@ -1642,6 +1699,9 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture &texture, glm::vec2 position,
     // Note: additive blending not yet fully implemented in Vulkan renderer
     (void)additive;
 
+    if (!m_FrameActive)
+        return;
+
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
         return;
 
@@ -1705,6 +1765,9 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture &texture, glm::vec2 position,
 {
     // Atlas version with custom UV coordinates
     (void)additive;
+
+    if (!m_FrameActive)
+        return;
 
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
         return;
@@ -1770,6 +1833,9 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position, glm::vec2 size, glm::ve
 {
     // Note: additive blending not yet implemented in Vulkan renderer
     (void)additive;
+    if (!m_FrameActive)
+        return;
+
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
         return; // Pipeline not ready
@@ -1807,12 +1873,28 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture, const glm::vec2 corn
                                     glm::vec2 texCoord, glm::vec2 texSize,
                                     glm::vec3 color, bool flipY)
 {
+    if (!m_FrameActive)
+        return;
+
     // Warped quads are pre-transformed - corners already include projection
     // We draw them directly without additional perspective transformation
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
         return;
     }
+
+#ifdef USE_VULKAN
+    if (texture.GetVulkanImageView() == VK_NULL_HANDLE)
+    {
+        try
+        {
+            UploadTexture(texture);
+        }
+        catch (...)
+        {
+        }
+    }
+#endif
 
     // Get texture resources
     TextureResources& texRes = GetOrCreateTexture(texture);
@@ -1828,8 +1910,8 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture, const glm::vec2 corn
     }
 
     // Calculate UV coordinates from pixel coordinates
-    float texW = static_cast<float>(texture.GetWidth());
-    float texH = static_cast<float>(texture.GetHeight());
+    float texW = std::max(1.0f, static_cast<float>(texture.GetWidth()));
+    float texH = std::max(1.0f, static_cast<float>(texture.GetHeight()));
 
     float u0 = texCoord.x / texW;
     float u1 = (texCoord.x + texSize.x) / texW;
@@ -1864,6 +1946,11 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture, const glm::vec2 corn
 
 VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
 {
+    if (imageView == VK_NULL_HANDLE || m_DescriptorPool == VK_NULL_HANDLE)
+    {
+        return VK_NULL_HANDLE;
+    }
+
     // Check cache first
     auto it = m_DescriptorSetCache.find(imageView);
     if (it != m_DescriptorSetCache.end())
@@ -1878,13 +1965,31 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_DescriptorSetLayout;
 
-    VkDescriptorSet descriptorSet;
-    VkResult result = vkAllocateDescriptorSets(m_Device, &allocInfo, &descriptorSet);
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    auto tryAllocate = [&]() -> VkResult
+    {
+        return vkAllocateDescriptorSets(m_Device, &allocInfo, &descriptorSet);
+    };
+
+    VkResult result = tryAllocate();
     if (result != VK_SUCCESS)
     {
-        // Descriptor pool exhausted
-        std::cerr << "Warning: Descriptor pool exhausted. Consider increasing pool size." << std::endl;
-        return VK_NULL_HANDLE;
+        // Try one recovery pass: reset the pool and rebuild cache.
+        if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL)
+        {
+            std::cerr << "Warning: Descriptor pool exhausted, resetting descriptor pool cache." << std::endl;
+            vkDeviceWaitIdle(m_Device);
+            vkResetDescriptorPool(m_Device, m_DescriptorPool, 0);
+            m_DescriptorSetCache.clear();
+            descriptorSet = VK_NULL_HANDLE;
+            result = tryAllocate();
+        }
+
+        if (result != VK_SUCCESS)
+        {
+            std::cerr << "Warning: Failed to allocate descriptor set. VkResult=" << result << std::endl;
+            return VK_NULL_HANDLE;
+        }
     }
 
     // Update descriptor set with texture
@@ -2004,6 +2109,7 @@ void VulkanRenderer::UploadTexture(const Texture &texture)
     // Cast away const since we're modifying Vulkan state, not logical texture state
     Texture *texPtr = const_cast<Texture *>(&texture);
     texPtr->CreateVulkanTexture(m_Device, m_PhysicalDevice, m_CommandPool, m_GraphicsQueue);
+    m_TextureCache.erase(texPtr);
 
     // Track for cleanup during shutdown
     // Check if already tracked to avoid duplicates
@@ -2058,6 +2164,9 @@ float VulkanRenderer::GetTextWidth(const std::string &text, float scale) const
 void VulkanRenderer::DrawText(const std::string &text, glm::vec2 position, float scale, glm::vec3 color,
                               float outlineSize, float alpha)
 {
+    if (!m_FrameActive)
+        return;
+
     if (m_Glyphs.empty() || text.empty())
     {
         return;

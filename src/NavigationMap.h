@@ -85,6 +85,7 @@ public:
 
     /// @brief Proxy type for `map[x][y]` syntax.
     using NavigationColumn = ColumnProxy<container_type, value_type, false>;
+    using ConstNavigationColumn = ConstColumnProxy<container_type, value_type, false>;
 
     /**
      * @brief Construct an empty navigation map.
@@ -182,7 +183,7 @@ public:
     [[nodiscard]] constexpr const container_type& GetData() const noexcept { return m_Navigation; }
 
     /**
-     * @brief Replace all data atomically.
+     * @brief Replace all map data in one call.
      *
      * @param data   New data (must have size == w * h).
      * @param width  New width.
@@ -205,10 +206,10 @@ public:
         return NavigationColumn(&m_Navigation, &m_Width, &m_Height, x);
     }
 
-    /// @brief 2D array access (const): `bool b = map[x][y]`
-    [[nodiscard]] constexpr NavigationColumn operator[](int x) const noexcept
+    /// @brief 2D array access on const-qualified map.
+    [[nodiscard]] constexpr ConstNavigationColumn operator[](int x) const noexcept
     {
-        return NavigationColumn(&m_Navigation, &m_Width, &m_Height, x);
+        return ConstNavigationColumn(&m_Navigation, &m_Width, &m_Height, x);
     }
 
 private:

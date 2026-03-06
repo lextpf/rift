@@ -8,6 +8,8 @@
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <thread>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -394,9 +396,33 @@ void Game::Run()
             {
                 double targetFrameTime = 1.0 / static_cast<double>(m_TargetFps);
                 double elapsed = glfwGetTime() - frameStartTime;
-                while (elapsed < targetFrameTime)
+                double remaining = targetFrameTime - elapsed;
+
+                if (remaining > 0.0)
                 {
-                    elapsed = glfwGetTime() - frameStartTime;
+                    using clock = std::chrono::steady_clock;
+                    const auto sleepDuration = std::chrono::duration_cast<clock::duration>(
+                        std::chrono::duration<double>(remaining));
+                    const auto frameDeadline = clock::now() + sleepDuration;
+
+                    // Sleep most of the remaining frame time, then yield briefly for accuracy.
+                    constexpr auto spinThreshold = std::chrono::microseconds(500);
+                    while (true)
+                    {
+                        const auto now = clock::now();
+                        if (now >= frameDeadline)
+                            break;
+
+                        const auto timeLeft = frameDeadline - now;
+                        if (timeLeft > spinThreshold)
+                        {
+                            std::this_thread::sleep_for(timeLeft - spinThreshold);
+                        }
+                        else
+                        {
+                            std::this_thread::yield();
+                        }
+                    }
                 }
             }
         }

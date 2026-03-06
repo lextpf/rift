@@ -61,6 +61,41 @@ private:
 };
 
 /**
+ * @class ConstColumnProxy
+ * @brief Read-only proxy for `map[x][y]` syntax on const containers.
+ *
+ * Provides bounds-checked reads only. Out-of-bounds reads return DefaultValue.
+ *
+ * @tparam C Container type satisfying RandomAccessContainerOf<T>
+ * @tparam T Element type
+ * @tparam DefaultValue Value returned for out-of-bounds reads
+ */
+template<typename C, typename T, T DefaultValue = T{}>
+    requires RandomAccessContainerOf<C, T>
+class ConstColumnProxy
+{
+public:
+    using container_type = C;
+    using value_type = T;
+
+    constexpr ConstColumnProxy(const C* data, const int* width, const int* height, int x) noexcept
+        : m_Data(data), m_Width(width), m_Height(height), m_X(x) {}
+
+    [[nodiscard]] constexpr T operator[](int y) const noexcept
+    {
+        if (m_X >= 0 && m_X < *m_Width && y >= 0 && y < *m_Height)
+            return static_cast<T>((*m_Data)[static_cast<std::size_t>(y * (*m_Width) + m_X)]);
+        return DefaultValue;
+    }
+
+private:
+    const C* m_Data;
+    const int* m_Width;
+    const int* m_Height;
+    int m_X;
+};
+
+/**
  * @class ColumnProxy
  * @brief Generic proxy class enabling `map[x][y]` syntax for flat 2D data.
  * @author Alex (https://github.com/lextpf)
@@ -76,7 +111,8 @@ private:
  * @par Usage
  * @code{.cpp}
  * std::vector<bool> flags(64 * 64, false);
- * ColumnProxy<std::vector<bool>, bool, false> boolCol(&flags, 64, 64, 10);
+ * int w = 64, h = 64;
+ * ColumnProxy<std::vector<bool>, bool, false> boolCol(&flags, &w, &h, 10);
  * boolCol[20] = true;  // Write
  * if (boolCol[20]) {}  // Read
  * @endcode
@@ -110,21 +146,6 @@ public:
      */
     constexpr ColumnProxy(C* data, const int* width, const int* height, int x) noexcept
         : m_Data(data), m_Width(width), m_Height(height), m_X(x) {}
-
-    /**
-     * @brief Construct proxy for const container access (read-only).
-     *
-     * Uses const_cast internally to unify storage, but the const overload
-     * of operator[] ensures only read operations occur. This pattern allows
-     * a single proxy class to handle both const and non-const map access.
-     *
-     * @param data   Pointer to const container (read-only access).
-     * @param width  Pointer to grid width.
-     * @param height Pointer to grid height.
-     * @param x      Column index for this proxy.
-     */
-    constexpr ColumnProxy(const C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(const_cast<C*>(data)), m_Width(width), m_Height(height), m_X(x) {}
 
     /**
      * @brief Access element at row y (mutable).

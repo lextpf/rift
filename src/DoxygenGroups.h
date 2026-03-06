@@ -11,7 +11,7 @@
  * 
  * \htmlonly
  * <pre class="mermaid">
- * flowchart TB
+ * flowchart LR
  * classDef core fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
  * classDef render fill:#2e1f5e,stroke:#8b5cf6,color:#e2e8f0
  * classDef world fill:#134e3a,stroke:#10b981,color:#e2e8f0

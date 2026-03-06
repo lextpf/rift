@@ -28,7 +28,7 @@ struct GLFWwindow;
  * | Feature              | Version | Usage                          |
  * |----------------------|---------|--------------------------------|
  * | Core API             | 1.0     | Explicit GPU control           |
- * | Swapchain            | KHR     | Double-buffered presentation   |
+ * | Swapchain            | KHR     | Presentation images            |
  * | Descriptor Sets      | 1.0     | Texture binding                |
  * | Push Constants       | 1.0     | Per-draw uniforms              |
  * | Memory Mapping       | 1.0     | Persistent vertex buffers      |
@@ -48,7 +48,7 @@ struct GLFWwindow;
  * | VkCommandBuffer      | Recorded GPU commands                |
  *
  * @par Synchronization
- * Uses double-buffering with semaphores and fences:
+ * Uses 2 frames-in-flight with semaphores and fences:
  * @code
  *   Frame N:   [Record Cmds] --> [Submit] ---> [Present]
  *                                   |              |
@@ -80,6 +80,8 @@ struct GLFWwindow;
  * - No dynamic descriptor indexing
  * - Fixed descriptor pool size
  * - Synchronous texture uploads
+ * - Clear color arguments are currently ignored (`Clear()` is handled in `BeginFrame()` with a fixed value)
+ * - Additive blending flags are currently ignored in sprite/atlas/rect draw paths
  *
  * @see IRenderer Base interface with method documentation
  * @see OpenGLRenderer Alternative OpenGL implementation
@@ -221,12 +223,14 @@ private:
     std::vector<VkSemaphore> m_ImageAvailableSemaphores;  ///< Swapchain image ready.
     std::vector<VkSemaphore> m_RenderFinishedSemaphores;  ///< Rendering complete.
     std::vector<VkFence> m_InFlightFences;                ///< CPU-GPU sync.
+    std::vector<VkFence> m_ImagesInFlight;                ///< Per-image fence tracking.
     /// @}
 
     /// @name Frame State
     /// @{
     size_t m_CurrentFrame;    ///< Current frame index (0 or 1).
     uint32_t m_ImageIndex;    ///< Acquired swapchain image index.
+    bool m_FrameActive{false};///< True after BeginFrame started a render pass.
     GLFWwindow *m_Window;     ///< GLFW window reference.
     glm::mat4 m_Projection;   ///< Current orthographic projection.
     /// @}

@@ -63,7 +63,7 @@
  * @code
  * // From file:
  * Texture tex;
- * tex.LoadFromFile("sprites/player.png");  // Loads to CPU + creates OpenGL texture
+ * tex.LoadFromFile("sprites/player.png");  // Loads to CPU; creates OpenGL texture if a GL context is active
  *
  * // From procedural data:
  * std::vector<unsigned char> pixels(64 * 64 * 4);
@@ -156,8 +156,9 @@ public:
     /**
      * @brief Load texture from an image file.
      *
-     * Loads image data using stb_image, stores a CPU copy, and creates
-     * an OpenGL texture immediately. Vulkan texture creation is deferred.
+     * Loads image data using stb_image and stores a CPU copy. If an active
+     * OpenGL context exists, an OpenGL texture is created immediately.
+     * Vulkan texture creation is deferred.
      *
      * @par Supported Formats
      * PNG, JPEG, BMP, TGA, GIF (first frame), PSD, HDR, PIC, PNM
@@ -186,7 +187,8 @@ public:
      * @param data    Pointer to pixel data (not null).
      * @param width   Image width in pixels (must be > 0).
      * @param height  Image height in pixels (must be > 0).
-     * @param channels Number of color channels (1, 3, or 4).
+     * @param channels Number of color channels (must be > 0).
+     *                 Supported formats are 1 (R), 3 (RGB), and 4 (RGBA).
      * @param flipY   If true, flip image vertically for OpenGL coordinates.
      * @return true if loaded successfully, false on invalid parameters.
      */

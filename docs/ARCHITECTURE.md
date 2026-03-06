@@ -6,19 +6,19 @@ The Wild Game Engine follows a **layered architecture** with clear separation of
 
 \htmlonly
 <pre class="mermaid">
-flowchart TB
+flowchart LR
     classDef core fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef system fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef render fill:#2e1f5e,stroke:#8b5cf6,color:#e2e8f0
     classDef data fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
 
     subgraph Entry["Entry Point"]
-        direction TB
+        direction LR
         main["main.cpp"]:::core
     end
 
     subgraph Core["Core Loop"]
-        direction TB
+        direction LR
         Game["Game"]:::core
         Input["ProcessInput()"]:::core
         Update["Update()"]:::core
@@ -26,7 +26,7 @@ flowchart TB
     end
 
     subgraph Systems["Engine Systems"]
-        direction TB
+        direction LR
         Time["TimeManager"]:::system
         Sky["SkyRenderer"]:::system
         Dialogue["DialogueManager"]:::system
@@ -35,7 +35,7 @@ flowchart TB
     end
 
     subgraph Rendering["Graphics"]
-        direction TB
+        direction LR
         IRenderer["IRenderer"]:::render
         Factory["RendererFactory"]:::render
         OpenGL["OpenGLRenderer"]:::render
@@ -43,7 +43,7 @@ flowchart TB
     end
 
     subgraph World["World Data"]
-        direction TB
+        direction LR
         Tilemap["Tilemap"]:::data
         Collision["CollisionMap"]:::data
         Navigation["NavigationMap"]:::data
@@ -51,7 +51,7 @@ flowchart TB
     end
 
     subgraph Entities["Entities"]
-        direction TB
+        direction LR
         Player["PlayerCharacter"]:::data
         NPC["NonPlayerCharacter"]:::data
     end
@@ -127,7 +127,7 @@ The engine uses a **variable timestep** game loop where delta time is computed e
 <pre class="mermaid">
 flowchart LR
     subgraph Frame["Each Frame"]
-        direction TB
+        direction LR
         A["Compute deltaTime"] --> B["ProcessInput(dt)"]
         B --> C["Update(dt)"]
         C --> D["Render()"]
@@ -289,7 +289,7 @@ The world is represented by `Tilemap` which manages tile data and derived maps:
 config:
   layout: elk
 ---
-graph TB
+graph LR
     classDef primary fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef derived fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef data fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
@@ -384,7 +384,7 @@ The dialogue system supports both simple text and branching conversations:
 config:
   layout: elk
 ---
-graph TB
+graph LR
     classDef manager fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     classDef data fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef state fill:#4a3520,stroke:#f59e0b,color:#e2e8f0

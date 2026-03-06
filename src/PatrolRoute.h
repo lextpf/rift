@@ -7,13 +7,14 @@ class Tilemap;
 
 /**
  * @class PatrolRoute
- * @brief Generates and manages patrol paths for NPCs with full tile coverage.
+ * @brief Generates and manages patrol paths for NPCs.
  * @author Alex (https://github.com/lextpf)
  * @ingroup World
  *
  * PatrolRoute uses graph traversal algorithms to create movement paths
- * that visit every connected walkable tile. Routes automatically detect
- * whether they can form closed loops or require ping-pong traversal.
+ * over connected walkable tiles, capped by the requested maximum route
+ * length. Routes automatically detect whether they can form closed loops
+ * or require ping-pong traversal.
  *
  * @par Algorithm Selection
  * The initialization process first collects reachable tiles using BFS,
@@ -21,7 +22,7 @@ class Tilemap;
  *
  * @htmlonly
  * <pre class="mermaid">
- * flowchart TD
+ * flowchart LR
  *     classDef start fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
  *     classDef decision fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
  *     classDef process fill:#134e3a,stroke:#10b981,color:#e2e8f0
@@ -30,7 +31,7 @@ class Tilemap;
  *     A[Initialize]:::start --> B[BFS: Collect<br/>Reachable Tiles]:::process
  *     B --> C{All tiles have<br/>exactly 2 neighbors?}:::decision
  *     C -->|Yes| D[Simple Cycle<br/>Walk the ring]:::result
- *     C -->|No| E[DFS with Backtracking<br/>Visit all tiles]:::result
+ *     C -->|No| E[DFS with Backtracking<br/>Visit collected tiles]:::result
  *     D --> F[Loop Mode<br/>A-B-C-A-B-C]:::result
  *     E --> G{End adjacent<br/>to start?}:::decision
  *     G -->|Yes| F
@@ -65,7 +66,7 @@ class Tilemap;
  *     classDef backtrack fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
  *
  *     subgraph "T-Shaped Map"
- *         direction TB
+ *         direction LR
  *         T1[A]:::visited
  *         T2[B]:::visited
  *         T3[C]:::visited
@@ -129,13 +130,14 @@ class Tilemap;
  * - **Ping-Pong Mode**: Index bounces: 0, 1, ..., N-1, N-2, ..., 1, 0, 1, ...
  *
  * @par Time Complexity
- * - **Initialize**: O(V) where V = connected walkable tiles
- *   - BFS visits each tile once
- *   - DFS backtrack steps bounded by 2V
+ * - **Initialize**: worst-case O(V^2) with current implementation
+ *   - BFS tile discovery is O(V), but queue front-erasure is linear
+ *   - Cycle detection uses linear membership checks over connected tiles
+ *   - DFS backtrack steps are bounded by O(V)
  * - **GetNextWaypoint**: O(1)
  *
  * @par Space Complexity
- * - O(V) for visited set during traversal
+ * - O(V) for visited state during traversal
  * - O(2V) worst case for stored waypoints (full backtracks)
  *
  * @see NonPlayerCharacter, Tilemap
@@ -157,7 +159,7 @@ public:
      * @param startTileX Starting tile column.
      * @param startTileY Starting tile row.
      * @param tilemap Tilemap for navigation queries.
-     * @param maxRouteLength Maximum waypoints (default: 100).
+     * @param maxRouteLength Upper bound for collected route tiles/steps (default: 100).
      * @return `true` if valid route created (>= 2 waypoints).
      */
     bool Initialize(int startTileX, int startTileY, const Tilemap *tilemap, int maxRouteLength = 100);
@@ -203,7 +205,9 @@ public:
      */
     void Reset()
     {
+        m_Waypoints.clear();
         m_CurrentWaypointIndex = 0;
+        m_IsClosed = false;
         m_PingPongForward = true;
     }
 

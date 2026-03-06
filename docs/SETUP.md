@@ -6,7 +6,7 @@ This guide covers installing dependencies and configuring your environment for d
 
 \htmlonly
 <pre class="mermaid">
-graph TB
+graph LR
     classDef required fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef optional fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
 

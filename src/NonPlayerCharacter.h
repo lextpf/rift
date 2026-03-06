@@ -14,11 +14,12 @@
  * @class NonPlayerCharacter
  * @brief Character with patrol behavior and player interaction.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entities
+ * @ingroup Entity
  *
  * NonPlayerCharacter represents an autonomous entity in the game world.
  * NPCs follow patrol routes through the navigation map and can interact
- * with the player through collision and dialogue.
+ * with the player through collision and dialogue. Patrol routes are
+ * initialized lazily during Update() (or explicitly via ReinitializePatrolRoute()).
  *
  * @see PatrolRoute, NavigationMap, PlayerCharacter
  */
@@ -59,6 +60,9 @@ public:
      * @param deltaTime Frame time in seconds.
      * @param tilemap Tilemap for navigation queries.
      * @param playerPosition Optional player position for collision.
+     *
+     * If no patrol route is currently valid, this method attempts to build one
+     * from the current tile with a maximum route length of 100 waypoints.
      */
     void Update(float deltaTime, const Tilemap *tilemap, const glm::vec2 *playerPosition = nullptr);
 
@@ -110,6 +114,7 @@ public:
     /**
      * @brief Reinitialize patrol route from current position.
      * @param tilemap Tilemap for navigation queries.
+     * Uses maxRouteLength=100 for route generation.
      * @return `true` if valid route was created.
      */
     bool ReinitializePatrolRoute(const Tilemap *tilemap);
