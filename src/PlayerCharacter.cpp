@@ -342,7 +342,7 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
     // Bottom half: lower 16 pixels of the sprite
     // Render position is offset to show only the bottom half
     glm::vec2 bottomRenderPos = renderPos + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
-    glm::vec2 bottomSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
+    glm::vec2 bottomSpriteCoords = spriteCoords;
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);
@@ -404,7 +404,7 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
                                                                      : m_SpriteSheet;
 
     // Top half: upper 16 pixels of the sprite (head/torso area)
-    glm::vec2 topSpriteCoords = spriteCoords;
+    glm::vec2 topSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);

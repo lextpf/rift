@@ -1408,13 +1408,19 @@ void Tilemap::RenderBackgroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                     continue;
                 }
 
-                // Collect all tiles belonging to this structure
-                std::vector<std::pair<int, int>> structureTiles;
-                int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-
-                for (int sy = y0; sy <= y1; ++sy)
+                // Collect all tiles in this structure across the full map.
+                // Track per-layer bounds so each layer matches RenderSingleTile projection mapping.
+                struct LayerStructBounds
                 {
-                    for (int sx = x0; sx <= x1; ++sx)
+                    bool valid = false;
+                    int minX = 0, maxX = 0, minY = 0, maxY = 0;
+                };
+                std::vector<LayerStructBounds> layerBounds(m_Layers.size());
+                std::vector<std::pair<int, int>> structureTiles;
+
+                for (int sy = 0; sy < m_MapHeight; ++sy)
+                {
+                    for (int sx = 0; sx < m_MapWidth; ++sx)
                     {
                         size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
                         bool hasTileInStruct = false;
@@ -1426,80 +1432,45 @@ void Tilemap::RenderBackgroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                             if (sid == foundStructId)
                             {
                                 hasTileInStruct = true;
+                                auto& b = layerBounds[layerIdx];
+                                if (!b.valid)
+                                {
+                                    b.valid = true;
+                                    b.minX = b.maxX = sx;
+                                    b.minY = b.maxY = sy;
+                                }
+                                else
+                                {
+                                    b.minX = std::min(b.minX, sx);
+                                    b.maxX = std::max(b.maxX, sx);
+                                    b.minY = std::min(b.minY, sy);
+                                    b.maxY = std::max(b.maxY, sy);
+                                }
                                 break;
                             }
                         }
                         if (!hasTileInStruct)
                             continue;
 
+                        if (sx < x0 || sx > x1 || sy < y0 || sy > y1)
+                            continue;
+
                         processed[sIdx] = true;
                         structureTiles.push_back({sx, sy});
-
-                        minX = std::min(minX, sx);
-                        maxX = std::max(maxX, sx);
-                        minY = std::min(minY, sy);
-                        maxY = std::max(maxY, sy);
                     }
                 }
 
                 if (structureTiles.empty())
                     continue;
 
-                // Use defined anchors for projection (world coordinates)
-                glm::vec2 leftAnchor = structDef.leftAnchor;
-                glm::vec2 rightAnchor = structDef.rightAnchor;
+                // Use the same warped-quad projection math as RenderSingleTile for consistency.
+                float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
+                float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
+                float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
+                float bottomScreenY = bottomWorldY - renderCam.y + 1.0f;
 
-                // Bottom edge Y position from anchors (use the lower Y, which is higher world value)
-                float bottomWorldY = std::max(leftAnchor.y, rightAnchor.y);
-                float bottomScreenY = bottomWorldY - renderCam.y + 1.0f;  // +1px offset
-
-                auto perspState = renderer.GetPerspectiveState();
-
-                // Anchor X positions for projection (world coordinates)
-                float anchorMinX = std::min(leftAnchor.x, rightAnchor.x);
-                float anchorMaxX = std::max(leftAnchor.x, rightAnchor.x);
-                float structureWorldWidth = anchorMaxX - anchorMinX;
-
-                // Project anchor center to get actual on-screen Y with sphere curvature
-                // On wide screens, sphere edges curve upward, so use projected Y for viewport check
-                float anchorCenterScreenX = (anchorMinX + anchorMaxX) * 0.5f - renderCam.x;
-                glm::vec2 projectedAnchor = renderer.ProjectPoint(glm::vec2(anchorCenterScreenX, bottomScreenY));
-                float projectedAnchorY = projectedAnchor.y;
-
-                // Calculate projection blend factor - fade out projection when anchor is outside viewport
-                float projectionBlend = 1.0f;
-                float fadeMargin = perspState.viewHeight * 0.25f;
-                if (projectedAnchorY < 0.0f)
-                {
-                    projectionBlend = 1.0f + (projectedAnchorY / fadeMargin);
-                    projectionBlend = std::max(0.0f, std::min(1.0f, projectionBlend));
-                }
-                else if (projectedAnchorY > perspState.viewHeight)
-                {
-                    float distOutside = projectedAnchorY - perspState.viewHeight;
-                    projectionBlend = 1.0f - (distOutside / fadeMargin);
-                    projectionBlend = std::max(0.0f, std::min(1.0f, projectionBlend));
-                }
-
-                float t = (bottomScreenY - perspState.horizonY) / (perspState.viewHeight - perspState.horizonY);
-                t = std::max(0.0f, std::min(1.0f, t));
-                float rawVanishScale = perspState.horizonScale + (1.0f - perspState.horizonScale) * t;
-                float vanishScale = 1.0f + (rawVanishScale - 1.0f) * projectionBlend;
-                float scaledTileH = tileHf * vanishScale;
-
-                // Structure width based on tile extent (uses minX/maxX from structureTiles)
-                int structureWidthTiles = maxX - minX + 1;
-                if (structureWidthTiles < 1) structureWidthTiles = 1;
-
-                std::vector<float> projectedEdgeX(structureWidthTiles + 1);
-                for (int i = 0; i <= structureWidthTiles; ++i)
-                {
-                    float edgeScreenX = anchorMinX + (i * structureWorldWidth / structureWidthTiles) - renderCam.x;
-                    glm::vec2 projected = renderer.ProjectPoint(glm::vec2(edgeScreenX, bottomScreenY));
-                    projectedEdgeX[i] = edgeScreenX + (projected.x - edgeScreenX) * projectionBlend;
-                }
-
-                renderer.SuspendPerspective(true);
+                glm::vec2 baseLeft(anchorMinX - renderCam.x, bottomScreenY);
+                glm::vec2 baseRight(anchorMaxX - renderCam.x, bottomScreenY);
 
                 for (const auto &[tx, ty] : structureTiles)
                 {
@@ -1528,38 +1499,52 @@ void Tilemap::RenderBackgroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                         if (IsTileTransparent(tid))
                             continue;
 
-                        // X position: use pre-computed edge positions (no gaps)
-                        // Map tile column (tx) to structure column index based on tile extent
-                        int edgeIdx = tx - minX;
-                        if (edgeIdx < 0 || edgeIdx >= static_cast<int>(projectedEdgeX.size()) - 1)
+                        const auto& b = layerBounds[layerIdx];
+                        if (!b.valid)
                             continue;
 
-                        float finalX = projectedEdgeX[edgeIdx];
-                        float scaledTileW = projectedEdgeX[edgeIdx + 1] - projectedEdgeX[edgeIdx] + .5f;
+                        int structureWidthTiles = b.maxX - b.minX + 1;
+                        int structureHeightTiles = b.maxY - b.minY + 1;
+                        if (structureWidthTiles < 1 || structureHeightTiles < 1)
+                            continue;
 
-                        // Y position: project this tile's bottom edge for base alignment, then stack up
-                        float tileBottomScreenY = bottomWorldY - renderCam.y + 1.0f;
-                        float tileScreenX = static_cast<float>(tx * m_TileWidth) - renderCam.x;
-                        glm::vec2 projectedTileBase = renderer.ProjectPoint(glm::vec2(tileScreenX, tileBottomScreenY));
-                        float blendedBaseY = tileBottomScreenY + (projectedTileBase.y - tileBottomScreenY) * projectionBlend;
+                        int tileCol = tx - b.minX;
+                        int tileRow = b.maxY - ty;
 
-                        // Calculate tile offset from bottom of structure using world Y
-                        int bottomTileY = static_cast<int>(bottomWorldY / static_cast<float>(m_TileHeight));
-                        int tileOffsetY = ty - bottomTileY;  // Rows above bottom (negative)
-                        float finalY = blendedBaseY + tileOffsetY * scaledTileH;
+                        float buildingHeightWorld = static_cast<float>(structureHeightTiles * m_TileHeight);
+
+                        float u0 = static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
+                        float u1 = static_cast<float>(tileCol + 1) / static_cast<float>(structureWidthTiles);
+                        float v0 = static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
+                        float v1 = static_cast<float>(tileRow + 1) / static_cast<float>(structureHeightTiles);
+
+                        glm::vec2 corners[4];
+                        corners[0] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u0, v1, buildingHeightWorld);
+                        corners[1] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u1, v1, buildingHeightWorld);
+                        corners[2] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u1, v0, buildingHeightWorld);
+                        corners[3] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u0, v0, buildingHeightWorld);
+
+                        bool anyBehind = false;
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            if (renderer.IsPointBehindSphere(corners[i]))
+                            {
+                                anyBehind = true;
+                                break;
+                            }
+                        }
+                        if (anyBehind)
+                            continue;
 
                         int tsX = (tid % dataTilesPerRow) * m_TileWidth;
                         int tsY = (tid / dataTilesPerRow) * m_TileHeight;
 
-                        renderer.DrawSpriteRegion(m_TilesetTexture, glm::vec2(finalX, finalY),
-                                                  glm::vec2(scaledTileW, scaledTileH),
-                                                  glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
-                                                  glm::vec2(tileWf, tileHf),
-                                                  layer.rotation[tIdx], white, flipY);
+                        renderer.DrawWarpedQuad(m_TilesetTexture, corners,
+                                                glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
+                                                glm::vec2(tileWf, tileHf),
+                                                white, flipY);
                     }
                 }
-
-                renderer.SuspendPerspective(false);
             }
             else
             {
@@ -1708,12 +1693,17 @@ void Tilemap::RenderForegroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                     continue;
                 }
 
-                std::vector<std::pair<int, int>> structureTiles;
-                int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-
-                for (int sy = y0; sy <= y1; ++sy)
+                struct LayerStructBounds
                 {
-                    for (int sx = x0; sx <= x1; ++sx)
+                    bool valid = false;
+                    int minX = 0, maxX = 0, minY = 0, maxY = 0;
+                };
+                std::vector<LayerStructBounds> layerBounds(m_Layers.size());
+                std::vector<std::pair<int, int>> structureTiles;
+
+                for (int sy = 0; sy < m_MapHeight; ++sy)
+                {
+                    for (int sx = 0; sx < m_MapWidth; ++sx)
                     {
                         size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
                         bool hasTileInStruct = false;
@@ -1725,80 +1715,45 @@ void Tilemap::RenderForegroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                             if (sid == foundStructId)
                             {
                                 hasTileInStruct = true;
+                                auto& b = layerBounds[layerIdx];
+                                if (!b.valid)
+                                {
+                                    b.valid = true;
+                                    b.minX = b.maxX = sx;
+                                    b.minY = b.maxY = sy;
+                                }
+                                else
+                                {
+                                    b.minX = std::min(b.minX, sx);
+                                    b.maxX = std::max(b.maxX, sx);
+                                    b.minY = std::min(b.minY, sy);
+                                    b.maxY = std::max(b.maxY, sy);
+                                }
                                 break;
                             }
                         }
                         if (!hasTileInStruct)
                             continue;
 
+                        if (sx < x0 || sx > x1 || sy < y0 || sy > y1)
+                            continue;
+
                         processed[sIdx] = true;
                         structureTiles.push_back({sx, sy});
-
-                        minX = std::min(minX, sx);
-                        maxX = std::max(maxX, sx);
-                        minY = std::min(minY, sy);
-                        maxY = std::max(maxY, sy);
                     }
                 }
 
                 if (structureTiles.empty())
                     continue;
 
-                // Use defined anchors for projection (world coordinates)
-                glm::vec2 leftAnchor = structDef.leftAnchor;
-                glm::vec2 rightAnchor = structDef.rightAnchor;
+                // Use the same warped-quad projection math as RenderSingleTile for consistency.
+                float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
+                float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
+                float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
+                float bottomScreenY = bottomWorldY - renderCam.y + 1.0f;
 
-                // Bottom edge Y position from anchors (use the lower Y, which is higher world value)
-                float bottomWorldY = std::max(leftAnchor.y, rightAnchor.y);
-                float bottomScreenY = bottomWorldY - renderCam.y + 1.0f;  // +1px offset
-
-                auto perspState = renderer.GetPerspectiveState();
-
-                // Anchor X positions for projection (world coordinates)
-                float anchorMinX = std::min(leftAnchor.x, rightAnchor.x);
-                float anchorMaxX = std::max(leftAnchor.x, rightAnchor.x);
-                float structureWorldWidth = anchorMaxX - anchorMinX;
-
-                // Project anchor center to get actual on-screen Y with sphere curvature
-                // On wide screens, sphere edges curve upward, so use projected Y for viewport check
-                float anchorCenterScreenX = (anchorMinX + anchorMaxX) * 0.5f - renderCam.x;
-                glm::vec2 projectedAnchor = renderer.ProjectPoint(glm::vec2(anchorCenterScreenX, bottomScreenY));
-                float projectedAnchorY = projectedAnchor.y;
-
-                // Calculate projection blend factor - fade out projection when anchor is outside viewport
-                float projectionBlend = 1.0f;
-                float fadeMargin = perspState.viewHeight * 0.25f;
-                if (projectedAnchorY < 0.0f)
-                {
-                    projectionBlend = 1.0f + (projectedAnchorY / fadeMargin);
-                    projectionBlend = std::max(0.0f, std::min(1.0f, projectionBlend));
-                }
-                else if (projectedAnchorY > perspState.viewHeight)
-                {
-                    float distOutside = projectedAnchorY - perspState.viewHeight;
-                    projectionBlend = 1.0f - (distOutside / fadeMargin);
-                    projectionBlend = std::max(0.0f, std::min(1.0f, projectionBlend));
-                }
-
-                float t = (bottomScreenY - perspState.horizonY) / (perspState.viewHeight - perspState.horizonY);
-                t = std::max(0.0f, std::min(1.0f, t));
-                float rawVanishScale = perspState.horizonScale + (1.0f - perspState.horizonScale) * t;
-                float vanishScale = 1.0f + (rawVanishScale - 1.0f) * projectionBlend;
-                float scaledTileH = tileHf * vanishScale;
-
-                // Structure width based on tile extent (uses minX/maxX from structureTiles)
-                int structureWidthTiles = maxX - minX + 1;
-                if (structureWidthTiles < 1) structureWidthTiles = 1;
-
-                std::vector<float> projectedEdgeX(structureWidthTiles + 1);
-                for (int i = 0; i <= structureWidthTiles; ++i)
-                {
-                    float edgeScreenX = anchorMinX + (i * structureWorldWidth / structureWidthTiles) - renderCam.x;
-                    glm::vec2 projected = renderer.ProjectPoint(glm::vec2(edgeScreenX, bottomScreenY));
-                    projectedEdgeX[i] = edgeScreenX + (projected.x - edgeScreenX) * projectionBlend;
-                }
-
-                renderer.SuspendPerspective(true);
+                glm::vec2 baseLeft(anchorMinX - renderCam.x, bottomScreenY);
+                glm::vec2 baseRight(anchorMaxX - renderCam.x, bottomScreenY);
 
                 for (const auto &[tx, ty] : structureTiles)
                 {
@@ -1827,38 +1782,52 @@ void Tilemap::RenderForegroundLayersNoProjection(IRenderer &renderer, glm::vec2 
                         if (IsTileTransparent(tid))
                             continue;
 
-                        // X position: use pre-computed edge positions (no gaps)
-                        // Map tile column (tx) to structure column index based on tile extent
-                        int edgeIdx = tx - minX;
-                        if (edgeIdx < 0 || edgeIdx >= static_cast<int>(projectedEdgeX.size()) - 1)
+                        const auto& b = layerBounds[layerIdx];
+                        if (!b.valid)
                             continue;
 
-                        float finalX = projectedEdgeX[edgeIdx];
-                        float scaledTileW = projectedEdgeX[edgeIdx + 1] - projectedEdgeX[edgeIdx] + .5f;
+                        int structureWidthTiles = b.maxX - b.minX + 1;
+                        int structureHeightTiles = b.maxY - b.minY + 1;
+                        if (structureWidthTiles < 1 || structureHeightTiles < 1)
+                            continue;
 
-                        // Y position: project this tile's bottom edge for base alignment, then stack up
-                        float tileBottomScreenY = bottomWorldY - renderCam.y + 1.0f;
-                        float tileScreenX = static_cast<float>(tx * m_TileWidth) - renderCam.x;
-                        glm::vec2 projectedTileBase = renderer.ProjectPoint(glm::vec2(tileScreenX, tileBottomScreenY));
-                        float blendedBaseY = tileBottomScreenY + (projectedTileBase.y - tileBottomScreenY) * projectionBlend;
+                        int tileCol = tx - b.minX;
+                        int tileRow = b.maxY - ty;
 
-                        // Calculate tile offset from bottom of structure using world Y
-                        int bottomTileY = static_cast<int>(bottomWorldY / static_cast<float>(m_TileHeight));
-                        int tileOffsetY = ty - bottomTileY;  // Rows above bottom (negative)
-                        float finalY = blendedBaseY + tileOffsetY * scaledTileH;
+                        float buildingHeightWorld = static_cast<float>(structureHeightTiles * m_TileHeight);
+
+                        float u0 = static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
+                        float u1 = static_cast<float>(tileCol + 1) / static_cast<float>(structureWidthTiles);
+                        float v0 = static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
+                        float v1 = static_cast<float>(tileRow + 1) / static_cast<float>(structureHeightTiles);
+
+                        glm::vec2 corners[4];
+                        corners[0] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u0, v1, buildingHeightWorld);
+                        corners[1] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u1, v1, buildingHeightWorld);
+                        corners[2] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u1, v0, buildingHeightWorld);
+                        corners[3] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u0, v0, buildingHeightWorld);
+
+                        bool anyBehind = false;
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            if (renderer.IsPointBehindSphere(corners[i]))
+                            {
+                                anyBehind = true;
+                                break;
+                            }
+                        }
+                        if (anyBehind)
+                            continue;
 
                         int tsX = (tid % dataTilesPerRow) * m_TileWidth;
                         int tsY = (tid / dataTilesPerRow) * m_TileHeight;
 
-                        renderer.DrawSpriteRegion(m_TilesetTexture, glm::vec2(finalX, finalY),
-                                                  glm::vec2(scaledTileW, scaledTileH),
-                                                  glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
-                                                  glm::vec2(tileWf, tileHf),
-                                                  layer.rotation[tIdx], white, flipY);
+                        renderer.DrawWarpedQuad(m_TilesetTexture, corners,
+                                                glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
+                                                glm::vec2(tileWf, tileHf),
+                                                white, flipY);
                     }
                 }
-
-                renderer.SuspendPerspective(false);
             }
             else
             {

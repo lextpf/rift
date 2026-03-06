@@ -470,7 +470,7 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
     // Draw lower 16 pixels (feet area)
-    glm::vec2 bottomHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
+    glm::vec2 bottomHalfCoords = spriteCoords;
     renderer.SuspendPerspective(true);
     renderer.DrawSpriteRegion(
         m_SpriteSheet,
@@ -517,7 +517,7 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
     // Draw upper 16 pixels (head/torso area)
-    glm::vec2 topHalfCoords = spriteCoords;
+    glm::vec2 topHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
 
     renderer.SuspendPerspective(true);
     renderer.DrawSpriteRegion(
