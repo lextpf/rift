@@ -11,19 +11,19 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     endif()
 endif()
 
-project(wild)
+project(rift)
 
 # Parse version from Version.h
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_major REGEX "#define WILD_VERSION_MAJOR")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_minor REGEX "#define WILD_VERSION_MINOR")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_patch REGEX "#define WILD_VERSION_PATCH")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_release REGEX "#define WILD_VERSION_RELEASE")
-string(REGEX REPLACE ".*#define WILD_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1" WILD_VERSION_MAJOR "${_ver_major}")
-string(REGEX REPLACE ".*#define WILD_VERSION_MINOR[ \t]+([0-9]+).*" "\\1" WILD_VERSION_MINOR "${_ver_minor}")
-string(REGEX REPLACE ".*#define WILD_VERSION_PATCH[ \t]+([0-9]+).*" "\\1" WILD_VERSION_PATCH "${_ver_patch}")
-string(REGEX REPLACE ".*#define WILD_VERSION_RELEASE[ \t]+([0-9]+).*" "\\1" WILD_VERSION_RELEASE "${_ver_release}")
-set(WILD_VERSION_STRING "${WILD_VERSION_MAJOR}.${WILD_VERSION_MINOR}.${WILD_VERSION_PATCH}.${WILD_VERSION_RELEASE}")
-message(STATUS "Wild version: ${WILD_VERSION_STRING}")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_major REGEX "#define RIFT_VERSION_MAJOR")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_minor REGEX "#define RIFT_VERSION_MINOR")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_patch REGEX "#define RIFT_VERSION_PATCH")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_release REGEX "#define RIFT_VERSION_RELEASE")
+string(REGEX REPLACE ".*#define RIFT_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_MAJOR "${_ver_major}")
+string(REGEX REPLACE ".*#define RIFT_VERSION_MINOR[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_MINOR "${_ver_minor}")
+string(REGEX REPLACE ".*#define RIFT_VERSION_PATCH[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_PATCH "${_ver_patch}")
+string(REGEX REPLACE ".*#define RIFT_VERSION_RELEASE[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_RELEASE "${_ver_release}")
+set(RIFT_VERSION_STRING "${RIFT_VERSION_MAJOR}.${RIFT_VERSION_MINOR}.${RIFT_VERSION_PATCH}.${RIFT_VERSION_RELEASE}")
+message(STATUS "Rift version: ${RIFT_VERSION_STRING}")
 
 # Generate Doxyfile from template
 configure_file("${CMAKE_SOURCE_DIR}/Doxyfile.in" "${CMAKE_BINARY_DIR}/Doxyfile" @ONLY)
@@ -245,16 +245,16 @@ foreach(subdir "" "Debug" "Release")
     endif()
 endforeach()
 
-# Collect shader source files for dependency tracking
-file(GLOB SHADER_FILES "${SHADERS_DIR}/*.vert" "${SHADERS_DIR}/*.frag" "${SHADERS_DIR}/*.glsl")
+# Collect shader files for dependency tracking
+file(GLOB SHADER_FILES "${SHADERS_DIR}/*.vert" "${SHADERS_DIR}/*.frag" "${SHADERS_DIR}/*.glsl" "${SHADERS_DIR}/*.spv")
 
-# Custom target to copy shaders - runs on every build
+# Custom target to copy shader folder contents - runs on every build
 add_custom_target(copy_shaders ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/Debug/shaders"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/Release/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "${CMAKE_BINARY_DIR}/Debug/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "${CMAKE_BINARY_DIR}/Release/shaders"
-    COMMENT "Copying shader sources to Debug and Release directories"
+    COMMENT "Copying shader files to Debug and Release directories"
     SOURCES ${SHADER_FILES}
 )
 
@@ -266,6 +266,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying assets to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${ASSETS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying shaders to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
@@ -315,27 +318,27 @@ if(BUILD_TESTS)
     )
 
     # Create test executable
-    add_executable(wild_tests ${TEST_SOURCES} ${TEST_LIB_SOURCES})
+    add_executable(rift_tests ${TEST_SOURCES} ${TEST_LIB_SOURCES})
 
-    target_include_directories(wild_tests PRIVATE
+    target_include_directories(rift_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src
     )
 
     # Link Google Test
     if(GTEST_FROM_VCPKG)
-        target_link_libraries(wild_tests PRIVATE GTest::gtest GTest::gtest_main)
+        target_link_libraries(rift_tests PRIVATE GTest::gtest GTest::gtest_main)
     else()
-        target_link_libraries(wild_tests PRIVATE gtest gtest_main)
+        target_link_libraries(rift_tests PRIVATE gtest gtest_main)
     endif()
 
     # Link GLM (required for TimeManager)
     if(GLM_FROM_VCPKG)
-        target_link_libraries(wild_tests PRIVATE glm::glm)
+        target_link_libraries(rift_tests PRIVATE glm::glm)
     endif()
 
     # Register tests with CTest
     include(GoogleTest)
-    gtest_discover_tests(wild_tests)
+    gtest_discover_tests(rift_tests)
 
-    message(STATUS "Tests enabled - build target: wild_tests")
+    message(STATUS "Tests enabled - build target: rift_tests")
 endif()

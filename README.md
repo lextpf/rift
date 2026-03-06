@@ -1,6 +1,6 @@
 <div align="center">
 
-# wild
+# rift
 **A modern 2.5D game engine built with C++23.**
 
 🏠 [Mainpage](./docs/MAINPAGE.md) | 🧱 [Building](./docs/BUILDING.md) | 🏛️ [Architecture](./docs/ARCHITECTURE.md) | 🤝 [Contributing](./CONTRIBUTING.md)
@@ -13,12 +13,12 @@
 ![Vulkan](https://img.shields.io/badge/Vulkan-v1.4-red?style=flat&logo=vulkan&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-475569.svg?logo=data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjZmZmZmZmIiB3aWR0aD0iMTY0cHgiIGhlaWdodD0iMTY0cHgiIHZpZXdCb3g9IjAgMCA1MTIuMDAgNTEyLjAwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIwLjAwNTEyIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlPSIjQ0NDQ0NDIiBzdHJva2Utd2lkdGg9IjMuMDcyIj48L2c+PGcgaWQ9IlNWR1JlcG9faWNvbkNhcnJpZXIiPjxwYXRoIGQ9Ik0yNTYgOEMxMTkuMDMzIDggOCAxMTkuMDMzIDggMjU2czExMS4wMzMgMjQ4IDI0OCAyNDggMjQ4LTExMS4wMzMgMjQ4LTI0OFMzOTIuOTY3IDggMjU2IDh6bTExNy4xMzQgMzQ2Ljc1M2MtMS41OTIgMS44NjctMzkuNzc2IDQ1LjczMS0xMDkuODUxIDQ1LjczMS04NC42OTIgMC0xNDQuNDg0LTYzLjI2LTE0NC40ODQtMTQ1LjU2NyAwLTgxLjMwMyA2Mi4wMDQtMTQzLjQwMSAxNDMuNzYyLTE0My40MDEgNjYuOTU3IDAgMTAxLjk2NSAzNy4zMTUgMTAzLjQyMiAzOC45MDRhMTIgMTIgMCAwIDEgMS4yMzggMTQuNjIzbC0yMi4zOCAzNC42NTVjLTQuMDQ5IDYuMjY3LTEyLjc3NCA3LjM1MS0xOC4yMzQgMi4yOTUtLjIzMy0uMjE0LTI2LjUyOS0yMy44OC02MS44OC0yMy44OC00Ni4xMTYgMC03My45MTYgMzMuNTc1LTczLjkxNiA3Ni4wODIgMCAzOS42MDIgMjUuNTE0IDc5LjY5MiA3NC4yNzcgNzkuNjkyIDM4LjY5NyAwIDY1LjI4LTI4LjMzOCA2NS41NDQtMjguNjI1IDUuMTMyLTUuNTY1IDE0LjA1OS01LjAzMyAxOC41MDggMS4wNTNsMjQuNTQ3IDMzLjU3MmExMi4wMDEgMTIuMDAxIDAgMCAxLS41NTMgMTQuODY2eiI+PC9wYXRoPjwvZz48L3N2Zz4=)
 <br/>
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=lextpf_rift&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=lextpf_rift)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_rift&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_rift)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_rift&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_rift)
 <br/>
-[![build](https://github.com/lextpf/wild/actions/workflows/build.yml/badge.svg)](https://github.com/lextpf/wild/actions/workflows/build.yml)
-[![tests](https://github.com/lextpf/wild/actions/workflows/test.yml/badge.svg)](https://github.com/lextpf/wild/actions/workflows/test.yml)
+[![build](https://github.com/lextpf/rift/actions/workflows/build.yml/badge.svg)](https://github.com/lextpf/rift/actions/workflows/build.yml)
+[![tests](https://github.com/lextpf/rift/actions/workflows/test.yml/badge.svg)](https://github.com/lextpf/rift/actions/workflows/test.yml)
 <br/>
 ![Sponsor](https://img.shields.io/static/v1?label=sponsor&message=%E2%9D%A4&color=ff69b4&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NDAgNjQwIj48IS0tIUZvbnQgQXdlc29tZSBQcm8gdjcuMi4wIGJ5IEBmb250YXdlc29tZSAtIGh0dHBzOi8vZm9udGF3ZXNvbWUuY29tIExpY2Vuc2UgLSBodHRwczovL2ZvbnRhd2Vzb21lLmNvbS9saWNlbnNlIChDb21tZXJjaWFsIExpY2Vuc2UpIENvcHlyaWdodCAyMDI2IEZvbnRpY29ucywgSW5jLi0tPjxwYXRoIG9wYWNpdHk9IjEiIGZpbGw9IiNmZjY5YjRmZiIgZD0iTTMyIDQ4MEwzMiA1NDRDMzIgNTYxLjcgNDYuMyA1NzYgNjQgNTc2TDM4NC41IDU3NkM0MTMuNSA1NzYgNDQxLjggNTY2LjcgNDY1LjIgNTQ5LjVMNTkxLjggNDU2LjJDNjA5LjYgNDQzLjEgNjEzLjQgNDE4LjEgNjAwLjMgNDAwLjNDNTg3LjIgMzgyLjUgNTYyLjIgMzc4LjcgNTQ0LjQgMzkxLjhMNDI0LjYgNDgwTDMxMiA0ODBDMjk4LjcgNDgwIDI4OCA0NjkuMyAyODggNDU2QzI4OCA0NDIuNyAyOTguNyA0MzIgMzEyIDQzMkwzODQgNDMyQzQwMS43IDQzMiA0MTYgNDE3LjcgNDE2IDQwMEM0MTYgMzgyLjMgNDAxLjcgMzY4IDM4NCAzNjhMMjMxLjggMzY4QzE5Ny45IDM2OCAxNjUuMyAzODEuNSAxNDEuMyA0MDUuNUw5OC43IDQ0OEw2NCA0NDhDNDYuMyA0NDggMzIgNDYyLjMgMzIgNDgweiIvPjxwYXRoIGZpbGw9InJnYmEoMjU1LCAyNTUsIDI1NSwgMS4wMCkiIGQ9Ik0yNTAuOSA2NEMyNzQuOSA2NCAyOTcuNSA3NS41IDMxMS42IDk1TDMyMCAxMDYuN0wzMjguNCA5NUMzNDIuNSA3NS41IDM2NS4xIDY0IDM4OS4xIDY0QzQzMC41IDY0IDQ2NCA5Ny41IDQ2NCAxMzguOUw0NjQgMTQxLjNDNDY0IDIwNS43IDM4MiAyNzQuNyAzNDEuOCAzMDQuNkMzMjguOCAzMTQuMyAzMTEuMyAzMTQuMyAyOTguMyAzMDQuNkMyNTguMSAyNzQuNiAxNzYgMjA1LjcgMTc2LjEgMTQxLjNMMTc2LjEgMTM4LjlDMTc2IDk3LjUgMjA5LjUgNjQgMjUwLjkgNjR6Ii8+PC9zdmc+)
 </div>
@@ -238,8 +238,8 @@ graph LR
 
 ```powershell
 # 1. Clone the repository
-git clone https://github.com/lextpf/wild.git
-cd wild
+git clone https://github.com/lextpf/rift.git
+cd rift
 
 # 2. Run setup script to download dependencies
 .\setup.ps1
@@ -248,7 +248,7 @@ cd wild
 .\build.bat
 
 # 4. Run the game
-.\build\Release\wild.exe
+.\build\Release\rift.exe
 ```
 
 ## Controls
@@ -396,7 +396,7 @@ doxygen Doxyfile
 ## Project Structure
 
 ```
-wild/
+rift/
 |-- src/                      # Source code
 |   |-- main.cpp              # Entry point
 |   |-- Game.cpp/h            # Core game loop and systems

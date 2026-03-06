@@ -225,7 +225,7 @@ void Game::ProcessInput(float deltaTime)
         f5KeyPressed = false;
     }
 
-    // Toggle FPS cap (0 = uncapped, 60 = capped)
+    // Toggle FPS cap (0 = uncapped, 500 = capped)
     static bool f6KeyPressed = false;
     if (glfwGetKey(m_Window, GLFW_KEY_F6) == GLFW_PRESS && !f6KeyPressed)
     {
@@ -249,7 +249,7 @@ void Game::ProcessInput(float deltaTime)
     // Toggle free camera mode (Space) - camera stops following player
     // WASD/Arrows can then pan camera while player still moves with WASD
     static bool spaceKeyFreeCamera = false;
-    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_Editor.IsActive())
+    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive && !m_Editor.IsActive())
     {
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyFreeCamera)
         {
@@ -388,7 +388,8 @@ void Game::ProcessInput(float deltaTime)
     // Note: Running or bicycling will automatically restore original appearance
     //       since NPCs don't have running/bicycle sprites.
     static bool xKeyPressed = false;
-    if (!m_Editor.IsActive() && !m_InDialogue && glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
+        glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
     {
         if (m_Player.IsUsingCopiedAppearance())
         {
@@ -508,7 +509,8 @@ void Game::ProcessInput(float deltaTime)
     //   2. NPC is in front of player or
     //   3. NPC hitbox is overlapping player hitbox
     static bool fKeyPressed = false;
-    if (!m_Editor.IsActive() && !m_InDialogue && glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed)
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
+        glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed)
     {
         glm::vec2 playerPos = m_Player.GetPosition();
         Direction playerDir = m_Player.GetDirection();
@@ -636,20 +638,11 @@ void Game::ProcessInput(float deltaTime)
                 // 4. NPC is very close and roughly in front
                 if (isColliding || isOnFrontTile || isInCorrectDirection || (isVeryClose && isRoughlyInFront))
                 {
-                    // Check if NPC has a dialogue tree
-                    if (npc.HasDialogueTree() && m_DialogueManager.StartDialogue(&npc))
-                    {
-                        // Using branching dialogue system
-                        m_DialogueNPC = &npc;
-                        m_DialoguePage = 0; // Reset pagination
-                    }
-                    else
-                    {
-                        // Fall back to simple dialogue
-                        m_InDialogue = true;
-                        m_DialogueNPC = &npc;
-                        m_DialogueText = npc.GetDialogue();
-                    }
+                    // Delay dialogue activation until the alignment snap completes.
+                    m_DialogueNPC = &npc;
+                    m_DialoguePage = 0;
+                    m_DialogueSnapPrefersTree = npc.HasDialogueTree();
+                    m_DialogueSnapFallbackText = npc.GetDialogue();
 
                     // Get current positions
                     playerPos = m_Player.GetPosition();
@@ -660,9 +653,11 @@ void Game::ProcessInput(float deltaTime)
                     // Y anchor is at bottom, so subtract 16 to find the tile the NPC stands on
                     int snapTileY = static_cast<int>(std::round((npcPos.y - 16.0f) / 16.0f));
 
-                    // Pass true to preserve patrol route so NPC continues where it left off after dialogue
-                    npc.SetTilePosition(npcTileX, snapTileY, 16, true);
-                    npcPos = npc.GetPosition();
+                    m_DialogueSnapNPCTileX = npcTileX;
+                    m_DialogueSnapNPCTileY = snapTileY;
+                    glm::vec2 npcTargetPos(
+                        static_cast<float>(m_DialogueSnapNPCTileX * 16 + 8),
+                        static_cast<float>(m_DialogueSnapNPCTileY * 16 + 16));
 
                     // Recalculate player tile position after getting fresh position
                     playerTileX = static_cast<int>(std::floor(playerPos.x / 16.0f));
@@ -844,58 +839,77 @@ void Game::ProcessInput(float deltaTime)
                             }
                         }
 
-                        // Snap player to the chosen tile position (ensures tile center)
-                        if (playerTileXFinal >= 0 && playerTileYFinal >= 0)
-                        {
-                            m_Player.SetTilePosition(playerTileXFinal, playerTileYFinal);
-                        }
                     }
                     else
                     {
                         // Player is already valid, but ensure they're exactly at tile center
-                        m_Player.SetTilePosition(currentPlayerTileX, currentPlayerTileY);
+                        playerTileXFinal = currentPlayerTileX;
+                        playerTileYFinal = currentPlayerTileY;
                     }
 
-                    // Stop player movement to prevent getting stuck
-                    m_Player.Stop();
-
-                    // Get fresh position after snapping to tile center
-                    playerPos = m_Player.GetPosition();
+                    glm::vec2 playerTargetPos = playerPos;
+                    bool hasPlayerTileTarget = (playerTileXFinal >= 0 && playerTileYFinal >= 0);
+                    if (hasPlayerTileTarget)
+                    {
+                        playerTargetPos = glm::vec2(
+                            static_cast<float>(playerTileXFinal * 16 + 8),
+                            static_cast<float>(playerTileYFinal * 16 + 16));
+                    }
 
                     // Make NPC face the player
-                    glm::vec2 npcToPlayer = playerPos - npcPos;
+                    glm::vec2 npcToPlayer = playerTargetPos - npcTargetPos;
+                    NPCDirection npcFacing = NPCDirection::DOWN;
                     if (std::abs(npcToPlayer.x) > std::abs(npcToPlayer.y))
                     {
                         // Horizontal direction
-                        npc.SetDirection(npcToPlayer.x > 0 ? NPCDirection::RIGHT : NPCDirection::LEFT);
+                        npcFacing = (npcToPlayer.x > 0) ? NPCDirection::RIGHT : NPCDirection::LEFT;
                     }
                     else
                     {
                         // Vertical direction
-                        npc.SetDirection(npcToPlayer.y > 0 ? NPCDirection::DOWN : NPCDirection::UP);
+                        npcFacing = (npcToPlayer.y > 0) ? NPCDirection::DOWN : NPCDirection::UP;
                     }
 
                     // Make player face the NPC
-                    glm::vec2 playerToNPC = npcPos - playerPos;
+                    glm::vec2 playerToNPC = npcTargetPos - playerTargetPos;
+                    Direction playerFacing = Direction::DOWN;
                     if (std::abs(playerToNPC.x) > std::abs(playerToNPC.y))
                     {
                         // Horizontal direction
-                        m_Player.SetDirection(playerToNPC.x > 0 ? Direction::RIGHT : Direction::LEFT);
+                        playerFacing = (playerToNPC.x > 0) ? Direction::RIGHT : Direction::LEFT;
                     }
                     else
                     {
                         // Vertical direction
-                        m_Player.SetDirection(playerToNPC.y > 0 ? Direction::DOWN : Direction::UP);
+                        playerFacing = (playerToNPC.y > 0) ? Direction::DOWN : Direction::UP;
                     }
 
-                    // Freeze both in place
-                    npc.SetStopped(true);       // Lock NPC in place
-                    npc.ResetAnimationToIdle(); // Reset NPC animation to idle frame
-                    // Player movement is already disabled by m_InDialogue check in Update()
+                    // Freeze both and begin smooth alignment.
+                    m_Player.Stop();
+                    npc.SetStopped(true);
+                    npc.ResetAnimationToIdle();
 
-                    std::cout << "Started dialogue with NPC: " << npc.GetType()
-                              << " at tile (" << npcTileX << ", " << npcTileY << ")"
-                              << ", player at tile (" << playerTileXFinal << ", " << playerTileYFinal << ")" << std::endl;
+                    m_DialogueSnapActive = true;
+                    m_DialogueSnapTimer = 0.0f;
+                    m_DialogueSnapDuration = 0.42f;
+                    m_DialogueSnapPlayerStart = playerPos;
+                    m_DialogueSnapPlayerTarget = playerTargetPos;
+                    m_DialogueSnapNPCStart = npcPos;
+                    m_DialogueSnapNPCTarget = npcTargetPos;
+                    m_DialogueSnapPlayerTileX = hasPlayerTileTarget
+                                                    ? playerTileXFinal
+                                                    : static_cast<int>(std::round((playerTargetPos.x - 8.0f) / 16.0f));
+                    m_DialogueSnapPlayerTileY = hasPlayerTileTarget
+                                                    ? playerTileYFinal
+                                                    : static_cast<int>(std::round((playerTargetPos.y - 16.0f) / 16.0f));
+                    m_DialogueSnapHasPlayerTile = hasPlayerTileTarget;
+                    m_DialogueSnapPlayerFacing = playerFacing;
+                    m_DialogueSnapNPCFacing = npcFacing;
+
+                    std::cout << "Starting dialogue snap with NPC: " << npc.GetType()
+                              << " target NPC tile (" << m_DialogueSnapNPCTileX << ", " << m_DialogueSnapNPCTileY << ")"
+                              << ", target player tile (" << m_DialogueSnapPlayerTileX << ", " << m_DialogueSnapPlayerTileY << ")"
+                              << std::endl;
                     break;
                 }
             }
@@ -1062,7 +1076,7 @@ void Game::ProcessInput(float deltaTime)
     }
 
     // Only process player movement if not in editor mode and not in dialogue
-    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive())
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive)
     {
         // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
@@ -1076,7 +1090,7 @@ void Game::ProcessInput(float deltaTime)
 
         m_Player.Move(moveDirection, deltaTime, &m_Tilemap, &npcPositions);
     }
-    else if (m_InDialogue)
+    else if (m_InDialogue || m_DialogueSnapActive)
     {
         // Stop player movement during dialogue
         m_Player.Stop();

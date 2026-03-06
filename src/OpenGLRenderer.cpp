@@ -37,6 +37,18 @@ static void DebugAfterDraw(const char *label, int count)
     }
 }
 
+unsigned int OpenGLRenderer::EnsureTextureReady(const Texture &texture)
+{
+    unsigned int texID = texture.GetID();
+    const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
+    if (texture.m_OpenGLContextGeneration != currentGen || texID == 0)
+    {
+        const_cast<Texture &>(texture).RecreateOpenGLTexture();
+        texID = texture.GetID();
+    }
+    return texID;
+}
+
 OpenGLRenderer::OpenGLRenderer()
     // Core geometry buffers
     : m_VAO(0)                                                     // Vertex array object for unit quad
@@ -511,15 +523,9 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture &texture, glm::vec2 position
         FlushRectBatch();
     }
 
-    unsigned int texID = texture.GetID();
-    const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
-    if (texture.m_OpenGLContextGeneration != currentGen || texID == 0)
-    {
-        const_cast<Texture &>(texture).RecreateOpenGLTexture();
-        texID = texture.GetID();
-        if (texID == 0)
-            return;
-    }
+    unsigned int texID = EnsureTextureReady(texture);
+    if (texID == 0)
+        return;
 
     // Texture change forces a flush, sprites with different textures can't be batched.
     // Use batch-content check instead of m_CurrentBatchTexture!=0 so an invalid
@@ -619,15 +625,9 @@ void OpenGLRenderer::DrawSpriteAtlas(const Texture &texture, glm::vec2 position,
     if (!m_RectBatchVertices.empty())
         FlushRectBatch();
 
-    unsigned int texID = texture.GetID();
-    const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
-    if (texture.m_OpenGLContextGeneration != currentGen || texID == 0)
-    {
-        const_cast<Texture &>(texture).RecreateOpenGLTexture();
-        texID = texture.GetID();
-        if (texID == 0)
-            return;
-    }
+    unsigned int texID = EnsureTextureReady(texture);
+    if (texID == 0)
+        return;
 
     // Flush particle batch if texture or blend mode changed.
     // Same rule as sprite batch: once vertices exist, texture mismatch must flush
@@ -815,15 +815,9 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture, const glm::vec2 corn
     if (!m_ParticleBatchVertices.empty())
         FlushParticleBatch();
 
-    unsigned int texID = texture.GetID();
-    const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
-    if (texture.m_OpenGLContextGeneration != currentGen || texID == 0)
-    {
-        const_cast<Texture &>(texture).RecreateOpenGLTexture();
-        texID = texture.GetID();
-        if (texID == 0)
-            return;
-    }
+    unsigned int texID = EnsureTextureReady(texture);
+    if (texID == 0)
+        return;
 
     // Flush sprite batch if texture changed.
     // Do not special-case texture 0, or stale/invalid IDs can leak into the batch.

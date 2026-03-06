@@ -1,7 +1,8 @@
 {
-  "name": "wild",
+  "name": "rift",
   "version": "1.0.0",
   "description": "2D tile-based game engine with OpenGL/Vulkan rendering",
+  "builtin-baseline": "05442024c3fda64320bd25d2251cc9807b84fb6f",
   "dependencies": [
     "glm",
     "glfw3",

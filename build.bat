@@ -1,12 +1,12 @@
 @echo off
 REM ============================================================================
-REM build.bat - Complete build pipeline for wild
+REM build.bat - Complete build pipeline for rift
 REM ============================================================================
 REM This script:
 REM   1. Builds Debug and Release configurations
 REM   2. Compiles shaders to SPIR-V
 REM   3. Copies assets to build folders
-REM   4. Cleans up shader binaries from shaders folder
+REM   4. Verifies shader binaries in build folders
 REM   5. Generates Doxygen documentation
 REM ============================================================================
 
@@ -17,7 +17,7 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
 echo ============================================================================
-echo                        WILD BUILD PIPELINE
+echo                        RIFT BUILD PIPELINE
 echo ============================================================================
 echo.
 
@@ -66,6 +66,8 @@ REM ============================================================================
 echo [2/5] Compiling shaders...
 echo ----------------------------------------------------------------------------
 
+set "SHADERS_COMPILED=0"
+
 REM Check if glslangValidator is available
 where glslangValidator >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
@@ -91,6 +93,7 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+set "SHADERS_COMPILED=1"
 echo [2/5] Shaders compiled successfully!
 :skip_shaders
 echo.
@@ -115,14 +118,18 @@ REM Copy assets to Release
 echo Copying assets to build\Release\assets...
 xcopy /E /Y /I "assets" "build\Release\assets" >nul
 
-REM Clean shader folders and copy only binaries
-echo Copying shader binaries to build\Debug\shaders...
-del /Q "build\Debug\shaders\*" >nul 2>&1
-copy /Y "shaders\*.spv" "build\Debug\shaders\" >nul 2>&1
+REM Copy shader binaries only if available; never delete existing binaries on a skip.
+dir /B "shaders\*.spv" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo Copying shader binaries to build\Debug\shaders...
+    copy /Y "shaders\*.spv" "build\Debug\shaders\" >nul
 
-echo Copying shader binaries to build\Release\shaders...
-del /Q "build\Release\shaders\*" >nul 2>&1
-copy /Y "shaders\*.spv" "build\Release\shaders\" >nul 2>&1
+    echo Copying shader binaries to build\Release\shaders...
+    copy /Y "shaders\*.spv" "build\Release\shaders\" >nul
+) else (
+    echo WARNING: No .spv shader binaries found in shaders\.
+    echo Keeping existing shader binaries in build folders.
+)
 
 REM Copy save files from root project folder to build folders (next to executable)
 echo Copying save files to build folders...
@@ -143,19 +150,38 @@ echo [3/5] Assets copied successfully!
 echo.
 
 REM ============================================================================
-REM STEP 4: Clean up shader binaries from source folder
+REM STEP 4: Verify shader binaries
 REM ============================================================================
-echo [4/5] Cleaning up shader binaries from source folder...
+echo [4/5] Verifying shader binaries...
 echo ----------------------------------------------------------------------------
 
-REM Delete .spv files from shaders folder (already copied to build folders)
-if exist "shaders\*.spv" (
-    del /Q "shaders\*.spv"
-    echo Deleted .spv files from shaders\ folder.
-) else (
-    echo No .spv files to clean up.
+set "MISSING_SHADER_BINARIES=0"
+if not exist "build\Debug\shaders\sprite.vert.spv" (
+    echo WARNING: Missing build\Debug\shaders\sprite.vert.spv
+    set "MISSING_SHADER_BINARIES=1"
 )
-echo Shader sources preserved in shaders\ folder.
+if not exist "build\Debug\shaders\sprite.frag.spv" (
+    echo WARNING: Missing build\Debug\shaders\sprite.frag.spv
+    set "MISSING_SHADER_BINARIES=1"
+)
+if not exist "build\Release\shaders\sprite.vert.spv" (
+    echo WARNING: Missing build\Release\shaders\sprite.vert.spv
+    set "MISSING_SHADER_BINARIES=1"
+)
+if not exist "build\Release\shaders\sprite.frag.spv" (
+    echo WARNING: Missing build\Release\shaders\sprite.frag.spv
+    set "MISSING_SHADER_BINARIES=1"
+)
+
+if "%MISSING_SHADER_BINARIES%"=="1" (
+    echo WARNING: Vulkan shader binaries are missing in one or more build folders.
+    echo          Vulkan renderer will fail until .spv files are present.
+    if "%SHADERS_COMPILED%"=="0" (
+        echo          Install Vulkan SDK and rerun build.bat to compile shaders.
+    )
+) else (
+    echo Shader binaries verified in Debug and Release output folders.
+)
 echo.
 
 REM ============================================================================
@@ -197,8 +223,8 @@ echo                        BUILD PIPELINE COMPLETE
 echo ============================================================================
 echo.
 echo Executables:
-echo   Debug:   build\Debug\wild.exe
-echo   Release: build\Release\wild.exe
+echo   Debug:   build\Debug\rift.exe
+echo   Release: build\Release\rift.exe
 echo.
 echo Assets copied to:
 echo   - build\Debug\assets

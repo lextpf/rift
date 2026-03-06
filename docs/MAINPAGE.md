@@ -1,10 +1,10 @@
-@mainpage Wild Game Engine
+@mainpage Rift Game Engine
 
 @tableofcontents
 
 ## Overview
 
-Wild is a 2D game engine written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.4), a complete day/night cycle with atmospheric effects, tile-based collision, NPC pathfinding, and a built-in level editor.
+Rift is a 2D game engine written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.4), a complete day/night cycle with atmospheric effects, tile-based collision, NPC pathfinding, and a built-in level editor.
 
 \htmlonly
 <pre class="mermaid">
@@ -77,7 +77,7 @@ Complete day/night cycle with 8 time periods, sun/moon arcs, star visibility, an
 ```powershell
 .\setup.ps1             # Download dependencies
 .\build.bat             # Build the project
-.\build\Debug\wild.exe  # Run
+.\build\Debug\rift.exe  # Run
 ```
 
 @see [Setup Guide](SETUP.md) for dependency installation.

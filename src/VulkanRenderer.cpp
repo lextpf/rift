@@ -436,7 +436,7 @@ void VulkanRenderer::CreateInstance()
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Wild Game";
+    appInfo.pApplicationName = "Rift Game";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -698,13 +698,29 @@ void VulkanRenderer::CreateSwapchain()
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(m_PhysicalDevice, m_Surface, &presentModeCount, presentModes.data());
 
+    // Prefer uncapped presentation when available so app-side FPS limiting can work.
+    // Fallback order:
+    //   1) IMMEDIATE (no vsync, may tear)
+    //   2) MAILBOX   (low-latency vsync)
+    //   3) FIFO      (always supported, vsync)
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     for (const auto &availablePresentMode : presentModes)
     {
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+        if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR)
         {
             presentMode = availablePresentMode;
             break;
+        }
+    }
+    if (presentMode == VK_PRESENT_MODE_FIFO_KHR)
+    {
+        for (const auto &availablePresentMode : presentModes)
+        {
+            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+            {
+                presentMode = availablePresentMode;
+                break;
+            }
         }
     }
 
@@ -974,7 +990,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
         std::cerr << "ERROR: Vulkan shaders not found!" << std::endl;
         std::cerr << "Please compile shaders: glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv" << std::endl;
         std::cerr << "                      glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv" << std::endl;
-        std::cerr << "Or run: compile-shaders.bat" << std::endl;
+        std::cerr << "Or run: build.bat" << std::endl;
         // Don't continue without shaders - throw exception
         throw std::runtime_error("Vulkan shaders not found. Please compile shaders first.");
     }
@@ -2356,73 +2372,9 @@ void VulkanRenderer::CreateGlyphTexture(int width, int height, const std::vector
     memcpy(dataPtr, rgbaData.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(m_Device, stagingMemory);
 
-    // One-time command buffer for upload
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandPool = m_CommandPool;
-    cmdAllocInfo.commandBufferCount = 1;
+    UploadStagingBufferToImage(stagingBuffer, outGlyph.image,
+                               static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-    VkCommandBuffer commandBuffer;
-    VK_CHECK(vkAllocateCommandBuffers(m_Device, &cmdAllocInfo, &commandBuffer));
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
-
-    // Transition to transfer dst
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = outGlyph.image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    // Copy buffer to image
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, outGlyph.image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    // Transition to shader read
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    VK_CHECK(vkEndCommandBuffer(commandBuffer));
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-    VK_CHECK(vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(m_GraphicsQueue));
-
-    vkFreeCommandBuffers(m_Device, m_CommandPool, 1, &commandBuffer);
     vkDestroyBuffer(m_Device, stagingBuffer, nullptr);
     vkFreeMemory(m_Device, stagingMemory, nullptr);
 

@@ -483,6 +483,13 @@ public:
     void RenderForegroundLayersNoProjection(IRenderer& renderer, glm::vec2 renderCam, glm::vec2 renderSize,
                                             glm::vec2 cullCam, glm::vec2 cullSize);
 
+private:
+    /// Shared implementation for background/foreground no-projection rendering.
+    void RenderLayersNoProjection(IRenderer& renderer, glm::vec2 renderCam, glm::vec2 renderSize,
+                                  glm::vec2 cullCam, glm::vec2 cullSize, bool isBackground);
+
+public:
+
     /// Get sorted indices for rendering (by renderOrder)
     std::vector<size_t> GetLayerRenderOrder() const;
     /** @} */

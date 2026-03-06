@@ -1,13 +1,13 @@
 #pragma once
 
 /// Major version number.
-#define WILD_VERSION_MAJOR 0
+#define RIFT_VERSION_MAJOR 0
 /// Minor version number.
-#define WILD_VERSION_MINOR 1
+#define RIFT_VERSION_MINOR 1
 /// Patch version number.
-#define WILD_VERSION_PATCH 0
+#define RIFT_VERSION_PATCH 0
 /// Release version number.
-#define WILD_VERSION_RELEASE 0
+#define RIFT_VERSION_RELEASE 0
 
 /**
  * Stringify version components.
@@ -17,16 +17,16 @@
  * @param patch Patch version.
  * @param release Release version.
  *
- * @see WILD_VERSION
+ * @see RIFT_VERSION
  */
-#define WILD_VERSION_STRINGIFY(major, minor, patch, release) \
+#define RIFT_VERSION_STRINGIFY(major, minor, patch, release) \
 	#major "." #minor "." #patch "." #release
 
 /// Complete version string (e.g., "0.1.0.0").
-#define WILD_VERSION \
-	WILD_VERSION_STRINGIFY( \
-		WILD_VERSION_MAJOR, \
-		WILD_VERSION_MINOR, \
-		WILD_VERSION_PATCH, \
-		WILD_VERSION_RELEASE)
+#define RIFT_VERSION \
+	RIFT_VERSION_STRINGIFY( \
+		RIFT_VERSION_MAJOR, \
+		RIFT_VERSION_MINOR, \
+		RIFT_VERSION_PATCH, \
+		RIFT_VERSION_RELEASE)
 

@@ -42,13 +42,13 @@ DOXYFILE_ENCODING      = UTF-8
 # title of most generated pages and in a few other places.
 # The default value is: My Project.
 
-PROJECT_NAME           = "Wild Game Engine"
+PROJECT_NAME           = "Rift Game Engine"
 
 # The PROJECT_NUMBER tag can be used to enter a project or revision number. This
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = @WILD_VERSION_STRING@
+PROJECT_NUMBER         = @RIFT_VERSION_STRING@
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewers a
@@ -1555,7 +1555,7 @@ GENERATE_DOCSET        = NO
 # The default value is: Doxygen generated docs.
 # This tag requires that the tag GENERATE_DOCSET is set to YES.
 
-DOCSET_FEEDNAME        = "Wild Game Engine Documentation"
+DOCSET_FEEDNAME        = "Rift Game Engine Documentation"
 
 # This tag determines the URL of the docset feed. A documentation feed provides
 # an umbrella under which multiple documentation sets from a single provider
@@ -1570,7 +1570,7 @@ DOCSET_FEEDURL         =
 # The default value is: org.doxygen.Project.
 # This tag requires that the tag GENERATE_DOCSET is set to YES.
 
-DOCSET_BUNDLE_ID       = org.wildgame.doxygen
+DOCSET_BUNDLE_ID       = org.riftgame.doxygen
 
 # The DOCSET_PUBLISHER_ID tag specifies a string that should uniquely identify
 # the documentation publisher. This should be a reverse domain-name style
@@ -1578,13 +1578,13 @@ DOCSET_BUNDLE_ID       = org.wildgame.doxygen
 # The default value is: org.doxygen.Publisher.
 # This tag requires that the tag GENERATE_DOCSET is set to YES.
 
-DOCSET_PUBLISHER_ID    = org.wildgame.doxygen
+DOCSET_PUBLISHER_ID    = org.riftgame.doxygen
 
 # The DOCSET_PUBLISHER_NAME tag identifies the documentation publisher.
 # The default value is: Publisher.
 # This tag requires that the tag GENERATE_DOCSET is set to YES.
 
-DOCSET_PUBLISHER_NAME  = "Wild Game Engine"
+DOCSET_PUBLISHER_NAME  = "Rift Game Engine"
 
 # If the GENERATE_HTMLHELP tag is set to YES then Doxygen generates three
 # additional HTML index files: index.hhp, index.hhc, and index.hhk. The
@@ -1684,7 +1684,7 @@ QCH_FILE               =
 # The default value is: org.doxygen.Project.
 # This tag requires that the tag GENERATE_QHP is set to YES.
 
-QHP_NAMESPACE          = org.wildgame.doxygen
+QHP_NAMESPACE          = org.riftgame.doxygen
 
 # The QHP_VIRTUAL_FOLDER tag specifies the namespace to use when generating Qt
 # Help Project output. For more information please see Qt Help Project / Virtual
@@ -1743,7 +1743,7 @@ GENERATE_ECLIPSEHELP   = NO
 # The default value is: org.doxygen.Project.
 # This tag requires that the tag GENERATE_ECLIPSEHELP is set to YES.
 
-ECLIPSE_DOC_ID         = org.wildgame.doxygen
+ECLIPSE_DOC_ID         = org.riftgame.doxygen
 
 # If you want full control over the layout of the generated HTML pages it might
 # be necessary to disable the index and replace it with your own. The

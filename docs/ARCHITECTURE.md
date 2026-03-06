@@ -1,6 +1,6 @@
 # Architecture Overview
 
-The Wild Game Engine follows a **layered architecture** with clear separation of concerns. At its core is the `Game` class which orchestrates all subsystems through a traditional game loop pattern.
+The Rift Game Engine follows a **layered architecture** with clear separation of concerns. At its core is the `Game` class which orchestrates all subsystems through a traditional game loop pattern.
 
 ## System Overview
 

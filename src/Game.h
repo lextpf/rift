@@ -440,5 +440,23 @@ private:
     GameStateManager m_GameState;          ///< Game flags and state for consequences
     int m_DialoguePage = 0;                ///< Current page of dialogue text (for pagination)
     mutable int m_DialogueTotalPages = 1;  ///< Total pages (cached during rendering)
+
+    // Smooth pre-dialogue alignment state (player + NPC slide into final talk positions).
+    bool m_DialogueSnapActive = false;
+    float m_DialogueSnapTimer = 0.0f;
+    float m_DialogueSnapDuration = 0.4f;
+    glm::vec2 m_DialogueSnapPlayerStart{0.0f};
+    glm::vec2 m_DialogueSnapPlayerTarget{0.0f};
+    glm::vec2 m_DialogueSnapNPCStart{0.0f};
+    glm::vec2 m_DialogueSnapNPCTarget{0.0f};
+    bool m_DialogueSnapHasPlayerTile = true;
+    int m_DialogueSnapPlayerTileX = 0;
+    int m_DialogueSnapPlayerTileY = 0;
+    int m_DialogueSnapNPCTileX = 0;
+    int m_DialogueSnapNPCTileY = 0;
+    Direction m_DialogueSnapPlayerFacing = Direction::DOWN;
+    NPCDirection m_DialogueSnapNPCFacing = NPCDirection::DOWN;
+    bool m_DialogueSnapPrefersTree = false;
+    std::string m_DialogueSnapFallbackText;
     /** @} */
 };

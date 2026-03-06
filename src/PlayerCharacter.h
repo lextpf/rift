@@ -266,6 +266,18 @@ public:
     }
 
     /**
+     * @brief Set player position directly in world space (no tile snapping).
+     *
+     * Used for short interpolation phases such as dialogue alignment.
+     *
+     * @param pos Exact world-space feet position.
+     */
+    inline void SetPositionRaw(glm::vec2 pos)
+    {
+        m_Position = pos;
+    }
+
+    /**
      * @brief Set player position directly by tile coordinates.
      *
      * @param tileX Tile column (0-based).

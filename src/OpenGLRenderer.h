@@ -174,6 +174,10 @@ private:
     /// @name Initialization Helpers
     /// @{
 
+    /// @brief Ensure texture has a valid OpenGL ID for the current context, recreating if needed.
+    /// @return Valid texture ID, or 0 if the texture could not be made ready.
+    unsigned int EnsureTextureReady(const Texture &texture);
+
     /// @brief Create VAO/VBO for the unit quad used by all sprite rendering.
     void SetupQuad();
 

@@ -1,6 +1,6 @@
 # Building the Project
 
-The Wild Game Engine uses CMake as its build system. This guide covers building for Windows.
+The Rift Game Engine uses CMake as its build system. This guide covers building for Windows.
 
 ## Build Process Overview
 
@@ -14,7 +14,7 @@ flowchart LR
     CMake["CMake"]:::tool
     Compiler["Compiler"]:::tool
     Shaders["Shader Compiler"]:::tool
-    Exe["wild.exe"]:::output
+    Exe["rift.exe"]:::output
     Assets["Assets"]:::output
 
     Source --> CMake
@@ -67,7 +67,7 @@ cmake ..
 cmake --build . --config Release
 
 :: Run
-.\Release\wild.exe
+.\Release\rift.exe
 ```
 
 ### Visual Studio
@@ -149,7 +149,7 @@ After a successful build:
 ```
 build/
 |-- Debug/            (or Release/)
-|   |-- wild.exe      # Main executable
+|   |-- rift.exe      # Main executable
 |   |-- assets/       # Game assets (copied)
 |   |   |-- sprites/
 |   |   |-- fonts/

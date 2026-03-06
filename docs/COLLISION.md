@@ -1,6 +1,6 @@
 # Collision & Pathfinding
 
-This document covers the collision detection, physics, and NPC navigation systems in the Wild Game Engine.
+This document covers the collision detection, physics, and NPC navigation systems in the Rift Game Engine.
 
 ## Collision System Overview
 

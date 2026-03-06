@@ -94,7 +94,7 @@ bool Game::Initialize()
 
     std::cout << "Initialize() step 4: Creating GLFW window..." << std::endl;
 
-    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "wild", nullptr, nullptr);
+    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
     if (!m_Window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -173,6 +173,13 @@ bool Game::Initialize()
     {
         std::cerr << "Unknown exception during Renderer initialization" << std::endl;
         return false;
+    }
+
+    // Some drivers/middleware paths can reset swap interval during init.
+    // Re-apply no-vsync after renderer initialization.
+    if (m_RendererAPI == RendererAPI::OpenGL)
+    {
+        glfwSwapInterval(0);
     }
 
     // Set viewport
@@ -405,8 +412,11 @@ void Game::Run()
                         std::chrono::duration<double>(remaining));
                     const auto frameDeadline = clock::now() + sleepDuration;
 
-                    // Sleep most of the remaining frame time, then yield briefly for accuracy.
-                    constexpr auto spinThreshold = std::chrono::microseconds(500);
+                    // Sleep most of the remaining frame time, then spin-yield for accuracy.
+                    // Windows default timer resolution is ~15.6ms, so sleep_for(1ms) can
+                    // sleep 15ms+.  Keep spinThreshold above the OS granularity so that
+                    // high-FPS targets (e.g. 500 fps = 2ms budget) never call sleep_for.
+                    constexpr auto spinThreshold = std::chrono::milliseconds(2);
                     while (true)
                     {
                         const auto now = clock::now();
@@ -515,13 +525,74 @@ void Game::Update(float deltaTime)
     // Get player position, needed for NPC updates and collision
     glm::vec2 playerPos = m_Player.GetPosition();
 
+    if (m_DialogueSnapActive)
+    {
+        if (!m_DialogueNPC)
+        {
+            m_DialogueSnapActive = false;
+        }
+        else
+        {
+            m_DialogueSnapTimer += deltaTime;
+            float duration = std::max(0.05f, m_DialogueSnapDuration);
+            float t = std::clamp(m_DialogueSnapTimer / duration, 0.0f, 1.0f);
+            float smoothT = t * t * (3.0f - 2.0f * t); // Smoothstep easing
+
+            glm::vec2 blendedPlayer = m_DialogueSnapPlayerStart + (m_DialogueSnapPlayerTarget - m_DialogueSnapPlayerStart) * smoothT;
+            glm::vec2 blendedNPC = m_DialogueSnapNPCStart + (m_DialogueSnapNPCTarget - m_DialogueSnapNPCStart) * smoothT;
+
+            m_Player.SetPositionRaw(blendedPlayer);
+            m_DialogueNPC->SetPosition(blendedNPC);
+            m_DialogueNPC->SetStopped(true);
+            m_DialogueNPC->ResetAnimationToIdle();
+            playerPos = blendedPlayer;
+
+            if (t >= 1.0f)
+            {
+                if (m_DialogueSnapHasPlayerTile)
+                {
+                    m_Player.SetTilePosition(m_DialogueSnapPlayerTileX, m_DialogueSnapPlayerTileY);
+                }
+                else
+                {
+                    m_Player.SetPositionRaw(m_DialogueSnapPlayerTarget);
+                }
+                m_DialogueNPC->SetTilePosition(m_DialogueSnapNPCTileX, m_DialogueSnapNPCTileY, 16, true);
+
+                m_Player.Stop();
+                m_Player.SetDirection(m_DialogueSnapPlayerFacing);
+                m_DialogueNPC->SetDirection(m_DialogueSnapNPCFacing);
+                m_DialogueNPC->SetStopped(true);
+                m_DialogueNPC->ResetAnimationToIdle();
+
+                bool startedTree = false;
+                if (m_DialogueSnapPrefersTree)
+                {
+                    startedTree = m_DialogueManager.StartDialogue(m_DialogueNPC);
+                    if (startedTree)
+                    {
+                        m_DialoguePage = 0;
+                    }
+                }
+                if (!startedTree)
+                {
+                    m_InDialogue = true;
+                    m_DialogueText = m_DialogueSnapFallbackText;
+                }
+
+                m_DialogueSnapActive = false;
+                playerPos = m_Player.GetPosition();
+            }
+        }
+    }
+
     // Update player elevation based on tilemap
     float elevation = m_Tilemap.GetElevationAtWorldPos(playerPos.x, playerPos.y);
     m_Player.SetElevationOffset(elevation);
 
     // Update NPCs
     // During dialogue, freeze the NPC being talked to
-    bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive();
+    bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnapActive;
     for (auto &npc : m_NPCs)
     {
         // Skip updating the NPC in dialogue
@@ -559,7 +630,7 @@ void Game::Update(float deltaTime)
     }
 
     // When in dialogue, arrow keys are used for navigating dialogue options
-    if (m_DialogueManager.IsActive() || m_InDialogue)
+    if (m_DialogueManager.IsActive() || m_InDialogue || m_DialogueSnapActive)
     {
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
@@ -1390,7 +1461,7 @@ bool Game::SwitchRenderer(RendererAPI api)
     }
 
     // Create new window at same position
-    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "wild", nullptr, nullptr);
+    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
     if (!m_Window)
     {
         std::cerr << "Failed to create GLFW window during renderer switch" << std::endl;
@@ -1436,6 +1507,12 @@ bool Game::SwitchRenderer(RendererAPI api)
 
     // Initialize renderer
     m_Renderer->Init();
+
+    // Re-apply no-vsync after renderer initialization.
+    if (m_RendererAPI == RendererAPI::OpenGL)
+    {
+        glfwSwapInterval(0);
+    }
 
     // Set viewport and projection
     m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);

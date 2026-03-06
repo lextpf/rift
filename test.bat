@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM test.bat - Run Wild Engine unit tests using Google Test
+REM test.bat - Run Rift Engine unit tests using Google Test
 REM ============================================================================
 REM This script:
 REM   1. Configures CMake if needed
@@ -11,7 +11,7 @@ REM ============================================================================
 setlocal
 
 echo ============================================================================
-echo                          WILD ENGINE TEST RUNNER
+echo                          RIFT ENGINE TEST RUNNER
 echo ============================================================================
 echo.
 
@@ -25,9 +25,13 @@ REM Check if vcpkg is available
 if defined VCPKG_ROOT (
     echo   Using vcpkg from: %VCPKG_ROOT%
     set TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
+    REM Prefer installed tools (git/cmake/ninja) over downloading PortableGit.
+    set VCPKG_FORCE_SYSTEM_BINARIES=1
 ) else if exist "%~dp0vcpkg\scripts\buildsystems\vcpkg.cmake" (
     echo   Using vcpkg from project directory
     set TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=%~dp0vcpkg/scripts/buildsystems/vcpkg.cmake
+    REM Prefer installed tools (git/cmake/ninja) over downloading PortableGit.
+    set VCPKG_FORCE_SYSTEM_BINARIES=1
 ) else (
     echo   Warning: vcpkg not found, using bundled dependencies from external/
     set TOOLCHAIN=
@@ -56,7 +60,7 @@ REM STEP 2: Build Tests
 REM ============================================================================
 echo [2/3] Building test executables...
 echo ----------------------------------------------------------------------------
-cmake --build . --config Release --target wild_tests
+cmake --build . --config Release --target rift_tests
 if errorlevel 1 (
     echo ERROR: Build failed!
     cd ..
@@ -74,16 +78,16 @@ echo.
 
 set ALL_PASSED=1
 
-REM Run wild_tests
-echo === wild_tests ===
-if exist "Release\wild_tests.exe" (
-    Release\wild_tests.exe --gtest_color=yes
+REM Run rift_tests
+echo === rift_tests ===
+if exist "Release\rift_tests.exe" (
+    Release\rift_tests.exe --gtest_color=yes
     if errorlevel 1 set ALL_PASSED=0
-) else if exist "wild_tests.exe" (
-    wild_tests.exe --gtest_color=yes
+) else if exist "rift_tests.exe" (
+    rift_tests.exe --gtest_color=yes
     if errorlevel 1 set ALL_PASSED=0
 ) else (
-    echo ERROR: wild_tests.exe not found!
+    echo ERROR: rift_tests.exe not found!
     set ALL_PASSED=0
 )
 echo.

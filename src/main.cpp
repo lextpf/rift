@@ -22,7 +22,7 @@
  *
  *    ----------------------------------------------------------------------
  *
- *      Repository:   https://github.com/lextpf/wild
+ *      Repository:   https://github.com/lextpf/rift
  *      License:      MIT
  */
 #include "Game.h"
@@ -41,14 +41,14 @@
 /**
  * @brief Signal-based crash handler for fatal errors.
  *
- * Logs the signal number to wild.txt before terminating.
+ * Logs the signal number to rift.txt before terminating.
  * Handles SIGABRT, SIGTERM, and SIGINT signals.
  *
  * @param sig The signal number that triggered the crash.
  */
 void CrashHandler(int sig)
 {
-    std::ofstream logFile("wild.txt", std::ios::app);
+    std::ofstream logFile("rift.txt", std::ios::app);
     logFile << "CRASH HANDLER: Signal " << sig << std::endl;
     logFile.flush();
     logFile.close();
@@ -72,7 +72,7 @@ int main()
                        {
         (void)ep; // Unused parameter
 
-        std::ofstream logFile("wild.txt", std::ios::app);
+        std::ofstream logFile("rift.txt", std::ios::app);
         logFile << "SEH EXCEPTION: Code " << code << std::endl;
         logFile.flush();
         logFile.close();
@@ -82,7 +82,7 @@ int main()
     // ------------------------------------------------------------------------
     // Initialize Logging
     // ------------------------------------------------------------------------
-    std::ofstream logFile("wild.txt", std::ios::app);
+    std::ofstream logFile("rift.txt", std::ios::app);
     logFile << "=== Program Starting ===" << std::endl;
 
     // ------------------------------------------------------------------------
@@ -118,7 +118,7 @@ int main()
         if (!game.Initialize())
         {
             std::cerr << "Failed to initialize game" << std::endl;
-            std::cerr << "Check wild.txt for details" << std::endl;
+            std::cerr << "Check rift.txt for details" << std::endl;
 
             logFile << "ERROR: Initialize() returned false" << std::endl;
             logFile.close();

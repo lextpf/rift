@@ -1,6 +1,6 @@
 # Using the Level Editor
 
-The Wild Engine features a built-in level editor that allows you to modify maps in real-time.
+The Rift Engine features a built-in level editor that allows you to modify maps in real-time.
 
 ## Entering Editor Mode
 

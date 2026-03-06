@@ -1,6 +1,6 @@
 # Rendering Pipeline
 
-This document describes the coordinate systems, transformations, and rendering techniques used in the Wild Game Engine.
+This document describes the coordinate systems, transformations, and rendering techniques used in the Rift Game Engine.
 
 ## Coordinate System
 

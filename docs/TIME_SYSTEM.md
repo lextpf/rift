@@ -1,6 +1,6 @@
 # Time System
 
-The Wild Game Engine features a complete day/night cycle system that drives ambient lighting, sky colors, celestial bodies, and atmospheric effects.
+The Rift Game Engine features a complete day/night cycle system that drives ambient lighting, sky colors, celestial bodies, and atmospheric effects.
 
 ## Overview
 
