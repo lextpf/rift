@@ -26,7 +26,7 @@ jobs:
           cmake -B build_tests -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build tests
-        run: cmake --build build_tests --config Release --target wild_tests
+        run: cmake --build build_tests --config Release --target rift_tests
 
       - name: Run tests
         run: |
