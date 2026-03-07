@@ -10,9 +10,6 @@
 #include <cmath>
 #include <chrono>
 #include <thread>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 #include <cctype>
 #include <vector>
 
@@ -118,7 +115,7 @@ bool Game::Initialize()
     std::cout << "Initialize() step 6: Creating Renderer..." << std::endl;
 
     // Create renderer based on selected API
-    m_Renderer.reset(CreateRenderer(m_RendererAPI, m_Window));
+    m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
     if (!m_Renderer)
     {
         std::cerr << "Failed to create Renderer" << std::endl;
@@ -864,7 +861,7 @@ void Game::ConfigureRendererPerspective(float width, float height)
         float viewportDiagonal = std::sqrt(width * width + height * height);
         float baseRadius = m_GlobeSphereRadius / m_CameraZoom;
         // Minimum radius to prevent extreme distortion, but set lower to allow globe visibility
-        float minRadius = viewportDiagonal / static_cast<float>(M_PI * 2.0);  // Quarter of full coverage
+        float minRadius = viewportDiagonal / static_cast<float>(rift::Pi * 2.0);  // Quarter of full coverage
         float effectiveSphereRadius = std::max(baseRadius, minRadius);
 
         m_Renderer->SetFisheyePerspective(true, effectiveSphereRadius, horizonY, horizonScale, width, height);
@@ -1476,7 +1473,7 @@ bool Game::SwitchRenderer(RendererAPI api)
     glfwSetWindowRefreshCallback(m_Window, WindowRefreshCallback);
 
     // Create new renderer
-    m_Renderer.reset(CreateRenderer(m_RendererAPI, m_Window));
+    m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
     if (!m_Renderer)
     {
         std::cerr << "Failed to create renderer during switch" << std::endl;

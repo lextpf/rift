@@ -1,13 +1,11 @@
 #include "SkyRenderer.h"
 #include "TimeManager.h"
 
+#include "MathConstants.h"
+
 #include <cmath>
 #include <random>
 #include <algorithm>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 SkyRenderer::SkyRenderer()
     : m_Time(0.0f)
@@ -324,7 +322,7 @@ void SkyRenderer::GenerateLightRays()
 
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> posDist(0.0f, 1.0f);
-    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * M_PI));
+    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * rift::Pi));
 
     // Sun rays - spread across ~2/3 of screen with varying origins
     for (int i = 0; i < SUN_RAY_COUNT; i++)
@@ -377,7 +375,7 @@ void SkyRenderer::GenerateStars(int count)
     std::uniform_real_distribution<float> posDistX(0.0f, 1.0f);
     std::uniform_real_distribution<float> posDistY(0.0f, 1.0f);
     std::uniform_real_distribution<float> brightDist(0.1f, 1.0f);
-    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * M_PI));
+    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * rift::Pi));
     std::uniform_real_distribution<float> speedDist(1.0f, 4.0f);
     std::uniform_real_distribution<float> sizeDist(0.2f, 0.9f);
     std::uniform_real_distribution<float> colorDist(0.0f, 1.0f);
@@ -426,7 +424,7 @@ void SkyRenderer::GenerateBackgroundStars(int count)
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> posDistX(0.0f, 1.0f);
     std::uniform_real_distribution<float> posDistY(0.0f, 1.0f);
-    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * M_PI));
+    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * rift::Pi));
     std::uniform_real_distribution<float> speedDist(1.5f, 5.0f);
     std::uniform_real_distribution<float> sizeDist(0.08f, 0.25f);
     std::uniform_real_distribution<float> brightDist(0.04f, 0.2f);
@@ -652,7 +650,7 @@ void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, in
         // Calculate ray angle - fan pattern radiating from sun
         // ray.xPosition (0-1) maps to spread angle, ray.angle adds small variation
         float rayAngleDeg = (ray.xPosition - 0.5f) * SUN_RAY_SPREAD + ray.angle * 10.0f;
-        float rayAngleRad = rayAngleDeg * static_cast<float>(M_PI) / 180.0f;
+        float rayAngleRad = rayAngleDeg * static_cast<float>(rift::Pi) / 180.0f;
 
         // Apply origin offset - rays emanate from different points along the sun band
         float originOffsetPx = ray.originOffset * (screenWidth * SUN_BAND_WIDTH * 0.5f);
@@ -770,7 +768,7 @@ void SkyRenderer::RenderMoonRays(IRenderer &renderer, const TimeManager &time, i
         // Calculate ray angle - fan pattern radiating from moon
         float spreadAngle = 60.0f;
         float rayAngleDeg = (ray.xPosition - 0.5f) * spreadAngle + ray.angle * 8.0f;
-        float rayAngleRad = rayAngleDeg * static_cast<float>(M_PI) / 180.0f;
+        float rayAngleRad = rayAngleDeg * static_cast<float>(rift::Pi) / 180.0f;
 
         // Apply origin offset for moon rays (subtle, less than sun)
         float originOffsetPx = ray.originOffset * (screenWidth * 0.15f);
@@ -891,7 +889,7 @@ void SkyRenderer::RenderShootingStars(IRenderer &renderer, const TimeManager &ti
         if (alpha < 0.01f)
             continue;
 
-        float angle = std::atan2(star.velocity.y, star.velocity.x) * 180.0f / static_cast<float>(M_PI);
+        float angle = std::atan2(star.velocity.y, star.velocity.x) * 180.0f / static_cast<float>(rift::Pi);
         glm::vec2 size(star.length, 3.0f);
 
         renderer.DrawSpriteAlpha(
@@ -943,7 +941,7 @@ void SkyRenderer::GenerateDewSparkles()
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> posDistX(0.0f, 1.0f);
     std::uniform_real_distribution<float> posDistY(0.55f, 1.0f); // Lower screen band
-    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * M_PI));
+    std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * rift::Pi));
     std::uniform_real_distribution<float> brightDist(0.4f, 1.0f);
     std::uniform_real_distribution<float> speedDist(1.5f, 5.0f);
 

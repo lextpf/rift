@@ -283,6 +283,19 @@ if(SAVE_FILES)
 endif()
 
 # ============================================================================
+# clang-format
+# ============================================================================
+find_program(CLANG_FORMAT_EXE NAMES clang-format)
+if(CLANG_FORMAT_EXE)
+    file(GLOB_RECURSE ALL_SOURCE_FILES src/*.cpp src/*.h)
+    add_custom_target(clang-format
+        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_SOURCE_FILES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running clang-format on src/"
+    )
+endif()
+
+# ============================================================================
 # Testing Support
 # ============================================================================
 option(BUILD_TESTS "Build unit tests" OFF)

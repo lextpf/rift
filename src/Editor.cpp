@@ -136,7 +136,7 @@ void Editor::ResetTilePickerState()
     std::cout << "Tile picker zoom and offset reset to defaults" << std::endl;
 }
 
-void Editor::Update(float deltaTime, EditorContext ctx)
+void Editor::Update(float deltaTime, const EditorContext& ctx)
 {
     // Smooth tile picker camera movement
     if (m_EditorMode && m_ShowTilePicker)
@@ -169,7 +169,7 @@ void Editor::Update(float deltaTime, EditorContext ctx)
     }
 }
 
-void Editor::Render(EditorContext ctx)
+void Editor::Render(const EditorContext& ctx)
 {
     // Render editor tile picker UI
     if (m_EditorMode && m_ShowTilePicker)
@@ -218,12 +218,12 @@ void Editor::Render(EditorContext ctx)
     }
 }
 
-void Editor::RenderNoProjectionAnchors(EditorContext ctx)
+void Editor::RenderNoProjectionAnchors(const EditorContext& ctx)
 {
     RenderNoProjectionAnchorsImpl(ctx);
 }
 
-void Editor::RecalculateNPCPatrolRoutes(EditorContext ctx)
+void Editor::RecalculateNPCPatrolRoutes(const EditorContext& ctx)
 {
     for (size_t i = 0; i < ctx.npcs.size();)
     {

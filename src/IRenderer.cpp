@@ -24,19 +24,19 @@ void IRenderer::RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotati
 
 void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
 {
-    if (m_PerspectiveEnabled && !m_PerspectiveSuspended && m_PerspectiveScreenHeight > 0.0f)
+    if (m_Persp.enabled && !m_PerspectiveSuspended && m_Persp.viewHeight > 0.0f)
     {
         perspectiveTransform::Params p;
-        p.applyGlobe = (m_ProjectionMode == ProjectionMode::Globe ||
-                        m_ProjectionMode == ProjectionMode::Fisheye);
-        p.applyVanishing = (m_ProjectionMode == ProjectionMode::VanishingPoint ||
-                            m_ProjectionMode == ProjectionMode::Fisheye);
+        p.applyGlobe = (m_Persp.mode == ProjectionMode::Globe ||
+                        m_Persp.mode == ProjectionMode::Fisheye);
+        p.applyVanishing = (m_Persp.mode == ProjectionMode::VanishingPoint ||
+                            m_Persp.mode == ProjectionMode::Fisheye);
         p.centerX = static_cast<double>(m_Persp.viewWidth) * 0.5;
         p.centerY = static_cast<double>(m_Persp.viewHeight) * 0.5;
-        p.horizonY = static_cast<double>(m_HorizonY);
-        p.screenHeight = static_cast<double>(m_PerspectiveScreenHeight);
-        p.horizonScale = static_cast<double>(m_HorizonScale);
-        p.sphereRadius = static_cast<double>(m_SphereRadius);
+        p.horizonY = static_cast<double>(m_Persp.horizonY);
+        p.screenHeight = static_cast<double>(m_Persp.viewHeight);
+        p.horizonScale = static_cast<double>(m_Persp.horizonScale);
+        p.sphereRadius = static_cast<double>(m_Persp.sphereRadius);
         perspectiveTransform::TransformCorners(corners, p);
     }
 }
@@ -44,12 +44,6 @@ void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
 void IRenderer::SetVanishingPointPerspective(bool enabled, float horizonY, float horizonScale,
                                               float viewWidth, float viewHeight)
 {
-    m_PerspectiveEnabled = enabled;
-    m_HorizonY = horizonY;
-    m_HorizonScale = horizonScale;
-    m_PerspectiveScreenHeight = viewHeight;
-    m_ProjectionMode = ProjectionMode::VanishingPoint;
-
     m_Persp.enabled = enabled;
     m_Persp.mode = ProjectionMode::VanishingPoint;
     m_Persp.horizonY = horizonY;
@@ -61,13 +55,6 @@ void IRenderer::SetVanishingPointPerspective(bool enabled, float horizonY, float
 void IRenderer::SetGlobePerspective(bool enabled, float sphereRadius,
                                      float viewWidth, float viewHeight)
 {
-    m_PerspectiveEnabled = enabled;
-    m_SphereRadius = sphereRadius;
-    m_HorizonY = 0.0f;
-    m_HorizonScale = 1.0f;
-    m_PerspectiveScreenHeight = viewHeight;
-    m_ProjectionMode = ProjectionMode::Globe;
-
     m_Persp.enabled = enabled;
     m_Persp.mode = ProjectionMode::Globe;
     m_Persp.sphereRadius = sphereRadius;
@@ -81,13 +68,6 @@ void IRenderer::SetFisheyePerspective(bool enabled, float sphereRadius,
                                        float horizonY, float horizonScale,
                                        float viewWidth, float viewHeight)
 {
-    m_PerspectiveEnabled = enabled;
-    m_SphereRadius = sphereRadius;
-    m_HorizonY = horizonY;
-    m_HorizonScale = horizonScale;
-    m_PerspectiveScreenHeight = viewHeight;
-    m_ProjectionMode = ProjectionMode::Fisheye;
-
     m_Persp.enabled = enabled;
     m_Persp.mode = ProjectionMode::Fisheye;
     m_Persp.sphereRadius = sphereRadius;

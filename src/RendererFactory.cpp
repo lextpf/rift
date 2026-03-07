@@ -1,8 +1,9 @@
 #include "RendererFactory.h"
-#include <iostream>
-
 #include "OpenGLRenderer.h"
 #include "VulkanRenderer.h"
+
+#include <iostream>
+#include <memory>
 
 
 // Checks if a renderer API was compiled into this build.
@@ -24,7 +25,7 @@ bool IsRendererAvailable(RendererAPI api)
 // Creates a renderer instance for the requested API.
 // Falls back to OpenGL if the requested API is unavailable.
 // Returns nullptr if no renderer can be created.
-IRenderer *CreateRenderer(RendererAPI api, GLFWwindow *window)
+std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow *window)
 {
     std::cout << "CreateRenderer() called with API: " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
     std::cout.flush();
@@ -42,14 +43,14 @@ IRenderer *CreateRenderer(RendererAPI api, GLFWwindow *window)
         case RendererAPI::OpenGL:
             std::cout << "Creating OpenGL renderer..." << std::endl;
             std::cout.flush();
-            return new OpenGLRenderer();
+            return std::make_unique<OpenGLRenderer>();
 
         case RendererAPI::Vulkan:
             std::cout << "Creating Vulkan renderer..." << std::endl;
             std::cout.flush();
             try
             {
-                VulkanRenderer *renderer = new VulkanRenderer(window);
+                auto renderer = std::make_unique<VulkanRenderer>(window);
                 std::cout << "Vulkan renderer created successfully" << std::endl;
                 std::cout.flush();
                 return renderer;
@@ -69,6 +70,6 @@ IRenderer *CreateRenderer(RendererAPI api, GLFWwindow *window)
 
         default:
             std::cerr << "Unknown renderer API, defaulting to OpenGL" << std::endl;
-            return new OpenGLRenderer();
+            return std::make_unique<OpenGLRenderer>();
     }
 }

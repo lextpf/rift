@@ -320,38 +320,17 @@ public:
      */
     int GetChannels() const { return m_Channels; }
 
-    /// @}
+    /**
+     * @brief Get the OpenGL context generation this texture was created in.
+     * @return Context generation counter.
+     */
+    std::uint64_t GetOpenGLContextGeneration() const { return m_OpenGLContextGeneration; }
 
-    /// @name OpenGL Resources
-    /// @brief GPU handles for OpenGL backend.
-    /// @{
-
-    unsigned int m_OpenGLID{0};  ///< OpenGL texture name (0 = invalid)
-    void *m_OpenGLContextTag{nullptr};  ///< GLFW context that created m_OpenGLID
-    std::uint64_t m_OpenGLContextGeneration{0};  ///< Logical OpenGL context generation
-
-    /// @}
-
-    /// @name Vulkan Resources
-    /// @brief GPU handles for Vulkan backend.
-    /// @{
-
-    VkImage m_VulkanImage{VK_NULL_HANDLE};               ///< Vulkan image object
-    VkDeviceMemory m_VulkanImageMemory{VK_NULL_HANDLE};  ///< Device memory backing the image
-    VkImageView m_VulkanImageView{VK_NULL_HANDLE};       ///< Image view for shader sampling
-    VkSampler m_VulkanSampler{VK_NULL_HANDLE};           ///< Sampler with filtering settings
-    VkDevice m_VulkanDevice{VK_NULL_HANDLE};             ///< Cached device handle for cleanup
-
-    /// @}
-
-    /// @name Image Data
-    /// @brief CPU-side storage and metadata.
-    /// @{
-
-    int m_Width{0};                                ///< Image width in pixels
-    int m_Height{0};                               ///< Image height in pixels
-    int m_Channels{0};                             ///< Color channels (1=R, 3=RGB, 4=RGBA)
-    std::vector<unsigned char> m_ImageData;        ///< CPU pixel buffer (retained for recreation)
+    /**
+     * @brief Get read-only access to the CPU pixel buffer.
+     * @return Const reference to the pixel data vector.
+     */
+    const std::vector<unsigned char>& GetImageData() const { return m_ImageData; }
 
     /// @}
 
@@ -372,5 +351,29 @@ private:
 
     static std::uint64_t s_CurrentOpenGLContextGeneration;
 
+    /// @}
+
+    /// @name OpenGL Resources
+    /// @{
+    unsigned int m_OpenGLID{0};
+    void *m_OpenGLContextTag{nullptr};
+    std::uint64_t m_OpenGLContextGeneration{0};
+    /// @}
+
+    /// @name Vulkan Resources
+    /// @{
+    VkImage m_VulkanImage{VK_NULL_HANDLE};
+    VkDeviceMemory m_VulkanImageMemory{VK_NULL_HANDLE};
+    VkImageView m_VulkanImageView{VK_NULL_HANDLE};
+    VkSampler m_VulkanSampler{VK_NULL_HANDLE};
+    VkDevice m_VulkanDevice{VK_NULL_HANDLE};
+    /// @}
+
+    /// @name Image Data
+    /// @{
+    int m_Width{0};
+    int m_Height{0};
+    int m_Channels{0};
+    std::vector<unsigned char> m_ImageData;
     /// @}
 };

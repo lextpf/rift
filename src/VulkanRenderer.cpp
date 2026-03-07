@@ -1,9 +1,8 @@
 #include "VulkanRenderer.h"
+#include "VulkanCommon.h"
 #include "VulkanShader.h"
 #include "Texture.h"
 
-#include <iostream>
-#include <stdexcept>
 #include <set>
 #include <algorithm>
 #include <cstring>
@@ -44,17 +43,6 @@ static bool LoadVulkanLibrary()
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
 
-// Helper macros
-#define VK_CHECK(x)                                                                                          \
-    do                                                                                                       \
-    {                                                                                                        \
-        VkResult result = x;                                                                                 \
-        if (result != VK_SUCCESS)                                                                            \
-        {                                                                                                    \
-            std::cerr << "Vulkan error at " << __FILE__ << ":" << __LINE__ << " - " << result << std::endl;  \
-            throw std::runtime_error("Vulkan operation failed");                                             \
-        }                                                                                                    \
-    } while (0)
 
 namespace
 {

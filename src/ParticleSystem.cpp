@@ -1,14 +1,12 @@
 #include "ParticleSystem.h"
 #include "Tilemap.h"
 
+#include "MathConstants.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 ParticleSystem::ParticleSystem()
     : m_Zones(nullptr)                             // Particle zones from tilemap
@@ -68,18 +66,18 @@ void ParticleSystem::BuildAtlas()
         Texture temp;
         if (temp.LoadFromFile(filePaths[i]))
         {
-            sources[i].width = temp.m_Width;
-            sources[i].height = temp.m_Height;
-            size_t dataSize = temp.m_Width * temp.m_Height * temp.m_Channels;
+            sources[i].width = temp.GetWidth();
+            sources[i].height = temp.GetHeight();
+            size_t dataSize = temp.GetWidth() * temp.GetHeight() * temp.GetChannels();
             sources[i].pixels.resize(dataSize);
-            if (!temp.m_ImageData.empty())
+            if (!temp.GetImageData().empty())
             {
-                memcpy(sources[i].pixels.data(), temp.m_ImageData.data(), dataSize);
+                memcpy(sources[i].pixels.data(), temp.GetImageData().data(), dataSize);
                 // Convert to RGBA if needed
-                if (temp.m_Channels == 3)
+                if (temp.GetChannels() == 3)
                 {
-                    std::vector<unsigned char> rgba(temp.m_Width * temp.m_Height * 4);
-                    for (int j = 0; j < temp.m_Width * temp.m_Height; j++)
+                    std::vector<unsigned char> rgba(temp.GetWidth() * temp.GetHeight() * 4);
+                    for (int j = 0; j < temp.GetWidth() * temp.GetHeight(); j++)
                     {
                         rgba[j * 4 + 0] = sources[i].pixels[j * 3 + 0];
                         rgba[j * 4 + 1] = sources[i].pixels[j * 3 + 1];
@@ -234,7 +232,7 @@ void ParticleSystem::GenerateSunshinePixels(std::vector<unsigned char> &pixels, 
             float bottomFeather = std::min(1.0f, (1.0f - dy) / 0.30f);
             bottomFeather = std::pow(bottomFeather, 2.0f);
 
-            float verticalIntensity = 0.5f + 0.5f * std::sin(dy * M_PI);
+            float verticalIntensity = 0.5f + 0.5f * std::sin(dy * rift::PiF);
             float beamAlpha = horizontalFalloff * verticalIntensity * topFeather * bottomFeather;
 
             float groundGlowY = 1.0f - std::abs(dy - 0.78f) / 0.15f;

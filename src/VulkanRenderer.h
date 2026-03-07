@@ -90,7 +90,7 @@ struct GLFWwindow;
 class VulkanRenderer : public IRenderer
 {
 public:
-    VulkanRenderer(GLFWwindow *window);
+    explicit VulkanRenderer(GLFWwindow *window);
     ~VulkanRenderer() override;
 
     void Init() override;

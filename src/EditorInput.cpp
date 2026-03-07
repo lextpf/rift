@@ -201,7 +201,7 @@ void BuildMysteryDialogueTree(DialogueTree& tree, std::string& outNpcName, const
 
 } // anonymous namespace
 
-void Editor::ProcessInput(float deltaTime, EditorContext ctx)
+void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 {
     static bool tKeyPressed = false;
     if (glfwGetKey(ctx.window, GLFW_KEY_T) == GLFW_PRESS && !tKeyPressed && m_EditorMode)
@@ -1071,7 +1071,7 @@ void Editor::ProcessInput(float deltaTime, EditorContext ctx)
         key0Pressed = false;
 }
 
-void Editor::ProcessMouseInput(EditorContext ctx)
+void Editor::ProcessMouseInput(const EditorContext& ctx)
 {
     double mouseX, mouseY;
     glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
@@ -1860,7 +1860,7 @@ void Editor::ProcessMouseInput(EditorContext ctx)
     m_LastMouseY = mouseY;
 }
 
-void Editor::HandleScroll(double yoffset, EditorContext ctx)
+void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
 {
     // Check for Ctrl modifier
     int ctrlState = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) | glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL);
@@ -1988,7 +1988,7 @@ float Editor::GetCompensatedTileRotation() const
     return tileRotation;
 }
 
-void Editor::SetLayerFlagAtTile(EditorContext ctx, int tileX, int tileY,
+void Editor::SetLayerFlagAtTile(const EditorContext& ctx,int tileX, int tileY,
                                 void (Tilemap::*setter)(int, int, size_t, bool),
                                 const std::string& flagName)
 {

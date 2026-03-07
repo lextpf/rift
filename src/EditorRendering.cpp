@@ -82,7 +82,7 @@ StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap, int startX, int st
 
 } // anonymous namespace
 
-void Editor::RenderCollisionOverlays(EditorContext ctx)
+void Editor::RenderCollisionOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -135,7 +135,7 @@ void Editor::RenderCollisionOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderNavigationOverlays(EditorContext ctx)
+void Editor::RenderNavigationOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -157,7 +157,7 @@ void Editor::RenderNavigationOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderElevationOverlays(EditorContext ctx)
+void Editor::RenderElevationOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -195,7 +195,7 @@ void Editor::RenderElevationOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderNoProjectionOverlays(EditorContext ctx)
+void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -306,7 +306,7 @@ void Editor::RenderNoProjectionOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderNoProjectionAnchorsImpl(EditorContext ctx)
+void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 {
     if (!m_ShowNoProjectionAnchors)
         return;
@@ -459,7 +459,7 @@ void Editor::RenderNoProjectionAnchorsImpl(EditorContext ctx)
     }
 }
 
-void Editor::RenderStructureOverlays(EditorContext ctx)
+void Editor::RenderStructureOverlays(const EditorContext& ctx)
 {
     if (!m_StructureEditMode)
         return;
@@ -555,7 +555,7 @@ void Editor::RenderStructureOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderLayerFlagOverlays(EditorContext ctx, bool editMode,
+void Editor::RenderLayerFlagOverlays(const EditorContext& ctx,bool editMode,
                                       bool (Tilemap::*getter)(int, int, size_t) const,
                                       const glm::vec3& color)
 {
@@ -605,21 +605,21 @@ void Editor::RenderLayerFlagOverlays(EditorContext ctx, bool editMode,
     }
 }
 
-void Editor::RenderYSortPlusOverlays(EditorContext ctx)
+void Editor::RenderYSortPlusOverlays(const EditorContext& ctx)
 {
     RenderLayerFlagOverlays(ctx, m_YSortPlusEditMode,
                             &Tilemap::GetLayerYSortPlus,
                             glm::vec3(0.0f, 0.8f, 0.8f));
 }
 
-void Editor::RenderYSortMinusOverlays(EditorContext ctx)
+void Editor::RenderYSortMinusOverlays(const EditorContext& ctx)
 {
     RenderLayerFlagOverlays(ctx, m_YSortMinusEditMode,
                             &Tilemap::GetLayerYSortMinus,
                             glm::vec3(0.9f, 0.2f, 0.9f));
 }
 
-void Editor::RenderParticleZoneOverlays(EditorContext ctx)
+void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
     float worldWidth = vr.screenSize.x;
@@ -734,7 +734,7 @@ void Editor::RenderParticleZoneOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderNPCDebugInfo(EditorContext ctx)
+void Editor::RenderNPCDebugInfo(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -773,7 +773,7 @@ void Editor::RenderNPCDebugInfo(EditorContext ctx)
     }
 }
 
-void Editor::RenderCornerCuttingOverlays(EditorContext ctx)
+void Editor::RenderCornerCuttingOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -909,7 +909,7 @@ void Editor::RenderCornerCuttingOverlays(EditorContext ctx)
     }
 }
 
-void Editor::RenderLayerOverlay(EditorContext ctx, int layerIndex, const glm::vec4& color)
+void Editor::RenderLayerOverlay(const EditorContext& ctx,int layerIndex, const glm::vec4& color)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -924,7 +924,7 @@ void Editor::RenderLayerOverlay(EditorContext ctx, int layerIndex, const glm::ve
             }
 }
 
-void Editor::RenderEditorUI(EditorContext ctx)
+void Editor::RenderEditorUI(const EditorContext& ctx)
 {
     // Set tile picker projection and use base world dimensions without camera zoom
     float tilePickerWorldWidth = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
@@ -1097,7 +1097,7 @@ void Editor::RenderEditorUI(EditorContext ctx)
     }
 }
 
-void Editor::RenderPlacementPreview(EditorContext ctx)
+void Editor::RenderPlacementPreview(const EditorContext& ctx)
 {
     // Draw animation mode status when not in tile picker
     if (m_AnimationEditMode && !m_ShowTilePicker && m_SelectedAnimationId >= 0)

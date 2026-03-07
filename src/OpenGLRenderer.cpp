@@ -41,7 +41,7 @@ unsigned int OpenGLRenderer::EnsureTextureReady(const Texture &texture)
 {
     unsigned int texID = texture.GetID();
     const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
-    if (texture.m_OpenGLContextGeneration != currentGen || texID == 0)
+    if (texture.GetOpenGLContextGeneration() != currentGen || texID == 0)
     {
         const_cast<Texture &>(texture).RecreateOpenGLTexture();
         texID = texture.GetID();
@@ -388,7 +388,7 @@ void OpenGLRenderer::UploadTexture(const Texture &texture)
 {
     // Recreate only if the texture does not belong to the active GL context generation.
     const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
-    if (texture.GetID() == 0 || texture.m_OpenGLContextGeneration != currentGen)
+    if (texture.GetID() == 0 || texture.GetOpenGLContextGeneration() != currentGen)
     {
         const_cast<Texture &>(texture).RecreateOpenGLTexture();
     }

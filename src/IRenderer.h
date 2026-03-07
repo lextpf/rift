@@ -9,9 +9,7 @@
 #include <string>
 #include <cmath>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "MathConstants.h"
 
 /**
  * @class IRenderer
@@ -568,7 +566,7 @@ public:
 
         // Visible edge of sphere is at d = R * pi/2 (90 degrees from center)
         // Points beyond this are on the back of the sphere
-        constexpr double halfPi = M_PI * 0.5;
+        constexpr double halfPi = rift::Pi * 0.5;
         return d > R * halfPi;
     }
 
@@ -758,13 +756,7 @@ public:
 protected:
     /// @name Perspective State (shared by all renderers)
     /// @{
-    bool m_PerspectiveEnabled = false;
     bool m_PerspectiveSuspended = false;
-    float m_HorizonY = 0.0f;
-    float m_HorizonScale = 0.5f;
-    float m_PerspectiveScreenHeight = 0.0f;
-    float m_SphereRadius = 2000.0f;
-    ProjectionMode m_ProjectionMode = ProjectionMode::VanishingPoint;
     PerspectiveState m_Persp;
     /// @}
 

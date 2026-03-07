@@ -122,10 +122,10 @@ public:
     bool IsActive() const { return m_EditorMode; }
     void SetActive(bool active);
 
-    void ProcessInput(float deltaTime, EditorContext ctx);
-    void ProcessMouseInput(EditorContext ctx);
-    void HandleScroll(double yoffset, EditorContext ctx);
-    void Update(float deltaTime, EditorContext ctx);
+    void ProcessInput(float deltaTime, const EditorContext& ctx);
+    void ProcessMouseInput(const EditorContext& ctx);
+    void HandleScroll(double yoffset, const EditorContext& ctx);
+    void Update(float deltaTime, const EditorContext& ctx);
 
     /**
      * @brief Render editor overlays and tile picker.
@@ -133,7 +133,7 @@ public:
      * Handles perspective suspension internally for the tile picker.
      * Called from Game::Render() when editor or debug mode is active.
      */
-    void Render(EditorContext ctx);
+    void Render(const EditorContext& ctx);
 
     /**
      * @brief Render no-projection anchor markers on top of everything.
@@ -141,7 +141,7 @@ public:
      * Separate from Render() because anchors must appear above all UI.
      * Caller is responsible for suspending perspective before calling.
      */
-    void RenderNoProjectionAnchors(EditorContext ctx);
+    void RenderNoProjectionAnchors(const EditorContext& ctx);
 
     bool IsDebugMode() const { return m_DebugMode; }
     bool IsShowDebugInfo() const { return m_ShowDebugInfo; }
@@ -159,29 +159,29 @@ public:
     void ResetTilePickerState();
 
 private:
-    void RenderEditorUI(EditorContext ctx);
-    void RenderCollisionOverlays(EditorContext ctx);
-    void RenderNavigationOverlays(EditorContext ctx);
-    void RenderElevationOverlays(EditorContext ctx);
-    void RenderNoProjectionOverlays(EditorContext ctx);
-    void RenderNoProjectionAnchorsImpl(EditorContext ctx);
-    void RenderStructureOverlays(EditorContext ctx);
-    void RenderLayerFlagOverlays(EditorContext ctx, bool editMode,
+    void RenderEditorUI(const EditorContext& ctx);
+    void RenderCollisionOverlays(const EditorContext& ctx);
+    void RenderNavigationOverlays(const EditorContext& ctx);
+    void RenderElevationOverlays(const EditorContext& ctx);
+    void RenderNoProjectionOverlays(const EditorContext& ctx);
+    void RenderNoProjectionAnchorsImpl(const EditorContext& ctx);
+    void RenderStructureOverlays(const EditorContext& ctx);
+    void RenderLayerFlagOverlays(const EditorContext& ctx,bool editMode,
                                   bool (Tilemap::*getter)(int, int, size_t) const,
                                   const glm::vec3& color);
-    void RenderYSortPlusOverlays(EditorContext ctx);
-    void RenderYSortMinusOverlays(EditorContext ctx);
-    void RenderParticleZoneOverlays(EditorContext ctx);
-    void RenderNPCDebugInfo(EditorContext ctx);
-    void RenderCornerCuttingOverlays(EditorContext ctx);
-    void RenderLayerOverlay(EditorContext ctx, int layerIndex, const glm::vec4& color);
-    void RenderPlacementPreview(EditorContext ctx);
+    void RenderYSortPlusOverlays(const EditorContext& ctx);
+    void RenderYSortMinusOverlays(const EditorContext& ctx);
+    void RenderParticleZoneOverlays(const EditorContext& ctx);
+    void RenderNPCDebugInfo(const EditorContext& ctx);
+    void RenderCornerCuttingOverlays(const EditorContext& ctx);
+    void RenderLayerOverlay(const EditorContext& ctx,int layerIndex, const glm::vec4& color);
+    void RenderPlacementPreview(const EditorContext& ctx);
 
-    void RecalculateNPCPatrolRoutes(EditorContext ctx);
+    void RecalculateNPCPatrolRoutes(const EditorContext& ctx);
 
     void CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const;
     float GetCompensatedTileRotation() const;
-    void SetLayerFlagAtTile(EditorContext ctx, int tileX, int tileY,
+    void SetLayerFlagAtTile(const EditorContext& ctx,int tileX, int tileY,
                             void (Tilemap::*setter)(int, int, size_t, bool),
                             const std::string& flagName);
 
