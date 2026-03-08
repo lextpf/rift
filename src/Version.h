@@ -23,9 +23,6 @@
     #major "." #minor "." #patch "." #release
 
 /// Complete version string (e.g., "0.1.0.0").
-#define RIFT_VERSION \
+#define RIFT_VERSION        \
     RIFT_VERSION_STRINGIFY( \
-        RIFT_VERSION_MAJOR, \
-        RIFT_VERSION_MINOR, \
-        RIFT_VERSION_PATCH, \
-        RIFT_VERSION_RELEASE)
+        RIFT_VERSION_MAJOR, RIFT_VERSION_MINOR, RIFT_VERSION_PATCH, RIFT_VERSION_RELEASE)

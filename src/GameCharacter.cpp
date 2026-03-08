@@ -1,16 +1,16 @@
 #include "GameCharacter.h"
 
 GameCharacter::GameCharacter()
-    : m_Position(0.0f, 0.0f)
-    , m_ElevationOffset(0.0f)
-    , m_TargetElevation(0.0f)
-    , m_ElevationStart(0.0f)
-    , m_ElevationProgress(1.0f)
-    , m_Direction(CharacterDirection::DOWN)
-    , m_CurrentFrame(0)
-    , m_AnimationTime(0.0f)
-    , m_WalkSequenceIndex(0)
-    , m_Speed(100.0f)
+    : m_Position(0.0f, 0.0f),
+      m_ElevationOffset(0.0f),
+      m_TargetElevation(0.0f),
+      m_ElevationStart(0.0f),
+      m_ElevationProgress(1.0f),
+      m_Direction(CharacterDirection::DOWN),
+      m_CurrentFrame(0),
+      m_AnimationTime(0.0f),
+      m_WalkSequenceIndex(0),
+      m_Speed(100.0f)
 {
 }
 

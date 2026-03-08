@@ -1,8 +1,8 @@
 #pragma once
 
-#include <glm/glm.hpp>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <glm/glm.hpp>
 
 /**
  * @namespace perspectiveTransform
@@ -54,14 +54,14 @@ namespace perspectiveTransform
  */
 struct Params
 {
-    bool applyGlobe;        ///< Apply spherical globe curvature.
-    bool applyVanishing;    ///< Apply vanishing-point depth scaling.
-    double centerX;         ///< Screen center X (viewWidth / 2).
-    double centerY;         ///< Screen center Y (viewHeight / 2).
-    double horizonY;        ///< Y position of the horizon line.
-    double screenHeight;    ///< Viewport height in pixels.
-    double horizonScale;    ///< Scale factor at the horizon (0-1).
-    double sphereRadius;    ///< Radius of the virtual sphere in pixels.
+    bool applyGlobe;      ///< Apply spherical globe curvature.
+    bool applyVanishing;  ///< Apply vanishing-point depth scaling.
+    double centerX;       ///< Screen center X (viewWidth / 2).
+    double centerY;       ///< Screen center Y (viewHeight / 2).
+    double horizonY;      ///< Y position of the horizon line.
+    double screenHeight;  ///< Viewport height in pixels.
+    double horizonScale;  ///< Scale factor at the horizon (0-1).
+    double sphereRadius;  ///< Radius of the virtual sphere in pixels.
 };
 
 /**
@@ -97,7 +97,8 @@ inline void TransformPoint(double& x, double& y, const Params& p)
     if (p.applyVanishing)
     {
         double denom = p.screenHeight - p.horizonY;
-        if (denom < 1e-5) return;
+        if (denom < 1e-5)
+            return;
 
         double depthNorm = std::max(0.0, std::min(1.0, (y - p.horizonY) / denom));
         double scaleFactor = p.horizonScale + (1.0 - p.horizonScale) * depthNorm;
@@ -140,4 +141,4 @@ inline void TransformCorners(glm::vec2 corners[4], const Params& p)
     }
 }
 
-} // namespace perspectiveTransform
+}  // namespace perspectiveTransform

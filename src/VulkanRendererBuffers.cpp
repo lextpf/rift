@@ -1,5 +1,5 @@
-#include "VulkanRenderer.h"
 #include "VulkanCommon.h"
+#include "VulkanRenderer.h"
 
 #include <cstring>
 
@@ -10,7 +10,8 @@ uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        if ((typeFilter & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
         {
             return i;
         }
@@ -19,7 +20,11 @@ uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
     throw std::runtime_error("Failed to find suitable memory type!");
 }
 
-void VulkanRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
+void VulkanRenderer::CreateBuffer(VkDeviceSize size,
+                                  VkBufferUsageFlags usage,
+                                  VkMemoryPropertyFlags properties,
+                                  VkBuffer& buffer,
+                                  VkDeviceMemory& bufferMemory)
 {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -77,19 +82,26 @@ void VulkanRenderer::CreateBuffers()
 {
     // Create per-frame vertex buffers to avoid race conditions between frames in flight
     // Vertex = 4 floats (pos.xy, tex.xy), 6 vertices per sprite
-    const uint32_t maxSprites = 10000; // generous limit so we never drop draw calls
+    const uint32_t maxSprites = 10000;  // generous limit so we never drop draw calls
     m_VertexBufferSize = sizeof(float) * 4 * 6 * maxSprites;
 
     // Create one vertex buffer per frame in flight
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         // Create directly in HOST_VISIBLE | HOST_COHERENT memory
-        CreateBuffer(m_VertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        CreateBuffer(m_VertexBufferSize,
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     m_VertexBuffers[i], m_VertexBufferMemories[i]);
+                     m_VertexBuffers[i],
+                     m_VertexBufferMemories[i]);
 
         // Map vertex buffer persistently
-        VK_CHECK(vkMapMemory(m_Device, m_VertexBufferMemories[i], 0, m_VertexBufferSize, 0, &m_VertexBuffersMapped[i]));
+        VK_CHECK(vkMapMemory(m_Device,
+                             m_VertexBufferMemories[i],
+                             0,
+                             m_VertexBufferSize,
+                             0,
+                             &m_VertexBuffersMapped[i]));
     }
 
     // Create index buffer (static, shared between frames)
@@ -98,17 +110,22 @@ void VulkanRenderer::CreateBuffers()
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    CreateBuffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    CreateBuffer(indexBufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
+                 stagingBuffer,
+                 stagingBufferMemory);
 
-    void *data;
+    void* data;
     vkMapMemory(m_Device, stagingBufferMemory, 0, indexBufferSize, 0, &data);
     memcpy(data, indices, (size_t)indexBufferSize);
     vkUnmapMemory(m_Device, stagingBufferMemory);
 
-    CreateBuffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_IndexBuffer, m_IndexBufferMemory);
+    CreateBuffer(indexBufferSize,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 m_IndexBuffer,
+                 m_IndexBufferMemory);
 
     CopyBuffer(stagingBuffer, m_IndexBuffer, indexBufferSize);
 
@@ -127,8 +144,9 @@ void VulkanRenderer::CreateDescriptorPool()
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1000;                                            // Allow up to 1000 descriptor sets
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; // Allow freeing individual sets
+    poolInfo.maxSets = 1000;  // Allow up to 1000 descriptor sets
+    poolInfo.flags =
+        VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;  // Allow freeing individual sets
 
     VK_CHECK(vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &m_DescriptorPool));
 }
@@ -161,7 +179,8 @@ void VulkanRenderer::CreateWhiteTexture()
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocInfo.memoryTypeIndex =
+        FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     VK_CHECK(vkAllocateMemory(m_Device, &allocInfo, nullptr, &m_WhiteTextureImageMemory));
     VK_CHECK(vkBindImageMemory(m_Device, m_WhiteTextureImage, m_WhiteTextureImageMemory, 0));
@@ -199,14 +218,16 @@ void VulkanRenderer::CreateWhiteTexture()
     VK_CHECK(vkCreateSampler(m_Device, &samplerInfo, nullptr, &m_WhiteTextureSampler));
 
     // Upload texture data using staging buffer
-    VkDeviceSize imageSize = 4; // 1x1 RGBA = 4 bytes
+    VkDeviceSize imageSize = 4;  // 1x1 RGBA = 4 bytes
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    CreateBuffer(imageSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
+                 stagingBuffer,
+                 stagingBufferMemory);
 
-    void *data;
+    void* data;
     VK_CHECK(vkMapMemory(m_Device, stagingBufferMemory, 0, imageSize, 0, &data));
     memcpy(data, whitePixel, imageSize);
     vkUnmapMemory(m_Device, stagingBufferMemory);

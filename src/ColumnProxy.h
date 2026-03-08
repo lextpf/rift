@@ -15,10 +15,10 @@
  * @tparam C Container type to check
  * @tparam T Element type
  */
-template<typename C, typename T>
+template <typename C, typename T>
 concept RandomAccessContainerOf = requires(C& c, const C& cc, std::size_t i, T val) {
-    { c[i] = val };                                     // Assignable from T
-    { static_cast<T>(cc[i]) };                          // Convertible to T
+    { c[i] = val };             // Assignable from T
+    { static_cast<T>(cc[i]) };  // Convertible to T
     { cc.size() } -> std::convertible_to<std::size_t>;
 };
 
@@ -35,12 +35,14 @@ concept RandomAccessContainerOf = requires(C& c, const C& cc, std::size_t i, T v
  * @tparam T Element type
  * @tparam DefaultValue Value returned for out-of-bounds reads
  */
-template<typename C, typename T, T DefaultValue>
+template <typename C, typename T, T DefaultValue>
 class RefProxy
 {
 public:
     constexpr RefProxy(C* data, std::size_t index, bool valid) noexcept
-        : m_Data(data), m_Index(index), m_Valid(valid) {}
+        : m_Data(data), m_Index(index), m_Valid(valid)
+    {
+    }
 
     constexpr RefProxy& operator=(const T& value) noexcept
     {
@@ -62,15 +64,18 @@ private:
 
 /**
  * @class ConstColumnProxy
- * @brief Read-only proxy for `map[x][y]` syntax on const containers.
+ * @brief Read-only proxy for `map[x][y]` syntax on const
+ * containers.
  *
  * Provides bounds-checked reads only. Out-of-bounds reads return DefaultValue.
- *
+
+ * *
  * @tparam C Container type satisfying RandomAccessContainerOf<T>
  * @tparam T Element type
+ *
  * @tparam DefaultValue Value returned for out-of-bounds reads
  */
-template<typename C, typename T, T DefaultValue = T{}>
+template <typename C, typename T, T DefaultValue = T{}>
     requires RandomAccessContainerOf<C, T>
 class ConstColumnProxy
 {
@@ -79,7 +84,9 @@ public:
     using value_type = T;
 
     constexpr ConstColumnProxy(const C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(data), m_Width(width), m_Height(height), m_X(x) {}
+        : m_Data(data), m_Width(width), m_Height(height), m_X(x)
+    {
+    }
 
     [[nodiscard]] constexpr T operator[](int y) const noexcept
     {
@@ -112,8 +119,10 @@ private:
  * @code{.cpp}
  * std::vector<bool> flags(64 * 64, false);
  * int w = 64, h = 64;
+ *
  * ColumnProxy<std::vector<bool>, bool, false> boolCol(&flags, &w, &h, 10);
- * boolCol[20] = true;  // Write
+ * boolCol[20] = true;
+ * // Write
  * if (boolCol[20]) {}  // Read
  * @endcode
  *
@@ -129,7 +138,7 @@ private:
  *
  * @see CollisionMap, NavigationMap, Tilemap
  */
-template<typename C, typename T, T DefaultValue = T{}>
+template <typename C, typename T, T DefaultValue = T{}>
     requires RandomAccessContainerOf<C, T>
 class ColumnProxy
 {
@@ -145,7 +154,9 @@ public:
      * @param x      Column index for this proxy.
      */
     constexpr ColumnProxy(C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(data), m_Width(width), m_Height(height), m_X(x) {}
+        : m_Data(data), m_Width(width), m_Height(height), m_X(x)
+    {
+    }
 
     /**
      * @brief Access element at row y (mutable).

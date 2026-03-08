@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Texture.h"
 #include "PerspectiveTransform.h"
+#include "Texture.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <string>
 #include <cmath>
+#include <string>
 
 #include "MathConstants.h"
 
@@ -140,15 +140,15 @@ public:
 
     /**
      * @brief Initialize the renderer.
-     * 
+     *
      * Creates GPU resources, compiles shaders, and sets up rendering state.
      * Must be called after window creation but before any rendering.
-     * 
+     *
      * @par OpenGL Initialization
      * - Compile sprite shader program
      * - Create VAO/VBO for quad rendering
      * - Enable blending for transparency
-     * 
+     *
      * @par Vulkan Initialization
      * - Create instance, device, swapchain
      * - Create render pass, pipeline
@@ -159,7 +159,7 @@ public:
 
     /**
      * @brief Shutdown and release all GPU resources.
-     * 
+     *
      * Destroys all graphics resources created during Init().
      * Must be called before window destruction.
      */
@@ -167,9 +167,9 @@ public:
 
     /**
      * @brief Begin a new rendering frame.
-     * 
+     *
      * Prepares the GPU for drawing. Must be called before any draw calls.
-     * 
+     *
      * @par OpenGL
      * - Reset batch state (vertices, textures, draw call count)
      * - Buffer clearing is handled separately via Clear()
@@ -183,13 +183,13 @@ public:
 
     /**
      * @brief End the current frame and present to screen.
-     * 
+     *
      * Finalizes rendering and displays the result.
-     * 
+     *
      * @par OpenGL
      * - Flush rendering commands
      * - Swap buffers handled by GLFW
-     * 
+     *
      * @par Vulkan
      * - End render pass
      * - Submit command buffer
@@ -199,25 +199,28 @@ public:
 
     /**
      * @brief Draw a sprite using the backend's default texture region.
-     * 
+     *
      * Position is the **top-left corner** of the sprite.
      * Current backend implementations call DrawSpriteRegion with
      * `texCoord=(0,0)` and `texSize=(1,1)` in pixel units.
      * Use DrawSpriteRegion/DrawSpriteAtlas for explicit region control.
-     * 
+     *
      * @par Transformation Order
      * 1. Scale to size
      * 2. Rotate around center
      * 3. Translate to position
-     * 
+     *
      * @param texture  Texture to draw.
      * @param position World position (top-left corner).
      * @param size     Sprite dimensions in pixels (default: 32x32).
      * @param rotation Rotation in degrees, clockwise (default: 0).
      * @param color    Color tint/modulation (default: white = no tint).
      */
-    virtual void DrawSprite(const Texture &texture, glm::vec2 position, glm::vec2 size = glm::vec2(32.0f, 32.0f),
-                            float rotation = 0.0f, glm::vec3 color = glm::vec3(1.0f)) = 0;
+    virtual void DrawSprite(const Texture& texture,
+                            glm::vec2 position,
+                            glm::vec2 size = glm::vec2(32.0f, 32.0f),
+                            float rotation = 0.0f,
+                            glm::vec3 color = glm::vec3(1.0f)) = 0;
 
     /**
      * @brief Draw a sprite with alpha tinting and optional additive blending.
@@ -233,15 +236,19 @@ public:
      * @param additive Use additive blending for glow effects (default: false).
      *                 Backend support varies; Vulkan currently ignores this flag.
      */
-    virtual void DrawSpriteAlpha(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                                 float rotation, glm::vec4 color, bool additive = false) = 0;
+    virtual void DrawSpriteAlpha(const Texture& texture,
+                                 glm::vec2 position,
+                                 glm::vec2 size,
+                                 float rotation,
+                                 glm::vec4 color,
+                                 bool additive = false) = 0;
 
     /**
      * @brief Draw a region of a texture (sprite sheet).
-     * 
+     *
      * Renders a rectangular portion of the texture, useful for sprite
      * sheets and tile atlases. The region is specified in **pixel coordinates**.
-     * 
+     *
      * @param texture  Texture containing the sprite sheet.
      * @param position World position (top-left corner).
      * @param size     Output size in pixels.
@@ -251,9 +258,14 @@ public:
      * @param color    Color tint (default: white).
      * @param flipY    Flip vertical UV coordinates (default: true for OpenGL).
      */
-    virtual void DrawSpriteRegion(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                                  glm::vec2 texCoord, glm::vec2 texSize, float rotation = 0.0f,
-                                  glm::vec3 color = glm::vec3(1.0f), bool flipY = true) = 0;
+    virtual void DrawSpriteRegion(const Texture& texture,
+                                  glm::vec2 position,
+                                  glm::vec2 size,
+                                  glm::vec2 texCoord,
+                                  glm::vec2 texSize,
+                                  float rotation = 0.0f,
+                                  glm::vec3 color = glm::vec3(1.0f),
+                                  bool flipY = true) = 0;
 
     /**
      * @brief Draw a sprite from a texture atlas with per-vertex alpha.
@@ -271,9 +283,14 @@ public:
      * @param additive Use additive blending for glow effects.
      *                 Backend support varies; Vulkan currently ignores this flag.
      */
-    virtual void DrawSpriteAtlas(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                                 glm::vec2 uvMin, glm::vec2 uvMax, float rotation,
-                                 glm::vec4 color, bool additive = false) = 0;
+    virtual void DrawSpriteAtlas(const Texture& texture,
+                                 glm::vec2 position,
+                                 glm::vec2 size,
+                                 glm::vec2 uvMin,
+                                 glm::vec2 uvMax,
+                                 float rotation,
+                                 glm::vec4 color,
+                                 bool additive = false) = 0;
 
     /**
      * @brief Draw a solid colored rectangle.
@@ -311,7 +328,10 @@ public:
      * @param additive Use additive blending for glow effects (default: false).
      *                 Backend support varies; Vulkan currently ignores this flag.
      */
-    virtual void DrawColoredRect(glm::vec2 position, glm::vec2 size, glm::vec4 color, bool additive = false) = 0;
+    virtual void DrawColoredRect(glm::vec2 position,
+                                 glm::vec2 size,
+                                 glm::vec4 color,
+                                 bool additive = false) = 0;
 
     /**
      * @brief Draw a texture region onto an arbitrary quad defined by 4 corner positions.
@@ -334,25 +354,28 @@ public:
      * @param color    Color tint (default: white = no tint).
      * @param flipY    Flip vertical UV coordinates (default: true for OpenGL).
      */
-    virtual void DrawWarpedQuad(const Texture& texture, const glm::vec2 corners[4],
-                                glm::vec2 texCoord, glm::vec2 texSize,
-                                glm::vec3 color = glm::vec3(1.0f), bool flipY = true) = 0;
+    virtual void DrawWarpedQuad(const Texture& texture,
+                                const glm::vec2 corners[4],
+                                glm::vec2 texCoord,
+                                glm::vec2 texSize,
+                                glm::vec3 color = glm::vec3(1.0f),
+                                bool flipY = true) = 0;
 
     /**
      * @brief Set the projection matrix.
-     * 
+     *
      * Updates the GPU uniform for coordinate transformation.
      * Typically called once per frame with an orthographic matrix.
-     * 
+     *
      * @param projection 4x4 projection matrix.
      */
     virtual void SetProjection(glm::mat4 projection) = 0;
 
     enum class ProjectionMode
     {
-        VanishingPoint,   // Perspective scaling toward horizon only
-        Globe,            // Spherical curvature only
-        Fisheye           // Globe curvature & vanishing point combined
+        VanishingPoint,  // Perspective scaling toward horizon only
+        Globe,           // Spherical curvature only
+        Fisheye          // Globe curvature & vanishing point combined
     };
 
     struct PerspectiveState
@@ -422,14 +445,16 @@ public:
     glm::vec2 ProjectPoint(const glm::vec2& p) const
     {
         PerspectiveState s = GetPerspectiveState();
-        if (!s.enabled) return p;
+        if (!s.enabled)
+            return p;
 
         double resultX = static_cast<double>(p.x);
         double resultY = static_cast<double>(p.y);
 
         perspectiveTransform::Params params;
         params.applyGlobe = (s.mode == ProjectionMode::Globe || s.mode == ProjectionMode::Fisheye);
-        params.applyVanishing = (s.mode == ProjectionMode::VanishingPoint || s.mode == ProjectionMode::Fisheye);
+        params.applyVanishing =
+            (s.mode == ProjectionMode::VanishingPoint || s.mode == ProjectionMode::Fisheye);
         params.centerX = static_cast<double>(s.viewWidth) * 0.5;
         params.centerY = static_cast<double>(s.viewHeight) * 0.5;
         params.horizonY = static_cast<double>(s.horizonY);
@@ -461,8 +486,11 @@ public:
      * @param heightWorld Building height in world/screen units (pixels at base).
      * @return Projected screen-space position for this vertex.
      */
-    glm::vec2 ComputeBuildingVertex(const glm::vec2& baseLeft, const glm::vec2& baseRight,
-                                    float u, float v, float heightWorld) const
+    glm::vec2 ComputeBuildingVertex(const glm::vec2& baseLeft,
+                                    const glm::vec2& baseRight,
+                                    float u,
+                                    float v,
+                                    float heightWorld) const
     {
         PerspectiveState s = GetPerspectiveState();
 
@@ -489,7 +517,8 @@ public:
         // Compute height scale factor based on vanishing point perspective
         // This makes buildings near horizon appear shorter (proper perspective)
         float heightScale = 1.0f;
-        bool hasVanishing = (s.mode == ProjectionMode::VanishingPoint || s.mode == ProjectionMode::Fisheye);
+        bool hasVanishing =
+            (s.mode == ProjectionMode::VanishingPoint || s.mode == ProjectionMode::Fisheye);
 
         if (hasVanishing)
         {
@@ -551,10 +580,12 @@ public:
     bool IsPointBehindSphere(const glm::vec2& p) const
     {
         PerspectiveState s = GetPerspectiveState();
-        if (!s.enabled) return false;
+        if (!s.enabled)
+            return false;
 
         bool hasGlobe = (s.mode == ProjectionMode::Globe || s.mode == ProjectionMode::Fisheye);
-        if (!hasGlobe) return false;
+        if (!hasGlobe)
+            return false;
 
         double centerX = static_cast<double>(s.viewWidth) * 0.5;
         double centerY = static_cast<double>(s.viewHeight) * 0.5;
@@ -572,10 +603,10 @@ public:
 
     /**
      * @brief Set the rendering viewport.
-     * 
+     *
      * Defines the rectangular region of the window to render into.
      * Typically matches the window size.
-     * 
+     *
      * @param x Viewport left edge.
      * @param y Viewport bottom edge.
      * @param width Viewport width in pixels.
@@ -601,8 +632,8 @@ public:
      * @see SetFisheyePerspective() For combined curvature + depth scaling.
      * @see ProjectPoint() For the projection math details.
      */
-    virtual void SetVanishingPointPerspective(bool enabled, float horizonY, float horizonScale,
-                                              float viewWidth, float viewHeight);
+    virtual void SetVanishingPointPerspective(
+        bool enabled, float horizonY, float horizonScale, float viewWidth, float viewHeight);
 
     /**
      * @brief Configure globe curvature only.
@@ -620,8 +651,10 @@ public:
      * @see SetFisheyePerspective() For combined curvature + depth scaling.
      * @see ProjectPoint() For the projection math details.
      */
-    virtual void SetGlobePerspective(bool enabled, float sphereRadius,
-                                     float viewWidth, float viewHeight);
+    virtual void SetGlobePerspective(bool enabled,
+                                     float sphereRadius,
+                                     float viewWidth,
+                                     float viewHeight);
 
     /**
      * @brief Configure globe curvature with vanishing point.
@@ -633,29 +666,32 @@ public:
      * @see SetGlobePerspective() For curvature only (no depth scaling).
      * @see ProjectPoint() For the projection math details.
      */
-    virtual void SetFisheyePerspective(bool enabled, float sphereRadius,
-                                       float horizonY, float horizonScale,
-                                       float viewWidth, float viewHeight);
+    virtual void SetFisheyePerspective(bool enabled,
+                                       float sphereRadius,
+                                       float horizonY,
+                                       float horizonScale,
+                                       float viewWidth,
+                                       float viewHeight);
 
     /**
      * @brief Temporarily suspend perspective effect for next draw calls.
-     * 
+     *
      * Call this before drawing elements that should not be affected by
      * perspective (e.g., player, NPCs). Call with false to resume perspective.
-     * 
+     *
      * @param suspend True to suspend perspective, false to resume.
      */
     virtual void SuspendPerspective(bool suspend);
 
     /**
      * @brief Clear the screen to a solid color.
-     * 
+     *
      * Fills the entire viewport with the specified color.
      * Should be called at the start of each frame.
      *
      * OpenGL uses the provided RGBA values directly. Vulkan currently performs
      * clearing during BeginFrame() with a fixed clear value and ignores these parameters.
-     * 
+     *
      * @param r Red component (0-1).
      * @param g Green component (0-1).
      * @param b Blue component (0-1).
@@ -665,17 +701,17 @@ public:
 
     /**
      * @brief Ensure a texture is uploaded to GPU memory.
-     * 
+     *
      * If the texture hasn't been uploaded yet, this creates the GPU
      * resource. Safe to call multiple times.
-     * 
+     *
      * @par Lazy Loading
      * Textures are typically loaded from disk on first use.
      * This method forces immediate upload if needed.
-     * 
+     *
      * @param texture Texture to upload.
      */
-    virtual void UploadTexture(const Texture &texture) = 0;
+    virtual void UploadTexture(const Texture& texture) = 0;
 
     /**
      * @brief Draw text at the specified position.
@@ -694,8 +730,11 @@ public:
      * @param outlineSize Outline/shadow thickness multiplier (default: 1.0).
      * @param alpha Text transparency 0.0-1.0 (default: 0.85).
      */
-    virtual void DrawText(const std::string &text, glm::vec2 position, float scale = 1.0f,
-                          glm::vec3 color = glm::vec3(1.0f), float outlineSize = 1.0f,
+    virtual void DrawText(const std::string& text,
+                          glm::vec2 position,
+                          float scale = 1.0f,
+                          glm::vec3 color = glm::vec3(1.0f),
+                          float outlineSize = 1.0f,
                           float alpha = 0.85f) = 0;
 
     /**

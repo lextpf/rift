@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Texture.h"
-#include "GameCharacter.h"
-#include "IRenderer.h"
 #include <glm/glm.hpp>
-#include <vector>
 #include <map>
 #include <string>
+#include <vector>
+#include "GameCharacter.h"
+#include "IRenderer.h"
+#include "Texture.h"
 
 /**
  * @enum AnimationType
@@ -95,12 +95,13 @@ public:
     /**
      * @brief Load the walking/idle sprite sheet.
      *
-     * The sprite sheet should be a 4-row x 3-column grid of 32x32 sprites:
+     * The sprite sheet should be a
+     * 4-row x 3-column grid of 32x32 sprites:
      * @code
      * +----+----+----+
-     * | D0 | D1 | D2 |  Row 0: Down
-     * +----+----+----+
-     * | U0 | U1 | U2 |  Row 1: Up
+     * | D0 | D1
+     * | D2 |  Row 0: Down
+     * +----+----+----+ | U0 | U1 | U2 |  Row 1: Up
      * +----+----+----+
      * | L0 | L1 | L2 |  Row 2: Left
      * +----+----+----+
@@ -111,7 +112,7 @@ public:
      * @param path Path to the sprite sheet PNG file.
      * @return true if loaded successfully, false on error.
      */
-    bool LoadSpriteSheet(const std::string &path);
+    bool LoadSpriteSheet(const std::string& path);
 
     /**
      * @brief Load the running sprite sheet.
@@ -122,7 +123,7 @@ public:
      * @param path Path to the running sprite sheet PNG file.
      * @return true if loaded successfully, false on error.
      */
-    bool LoadRunningSpriteSheet(const std::string &path);
+    bool LoadRunningSpriteSheet(const std::string& path);
 
     /**
      * @brief Load the bicycle sprite sheet.
@@ -133,7 +134,7 @@ public:
      * @param path Path to the bicycle sprite sheet PNG file.
      * @return true if loaded successfully, false on error.
      */
-    bool LoadBicycleSpriteSheet(const std::string &path);
+    bool LoadBicycleSpriteSheet(const std::string& path);
 
     /**
      * @brief Upload all sprite textures to the renderer.
@@ -143,7 +144,7 @@ public:
      *
      * @param renderer Reference to the active renderer.
      */
-    void UploadTextures(IRenderer &renderer);
+    void UploadTextures(IRenderer& renderer);
 
     /**
      * @brief Update player animation state.
@@ -161,7 +162,7 @@ public:
      * @param renderer Reference to the active renderer.
      * @param cameraPos Current camera position in world space.
      */
-    void Render(IRenderer &renderer, glm::vec2 cameraPos);
+    void Render(IRenderer& renderer, glm::vec2 cameraPos);
 
     /**
      * @brief Render only the bottom half of the player sprite (feet area).
@@ -169,7 +170,7 @@ public:
      * @param renderer Reference to the active renderer.
      * @param cameraPos Current camera position in world space.
      */
-    void RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos);
+    void RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos);
 
     /**
      * @brief Render only the top half of the player sprite (head/torso area).
@@ -177,7 +178,7 @@ public:
      * @param renderer Reference to the active renderer.
      * @param cameraPos Current camera position in world space.
      */
-    void RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos);
+    void RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos);
 
     /**
      * @brief Process movement input and update position.
@@ -187,7 +188,10 @@ public:
      * @param tilemap Optional tilemap for collision detection.
      * @param npcPositions Optional list of NPC feet positions for collision.
      */
-    void Move(glm::vec2 direction, float deltaTime, const class Tilemap *tilemap = nullptr, const std::vector<glm::vec2> *npcPositions = nullptr);
+    void Move(glm::vec2 direction,
+              float deltaTime,
+              const class Tilemap* tilemap = nullptr,
+              const std::vector<glm::vec2>* npcPositions = nullptr);
 
     /**
      * @brief Immediately stop movement and reset to idle animation.
@@ -236,7 +240,7 @@ public:
      * @param spritePath Path to the NPC sprite sheet.
      * @return true if sprite loaded successfully.
      */
-    bool CopyAppearanceFrom(const std::string &spritePath);
+    bool CopyAppearanceFrom(const std::string& spritePath);
 
     /**
      * @brief Restore original character appearance.
@@ -261,21 +265,20 @@ public:
     {
         int tileX = static_cast<int>(std::floor(pos.x / 16.0f));
         int tileY = static_cast<int>(std::floor(pos.y / 16.0f));
-        m_Position.x = tileX * 16.0f + 8.0f;  // horizontal center of tile
-        m_Position.y = tileY * 16.0f + 16.0f; // bottom of tile (feet position)
+        m_Position.x = tileX * 16.0f + 8.0f;   // horizontal center of tile
+        m_Position.y = tileY * 16.0f + 16.0f;  // bottom of tile (feet position)
     }
 
     /**
      * @brief Set player position directly in world space (no tile snapping).
      *
+     *
      * Used for short interpolation phases such as dialogue alignment.
      *
-     * @param pos Exact world-space feet position.
+     * @param pos
+     * Exact world-space feet position.
      */
-    inline void SetPositionRaw(glm::vec2 pos)
-    {
-        m_Position = pos;
-    }
+    inline void SetPositionRaw(glm::vec2 pos) { m_Position = pos; }
 
     /**
      * @brief Set player position directly by tile coordinates.
@@ -285,8 +288,8 @@ public:
      */
     inline void SetTilePosition(int tileX, int tileY)
     {
-        m_Position.x = tileX * 16.0f + 8.0f;  // horizontal center of tile
-        m_Position.y = tileY * 16.0f + 16.0f; // bottom of tile (feet position)
+        m_Position.x = tileX * 16.0f + 8.0f;   // horizontal center of tile
+        m_Position.y = tileY * 16.0f + 16.0f;  // bottom of tile (feet position)
     }
 
     /**
@@ -302,7 +305,9 @@ public:
      * @param spriteType One of: "Walking", "Running", or "Bicycle".
      * @param path Full path to the asset file.
      */
-    static void SetCharacterAsset(CharacterType characterType, const std::string &spriteType, const std::string &path);
+    static void SetCharacterAsset(CharacterType characterType,
+                                  const std::string& spriteType,
+                                  const std::string& path);
 
     /**
      * @name Render Constants
@@ -319,8 +324,10 @@ public:
     inline static const float HITBOX_WIDTH = 16.0f;   ///< Collision box width (1 tile)
     inline static const float HITBOX_HEIGHT = 16.0f;  ///< Collision box height (1 tile)
 
-    inline static const float HALF_HITBOX_WIDTH = HITBOX_WIDTH / 2;    ///< Half of the collision box width
-    inline static const float HALF_HITBOX_HEIGHT = HITBOX_HEIGHT / 2;  ///< Half of the collision box height
+    inline static const float HALF_HITBOX_WIDTH =
+        HITBOX_WIDTH / 2;  ///< Half of the collision box width
+    inline static const float HALF_HITBOX_HEIGHT =
+        HITBOX_HEIGHT / 2;  ///< Half of the collision box height
     /** @} */
 
 private:
@@ -372,36 +379,60 @@ private:
     static const float ANIMATION_SPEED;    ///< Base frame duration (0.15s)
     /** @} */
 
-    glm::vec2 GetSpriteCoords(int frame, Direction dir, AnimationType anim, bool requiresYFlip = false);
+    glm::vec2 GetSpriteCoords(int frame,
+                              Direction dir,
+                              AnimationType anim,
+                              bool requiresYFlip = false);
 
     /// @name Collision Detection Helpers
     /// @{
-    bool CollidesWithNPC(const glm::vec2 &feetPos, const std::vector<glm::vec2> *npcPositions) const;
-    bool CollidesWithTilesStrict(const glm::vec2 &feetPos, const class Tilemap *tilemap,
-                                  int moveDx, int moveDy, bool diagonalInput) const;
-    bool CollidesWithTilesCenter(const glm::vec2 &feetPos, const class Tilemap *tilemap) const;
-    bool CollidesAt(const glm::vec2 &feetPos, const class Tilemap *tilemap,
-                    const std::vector<glm::vec2> *npcPositions, bool sprintMode,
-                    int moveDx = 0, int moveDy = 0, bool diagonalInput = false) const;
-    bool IsCornerPenetration(const glm::vec2 &feetPos, const class Tilemap *tilemap) const;
-    glm::vec2 ComputeSprintCornerEject(const class Tilemap *tilemap,
-                                       const std::vector<glm::vec2> *npcPositions,
+    bool CollidesWithNPC(const glm::vec2& feetPos,
+                         const std::vector<glm::vec2>* npcPositions) const;
+    bool CollidesWithTilesStrict(const glm::vec2& feetPos,
+                                 const class Tilemap* tilemap,
+                                 int moveDx,
+                                 int moveDy,
+                                 bool diagonalInput) const;
+    bool CollidesWithTilesCenter(const glm::vec2& feetPos, const class Tilemap* tilemap) const;
+    bool CollidesAt(const glm::vec2& feetPos,
+                    const class Tilemap* tilemap,
+                    const std::vector<glm::vec2>* npcPositions,
+                    bool sprintMode,
+                    int moveDx = 0,
+                    int moveDy = 0,
+                    bool diagonalInput = false) const;
+    bool IsCornerPenetration(const glm::vec2& feetPos, const class Tilemap* tilemap) const;
+    glm::vec2 ComputeSprintCornerEject(const class Tilemap* tilemap,
+                                       const std::vector<glm::vec2>* npcPositions,
                                        glm::vec2 normalizedDir) const;
-    glm::vec2 GetCornerSlideDirection(const glm::vec2& testPos, const class Tilemap* tilemap,
-                                       int moveDirX, int moveDirY);
-    glm::vec2 FindClosestSafeTileCenter(const class Tilemap *tilemap,
-                                        const std::vector<glm::vec2> *npcPositions) const;
+    glm::vec2 GetCornerSlideDirection(const glm::vec2& testPos,
+                                      const class Tilemap* tilemap,
+                                      int moveDirX,
+                                      int moveDirY);
+    glm::vec2 FindClosestSafeTileCenter(const class Tilemap* tilemap,
+                                        const std::vector<glm::vec2>* npcPositions) const;
     static float CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon = 0.01f);
-    glm::vec2 TrySlideMovement(glm::vec2 desiredMovement, glm::vec2 normalizedDir,
-                                float deltaTime, float currentSpeed,
-                                const class Tilemap *tilemap, const std::vector<glm::vec2> *npcPositions,
-                                bool sprintMode, int moveDx, int moveDy, bool diagonalInput);
-    glm::vec2 ApplyLaneSnapping(glm::vec2 desiredMovement, glm::vec2 normalizedDir,
-        float deltaTime, const Tilemap *tilemap,
-        const std::vector<glm::vec2> *npcPositions,
-        bool sprintMode, int moveDx, int moveDy);
-    void HandleIdleSnap(float deltaTime, const class Tilemap *tilemap,
-                        const std::vector<glm::vec2> *npcPositions);
+    glm::vec2 TrySlideMovement(glm::vec2 desiredMovement,
+                               glm::vec2 normalizedDir,
+                               float deltaTime,
+                               float currentSpeed,
+                               const class Tilemap* tilemap,
+                               const std::vector<glm::vec2>* npcPositions,
+                               bool sprintMode,
+                               int moveDx,
+                               int moveDy,
+                               bool diagonalInput);
+    glm::vec2 ApplyLaneSnapping(glm::vec2 desiredMovement,
+                                glm::vec2 normalizedDir,
+                                float deltaTime,
+                                const Tilemap* tilemap,
+                                const std::vector<glm::vec2>* npcPositions,
+                                bool sprintMode,
+                                int moveDx,
+                                int moveDy);
+    void HandleIdleSnap(float deltaTime,
+                        const class Tilemap* tilemap,
+                        const std::vector<glm::vec2>* npcPositions);
     /// @}
 
     static std::map<std::pair<CharacterType, std::string>, std::string> s_CharacterAssets;

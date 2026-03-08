@@ -1,14 +1,14 @@
 #include "TimeManager.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 TimeManager::TimeManager()
-    : m_CurrentTime(12.0f)
-    , m_DayCount(0)
-    , m_TimeScale(1.0f)
-    , m_DayDuration(24.0f)
-    , m_Weather(WeatherState::Clear)
+    : m_CurrentTime(12.0f),
+      m_DayCount(0),
+      m_TimeScale(1.0f),
+      m_DayDuration(24.0f),
+      m_Weather(WeatherState::Clear)
 {
 }
 
@@ -76,7 +76,7 @@ float TimeManager::GetSunArc() const
 {
     // Sun visible from SUNRISE_TIME (6:00) to SUNSET_TIME (20:00)
     if (m_CurrentTime < SUNRISE_TIME || m_CurrentTime > SUNSET_TIME)
-        return -1.0f; // Sun below horizon
+        return -1.0f;  // Sun below horizon
 
     // Map sunrise-sunset to 0-1 arc
     float dayLength = SUNSET_TIME - SUNRISE_TIME;
@@ -100,7 +100,7 @@ float TimeManager::GetMoonArc() const
         return (t + (24.0f - MOONRISE_TIME)) / 12.0f;
     }
 
-    return -1.0f; // Moon below horizon
+    return -1.0f;  // Moon below horizon
 }
 
 int TimeManager::GetMoonPhase() const
@@ -202,13 +202,13 @@ glm::vec3 TimeManager::GetSkyColor() const
     float t = m_CurrentTime;
 
     // Define sky colors for different times - more muted transitions
-    glm::vec3 dawnSky(0.7f, 0.5f, 0.4f);         // Muted orange-pink
-    glm::vec3 morningSky(0.45f, 0.6f, 0.85f);    // Light blue
-    glm::vec3 middaySky(0.4f, 0.55f, 0.8f);      // Blue
-    glm::vec3 afternoonSky(0.45f, 0.55f, 0.75f); // Blue with warmth
-    glm::vec3 duskSky(0.6f, 0.4f, 0.35f);        // Muted orange
-    glm::vec3 eveningSky(0.12f, 0.12f, 0.28f);   // Dark blue
-    glm::vec3 nightSky(0.04f, 0.04f, 0.12f);     // Near black
+    glm::vec3 dawnSky(0.7f, 0.5f, 0.4f);          // Muted orange-pink
+    glm::vec3 morningSky(0.45f, 0.6f, 0.85f);     // Light blue
+    glm::vec3 middaySky(0.4f, 0.55f, 0.8f);       // Blue
+    glm::vec3 afternoonSky(0.45f, 0.55f, 0.75f);  // Blue with warmth
+    glm::vec3 duskSky(0.6f, 0.4f, 0.35f);         // Muted orange
+    glm::vec3 eveningSky(0.12f, 0.12f, 0.28f);    // Dark blue
+    glm::vec3 nightSky(0.04f, 0.04f, 0.12f);      // Near black
 
     // Weather affects sky
     if (m_Weather == WeatherState::Overcast)
@@ -267,14 +267,14 @@ glm::vec3 TimeManager::GetSunColor() const
 {
     float arc = GetSunArc();
     if (arc < 0.0f)
-        return glm::vec3(0.0f); // Sun not visible
+        return glm::vec3(0.0f);  // Sun not visible
 
     // Sun color changes through the day
     // Sunrise/sunset: orange
     // Midday: bright white/yellow
-    glm::vec3 sunriseColor(1.0f, 0.6f, 0.3f); // Orange
-    glm::vec3 middayColor(1.0f, 0.98f, 0.9f); // Bright white-yellow
-    glm::vec3 sunsetColor(1.0f, 0.5f, 0.2f);  // Deep orange
+    glm::vec3 sunriseColor(1.0f, 0.6f, 0.3f);  // Orange
+    glm::vec3 middayColor(1.0f, 0.98f, 0.9f);  // Bright white-yellow
+    glm::vec3 sunsetColor(1.0f, 0.5f, 0.2f);   // Deep orange
 
     // arc: 0 = sunrise, 0.5 = noon, 1 = sunset
     if (arc < 0.15f)
@@ -323,7 +323,7 @@ float TimeManager::GetStarVisibility() const
         return 1.0f - GetTransitionFactor(t, DAWN_START, DAWN_END);
     }
 
-    return 0.0f; // Daytime - no stars
+    return 0.0f;  // Daytime - no stars
 }
 
 void TimeManager::SetTime(float hours)
@@ -375,7 +375,7 @@ float TimeManager::GetDawnIntensity() const
     return 0.0f;
 }
 
-glm::vec3 TimeManager::LerpColor(const glm::vec3 &a, const glm::vec3 &b, float t) const
+glm::vec3 TimeManager::LerpColor(const glm::vec3& a, const glm::vec3& b, float t) const
 {
     t = std::clamp(t, 0.0f, 1.0f);
     return a + (b - a) * t;

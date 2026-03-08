@@ -134,37 +134,37 @@ public:
 
     /// @name Shared Constants
     /// @{
-    static constexpr int SPRITE_WIDTH = 32;           ///< Sprite sheet cell width in pixels
-    static constexpr int SPRITE_HEIGHT = 32;          ///< Sprite sheet cell height in pixels
-    static constexpr float COLLISION_EPS = 0.05f;     ///< AABB floating-point tolerance
+    static constexpr int SPRITE_WIDTH = 32;                ///< Sprite sheet cell width in pixels
+    static constexpr int SPRITE_HEIGHT = 32;               ///< Sprite sheet cell height in pixels
+    static constexpr float COLLISION_EPS = 0.05f;          ///< AABB floating-point tolerance
     static constexpr int WALK_SEQUENCE[4] = {1, 0, 2, 0};  ///< Walk cycle frame indices
-    static constexpr int WALK_SEQUENCE_LENGTH = 4;    ///< Length of WALK_SEQUENCE
+    static constexpr int WALK_SEQUENCE_LENGTH = 4;         ///< Length of WALK_SEQUENCE
     /// @}
 
 protected:
     /// @name Position State
     /// @{
-    glm::vec2 m_Position{0.0f, 0.0f};       ///< World position (bottom-center of sprite)
+    glm::vec2 m_Position{0.0f, 0.0f};  ///< World position (bottom-center of sprite)
     /// @}
 
     /// @name Elevation State
     /// @{
-    float m_ElevationOffset{0.0f};           ///< Current visual Y offset in pixels
-    float m_TargetElevation{0.0f};           ///< Target elevation to interpolate toward
-    float m_ElevationStart{0.0f};            ///< Elevation at start of current transition
-    float m_ElevationProgress{1.0f};         ///< Interpolation progress (0 = start, 1 = done)
+    float m_ElevationOffset{0.0f};    ///< Current visual Y offset in pixels
+    float m_TargetElevation{0.0f};    ///< Target elevation to interpolate toward
+    float m_ElevationStart{0.0f};     ///< Elevation at start of current transition
+    float m_ElevationProgress{1.0f};  ///< Interpolation progress (0 = start, 1 = done)
     /// @}
 
     /// @name Direction & Animation State
     /// @{
     CharacterDirection m_Direction{CharacterDirection::DOWN};  ///< Current facing direction
-    int m_CurrentFrame{0};                   ///< Active sprite sheet frame (column index)
-    float m_AnimationTime{0.0f};             ///< Accumulator for animation timing
-    int m_WalkSequenceIndex{0};              ///< Current index into WALK_SEQUENCE
+    int m_CurrentFrame{0};        ///< Active sprite sheet frame (column index)
+    float m_AnimationTime{0.0f};  ///< Accumulator for animation timing
+    int m_WalkSequenceIndex{0};   ///< Current index into WALK_SEQUENCE
     /// @}
 
     /// @name Movement State
     /// @{
-    float m_Speed{100.0f};                   ///< Movement speed in pixels per second
+    float m_Speed{100.0f};  ///< Movement speed in pixels per second
     /// @}
 };

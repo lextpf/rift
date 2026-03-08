@@ -128,37 +128,71 @@ public:
     void BeginFrame() override;
     void EndFrame() override;
 
-    void DrawSprite(const Texture &texture, glm::vec2 position, glm::vec2 size = glm::vec2(32.0f, 32.0f),
-                    float rotation = 0.0f, glm::vec3 color = glm::vec3(1.0f)) override;
-    void DrawSpriteRegion(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                          glm::vec2 texCoord, glm::vec2 texSize, float rotation = 0.0f,
-                          glm::vec3 color = glm::vec3(1.0f), bool flipY = true) override;
-    void DrawSpriteAlpha(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                         float rotation, glm::vec4 color, bool additive = false) override;
-    void DrawSpriteAtlas(const Texture &texture, glm::vec2 position, glm::vec2 size,
-                         glm::vec2 uvMin, glm::vec2 uvMax, float rotation,
-                         glm::vec4 color, bool additive = false) override;
-    void DrawColoredRect(glm::vec2 position, glm::vec2 size, glm::vec4 color, bool additive = false) override;
-    void DrawWarpedQuad(const Texture& texture, const glm::vec2 corners[4],
-                        glm::vec2 texCoord, glm::vec2 texSize,
-                        glm::vec3 color = glm::vec3(1.0f), bool flipY = true) override;
+    void DrawSprite(const Texture& texture,
+                    glm::vec2 position,
+                    glm::vec2 size = glm::vec2(32.0f, 32.0f),
+                    float rotation = 0.0f,
+                    glm::vec3 color = glm::vec3(1.0f)) override;
+    void DrawSpriteRegion(const Texture& texture,
+                          glm::vec2 position,
+                          glm::vec2 size,
+                          glm::vec2 texCoord,
+                          glm::vec2 texSize,
+                          float rotation = 0.0f,
+                          glm::vec3 color = glm::vec3(1.0f),
+                          bool flipY = true) override;
+    void DrawSpriteAlpha(const Texture& texture,
+                         glm::vec2 position,
+                         glm::vec2 size,
+                         float rotation,
+                         glm::vec4 color,
+                         bool additive = false) override;
+    void DrawSpriteAtlas(const Texture& texture,
+                         glm::vec2 position,
+                         glm::vec2 size,
+                         glm::vec2 uvMin,
+                         glm::vec2 uvMax,
+                         float rotation,
+                         glm::vec4 color,
+                         bool additive = false) override;
+    void DrawColoredRect(glm::vec2 position,
+                         glm::vec2 size,
+                         glm::vec4 color,
+                         bool additive = false) override;
+    void DrawWarpedQuad(const Texture& texture,
+                        const glm::vec2 corners[4],
+                        glm::vec2 texCoord,
+                        glm::vec2 texSize,
+                        glm::vec3 color = glm::vec3(1.0f),
+                        bool flipY = true) override;
 
     void SetProjection(glm::mat4 projection) override;
     void SetViewport(int x, int y, int width, int height) override;
-    void SetVanishingPointPerspective(bool enabled, float horizonY, float horizonScale,
-                                      float viewWidth, float viewHeight) override;
-    void SetGlobePerspective(bool enabled, float sphereRadius,
-                             float viewWidth, float viewHeight) override;
-    void SetFisheyePerspective(bool enabled, float sphereRadius,
-                               float horizonY, float horizonScale,
-                               float viewWidth, float viewHeight) override;
+    void SetVanishingPointPerspective(bool enabled,
+                                      float horizonY,
+                                      float horizonScale,
+                                      float viewWidth,
+                                      float viewHeight) override;
+    void SetGlobePerspective(bool enabled,
+                             float sphereRadius,
+                             float viewWidth,
+                             float viewHeight) override;
+    void SetFisheyePerspective(bool enabled,
+                               float sphereRadius,
+                               float horizonY,
+                               float horizonScale,
+                               float viewWidth,
+                               float viewHeight) override;
     void SuspendPerspective(bool suspend) override;
     void Clear(float r, float g, float b, float a) override;
 
-    void UploadTexture(const Texture &texture) override;
+    void UploadTexture(const Texture& texture) override;
 
-    void DrawText(const std::string &text, glm::vec2 position, float scale = 1.0f,
-                  glm::vec3 color = glm::vec3(1.0f), float outlineSize = 1.0f,
+    void DrawText(const std::string& text,
+                  glm::vec2 position,
+                  float scale = 1.0f,
+                  glm::vec3 color = glm::vec3(1.0f),
+                  float outlineSize = 1.0f,
                   float alpha = 0.85f) override;
     float GetTextAscent(float scale = 1.0f) const override;
     float GetTextWidth(const std::string& text, float scale = 1.0f) const override;
@@ -176,7 +210,7 @@ private:
 
     /// @brief Ensure texture has a valid OpenGL ID for the current context, recreating if needed.
     /// @return Valid texture ID, or 0 if the texture could not be made ready.
-    unsigned int EnsureTextureReady(const Texture &texture);
+    unsigned int EnsureTextureReady(const Texture& texture);
 
     /// @brief Create VAO/VBO for the unit quad used by all sprite rendering.
     void SetupQuad();
@@ -186,7 +220,7 @@ private:
 
     /// @brief Load a TTF font and build the glyph texture atlas.
     /// @param fontPath Path to the .ttf font file.
-    void LoadFont(const std::string &fontPath);
+    void LoadFont(const std::string& fontPath);
 
     /// @}
 
@@ -200,10 +234,10 @@ private:
      */
     struct Character
     {
-        glm::ivec2 Size;        ///< Glyph dimensions in pixels.
-        glm::ivec2 Bearing;     ///< Offset from baseline to top-left.
-        unsigned int Advance;   ///< Horizontal advance to next character.
-        float u0, v0, u1, v1;   ///< UV coordinates in the font atlas.
+        glm::ivec2 Size;       ///< Glyph dimensions in pixels.
+        glm::ivec2 Bearing;    ///< Offset from baseline to top-left.
+        unsigned int Advance;  ///< Horizontal advance to next character.
+        float u0, v0, u1, v1;  ///< UV coordinates in the font atlas.
     };
 
     std::map<char, Character> m_Characters;   ///< Glyph lookup table.
@@ -220,10 +254,10 @@ private:
     /// @name Core OpenGL Objects
     /// @{
 
-    unsigned int m_VAO, m_VBO, m_EBO;   ///< Unit quad geometry.
-    unsigned int m_ShaderProgram;        ///< Unified sprite/text shader.
-    glm::mat4 m_Projection;              ///< Current orthographic projection.
-    unsigned int m_WhiteTexture;         ///< 1x1 white texture for rects.
+    unsigned int m_VAO, m_VBO, m_EBO;  ///< Unit quad geometry.
+    unsigned int m_ShaderProgram;      ///< Unified sprite/text shader.
+    glm::mat4 m_Projection;            ///< Current orthographic projection.
+    unsigned int m_WhiteTexture;       ///< 1x1 white texture for rects.
 
     /// @}
 
@@ -248,9 +282,10 @@ private:
     static constexpr size_t MAX_TEXT_QUADS = 2048;
 
     /// @brief Vertex format for text quads.
-    struct TextVertex {
-        float x, y;   ///< Screen position.
-        float u, v;   ///< Font atlas UV.
+    struct TextVertex
+    {
+        float x, y;  ///< Screen position.
+        float u, v;  ///< Font atlas UV.
     };
 
     std::vector<TextVertex> m_TextBatchVertices;  ///< Accumulated text geometry.
@@ -263,13 +298,14 @@ private:
 
     /// @brief Maximum sprites before automatic flush.
     static constexpr size_t MAX_BATCH_SPRITES = 10000;
-    static constexpr size_t VERTICES_PER_SPRITE = 6;   ///< Two triangles.
-    static constexpr size_t FLOATS_PER_VERTEX = 4;     ///< x, y, u, v.
+    static constexpr size_t VERTICES_PER_SPRITE = 6;  ///< Two triangles.
+    static constexpr size_t FLOATS_PER_VERTEX = 4;    ///< x, y, u, v.
 
     /// @brief Vertex format for batched sprites (pre-transformed).
-    struct BatchVertex {
-        float x, y;   ///< Final screen position after perspective.
-        float u, v;   ///< Texture coordinates.
+    struct BatchVertex
+    {
+        float x, y;  ///< Final screen position after perspective.
+        float u, v;  ///< Texture coordinates.
     };
 
     std::vector<BatchVertex> m_BatchVertices;  ///< Accumulated sprite geometry.
@@ -285,7 +321,8 @@ private:
     /// @{
 
     /// @brief Vertex format with per-vertex RGBA color.
-    struct ColoredVertex {
+    struct ColoredVertex
+    {
         float x, y;        ///< Screen position.
         float u, v;        ///< Texture coords (unused for rects).
         float r, g, b, a;  ///< Per-vertex color.
@@ -330,7 +367,7 @@ private:
      * @param filepath Path to .vert or .frag shader file.
      * @return Shader source as string, or empty string on error.
      */
-    std::string LoadShaderFromFile(const std::string &filepath);
+    std::string LoadShaderFromFile(const std::string& filepath);
 
     /// @}
 };

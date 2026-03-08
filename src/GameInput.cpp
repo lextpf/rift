@@ -28,19 +28,19 @@ void Game::ProcessInput(float deltaTime)
     // Y increases downward in screen space (top-left origin), so W = -Y, S = +Y
     if (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS)
     {
-        moveDirection.y -= 1.0f; // Up
+        moveDirection.y -= 1.0f;  // Up
     }
     if (glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS)
     {
-        moveDirection.x -= 1.0f; // Left
+        moveDirection.x -= 1.0f;  // Left
     }
     if (glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS)
     {
-        moveDirection.y += 1.0f; // Down
+        moveDirection.y += 1.0f;  // Down
     }
     if (glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS)
     {
-        moveDirection.x += 1.0f; // Right
+        moveDirection.x += 1.0f;  // Right
     }
 
     // Toggles between gameplay and editor mode.
@@ -68,8 +68,8 @@ void Game::ProcessInput(float deltaTime)
 
     // --- Remainder of ProcessInput: keys that stay in Game ---
     // (E key is above, editor delegation just above)
-    // The following sections handle: Z, F1-F6, Space, PageUp/Down, C, B, X, F, dialogue, player movement
-
+    // The following sections handle: Z, F1-F6, Space, PageUp/Down, C, B, X, F, dialogue, player
+    // movement
 
     // Resets camera zoom to 1.0x and recenters on player.
     // In editor mode, also resets tile picker zoom and pan.
@@ -88,18 +88,24 @@ void Game::ProcessInput(float deltaTime)
 
             // Calculate player's visual center
             glm::vec2 playerAnchorTileCenter = m_Player.GetCurrentTileCenter();
-            glm::vec2 playerVisualCenter = glm::vec2(playerAnchorTileCenter.x, playerAnchorTileCenter.y - 16.0f);
+            glm::vec2 playerVisualCenter =
+                glm::vec2(playerAnchorTileCenter.x, playerAnchorTileCenter.y - 16.0f);
 
             // Position camera so player is centered
-            m_CameraPosition = playerVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
+            m_CameraPosition =
+                playerVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
             // Clamp to map bounds (skip in editor free-camera mode)
             if (!(m_Editor.IsActive() && m_FreeCameraMode))
             {
-                float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
-                float mapHeight = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
-                m_CameraPosition.x = std::max(0.0f, std::min(m_CameraPosition.x, mapWidth - worldWidth));
-                m_CameraPosition.y = std::max(0.0f, std::min(m_CameraPosition.y, mapHeight - worldHeight));
+                float mapWidth =
+                    static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
+                float mapHeight =
+                    static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
+                m_CameraPosition.x =
+                    std::max(0.0f, std::min(m_CameraPosition.x, mapWidth - worldWidth));
+                m_CameraPosition.y =
+                    std::max(0.0f, std::min(m_CameraPosition.y, mapHeight - worldHeight));
             }
 
             // Disable smooth follow to prevent drift after reset
@@ -123,9 +129,8 @@ void Game::ProcessInput(float deltaTime)
     if (glfwGetKey(m_Window, GLFW_KEY_F1) == GLFW_PRESS && !f1KeyPressed)
     {
         // Toggle between OpenGL and Vulkan
-        RendererAPI newApi = (m_RendererAPI == RendererAPI::OpenGL)
-                                 ? RendererAPI::Vulkan
-                                 : RendererAPI::OpenGL;
+        RendererAPI newApi =
+            (m_RendererAPI == RendererAPI::OpenGL) ? RendererAPI::Vulkan : RendererAPI::OpenGL;
         SwitchRenderer(newApi);
         f1KeyPressed = true;
     }
@@ -169,41 +174,41 @@ void Game::ProcessInput(float deltaTime)
     if (glfwGetKey(m_Window, GLFW_KEY_F4) == GLFW_PRESS && !f4KeyPressed)
     {
         timeOfDayCycle = (timeOfDayCycle + 1) % 8;
-        const char *periodName = "";
+        const char* periodName = "";
         switch (timeOfDayCycle)
         {
-        case 0: // Dawn (05:00-07:00)
-            m_TimeManager.SetTime(6.0f);
-            periodName = "Dawn (06:00)";
-            break;
-        case 1: // Morning (07:00-10:00)
-            m_TimeManager.SetTime(8.5f);
-            periodName = "Morning (08:30)";
-            break;
-        case 2: // Midday (10:00-16:00)
-            m_TimeManager.SetTime(13.0f);
-            periodName = "Midday (13:00)";
-            break;
-        case 3: // Afternoon (16:00-18:00)
-            m_TimeManager.SetTime(17.0f);
-            periodName = "Afternoon (17:00)";
-            break;
-        case 4: // Dusk (18:00-20:00)
-            m_TimeManager.SetTime(19.0f);
-            periodName = "Dusk (19:00)";
-            break;
-        case 5: // Evening (20:00-22:00)
-            m_TimeManager.SetTime(21.0f);
-            periodName = "Evening (21:00)";
-            break;
-        case 6: // Night (22:00-04:00)
-            m_TimeManager.SetTime(1.0f);
-            periodName = "Night (01:00)";
-            break;
-        case 7: // LateNight (04:00-05:00)
-            m_TimeManager.SetTime(4.5f);
-            periodName = "Late Night (04:30)";
-            break;
+            case 0:  // Dawn (05:00-07:00)
+                m_TimeManager.SetTime(6.0f);
+                periodName = "Dawn (06:00)";
+                break;
+            case 1:  // Morning (07:00-10:00)
+                m_TimeManager.SetTime(8.5f);
+                periodName = "Morning (08:30)";
+                break;
+            case 2:  // Midday (10:00-16:00)
+                m_TimeManager.SetTime(13.0f);
+                periodName = "Midday (13:00)";
+                break;
+            case 3:  // Afternoon (16:00-18:00)
+                m_TimeManager.SetTime(17.0f);
+                periodName = "Afternoon (17:00)";
+                break;
+            case 4:  // Dusk (18:00-20:00)
+                m_TimeManager.SetTime(19.0f);
+                periodName = "Dusk (19:00)";
+                break;
+            case 5:  // Evening (20:00-22:00)
+                m_TimeManager.SetTime(21.0f);
+                periodName = "Evening (21:00)";
+                break;
+            case 6:  // Night (22:00-04:00)
+                m_TimeManager.SetTime(1.0f);
+                periodName = "Night (01:00)";
+                break;
+            case 7:  // LateNight (04:00-05:00)
+                m_TimeManager.SetTime(4.5f);
+                periodName = "Late Night (04:30)";
+                break;
         }
         std::cout << "Time of day: " << periodName << std::endl;
         f4KeyPressed = true;
@@ -249,7 +254,8 @@ void Game::ProcessInput(float deltaTime)
     // Toggle free camera mode (Space) - camera stops following player
     // WASD/Arrows can then pan camera while player still moves with WASD
     static bool spaceKeyFreeCamera = false;
-    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive && !m_Editor.IsActive())
+    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
+        !m_Editor.IsActive())
     {
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyFreeCamera)
         {
@@ -274,7 +280,8 @@ void Game::ProcessInput(float deltaTime)
         {
             m_GlobeSphereRadius = std::min(500.0f, m_GlobeSphereRadius + 10.0f);
             m_CameraTilt = std::max(0.0f, m_CameraTilt - 0.05f);
-            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt << std::endl;
+            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt
+                      << std::endl;
             pageUpPressed = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_PAGE_UP) == GLFW_RELEASE)
@@ -286,7 +293,8 @@ void Game::ProcessInput(float deltaTime)
         {
             m_GlobeSphereRadius = std::max(50.0f, m_GlobeSphereRadius - 10.0f);
             m_CameraTilt = std::min(1.0f, m_CameraTilt + 0.05f);
-            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt << std::endl;
+            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt
+                      << std::endl;
             pageDownPressed = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_PAGE_DOWN) == GLFW_RELEASE)
@@ -305,47 +313,47 @@ void Game::ProcessInput(float deltaTime)
         // Cycle to next character type
         switch (currentType)
         {
-        case CharacterType::BW1_MALE:
-            newType = CharacterType::BW1_FEMALE;
-            break;
-        case CharacterType::BW1_FEMALE:
-            newType = CharacterType::BW2_MALE;
-            break;
-        case CharacterType::BW2_MALE:
-            newType = CharacterType::BW2_FEMALE;
-            break;
-        case CharacterType::BW2_FEMALE:
-            newType = CharacterType::CC_FEMALE;
-            break;
-        case CharacterType::CC_FEMALE:
-            newType = CharacterType::BW1_MALE; // Wrap to start
-            break;
-        default:
-            newType = CharacterType::BW1_MALE;
-            break;
+            case CharacterType::BW1_MALE:
+                newType = CharacterType::BW1_FEMALE;
+                break;
+            case CharacterType::BW1_FEMALE:
+                newType = CharacterType::BW2_MALE;
+                break;
+            case CharacterType::BW2_MALE:
+                newType = CharacterType::BW2_FEMALE;
+                break;
+            case CharacterType::BW2_FEMALE:
+                newType = CharacterType::CC_FEMALE;
+                break;
+            case CharacterType::CC_FEMALE:
+                newType = CharacterType::BW1_MALE;  // Wrap to start
+                break;
+            default:
+                newType = CharacterType::BW1_MALE;
+                break;
         }
 
         // Attempt to load and switch to new character
         if (m_Player.SwitchCharacter(newType))
         {
-            const char *name = "BW1_MALE";
+            const char* name = "BW1_MALE";
             switch (newType)
             {
-            case CharacterType::BW1_MALE:
-                name = "BW1_MALE";
-                break;
-            case CharacterType::BW1_FEMALE:
-                name = "BW1_FEMALE";
-                break;
-            case CharacterType::BW2_MALE:
-                name = "BW2_MALE";
-                break;
-            case CharacterType::BW2_FEMALE:
-                name = "BW2_FEMALE";
-                break;
-            case CharacterType::CC_FEMALE:
-                name = "CC_FEMALE";
-                break;
+                case CharacterType::BW1_MALE:
+                    name = "BW1_MALE";
+                    break;
+                case CharacterType::BW1_FEMALE:
+                    name = "BW1_FEMALE";
+                    break;
+                case CharacterType::BW2_MALE:
+                    name = "BW2_MALE";
+                    break;
+                case CharacterType::BW2_FEMALE:
+                    name = "BW2_FEMALE";
+                    break;
+                case CharacterType::CC_FEMALE:
+                    name = "CC_FEMALE";
+                    break;
             }
             std::cout << "Character switched to: " << name << std::endl;
         }
@@ -388,8 +396,8 @@ void Game::ProcessInput(float deltaTime)
     // Note: Running or bicycling will automatically restore original appearance
     //       since NPCs don't have running/bicycle sprites.
     static bool xKeyPressed = false;
-    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
-        glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
+        !m_DialogueSnapActive && glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
     {
         if (m_Player.IsUsingCopiedAppearance())
         {
@@ -402,12 +410,12 @@ void Game::ProcessInput(float deltaTime)
         {
             // Try to copy appearance from nearby NPC
             glm::vec2 playerPos = m_Player.GetPosition();
-            const float COPY_RANGE = 32.0f; // 2 tiles
+            const float COPY_RANGE = 32.0f;  // 2 tiles
 
-            NonPlayerCharacter *nearestNPC = nullptr;
+            NonPlayerCharacter* nearestNPC = nullptr;
             float nearestDist = COPY_RANGE + 1.0f;
 
-            for (auto &npc : m_NPCs)
+            for (auto& npc : m_NPCs)
             {
                 glm::vec2 npcPos = npc.GetPosition();
                 float dist = glm::length(npcPos - playerPos);
@@ -424,7 +432,8 @@ void Game::ProcessInput(float deltaTime)
                 if (m_Player.CopyAppearanceFrom(spritePath))
                 {
                     m_Player.UploadTextures(*m_Renderer);
-                    std::cout << "Copied appearance from: " << nearestNPC->GetType() << " (X)" << std::endl;
+                    std::cout << "Copied appearance from: " << nearestNPC->GetType() << " (X)"
+                              << std::endl;
                 }
             }
             else
@@ -443,19 +452,25 @@ void Game::ProcessInput(float deltaTime)
 
         // Calculate world coordinates from mouse position
         float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
-        float baseWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
+        float baseWorldHeight =
+            static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
         float worldWidth = baseWorldWidth / m_CameraZoom;
         float worldHeight = baseWorldHeight / m_CameraZoom;
 
-        float worldX = (static_cast<float>(mouseX) / static_cast<float>(m_ScreenWidth)) * worldWidth + m_CameraPosition.x;
-        float worldY = (static_cast<float>(mouseY) / static_cast<float>(m_ScreenHeight)) * worldHeight + m_CameraPosition.y;
+        float worldX =
+            (static_cast<float>(mouseX) / static_cast<float>(m_ScreenWidth)) * worldWidth +
+            m_CameraPosition.x;
+        float worldY =
+            (static_cast<float>(mouseY) / static_cast<float>(m_ScreenHeight)) * worldHeight +
+            m_CameraPosition.y;
 
         int tileWidth = m_Tilemap.GetTileWidth();
         int tileHeight = m_Tilemap.GetTileHeight();
         int tileX = static_cast<int>(worldX / tileWidth);
         int tileY = static_cast<int>(worldY / tileHeight);
 
-        if (tileX >= 0 && tileY >= 0 && tileX < m_Tilemap.GetMapWidth() && tileY < m_Tilemap.GetMapHeight())
+        if (tileX >= 0 && tileY >= 0 && tileX < m_Tilemap.GetMapWidth() &&
+            tileY < m_Tilemap.GetMapHeight())
         {
             if (m_Tilemap.GetTileCollision(tileX, tileY))
             {
@@ -465,7 +480,7 @@ void Game::ProcessInput(float deltaTime)
                 float halfTile = tileWidth * 0.5f;
 
                 Tilemap::Corner corner;
-                const char *cornerName;
+                const char* cornerName;
                 if (localX < halfTile && localY < halfTile)
                 {
                     corner = Tilemap::CORNER_TL;
@@ -489,12 +504,13 @@ void Game::ProcessInput(float deltaTime)
 
                 bool currentlyBlocked = m_Tilemap.IsCornerCutBlocked(tileX, tileY, corner);
                 m_Tilemap.SetCornerCutBlocked(tileX, tileY, corner, !currentlyBlocked);
-                std::cout << "Corner cutting " << cornerName << " at (" << tileX << ", " << tileY << "): "
-                          << (!currentlyBlocked ? "BLOCKED" : "ALLOWED") << std::endl;
+                std::cout << "Corner cutting " << cornerName << " at (" << tileX << ", " << tileY
+                          << "): " << (!currentlyBlocked ? "BLOCKED" : "ALLOWED") << std::endl;
             }
             else
             {
-                std::cout << "Tile (" << tileX << ", " << tileY << ") has no collision - corner cutting N/A" << std::endl;
+                std::cout << "Tile (" << tileX << ", " << tileY
+                          << ") has no collision - corner cutting N/A" << std::endl;
             }
         }
         xKeyPressed = true;
@@ -509,8 +525,8 @@ void Game::ProcessInput(float deltaTime)
     //   2. NPC is in front of player or
     //   3. NPC hitbox is overlapping player hitbox
     static bool fKeyPressed = false;
-    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
-        glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed)
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
+        !m_DialogueSnapActive && glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed)
     {
         glm::vec2 playerPos = m_Player.GetPosition();
         Direction playerDir = m_Player.GetDirection();
@@ -526,32 +542,32 @@ void Game::ProcessInput(float deltaTime)
 
         switch (playerDir)
         {
-        case Direction::DOWN:
-            frontTileY += 1;
-            break;
-        case Direction::UP:
-            frontTileY -= 1;
-            break;
-        case Direction::LEFT:
-            frontTileX -= 1;
-            break;
-        case Direction::RIGHT:
-            frontTileX += 1;
-            break;
+            case Direction::DOWN:
+                frontTileY += 1;
+                break;
+            case Direction::UP:
+                frontTileY -= 1;
+                break;
+            case Direction::LEFT:
+                frontTileX -= 1;
+                break;
+            case Direction::RIGHT:
+                frontTileX += 1;
+                break;
         }
 
         // Interaction thresholds
-        const float INTERACTION_RANGE = 32.0f;  // 2 tiles for easier interaction
-        const float COLLISION_DISTANCE = 20.0f; // Very close = colliding
+        const float INTERACTION_RANGE = 32.0f;   // 2 tiles for easier interaction
+        const float COLLISION_DISTANCE = 20.0f;  // Very close = colliding
 
         // Hitbox dimensions for AABB collision
-        const float PLAYER_HALF_W = 16.0f * 0.5f; // Player: 16x16 px hitbox
+        const float PLAYER_HALF_W = 16.0f * 0.5f;  // Player: 16x16 px hitbox
         const float PLAYER_BOX_H = 16.0f;
-        const float NPC_HALF_W = 16.0f * 0.5f; // NPC: 16x16 px hitbox
+        const float NPC_HALF_W = 16.0f * 0.5f;  // NPC: 16x16 px hitbox
         const float NPC_BOX_H = 16.0f;
-        const float COLLISION_EPS = 0.05f; // Small margin for floating-point
+        const float COLLISION_EPS = 0.05f;  // Small margin for floating-point
 
-        for (auto &npc : m_NPCs)
+        for (auto& npc : m_NPCs)
         {
             glm::vec2 npcPos = npc.GetPosition();
             float distance = glm::length(npcPos - playerPos);
@@ -583,7 +599,8 @@ void Game::ProcessInput(float deltaTime)
                 // Also check if NPC is on cardinal-adjacent tiles
                 int tileDistX = std::abs(playerTileX - npcTileX);
                 int tileDistY = std::abs(playerTileY - npcTileY);
-                bool isCardinalAdjacent = (tileDistX == 1 && tileDistY == 0) || (tileDistX == 0 && tileDistY == 1);
+                bool isCardinalAdjacent =
+                    (tileDistX == 1 && tileDistY == 0) || (tileDistX == 0 && tileDistY == 1);
                 bool isSameTile = (tileDistX == 0 && tileDistY == 0);
 
                 // Verify NPC is in the correct direction
@@ -592,18 +609,22 @@ void Game::ProcessInput(float deltaTime)
                 {
                     switch (playerDir)
                     {
-                    case Direction::DOWN:
-                        isInCorrectDirection = (npcTileY > playerTileY && npcTileX == playerTileX);
-                        break;
-                    case Direction::UP:
-                        isInCorrectDirection = (npcTileY < playerTileY && npcTileX == playerTileX);
-                        break;
-                    case Direction::LEFT:
-                        isInCorrectDirection = (npcTileX < playerTileX && npcTileY == playerTileY);
-                        break;
-                    case Direction::RIGHT:
-                        isInCorrectDirection = (npcTileX > playerTileX && npcTileY == playerTileY);
-                        break;
+                        case Direction::DOWN:
+                            isInCorrectDirection =
+                                (npcTileY > playerTileY && npcTileX == playerTileX);
+                            break;
+                        case Direction::UP:
+                            isInCorrectDirection =
+                                (npcTileY < playerTileY && npcTileX == playerTileX);
+                            break;
+                        case Direction::LEFT:
+                            isInCorrectDirection =
+                                (npcTileX < playerTileX && npcTileY == playerTileY);
+                            break;
+                        case Direction::RIGHT:
+                            isInCorrectDirection =
+                                (npcTileX > playerTileX && npcTileY == playerTileY);
+                            break;
                     }
                 }
 
@@ -616,18 +637,20 @@ void Game::ProcessInput(float deltaTime)
                     // When very close, be more lenient with direction check
                     switch (playerDir)
                     {
-                    case Direction::DOWN:
-                        isRoughlyInFront = (toNPC.y > -8.0f); // NPC is below or at same level
-                        break;
-                    case Direction::UP:
-                        isRoughlyInFront = (toNPC.y < 8.0f); // NPC is above or at same level
-                        break;
-                    case Direction::LEFT:
-                        isRoughlyInFront = (toNPC.x < 8.0f); // NPC is to the left or at same level
-                        break;
-                    case Direction::RIGHT:
-                        isRoughlyInFront = (toNPC.x > -8.0f); // NPC is to the right or at same level
-                        break;
+                        case Direction::DOWN:
+                            isRoughlyInFront = (toNPC.y > -8.0f);  // NPC is below or at same level
+                            break;
+                        case Direction::UP:
+                            isRoughlyInFront = (toNPC.y < 8.0f);  // NPC is above or at same level
+                            break;
+                        case Direction::LEFT:
+                            isRoughlyInFront =
+                                (toNPC.x < 8.0f);  // NPC is to the left or at same level
+                            break;
+                        case Direction::RIGHT:
+                            isRoughlyInFront =
+                                (toNPC.x > -8.0f);  // NPC is to the right or at same level
+                            break;
                     }
                 }
 
@@ -636,7 +659,8 @@ void Game::ProcessInput(float deltaTime)
                 // 2. NPC is on front tile or
                 // 3. NPC is cardinal-adjacent in correct direction or
                 // 4. NPC is very close and roughly in front
-                if (isColliding || isOnFrontTile || isInCorrectDirection || (isVeryClose && isRoughlyInFront))
+                if (isColliding || isOnFrontTile || isInCorrectDirection ||
+                    (isVeryClose && isRoughlyInFront))
                 {
                     // Delay dialogue activation until the alignment snap completes.
                     m_DialogueNPC = &npc;
@@ -655,9 +679,8 @@ void Game::ProcessInput(float deltaTime)
 
                     m_DialogueSnapNPCTileX = npcTileX;
                     m_DialogueSnapNPCTileY = snapTileY;
-                    glm::vec2 npcTargetPos(
-                        static_cast<float>(m_DialogueSnapNPCTileX * 16 + 8),
-                        static_cast<float>(m_DialogueSnapNPCTileY * 16 + 16));
+                    glm::vec2 npcTargetPos(static_cast<float>(m_DialogueSnapNPCTileX * 16 + 8),
+                                           static_cast<float>(m_DialogueSnapNPCTileY * 16 + 16));
 
                     // Recalculate player tile position after getting fresh position
                     playerTileX = static_cast<int>(std::floor(playerPos.x / 16.0f));
@@ -709,9 +732,12 @@ void Game::ProcessInput(float deltaTime)
                         finalDy = 1;
                     }
 
-                    // Find nearest tile (round instead of floor so player doesn't snap when slightly off-center)
-                    int currentPlayerTileX = static_cast<int>(std::round((playerPos.x - 8.0f) / 16.0f));
-                    int currentPlayerTileY = static_cast<int>(std::round((playerPos.y - 16.0f) / 16.0f));
+                    // Find nearest tile (round instead of floor so player doesn't snap when
+                    // slightly off-center)
+                    int currentPlayerTileX =
+                        static_cast<int>(std::round((playerPos.x - 8.0f) / 16.0f));
+                    int currentPlayerTileY =
+                        static_cast<int>(std::round((playerPos.y - 16.0f) / 16.0f));
 
                     // Check if player is already on a valid cardinal-adjacent tile
                     bool playerAlreadyValid = false;
@@ -726,7 +752,8 @@ void Game::ProcessInput(float deltaTime)
                             // Check if it's cardinal-adjacent to NPC
                             int tileDistX = std::abs(currentPlayerTileX - npcTileX);
                             int tileDistY = std::abs(currentPlayerTileY - npcTileY);
-                            bool isCardinalAdjacent = (tileDistX == 1 && tileDistY == 0) || (tileDistX == 0 && tileDistY == 1);
+                            bool isCardinalAdjacent = (tileDistX == 1 && tileDistY == 0) ||
+                                                      (tileDistX == 0 && tileDistY == 1);
                             if (isCardinalAdjacent)
                             {
                                 playerAlreadyValid = true;
@@ -738,7 +765,8 @@ void Game::ProcessInput(float deltaTime)
                     int playerTileYFinal = currentPlayerTileY;
                     auto isValidSnapTile = [this, npcTileX, npcTileY](int tx, int ty)
                     {
-                        if (tx < 0 || ty < 0 || tx >= m_Tilemap.GetMapWidth() || ty >= m_Tilemap.GetMapHeight())
+                        if (tx < 0 || ty < 0 || tx >= m_Tilemap.GetMapWidth() ||
+                            ty >= m_Tilemap.GetMapHeight())
                             return false;
                         if (tx == npcTileX && ty == npcTileY)
                             return false;
@@ -749,7 +777,8 @@ void Game::ProcessInput(float deltaTime)
                     if (!playerAlreadyValid)
                     {
                         // Ensure finalDx and finalDy are not both zero
-                        // This handles the edge case where player and NPC might be on same tile due to floating point precision
+                        // This handles the edge case where player and NPC might be on same tile due
+                        // to floating point precision
                         if (finalDx == 0 && finalDy == 0)
                         {
                             // Default to down if somehow on same tile
@@ -764,16 +793,16 @@ void Game::ProcessInput(float deltaTime)
                             int dx, dy;
                         };
                         CardinalDir cardinals[] = {
-                            {finalDx, finalDy}, // Preferred direction
-                            {0, 1},             // Down
-                            {0, -1},            // Up
-                            {1, 0},             // Right
-                            {-1, 0}             // Left
+                            {finalDx, finalDy},  // Preferred direction
+                            {0, 1},              // Down
+                            {0, -1},             // Up
+                            {1, 0},              // Right
+                            {-1, 0}              // Left
                         };
 
                         bool foundValidPosition = false;
 
-                        for (const auto &dir : cardinals)
+                        for (const auto& dir : cardinals)
                         {
                             int testTileX = npcTileX + dir.dx;
                             int testTileY = npcTileY + dir.dy;
@@ -818,7 +847,8 @@ void Game::ProcessInput(float deltaTime)
                             }
                             else if (isValidSnapTile(npcTileX, npcTileY + 1))
                             {
-                                // Fallback, use down direction if preferred would place on same tile
+                                // Fallback, use down direction if preferred would place on same
+                                // tile
                                 playerTileXFinal = npcTileX;
                                 playerTileYFinal = npcTileY + 1;
                             }
@@ -838,7 +868,6 @@ void Game::ProcessInput(float deltaTime)
                                 playerTileYFinal = -1;
                             }
                         }
-
                     }
                     else
                     {
@@ -851,9 +880,8 @@ void Game::ProcessInput(float deltaTime)
                     bool hasPlayerTileTarget = (playerTileXFinal >= 0 && playerTileYFinal >= 0);
                     if (hasPlayerTileTarget)
                     {
-                        playerTargetPos = glm::vec2(
-                            static_cast<float>(playerTileXFinal * 16 + 8),
-                            static_cast<float>(playerTileYFinal * 16 + 16));
+                        playerTargetPos = glm::vec2(static_cast<float>(playerTileXFinal * 16 + 8),
+                                                    static_cast<float>(playerTileYFinal * 16 + 16));
                     }
 
                     // Make NPC face the player
@@ -896,20 +924,23 @@ void Game::ProcessInput(float deltaTime)
                     m_DialogueSnapPlayerTarget = playerTargetPos;
                     m_DialogueSnapNPCStart = npcPos;
                     m_DialogueSnapNPCTarget = npcTargetPos;
-                    m_DialogueSnapPlayerTileX = hasPlayerTileTarget
-                                                    ? playerTileXFinal
-                                                    : static_cast<int>(std::round((playerTargetPos.x - 8.0f) / 16.0f));
-                    m_DialogueSnapPlayerTileY = hasPlayerTileTarget
-                                                    ? playerTileYFinal
-                                                    : static_cast<int>(std::round((playerTargetPos.y - 16.0f) / 16.0f));
+                    m_DialogueSnapPlayerTileX =
+                        hasPlayerTileTarget
+                            ? playerTileXFinal
+                            : static_cast<int>(std::round((playerTargetPos.x - 8.0f) / 16.0f));
+                    m_DialogueSnapPlayerTileY =
+                        hasPlayerTileTarget
+                            ? playerTileYFinal
+                            : static_cast<int>(std::round((playerTargetPos.y - 16.0f) / 16.0f));
                     m_DialogueSnapHasPlayerTile = hasPlayerTileTarget;
                     m_DialogueSnapPlayerFacing = playerFacing;
                     m_DialogueSnapNPCFacing = npcFacing;
 
                     std::cout << "Starting dialogue snap with NPC: " << npc.GetType()
-                              << " target NPC tile (" << m_DialogueSnapNPCTileX << ", " << m_DialogueSnapNPCTileY << ")"
-                              << ", target player tile (" << m_DialogueSnapPlayerTileX << ", " << m_DialogueSnapPlayerTileY << ")"
-                              << std::endl;
+                              << " target NPC tile (" << m_DialogueSnapNPCTileX << ", "
+                              << m_DialogueSnapNPCTileY << ")"
+                              << ", target player tile (" << m_DialogueSnapPlayerTileX << ", "
+                              << m_DialogueSnapPlayerTileY << ")" << std::endl;
                     break;
                 }
             }
@@ -931,22 +962,28 @@ void Game::ProcessInput(float deltaTime)
         static bool escapeKeyTree = false;
 
         // Navigate options with Up/Down or W/S
-        if ((glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_PRESS || glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS) && !upKeyPressed)
+        if ((glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_PRESS ||
+             glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS) &&
+            !upKeyPressed)
         {
             m_DialogueManager.SelectPrevious();
             upKeyPressed = true;
         }
-        if (glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_RELEASE && glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_RELEASE)
+        if (glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_RELEASE &&
+            glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_RELEASE)
         {
             upKeyPressed = false;
         }
 
-        if ((glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_PRESS || glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS) && !downKeyPressed)
+        if ((glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_PRESS ||
+             glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS) &&
+            !downKeyPressed)
         {
             m_DialogueManager.SelectNext();
             downKeyPressed = true;
         }
-        if (glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_RELEASE && glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_RELEASE)
+        if (glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_RELEASE &&
+            glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_RELEASE)
         {
             downKeyPressed = false;
         }
@@ -961,7 +998,7 @@ void Game::ProcessInput(float deltaTime)
             }
             else
             {
-                m_DialoguePage = 0; // Reset for next node
+                m_DialoguePage = 0;  // Reset for next node
                 m_DialogueManager.ConfirmSelection();
                 // If dialogue ended, release NPC
                 if (!m_DialogueManager.IsActive() && m_DialogueNPC)
@@ -986,7 +1023,7 @@ void Game::ProcessInput(float deltaTime)
             }
             else
             {
-                m_DialoguePage = 0; // Reset for next node
+                m_DialoguePage = 0;  // Reset for next node
                 m_DialogueManager.ConfirmSelection();
                 if (!m_DialogueManager.IsActive() && m_DialogueNPC)
                 {
@@ -1005,7 +1042,7 @@ void Game::ProcessInput(float deltaTime)
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyTree)
         {
             m_DialogueManager.EndDialogue();
-            m_DialoguePage = 0; // Reset pagination
+            m_DialoguePage = 0;  // Reset pagination
             if (m_DialogueNPC)
             {
                 m_DialogueNPC->SetStopped(false);
@@ -1076,14 +1113,15 @@ void Game::ProcessInput(float deltaTime)
     }
 
     // Only process player movement if not in editor mode and not in dialogue
-    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive)
+    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
+        !m_DialogueSnapActive)
     {
         // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
 
         // Collect NPC positions for collision checking
         std::vector<glm::vec2> npcPositions;
-        for (const auto &npc : m_NPCs)
+        for (const auto& npc : m_NPCs)
         {
             npcPositions.push_back(npc.GetPosition());
         }
@@ -1103,10 +1141,10 @@ void Game::ProcessInput(float deltaTime)
     }
 }
 
-void Game::ScrollCallback(GLFWwindow *window, double /*xoffset*/, double yoffset)
+void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset)
 {
     // Retrieve Game instance from window user pointer
-    Game *game = static_cast<Game *>(glfwGetWindowUserPointer(window));
+    Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
     if (!game)
     {
         return;
@@ -1124,14 +1162,17 @@ void Game::ScrollCallback(GLFWwindow *window, double /*xoffset*/, double yoffset
     }
 
     // Check for Ctrl modifier
-    int ctrlState = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) | glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL);
+    int ctrlState =
+        glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) | glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL);
 
     // Camera zoom with Ctrl+scroll
     if (ctrlState == GLFW_PRESS)
     {
         // Zoom centered on player position
-        float baseWorldWidth = static_cast<float>(game->m_TilesVisibleWidth * game->m_Tilemap.GetTileWidth());
-        float baseWorldHeight = static_cast<float>(game->m_TilesVisibleHeight * game->m_Tilemap.GetTileHeight());
+        float baseWorldWidth =
+            static_cast<float>(game->m_TilesVisibleWidth * game->m_Tilemap.GetTileWidth());
+        float baseWorldHeight =
+            static_cast<float>(game->m_TilesVisibleHeight * game->m_Tilemap.GetTileHeight());
 
         float oldZoom = game->m_CameraZoom;
         float oldWorldWidth = baseWorldWidth / oldZoom;
@@ -1139,7 +1180,8 @@ void Game::ScrollCallback(GLFWwindow *window, double /*xoffset*/, double yoffset
 
         // Get the player's visual center
         glm::vec2 playerPos = game->m_Player.GetPosition();
-        glm::vec2 playerVisualCenter = playerPos - glm::vec2(0.0f, PlayerCharacter::HITBOX_HEIGHT * 0.5f);
+        glm::vec2 playerVisualCenter =
+            playerPos - glm::vec2(0.0f, PlayerCharacter::HITBOX_HEIGHT * 0.5f);
 
         // Apply zoom with snapping to prevent sub-pixel seams
         float zoomDelta = yoffset > 0 ? 1.1f : 0.9f;
@@ -1156,15 +1198,20 @@ void Game::ScrollCallback(GLFWwindow *window, double /*xoffset*/, double yoffset
         float newWorldHeight = baseWorldHeight / newZoom;
 
         // Adjust camera position to keep player centered
-        game->m_CameraPosition = playerVisualCenter - glm::vec2(newWorldWidth * 0.5f, newWorldHeight * 0.5f);
+        game->m_CameraPosition =
+            playerVisualCenter - glm::vec2(newWorldWidth * 0.5f, newWorldHeight * 0.5f);
 
         // Clamp camera to map bounds (skip in editor free-camera mode)
         if (!(game->m_Editor.IsActive() && game->m_FreeCameraMode))
         {
-            float mapWidth = static_cast<float>(game->m_Tilemap.GetMapWidth() * game->m_Tilemap.GetTileWidth());
-            float mapHeight = static_cast<float>(game->m_Tilemap.GetMapHeight() * game->m_Tilemap.GetTileHeight());
-            game->m_CameraPosition.x = std::max(0.0f, std::min(game->m_CameraPosition.x, mapWidth - newWorldWidth));
-            game->m_CameraPosition.y = std::max(0.0f, std::min(game->m_CameraPosition.y, mapHeight - newWorldHeight));
+            float mapWidth =
+                static_cast<float>(game->m_Tilemap.GetMapWidth() * game->m_Tilemap.GetTileWidth());
+            float mapHeight = static_cast<float>(game->m_Tilemap.GetMapHeight() *
+                                                 game->m_Tilemap.GetTileHeight());
+            game->m_CameraPosition.x =
+                std::max(0.0f, std::min(game->m_CameraPosition.x, mapWidth - newWorldWidth));
+            game->m_CameraPosition.y =
+                std::max(0.0f, std::min(game->m_CameraPosition.y, mapHeight - newWorldHeight));
         }
 
         // Also update the follow target so camera doesn't snap back

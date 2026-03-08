@@ -1,34 +1,40 @@
 #include "DialogueManager.h"
+#include "Game.h"
 #include "GameStateManager.h"
 #include "NonPlayerCharacter.h"
-#include "Game.h"
 
 #include <iostream>
 
 // Invariants: when active, m_CurrentTree points at m_ActiveTree and
 // m_VisibleOptions stores pointers into that owned copy.
 DialogueManager::DialogueManager()
-    : m_Game(nullptr)               // Set by Initialize() - provides NPC access
-    , m_StateManager(nullptr)       // Set by Initialize() - evaluates conditions and stores flags
-    , m_Active(false)               // No conversation in progress until StartDialogue()
-    , m_CurrentTree(nullptr)        // Points to m_ActiveTree when dialogue is active
-    , m_CurrentNode(nullptr)        // Current position in the dialogue tree
-    , m_SelectedOption(0)           // UI cursor position in the options list
+    : m_Game(nullptr)  // Set by Initialize() - provides NPC access
+      ,
+      m_StateManager(nullptr)  // Set by Initialize() - evaluates conditions and stores flags
+      ,
+      m_Active(false)  // No conversation in progress until StartDialogue()
+      ,
+      m_CurrentTree(nullptr)  // Points to m_ActiveTree when dialogue is active
+      ,
+      m_CurrentNode(nullptr)  // Current position in the dialogue tree
+      ,
+      m_SelectedOption(0)  // UI cursor position in the options list
 {
 }
 
-void DialogueManager::Initialize(Game *game, GameStateManager *stateManager)
+void DialogueManager::Initialize(Game* game, GameStateManager* stateManager)
 {
     m_Game = game;
     m_StateManager = stateManager;
 }
 
-bool DialogueManager::StartDialogue(NonPlayerCharacter *npc)
+bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
 {
     // Respect contract do not start if a conversation is already active
     if (m_Active)
     {
-        std::cerr << "DialogueManager: Dialogue already active; refusing to start a new one" << std::endl;
+        std::cerr << "DialogueManager: Dialogue already active; refusing to start a new one"
+                  << std::endl;
         return false;
     }
 
@@ -43,8 +49,8 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter *npc)
     }
 
     // Get the starting point for this conversation
-    const DialogueTree &tree = npc->GetDialogueTree();
-    const DialogueNode *startNode = tree.GetStartNode();
+    const DialogueTree& tree = npc->GetDialogueTree();
+    const DialogueNode* startNode = tree.GetStartNode();
     if (!startNode)
     {
         std::cerr << "DialogueManager: Start node not found in NPC tree" << std::endl;
@@ -69,8 +75,10 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter *npc)
     // Build the list of currently available options
     RefreshVisibleOptions();
 
-    // TODO: surface start failures and logging through the game's logger instead of std::cout/std::cerr.
-    std::cout << "DialogueManager: Started dialogue with NPC '" << npc->GetType() << "'" << std::endl;
+    // TODO: surface start failures and logging through the game's logger instead of
+    // std::cout/std::cerr.
+    std::cout << "DialogueManager: Started dialogue with NPC '" << npc->GetType() << "'"
+              << std::endl;
     return true;
 }
 
@@ -94,7 +102,7 @@ void DialogueManager::SelectOption(int optionIndex)
     if (optionIndex < 0 || optionIndex >= static_cast<int>(m_VisibleOptions.size()))
         return;
 
-    const DialogueOption *option = m_VisibleOptions[optionIndex];
+    const DialogueOption* option = m_VisibleOptions[optionIndex];
 
     // Apply any game state changes from this choice
     ExecuteConsequences(option->consequences);
@@ -103,7 +111,7 @@ void DialogueManager::SelectOption(int optionIndex)
     TransitionToNode(option->nextNodeId);
 }
 
-void DialogueManager::TransitionToNode(const std::string &nodeId)
+void DialogueManager::TransitionToNode(const std::string& nodeId)
 {
     // Empty nodeId means "end dialogue" (terminal option)
     if (nodeId.empty() || !m_CurrentTree)
@@ -113,7 +121,7 @@ void DialogueManager::TransitionToNode(const std::string &nodeId)
     }
 
     // Look up the next node in the tree
-    const DialogueNode *nextNode = m_CurrentTree->GetNode(nodeId);
+    const DialogueNode* nextNode = m_CurrentTree->GetNode(nodeId);
     if (!nextNode)
     {
         std::cerr << "DialogueManager: Node not found: " << nodeId << std::endl;
@@ -168,34 +176,36 @@ void DialogueManager::ConfirmSelection()
     }
 }
 
-void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence> &consequences)
+void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>& consequences)
 {
     if (!m_StateManager)
         return;
 
-    for (const auto &cons : consequences)
+    for (const auto& cons : consequences)
     {
         switch (cons.type)
         {
-        case DialogueConsequence::Type::SET_FLAG:
-            // Mark a boolean flag as true (e.g., "quest_accepted")
-            m_StateManager->SetFlag(cons.key, true);
-            std::cout << "DialogueManager: Set flag '" << cons.key << "' = true" << std::endl;
-            break;
+            case DialogueConsequence::Type::SET_FLAG:
+                // Mark a boolean flag as true (e.g., "quest_accepted")
+                m_StateManager->SetFlag(cons.key, true);
+                std::cout << "DialogueManager: Set flag '" << cons.key << "' = true" << std::endl;
+                break;
 
-        case DialogueConsequence::Type::CLEAR_FLAG:
-            // Remove/unset a flag key entirely (e.g., "has_item")
-            m_StateManager->ClearFlag(cons.key);
-            std::cout << "DialogueManager: Cleared flag '" << cons.key << "'" << std::endl;
-            break;
+            case DialogueConsequence::Type::CLEAR_FLAG:
+                // Remove/unset a flag key entirely (e.g., "has_item")
+                m_StateManager->ClearFlag(cons.key);
+                std::cout << "DialogueManager: Cleared flag '" << cons.key << "'" << std::endl;
+                break;
 
-        case DialogueConsequence::Type::SET_FLAG_VALUE:
-            // Set a flag to a specific string value (e.g., "reputation" = "friendly")
-            m_StateManager->SetFlagValue(cons.key, cons.value);
-            std::cout << "DialogueManager: Set flag '" << cons.key << "' = '" << cons.value << "'" << std::endl;
-            break;
+            case DialogueConsequence::Type::SET_FLAG_VALUE:
+                // Set a flag to a specific string value (e.g., "reputation" = "friendly")
+                m_StateManager->SetFlagValue(cons.key, cons.value);
+                std::cout << "DialogueManager: Set flag '" << cons.key << "' = '" << cons.value
+                          << "'" << std::endl;
+                break;
         }
-        // TODO: extend consequences to support scripted actions or item grants; log unhandled types when the enum grows.
+        // TODO: extend consequences to support scripted actions or item grants; log unhandled types
+        // when the enum grows.
     }
 }
 
@@ -207,7 +217,7 @@ void DialogueManager::RefreshVisibleOptions()
         return;
 
     // Filter options based on their conditions
-    for (const auto &option : m_CurrentNode->options)
+    for (const auto& option : m_CurrentNode->options)
     {
         // Only show options where all conditions are satisfied
         if (m_StateManager->EvaluateConditions(option.conditions))

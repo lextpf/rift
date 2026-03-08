@@ -11,12 +11,16 @@
  * @author Alex (https://github.com/lextpf)
  *
  * Central storage for all game flags that dialogue conditions can check
- * and consequences can modify. Flags are stored as string key-value pairs.
+ * and consequences can
+ * modify. Flags are stored as string key-value pairs.
  *
- * @note Condition checks are presence-based by default:
+ * @note Condition checks are
+ * presence-based by default:
  * - `FLAG_SET` means the key exists, regardless of stored value.
- * - `FLAG_NOT_SET` means the key does not exist.
- * Use `FLAG_EQUALS` for value-based checks (e.g., `key == "true"`).
+ * -
+ * `FLAG_NOT_SET` means the key does not exist.
+ * Use `FLAG_EQUALS` for value-based checks (e.g.,
+ * `key == "true"`).
  *
  * @section flag_types Flag Types
  * |    Type |     Method     | Storage    | Example            |
@@ -114,7 +118,8 @@ public:
     [[nodiscard]] bool GetFlag(const std::string& key) const
     {
         auto it = m_Flags.find(key);
-        if (it == m_Flags.end()) return false;
+        if (it == m_Flags.end())
+            return false;
         return (it->second == "true" || it->second == "1");
     }
 
@@ -122,20 +127,14 @@ public:
      * @brief Clear/unset a flag by removing its key.
      * @param key Flag name.
      */
-    void ClearFlag(const std::string& key)
-    {
-        m_Flags.erase(key);
-    }
+    void ClearFlag(const std::string& key) { m_Flags.erase(key); }
 
     /**
      * @brief Set a flag to a string value.
      * @param key Flag name.
      * @param value String value.
      */
-    void SetFlagValue(const std::string& key, const std::string& value)
-    {
-        m_Flags[key] = value;
-    }
+    void SetFlagValue(const std::string& key, const std::string& value) { m_Flags[key] = value; }
 
     /**
      * @brief Get a flag's string value.
@@ -151,7 +150,8 @@ public:
     /**
      * @brief Check if a flag exists.
      * @param key Flag name.
-     * @return True if the flag key exists (value may be "false").
+     * @return True if
+     * the flag key exists (value may be "false").
      */
     [[nodiscard]] bool HasFlag(const std::string& key) const
     {
@@ -201,10 +201,7 @@ public:
     /**
      * @brief Clear all state.
      */
-    void Clear()
-    {
-        m_Flags.clear();
-    }
+    void Clear() { m_Flags.clear(); }
 
     /**
      * @brief Get list of active quest names.
@@ -217,8 +214,7 @@ public:
         for (const auto& [key, value] : m_Flags)
         {
             // Check if this is a quest flag that's active
-            if (key.find("_quest") != std::string::npos &&
-                key.find("accepted_") == 0 &&
+            if (key.find("_quest") != std::string::npos && key.find("accepted_") == 0 &&
                 !value.empty() && value != "false" && value != "0")
             {
                 // Extract quest name
@@ -247,8 +243,7 @@ public:
     {
         std::string flagKey = "accepted_" + questName;
         auto it = m_Flags.find(flagKey);
-        if (it != m_Flags.end() &&
-            it->second != "true" && it->second != "1" &&
+        if (it != m_Flags.end() && it->second != "true" && it->second != "1" &&
             it->second != "false" && it->second != "0")
         {
             return it->second;

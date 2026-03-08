@@ -1,19 +1,19 @@
 #include "Tilemap.h"
 #include "NonPlayerCharacter.h"
 
-#include <iostream>
-#include <algorithm>
-#include <random>
-#include <vector>
-#include <cmath>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-#include <functional>
-#include <cstring>
-#include <json.hpp>
 #include <glad/glad.h>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <functional>
 #include <glm/gtc/type_ptr.hpp>
+#include <iomanip>
+#include <iostream>
+#include <json.hpp>
+#include <random>
+#include <sstream>
+#include <vector>
 
 // Note: STB_IMAGE_IMPLEMENTATION is already defined in Texture.cpp
 // We just need the header for function declarations
@@ -21,10 +21,15 @@
 
 /// Compute 4 warped-quad corners for a building tile and return true if any
 /// corner is behind the sphere (i.e. the tile should be skipped).
-static bool ComputeBuildingCornersClipped(
-    IRenderer &renderer, glm::vec2 baseLeft, glm::vec2 baseRight,
-    float u0, float u1, float v0, float v1,
-    float buildingHeightWorld, glm::vec2 (&corners)[4])
+static bool ComputeBuildingCornersClipped(IRenderer& renderer,
+                                          glm::vec2 baseLeft,
+                                          glm::vec2 baseRight,
+                                          float u0,
+                                          float u1,
+                                          float v0,
+                                          float v1,
+                                          float buildingHeightWorld,
+                                          glm::vec2 (&corners)[4])
 {
     corners[0] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u0, v1, buildingHeightWorld);
     corners[1] = renderer.ComputeBuildingVertex(baseLeft, baseRight, u1, v1, buildingHeightWorld);
@@ -39,20 +44,20 @@ static bool ComputeBuildingCornersClipped(
 }
 
 Tilemap::Tilemap()
-    : m_TileWidth(16)
-    , m_TileHeight(16)
-    , m_MapWidth(125)
-    , m_MapHeight(125)
-    , m_TilesetWidth(0)
-    , m_TilesetHeight(0)
-    , m_TilesPerRow(0)
-    , m_TilesetData(nullptr)
-    , m_TilesetDataWidth(0)
-    , m_TilesetDataHeight(0)
-    , m_TilesetChannels(0)
-    , m_TilesetDataFromStbi(false)
-    , m_TransparencyCacheBuilt(false)
-    , m_AnimationTime(0.0f)
+    : m_TileWidth(16),
+      m_TileHeight(16),
+      m_MapWidth(125),
+      m_MapHeight(125),
+      m_TilesetWidth(0),
+      m_TilesetHeight(0),
+      m_TilesPerRow(0),
+      m_TilesetData(nullptr),
+      m_TilesetDataWidth(0),
+      m_TilesetDataHeight(0),
+      m_TilesetChannels(0),
+      m_TilesetDataFromStbi(false),
+      m_TransparencyCacheBuilt(false),
+      m_AnimationTime(0.0f)
 {
     // Allocate storage for all layers using row-major layout: size = width * height
     const size_t mapSize = m_MapWidth * m_MapHeight;
@@ -87,7 +92,7 @@ Tilemap::Tilemap()
     m_Layers.emplace_back("Overlay3", 140, false);
 
     // Resize all layers to map size
-    for (auto &layer : m_Layers)
+    for (auto& layer : m_Layers)
     {
         layer.resize(mapSize);
     }
@@ -171,7 +176,9 @@ void Tilemap::BuildTransparencyCache()
     std::cout << "Built transparency cache for " << totalTiles << " tiles" << std::endl;
 }
 
-bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int tileWidth, int tileHeight)
+bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
+                                   int tileWidth,
+                                   int tileHeight)
 {
     if (paths.empty())
     {
@@ -187,7 +194,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
 
     struct TilesetData
     {
-        unsigned char *data;
+        unsigned char* data;
         int width;
         int height;
         int channels;
@@ -200,12 +207,13 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     for (size_t i = 0; i < paths.size(); ++i)
     {
         int width, height, channels;
-        unsigned char *data = stbi_load(paths[i].c_str(), &width, &height, &channels, 0);
+        unsigned char* data = stbi_load(paths[i].c_str(), &width, &height, &channels, 0);
         if (!data)
         {
-            std::cerr << "ERROR: Could not load tileset " << (i + 1) << ": " << paths[i] << std::endl;
+            std::cerr << "ERROR: Could not load tileset " << (i + 1) << ": " << paths[i]
+                      << std::endl;
             // Clean up already loaded tilesets
-            for (auto &ts : tilesets)
+            for (auto& ts : tilesets)
             {
                 stbi_image_free(ts.data);
             }
@@ -227,10 +235,11 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     {
         if (tilesets[i].channels != channels)
         {
-            std::cerr << "ERROR: Tilesets must have the same number of channels! Tileset 1: " << channels
-                      << ", Tileset " << (i + 1) << ": " << tilesets[i].channels << std::endl;
+            std::cerr << "ERROR: Tilesets must have the same number of channels! Tileset 1: "
+                      << channels << ", Tileset " << (i + 1) << ": " << tilesets[i].channels
+                      << std::endl;
             // Clean up
-            for (auto &ts : tilesets)
+            for (auto& ts : tilesets)
             {
                 stbi_image_free(ts.data);
             }
@@ -241,14 +250,14 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     // Find maximum width for the combined tileset
     int combinedWidth = tilesets[0].width;
     int combinedHeight = 0;
-    for (const auto &ts : tilesets)
+    for (const auto& ts : tilesets)
     {
         combinedWidth = std::max(combinedWidth, ts.width);
         combinedHeight += ts.height;
     }
 
     // Allocate combined data
-    unsigned char *combinedData = new unsigned char[combinedWidth * combinedHeight * channels];
+    unsigned char* combinedData = new unsigned char[combinedWidth * combinedHeight * channels];
 
     // Initialize combined data to transparent (0)
     memset(combinedData, 0, combinedWidth * combinedHeight * channels);
@@ -257,14 +266,17 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     int currentY = 0;
     for (size_t i = 0; i < tilesets.size(); ++i)
     {
-        const auto &ts = tilesets[i];
+        const auto& ts = tilesets[i];
         for (int y = 0; y < ts.height; ++y)
         {
             // Calculate offsets with explicit bounds check
-            size_t destOffset = static_cast<size_t>(currentY + y) * static_cast<size_t>(combinedWidth) * static_cast<size_t>(channels);
-            size_t srcOffset = static_cast<size_t>(y) * static_cast<size_t>(ts.width) * static_cast<size_t>(channels);
+            size_t destOffset = static_cast<size_t>(currentY + y) *
+                                static_cast<size_t>(combinedWidth) * static_cast<size_t>(channels);
+            size_t srcOffset = static_cast<size_t>(y) * static_cast<size_t>(ts.width) *
+                               static_cast<size_t>(channels);
             size_t copySize = static_cast<size_t>(ts.width) * static_cast<size_t>(channels);
-            size_t destSize = static_cast<size_t>(combinedWidth) * static_cast<size_t>(combinedHeight) * static_cast<size_t>(channels);
+            size_t destSize = static_cast<size_t>(combinedWidth) *
+                              static_cast<size_t>(combinedHeight) * static_cast<size_t>(channels);
 
             // Verify bounds before copy
             if (destOffset + copySize <= destSize)
@@ -278,7 +290,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
 
     // Create OpenGL texture from combined data
     // Flip vertically for OpenGL (origin at bottom-left)
-    unsigned char *flippedData = new unsigned char[combinedWidth * combinedHeight * channels];
+    unsigned char* flippedData = new unsigned char[combinedWidth * combinedHeight * channels];
     for (int y = 0; y < combinedHeight; ++y)
     {
         int srcY = combinedHeight - 1 - y;
@@ -293,7 +305,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
         std::cerr << "ERROR: Failed to create combined texture!" << std::endl;
         delete[] combinedData;
         delete[] flippedData;
-        for (auto &ts : tilesets)
+        for (auto& ts : tilesets)
         {
             stbi_image_free(ts.data);
         }
@@ -320,11 +332,13 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
     m_TilesetHeight = combinedHeight;
     m_TilesPerRow = m_TilesetWidth / m_TileWidth;
 
-    std::cout << "Combined tileset dimensions: " << m_TilesetWidth << "x" << m_TilesetHeight << std::endl;
+    std::cout << "Combined tileset dimensions: " << m_TilesetWidth << "x" << m_TilesetHeight
+              << std::endl;
     for (size_t i = 0; i < tilesets.size(); ++i)
     {
-        std::cout << "  Tileset " << (i + 1) << ": " << tilesets[i].width << "x" << tilesets[i].height
-                  << " (" << (tilesets[i].width / m_TileWidth) << " tiles wide) - " << paths[i] << std::endl;
+        std::cout << "  Tileset " << (i + 1) << ": " << tilesets[i].width << "x"
+                  << tilesets[i].height << " (" << (tilesets[i].width / m_TileWidth)
+                  << " tiles wide) - " << paths[i] << std::endl;
     }
     if (tilesets.size() > 1)
     {
@@ -339,16 +353,20 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string> &paths, int ti
         }
         if (differentWidths)
         {
-            std::cout << "  Note: Tilesets have different widths. Narrower tilesets padded with transparency." << std::endl;
+            std::cout << "  Note: Tilesets have different widths. Narrower tilesets padded with "
+                         "transparency."
+                      << std::endl;
         }
     }
     std::cout << "Tile size: " << m_TileWidth << "x" << m_TileHeight << std::endl;
     std::cout << "Tiles per row: " << m_TilesPerRow << std::endl;
-    std::cout << "Total tiles: " << (m_TilesetDataWidth / m_TileWidth) * (m_TilesetDataHeight / m_TileHeight) << std::endl;
+    std::cout << "Total tiles: "
+              << (m_TilesetDataWidth / m_TileWidth) * (m_TilesetDataHeight / m_TileHeight)
+              << std::endl;
 
     // Clean up temporary data
     delete[] flippedData;
-    for (auto &ts : tilesets)
+    for (auto& ts : tilesets)
     {
         stbi_image_free(ts.data);
     }
@@ -373,28 +391,28 @@ void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
     m_Layers.reserve(10);
 
     // Background layers (rendered before player)
-    m_Layers.push_back(TileLayer("Ground", 0, true));         // Layer 0: Base terrain
-    m_Layers.push_back(TileLayer("Ground Detail", 10, true)); // Layer 1: Ground details
-    m_Layers.push_back(TileLayer("Objects", 20, true));       // Layer 2: Background objects
-    m_Layers.push_back(TileLayer("Objects2", 30, true));      // Layer 3: More background objects
-    m_Layers.push_back(TileLayer("Objects3", 40, true));      // Layer 4: Extra background objects
+    m_Layers.push_back(TileLayer("Ground", 0, true));          // Layer 0: Base terrain
+    m_Layers.push_back(TileLayer("Ground Detail", 10, true));  // Layer 1: Ground details
+    m_Layers.push_back(TileLayer("Objects", 20, true));        // Layer 2: Background objects
+    m_Layers.push_back(TileLayer("Objects2", 30, true));       // Layer 3: More background objects
+    m_Layers.push_back(TileLayer("Objects3", 40, true));       // Layer 4: Extra background objects
 
     // Foreground layers (rendered after player for depth)
-    m_Layers.push_back(TileLayer("Foreground", 100, false));  // Layer 5: Foreground objects
-    m_Layers.push_back(TileLayer("Foreground2", 110, false)); // Layer 6: More foreground
-    m_Layers.push_back(TileLayer("Overlay", 120, false));     // Layer 7: Top overlay
-    m_Layers.push_back(TileLayer("Overlay2", 130, false));    // Layer 8: Extra top layer
-    m_Layers.push_back(TileLayer("Overlay3", 140, false));    // Layer 9: Highest overlay
+    m_Layers.push_back(TileLayer("Foreground", 100, false));   // Layer 5: Foreground objects
+    m_Layers.push_back(TileLayer("Foreground2", 110, false));  // Layer 6: More foreground
+    m_Layers.push_back(TileLayer("Overlay", 120, false));      // Layer 7: Top overlay
+    m_Layers.push_back(TileLayer("Overlay2", 130, false));     // Layer 8: Extra top layer
+    m_Layers.push_back(TileLayer("Overlay3", 140, false));     // Layer 9: Highest overlay
 
     // Resize all layer data arrays
-    for (auto &layer : m_Layers)
+    for (auto& layer : m_Layers)
     {
         layer.resize(mapSize);
     }
 
     m_CollisionMap.Resize(m_MapWidth, m_MapHeight);
     m_NavigationMap.Resize(m_MapWidth, m_MapHeight);
-    m_CornerCutBlocked.assign(mapSize, 0); // All corners allow cutting by default
+    m_CornerCutBlocked.assign(mapSize, 0);  // All corners allow cutting by default
 
     // Initialize animation map
     m_TileAnimationMap.assign(mapSize, -1);
@@ -463,7 +481,7 @@ bool Tilemap::IsTileTransparent(int tileID) const
     // Fallback to pixel scanning if cache not available
     if (!m_TilesetData || tileID < 0 || m_TilesetChannels == 0)
     {
-        return true; // Treat as transparent if we can't check
+        return true;  // Treat as transparent if we can't check
     }
 
     int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
@@ -558,9 +576,8 @@ bool Tilemap::GetNoProjection(int x, int y, int layer) const
     return m_Layers[layerIdx].noProjection[index];
 }
 
-bool Tilemap::FindNoProjectionStructureBounds(int tileX, int tileY,
-                                              int &outMinX, int &outMaxX,
-                                              int &outMinY, int &outMaxY) const
+bool Tilemap::FindNoProjectionStructureBounds(
+    int tileX, int tileY, int& outMinX, int& outMaxX, int& outMinY, int& outMaxY) const
 {
     if (tileX < 0 || tileX >= m_MapWidth || tileY < 0 || tileY >= m_MapHeight)
         return false;
@@ -631,7 +648,9 @@ bool Tilemap::FindNoProjectionStructureBounds(int tileX, int tileY,
     return true;
 }
 
-int Tilemap::AddNoProjectionStructure(glm::vec2 leftAnchor, glm::vec2 rightAnchor, const std::string& name)
+int Tilemap::AddNoProjectionStructure(glm::vec2 leftAnchor,
+                                      glm::vec2 rightAnchor,
+                                      const std::string& name)
 {
     int id = static_cast<int>(m_NoProjectionStructures.size());
     m_NoProjectionStructures.emplace_back(id, leftAnchor, rightAnchor, name);
@@ -704,12 +723,14 @@ void Tilemap::SetTileStructureId(int x, int y, int layer, int structId)
     m_Layers[layerIdx].structureId[index] = structId;
 }
 
-const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(glm::vec2 cullCam, glm::vec2 cullSize) const
+const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
+    glm::vec2 cullCam, glm::vec2 cullSize) const
 {
     m_YSortPlusTilesCache.clear();
 
     int x0, y0, x1, y1;
-    ComputeTileRange(m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
+    ComputeTileRange(
+        m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
 
     // Helper to check if a tile at (x,y,layer) is Y-sorted and non-empty using dynamic layers
     auto isYSortPlusTile = [this](int x, int y, size_t layerIdx) -> bool
@@ -719,7 +740,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(glm
         if (layerIdx >= m_Layers.size())
             return false;
         size_t index = static_cast<size_t>(y * m_MapWidth + x);
-        const TileLayer &layer = m_Layers[layerIdx];
+        const TileLayer& layer = m_Layers[layerIdx];
         if (index >= layer.ySortPlus.size())
             return false;
         if (!layer.ySortPlus[index])
@@ -742,7 +763,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(glm
     // Check all dynamic layers for Y-sorted tiles
     for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
     {
-        const TileLayer &layer = m_Layers[layerIdx];
+        const TileLayer& layer = m_Layers[layerIdx];
 
         for (int y = y0; y <= y1; ++y)
         {
@@ -779,7 +800,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(glm
                 YSortPlusTile tile;
                 tile.x = x;
                 tile.y = y;
-                tile.layer = static_cast<int>(layerIdx); // Store dynamic layer index
+                tile.layer = static_cast<int>(layerIdx);  // Store dynamic layer index
                 // Use bottom tile's anchorY so entire vertical stack sorts together
                 tile.anchorY = static_cast<float>((bottomY + 1) * m_TileHeight);
                 // Check if this tile has no-projection flag
@@ -795,7 +816,8 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(glm
     return m_YSortPlusTilesCache;
 }
 
-void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection)
+void Tilemap::RenderSingleTile(
+    IRenderer& renderer, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection)
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return;
@@ -805,7 +827,7 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
         return;
 
     size_t index = static_cast<size_t>(y * m_MapWidth + x);
-    const TileLayer &tileLayer = m_Layers[layerIdx];
+    const TileLayer& tileLayer = m_Layers[layerIdx];
 
     if (index >= tileLayer.tiles.size())
         return;
@@ -830,7 +852,8 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
         return;
 
     // Determine no-projection mode: -1=auto (from layer), 0=force off, 1=force on
-    bool isNoProjection = (useNoProjection == -1) ? tileLayer.noProjection[index] : (useNoProjection == 1);
+    bool isNoProjection =
+        (useNoProjection == -1) ? tileLayer.noProjection[index] : (useNoProjection == 1);
 
     int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
     int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
@@ -852,13 +875,20 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
             glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
             glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
 
-            renderer.DrawSpriteRegion(m_TilesetTexture, screenPos, renderSize,
-                                      texCoord, texSize, rotation, glm::vec3(1.0f), flipY);
+            renderer.DrawSpriteRegion(m_TilesetTexture,
+                                      screenPos,
+                                      renderSize,
+                                      texCoord,
+                                      texSize,
+                                      rotation,
+                                      glm::vec3(1.0f),
+                                      flipY);
         }
         else
         {
             // 3D mode: use structure-based rendering if tile has structure ID
-            int structId = (index < tileLayer.structureId.size()) ? tileLayer.structureId[index] : -1;
+            int structId =
+                (index < tileLayer.structureId.size()) ? tileLayer.structureId[index] : -1;
 
             if (structId >= 0 && structId < static_cast<int>(m_NoProjectionStructures.size()))
             {
@@ -867,8 +897,10 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                 const NoProjectionStructure& structDef = m_NoProjectionStructures[structId];
 
                 // Check if structure anchor is behind the sphere
-                float anchorCenterX = (structDef.leftAnchor.x + structDef.rightAnchor.x) * 0.5f - cameraPos.x;
-                float anchorCenterY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y) - cameraPos.y;
+                float anchorCenterX =
+                    (structDef.leftAnchor.x + structDef.rightAnchor.x) * 0.5f - cameraPos.x;
+                float anchorCenterY =
+                    std::max(structDef.leftAnchor.y, structDef.rightAnchor.y) - cameraPos.y;
                 if (renderer.IsPointBehindSphere(glm::vec2(anchorCenterX, anchorCenterY)))
                     return;
 
@@ -879,7 +911,8 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                     for (int sx = 0; sx < m_MapWidth; ++sx)
                     {
                         size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
-                        if (sIdx < tileLayer.structureId.size() && tileLayer.structureId[sIdx] == structId)
+                        if (sIdx < tileLayer.structureId.size() &&
+                            tileLayer.structureId[sIdx] == structId)
                         {
                             minX = std::min(minX, sx);
                             maxX = std::max(maxX, sx);
@@ -892,8 +925,10 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                 // Structure dimensions in tiles
                 int structureWidthTiles = maxX - minX + 1;
                 int structureHeightTiles = maxY - minY + 1;
-                if (structureWidthTiles < 1) structureWidthTiles = 1;
-                if (structureHeightTiles < 1) structureHeightTiles = 1;
+                if (structureWidthTiles < 1)
+                    structureWidthTiles = 1;
+                if (structureHeightTiles < 1)
+                    structureHeightTiles = 1;
 
                 // Calculate this tile's position within the structure (0-based from bottom-left)
                 int tileCol = x - minX;  // Column index (0 to widthTiles-1)
@@ -902,9 +937,11 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                 // Parametric coordinates for this tile within the structure
                 // u: [0,1] across width, v: [0,1] up height
                 float u0 = static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
-                float u1 = static_cast<float>(tileCol + 1) / static_cast<float>(structureWidthTiles);
+                float u1 =
+                    static_cast<float>(tileCol + 1) / static_cast<float>(structureWidthTiles);
                 float v0 = static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
-                float v1 = static_cast<float>(tileRow + 1) / static_cast<float>(structureHeightTiles);
+                float v1 =
+                    static_cast<float>(tileRow + 1) / static_cast<float>(structureHeightTiles);
 
                 // Match the old code's coordinate calculation for perfect base pinning
                 // Sort anchor X positions (old code used min/max)
@@ -924,11 +961,20 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                 float buildingHeightWorld = static_cast<float>(structureHeightTiles * m_TileHeight);
 
                 glm::vec2 corners[4];
-                if (ComputeBuildingCornersClipped(renderer, baseLeft, baseRight, u0, u1, v0, v1, buildingHeightWorld, corners))
+                if (ComputeBuildingCornersClipped(renderer,
+                                                  baseLeft,
+                                                  baseRight,
+                                                  u0,
+                                                  u1,
+                                                  v0,
+                                                  v1,
+                                                  buildingHeightWorld,
+                                                  corners))
                     return;
 
                 // Render the tile as a warped quad (no additional perspective applied)
-                renderer.DrawWarpedQuad(m_TilesetTexture, corners, texCoord, texSize, glm::vec3(1.0f), flipY);
+                renderer.DrawWarpedQuad(
+                    m_TilesetTexture, corners, texCoord, texSize, glm::vec3(1.0f), flipY);
             }
             else
             {
@@ -936,11 +982,18 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
                 float worldX = static_cast<float>(x * m_TileWidth);
                 float worldY = static_cast<float>(y * m_TileHeight);
                 glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
-                glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
+                glm::vec2 renderSize(static_cast<float>(m_TileWidth),
+                                     static_cast<float>(m_TileHeight));
 
                 renderer.SuspendPerspective(true);
-                renderer.DrawSpriteRegion(m_TilesetTexture, screenPos, renderSize,
-                                          texCoord, texSize, rotation, glm::vec3(1.0f), flipY);
+                renderer.DrawSpriteRegion(m_TilesetTexture,
+                                          screenPos,
+                                          renderSize,
+                                          texCoord,
+                                          texSize,
+                                          rotation,
+                                          glm::vec3(1.0f),
+                                          flipY);
                 renderer.SuspendPerspective(false);
             }
         }
@@ -953,12 +1006,18 @@ void Tilemap::RenderSingleTile(IRenderer &renderer, int x, int y, int layer, glm
         glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
 
         glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
-        renderer.DrawSpriteRegion(m_TilesetTexture, screenPos, renderSize,
-                                  texCoord, texSize, rotation, glm::vec3(1.0f), flipY);
+        renderer.DrawSpriteRegion(m_TilesetTexture,
+                                  screenPos,
+                                  renderSize,
+                                  texCoord,
+                                  texSize,
+                                  rotation,
+                                  glm::vec3(1.0f),
+                                  flipY);
     }
 }
 
-TileLayer &Tilemap::GetLayer(size_t index)
+TileLayer& Tilemap::GetLayer(size_t index)
 {
     if (index >= m_Layers.size())
     {
@@ -967,7 +1026,7 @@ TileLayer &Tilemap::GetLayer(size_t index)
     return m_Layers[index];
 }
 
-const TileLayer &Tilemap::GetLayer(size_t index) const
+const TileLayer& Tilemap::GetLayer(size_t index) const
 {
     if (index >= m_Layers.size())
     {
@@ -1057,13 +1116,18 @@ std::vector<size_t> Tilemap::GetLayerRenderOrder() const
     {
         indices[i] = i;
     }
-    std::sort(indices.begin(), indices.end(), [this](size_t a, size_t b)
+    std::sort(indices.begin(),
+              indices.end(),
+              [this](size_t a, size_t b)
               { return m_Layers[a].renderOrder < m_Layers[b].renderOrder; });
     return indices;
 }
 
-void Tilemap::RenderBackgroundLayers(IRenderer &renderer, glm::vec2 renderCam, glm::vec2 renderSize,
-                                     glm::vec2 cullCam, glm::vec2 cullSize)
+void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
+                                     glm::vec2 renderCam,
+                                     glm::vec2 renderSize,
+                                     glm::vec2 cullCam,
+                                     glm::vec2 cullSize)
 {
     // Single-pass rendering: iterate visible tiles once, render all background layers per tile
     auto order = GetLayerRenderOrder();
@@ -1083,7 +1147,8 @@ void Tilemap::RenderBackgroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
 
     // Compute visible tile range once
     int x0, y0, x1, y1;
-    ComputeTileRange(m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
+    ComputeTileRange(
+        m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
 
     // Pre-compute constants
     const int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
@@ -1096,20 +1161,22 @@ void Tilemap::RenderBackgroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
-    const std::vector<bool> &transparencyCache = m_TileTransparencyCache;
+    const std::vector<bool>& transparencyCache = m_TileTransparencyCache;
     const int transparencyCacheSize = static_cast<int>(transparencyCache.size());
 
     // Single pass over visible tiles
     for (int y = y0; y <= y1; ++y)
     {
         const int rowOffset = y * mapWidth;
-        const double tilePosYd = static_cast<double>(y) * m_TileHeight - static_cast<double>(renderCam.y);
+        const double tilePosYd =
+            static_cast<double>(y) * m_TileHeight - static_cast<double>(renderCam.y);
         const float tilePosY = static_cast<float>(tilePosYd);
 
         for (int x = x0; x <= x1; ++x)
         {
             const size_t idx = static_cast<size_t>(rowOffset + x);
-            const double tilePosXd = static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
+            const double tilePosXd =
+                static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
             // Skip tiles behind the sphere (when full globe is visible)
@@ -1120,7 +1187,7 @@ void Tilemap::RenderBackgroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
             // Render all background layers at this position (in render order)
             for (size_t layerIdx : bgLayers)
             {
-                const TileLayer &layer = m_Layers[layerIdx];
+                const TileLayer& layer = m_Layers[layerIdx];
 
                 int tileID = layer.tiles[idx];
 
@@ -1145,26 +1212,32 @@ void Tilemap::RenderBackgroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
                     continue;
 
                 // Skip transparent tiles
-                if (hasTransparencyCache && tileID < transparencyCacheSize && transparencyCache[tileID])
+                if (hasTransparencyCache && tileID < transparencyCacheSize &&
+                    transparencyCache[tileID])
                     continue;
 
                 const int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
                 const int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
 
-                renderer.DrawSpriteRegion(m_TilesetTexture,
-                                          glm::vec2(tilePosX, tilePosY),
-                                          tileRenderSize,
-                                          glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
-                                          texSize,
-                                          layer.rotation[idx],
-                                          white, flipY);
+                renderer.DrawSpriteRegion(
+                    m_TilesetTexture,
+                    glm::vec2(tilePosX, tilePosY),
+                    tileRenderSize,
+                    glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
+                    texSize,
+                    layer.rotation[idx],
+                    white,
+                    flipY);
             }
         }
     }
 }
 
-void Tilemap::RenderForegroundLayers(IRenderer &renderer, glm::vec2 renderCam, glm::vec2 renderSize,
-                                     glm::vec2 cullCam, glm::vec2 cullSize)
+void Tilemap::RenderForegroundLayers(IRenderer& renderer,
+                                     glm::vec2 renderCam,
+                                     glm::vec2 renderSize,
+                                     glm::vec2 cullCam,
+                                     glm::vec2 cullSize)
 {
     // Single-pass rendering: iterate visible tiles once, render all foreground layers per tile
     auto order = GetLayerRenderOrder();
@@ -1184,7 +1257,8 @@ void Tilemap::RenderForegroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
 
     // Compute visible tile range once
     int x0, y0, x1, y1;
-    ComputeTileRange(m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
+    ComputeTileRange(
+        m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
 
     // Pre-compute constants
     const int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
@@ -1197,20 +1271,22 @@ void Tilemap::RenderForegroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
-    const std::vector<bool> &transparencyCache = m_TileTransparencyCache;
+    const std::vector<bool>& transparencyCache = m_TileTransparencyCache;
     const int transparencyCacheSize = static_cast<int>(transparencyCache.size());
 
     // Single pass over visible tiles
     for (int y = y0; y <= y1; ++y)
     {
         const int rowOffset = y * mapWidth;
-        const double tilePosYd = static_cast<double>(y) * m_TileHeight - static_cast<double>(renderCam.y);
+        const double tilePosYd =
+            static_cast<double>(y) * m_TileHeight - static_cast<double>(renderCam.y);
         const float tilePosY = static_cast<float>(tilePosYd);
 
         for (int x = x0; x <= x1; ++x)
         {
             const size_t idx = static_cast<size_t>(rowOffset + x);
-            const double tilePosXd = static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
+            const double tilePosXd =
+                static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
             // Skip tiles behind the sphere (when full globe is visible)
@@ -1221,7 +1297,7 @@ void Tilemap::RenderForegroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
             // Render all foreground layers at this position (in render order)
             for (size_t layerIdx : fgLayers)
             {
-                const TileLayer &layer = m_Layers[layerIdx];
+                const TileLayer& layer = m_Layers[layerIdx];
 
                 int tileID = layer.tiles[idx];
 
@@ -1246,38 +1322,51 @@ void Tilemap::RenderForegroundLayers(IRenderer &renderer, glm::vec2 renderCam, g
                     continue;
 
                 // Skip transparent tiles
-                if (hasTransparencyCache && tileID < transparencyCacheSize && transparencyCache[tileID])
+                if (hasTransparencyCache && tileID < transparencyCacheSize &&
+                    transparencyCache[tileID])
                     continue;
 
                 const int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
                 const int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
 
-                renderer.DrawSpriteRegion(m_TilesetTexture,
-                                          glm::vec2(tilePosX, tilePosY),
-                                          tileRenderSize,
-                                          glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
-                                          texSize,
-                                          layer.rotation[idx],
-                                          white, flipY);
+                renderer.DrawSpriteRegion(
+                    m_TilesetTexture,
+                    glm::vec2(tilePosX, tilePosY),
+                    tileRenderSize,
+                    glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
+                    texSize,
+                    layer.rotation[idx],
+                    white,
+                    flipY);
             }
         }
     }
 }
 
-void Tilemap::RenderBackgroundLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam, glm::vec2 renderSize,
-                                                 glm::vec2 cullCam, glm::vec2 cullSize)
+void Tilemap::RenderBackgroundLayersNoProjection(IRenderer& renderer,
+                                                 glm::vec2 renderCam,
+                                                 glm::vec2 renderSize,
+                                                 glm::vec2 cullCam,
+                                                 glm::vec2 cullSize)
 {
     RenderLayersNoProjection(renderer, renderCam, renderSize, cullCam, cullSize, true);
 }
 
-void Tilemap::RenderForegroundLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam, glm::vec2 renderSize,
-                                                 glm::vec2 cullCam, glm::vec2 cullSize)
+void Tilemap::RenderForegroundLayersNoProjection(IRenderer& renderer,
+                                                 glm::vec2 renderCam,
+                                                 glm::vec2 renderSize,
+                                                 glm::vec2 cullCam,
+                                                 glm::vec2 cullSize)
 {
     RenderLayersNoProjection(renderer, renderCam, renderSize, cullCam, cullSize, false);
 }
 
-void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam, glm::vec2 renderSize,
-                                       glm::vec2 cullCam, glm::vec2 cullSize, bool isBackground)
+void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
+                                       glm::vec2 renderCam,
+                                       glm::vec2 renderSize,
+                                       glm::vec2 cullCam,
+                                       glm::vec2 cullSize,
+                                       bool isBackground)
 {
     auto order = GetLayerRenderOrder();
 
@@ -1294,7 +1383,8 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
         return;
 
     int x0, y0, x1, y1;
-    ComputeTileRange(m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
+    ComputeTileRange(
+        m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
 
     const int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
     const int mapWidth = m_MapWidth;
@@ -1319,7 +1409,7 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
 
                 for (size_t layerIdx : layers)
                 {
-                    const TileLayer &layer = m_Layers[layerIdx];
+                    const TileLayer& layer = m_Layers[layerIdx];
 
                     int tileID = layer.tiles[idx];
 
@@ -1345,12 +1435,15 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
                     int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
                     int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
 
-                    renderer.DrawSpriteRegion(m_TilesetTexture,
-                                              glm::vec2(tilePosX, tilePosY),
-                                              glm::vec2(tileWf, tileHf),
-                                              glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
-                                              glm::vec2(tileWf, tileHf),
-                                              layer.rotation[idx], white, flipY);
+                    renderer.DrawSpriteRegion(
+                        m_TilesetTexture,
+                        glm::vec2(tilePosX, tilePosY),
+                        glm::vec2(tileWf, tileHf),
+                        glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
+                        glm::vec2(tileWf, tileHf),
+                        layer.rotation[idx],
+                        white,
+                        flipY);
                 }
             }
         }
@@ -1380,7 +1473,8 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
                 if (m_Layers[layerIdx].noProjection[idx] && !m_Layers[layerIdx].ySortPlus[idx])
                 {
                     hasNoProj = true;
-                    if (idx < m_Layers[layerIdx].structureId.size() && m_Layers[layerIdx].structureId[idx] >= 0)
+                    if (idx < m_Layers[layerIdx].structureId.size() &&
+                        m_Layers[layerIdx].structureId[idx] >= 0)
                     {
                         foundStructId = m_Layers[layerIdx].structureId[idx];
                     }
@@ -1390,7 +1484,8 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
             if (!hasNoProj)
                 continue;
 
-            if (foundStructId >= 0 && foundStructId < static_cast<int>(m_NoProjectionStructures.size()))
+            if (foundStructId >= 0 &&
+                foundStructId < static_cast<int>(m_NoProjectionStructures.size()))
             {
                 if (renderedStructures[foundStructId])
                 {
@@ -1401,8 +1496,10 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
 
                 const NoProjectionStructure& structDef = m_NoProjectionStructures[foundStructId];
 
-                float anchorCenterX = (structDef.leftAnchor.x + structDef.rightAnchor.x) * 0.5f - renderCam.x;
-                float anchorCenterY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y) - renderCam.y;
+                float anchorCenterX =
+                    (structDef.leftAnchor.x + structDef.rightAnchor.x) * 0.5f - renderCam.x;
+                float anchorCenterY =
+                    std::max(structDef.leftAnchor.y, structDef.rightAnchor.y) - renderCam.y;
                 if (renderer.IsPointBehindSphere(glm::vec2(anchorCenterX, anchorCenterY)))
                 {
                     processed[idx] = true;
@@ -1425,9 +1522,12 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
                         bool hasTileInStruct = false;
                         for (size_t layerIdx : layers)
                         {
-                            if (!m_Layers[layerIdx].noProjection[sIdx] || m_Layers[layerIdx].ySortPlus[sIdx])
+                            if (!m_Layers[layerIdx].noProjection[sIdx] ||
+                                m_Layers[layerIdx].ySortPlus[sIdx])
                                 continue;
-                            int sid = (sIdx < m_Layers[layerIdx].structureId.size()) ? m_Layers[layerIdx].structureId[sIdx] : -1;
+                            int sid = (sIdx < m_Layers[layerIdx].structureId.size())
+                                          ? m_Layers[layerIdx].structureId[sIdx]
+                                          : -1;
                             if (sid == foundStructId)
                             {
                                 hasTileInStruct = true;
@@ -1470,13 +1570,13 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
                 glm::vec2 baseLeft(anchorMinX - renderCam.x, bottomScreenY);
                 glm::vec2 baseRight(anchorMaxX - renderCam.x, bottomScreenY);
 
-                for (const auto &[tx, ty] : structureTiles)
+                for (const auto& [tx, ty] : structureTiles)
                 {
                     size_t tIdx = static_cast<size_t>(ty * m_MapWidth + tx);
 
                     for (size_t layerIdx : layers)
                     {
-                        const TileLayer &layer = m_Layers[layerIdx];
+                        const TileLayer& layer = m_Layers[layerIdx];
 
                         if (!layer.noProjection[tIdx] || layer.ySortPlus[tIdx])
                             continue;
@@ -1509,24 +1609,40 @@ void Tilemap::RenderLayersNoProjection(IRenderer &renderer, glm::vec2 renderCam,
                         int tileCol = tx - b.minX;
                         int tileRow = b.maxY - ty;
 
-                        float buildingHeightWorld = static_cast<float>(structureHeightTiles * m_TileHeight);
+                        float buildingHeightWorld =
+                            static_cast<float>(structureHeightTiles * m_TileHeight);
 
-                        float u0 = static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
-                        float u1 = static_cast<float>(tileCol + 1) / static_cast<float>(structureWidthTiles);
-                        float v0 = static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
-                        float v1 = static_cast<float>(tileRow + 1) / static_cast<float>(structureHeightTiles);
+                        float u0 =
+                            static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
+                        float u1 = static_cast<float>(tileCol + 1) /
+                                   static_cast<float>(structureWidthTiles);
+                        float v0 =
+                            static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
+                        float v1 = static_cast<float>(tileRow + 1) /
+                                   static_cast<float>(structureHeightTiles);
 
                         glm::vec2 corners[4];
-                        if (ComputeBuildingCornersClipped(renderer, baseLeft, baseRight, u0, u1, v0, v1, buildingHeightWorld, corners))
+                        if (ComputeBuildingCornersClipped(renderer,
+                                                          baseLeft,
+                                                          baseRight,
+                                                          u0,
+                                                          u1,
+                                                          v0,
+                                                          v1,
+                                                          buildingHeightWorld,
+                                                          corners))
                             continue;
 
                         int tsX = (tid % dataTilesPerRow) * m_TileWidth;
                         int tsY = (tid / dataTilesPerRow) * m_TileHeight;
 
-                        renderer.DrawWarpedQuad(m_TilesetTexture, corners,
-                                                glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
-                                                glm::vec2(tileWf, tileHf),
-                                                white, flipY);
+                        renderer.DrawWarpedQuad(
+                            m_TilesetTexture,
+                            corners,
+                            glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
+                            glm::vec2(tileWf, tileHf),
+                            white,
+                            flipY);
                     }
                 }
             }
@@ -1556,9 +1672,11 @@ void Tilemap::GenerateDefaultMap()
     int totalTiles = totalTilesX * totalTilesY;
 
     std::cout << "Scanning tileset for non-transparent tiles..." << std::endl;
-    std::cout << "  Tileset size: " << m_TilesetDataWidth << "x" << m_TilesetDataHeight << " pixels" << std::endl;
+    std::cout << "  Tileset size: " << m_TilesetDataWidth << "x" << m_TilesetDataHeight << " pixels"
+              << std::endl;
     std::cout << "  Tile size: " << m_TileWidth << "x" << m_TileHeight << " pixels" << std::endl;
-    std::cout << "  Total tiles in tileset: " << totalTilesX << "x" << totalTilesY << " = " << totalTiles << " tiles" << std::endl;
+    std::cout << "  Total tiles in tileset: " << totalTilesX << "x" << totalTilesY << " = "
+              << totalTiles << " tiles" << std::endl;
 
     for (int tileID = 0; tileID < totalTiles; ++tileID)
     {
@@ -1569,7 +1687,7 @@ void Tilemap::GenerateDefaultMap()
 
         if (tilesetX % m_TileWidth != 0 || tilesetY % m_TileHeight != 0)
         {
-            continue; // Skip misaligned tiles (shouldn't happen)
+            continue;  // Skip misaligned tiles (shouldn't happen)
         }
 
         if (!IsTileTransparent(tileID))
@@ -1578,7 +1696,8 @@ void Tilemap::GenerateDefaultMap()
         }
     }
 
-    std::cout << "Found " << validTileIDs.size() << " non-transparent tiles out of " << totalTiles << " total tiles" << std::endl;
+    std::cout << "Found " << validTileIDs.size() << " non-transparent tiles out of " << totalTiles
+              << " total tiles" << std::endl;
 
     if (validTileIDs.empty())
     {
@@ -1590,7 +1709,8 @@ void Tilemap::GenerateDefaultMap()
     std::mt19937 mapRng(std::random_device{}());
     std::uniform_int_distribution<int> tileDist(0, static_cast<int>(validTileIDs.size()) - 1);
 
-    std::cout << "Generating random map with " << (m_MapWidth * m_MapHeight) << " tiles..." << std::endl;
+    std::cout << "Generating random map with " << (m_MapWidth * m_MapHeight) << " tiles..."
+              << std::endl;
 
     for (int y = 0; y < m_MapHeight; ++y)
     {
@@ -1602,7 +1722,8 @@ void Tilemap::GenerateDefaultMap()
         }
     }
 
-    std::cout << "Generated random map with " << (m_MapWidth * m_MapHeight) << " tiles" << std::endl;
+    std::cout << "Generated random map with " << (m_MapWidth * m_MapHeight) << " tiles"
+              << std::endl;
 }
 
 std::vector<int> Tilemap::GetValidTileIDs() const
@@ -1629,7 +1750,7 @@ std::vector<int> Tilemap::GetValidTileIDs() const
     return validTileIDs;
 }
 
-static std::vector<DialogueCondition> ParseConditionString(const std::string &whenStr)
+static std::vector<DialogueCondition> ParseConditionString(const std::string& whenStr)
 {
     std::vector<DialogueCondition> conditions;
     if (whenStr.empty())
@@ -1640,12 +1761,8 @@ static std::vector<DialogueCondition> ParseConditionString(const std::string &wh
     while (!remaining.empty())
     {
         size_t andPos = remaining.find(" & ");
-        std::string part = (andPos != std::string::npos)
-                               ? remaining.substr(0, andPos)
-                               : remaining;
-        remaining = (andPos != std::string::npos)
-                        ? remaining.substr(andPos + 3)
-                        : "";
+        std::string part = (andPos != std::string::npos) ? remaining.substr(0, andPos) : remaining;
+        remaining = (andPos != std::string::npos) ? remaining.substr(andPos + 3) : "";
 
         // Trim whitespace
         while (!part.empty() && part[0] == ' ')
@@ -1672,8 +1789,8 @@ static std::vector<DialogueCondition> ParseConditionString(const std::string &wh
         }
         else
         {
-            cond.type = negated ? DialogueCondition::Type::FLAG_NOT_SET
-                                : DialogueCondition::Type::FLAG_SET;
+            cond.type =
+                negated ? DialogueCondition::Type::FLAG_NOT_SET : DialogueCondition::Type::FLAG_SET;
             cond.key = part;
         }
 
@@ -1682,13 +1799,13 @@ static std::vector<DialogueCondition> ParseConditionString(const std::string &wh
     return conditions;
 }
 
-static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::json &doArr)
+static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::json& doArr)
 {
     std::vector<DialogueConsequence> consequences;
     if (!doArr.is_array())
         return consequences;
 
-    for (const auto &item : doArr)
+    for (const auto& item : doArr)
     {
         if (!item.is_string())
             continue;
@@ -1710,7 +1827,7 @@ static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::js
             size_t colonPos = str.find(':');
             cons.type = DialogueConsequence::Type::SET_FLAG;
             cons.key = str.substr(0, colonPos);
-            cons.value = str.substr(colonPos + 1); // Quest description
+            cons.value = str.substr(colonPos + 1);  // Quest description
         }
         // Check for value assignment
         else if (str.find('=') != std::string::npos)
@@ -1732,7 +1849,7 @@ static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::js
     return consequences;
 }
 
-static std::string SerializeConditions(const std::vector<DialogueCondition> &conditions)
+static std::string SerializeConditions(const std::vector<DialogueCondition>& conditions)
 {
     if (conditions.empty())
         return "";
@@ -1742,7 +1859,7 @@ static std::string SerializeConditions(const std::vector<DialogueCondition> &con
     {
         if (i > 0)
             result += " & ";
-        const auto &c = conditions[i];
+        const auto& c = conditions[i];
 
         if (c.type == DialogueCondition::Type::FLAG_NOT_SET)
             result += "!" + c.key;
@@ -1754,25 +1871,28 @@ static std::string SerializeConditions(const std::vector<DialogueCondition> &con
     return result;
 }
 
-static nlohmann::json SerializeConsequences(const std::vector<DialogueConsequence> &consequences)
+static nlohmann::json SerializeConsequences(const std::vector<DialogueConsequence>& consequences)
 {
     nlohmann::json arr = nlohmann::json::array();
-    for (const auto &c : consequences)
+    for (const auto& c : consequences)
     {
         if (c.type == DialogueConsequence::Type::CLEAR_FLAG)
             arr.push_back("-" + c.key);
         else if (c.type == DialogueConsequence::Type::SET_FLAG_VALUE)
             arr.push_back(c.key + "=" + c.value);
         else if (c.type == DialogueConsequence::Type::SET_FLAG && !c.value.empty())
-            arr.push_back(c.key + ":" + c.value); // Quest description
+            arr.push_back(c.key + ":" + c.value);  // Quest description
         else
             arr.push_back(c.key);
     }
     return arr;
 }
 
-bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPlayerCharacter> *npcs,
-                            int playerTileX, int playerTileY, int characterType) const
+bool Tilemap::SaveMapToJSON(const std::string& filename,
+                            const std::vector<NonPlayerCharacter>* npcs,
+                            int playerTileX,
+                            int playerTileY,
+                            int characterType) const
 {
     using json = nlohmann::json;
 
@@ -1812,7 +1932,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
     json dynamicLayersArray = json::array();
     for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
     {
-        const TileLayer &layer = m_Layers[layerIdx];
+        const TileLayer& layer = m_Layers[layerIdx];
         json layerJson = json::object();
         layerJson["name"] = layer.name;
         layerJson["renderOrder"] = layer.renderOrder;
@@ -1895,7 +2015,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
     if (!m_NoProjectionStructures.empty())
     {
         json structuresArray = json::array();
-        for (const auto &s : m_NoProjectionStructures)
+        for (const auto& s : m_NoProjectionStructures)
         {
             json structJson;
             structJson["id"] = s.id;
@@ -1912,7 +2032,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
 
     // Particle Zones
     json particleZonesArray = json::array();
-    for (const auto &zone : m_ParticleZones)
+    for (const auto& zone : m_ParticleZones)
     {
         json zoneJson;
         zoneJson["x"] = zone.position.x;
@@ -1931,7 +2051,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
     if (npcs)
     {
         std::cout << "Saving " << npcs->size() << " NPCs to " << filename << std::endl;
-        for (const auto &npc : *npcs)
+        for (const auto& npc : *npcs)
         {
             json npcObj;
             npcObj["type"] = npc.GetType();
@@ -1948,7 +2068,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
             // Save dialogue tree (simplified format)
             if (npc.HasDialogueTree())
             {
-                const DialogueTree &tree = npc.GetDialogueTree();
+                const DialogueTree& tree = npc.GetDialogueTree();
                 json treeJson;
                 if (tree.startNodeId != "start")
                     treeJson["start"] = tree.startNodeId;
@@ -1961,7 +2081,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
                     treeJson["speaker"] = defaultSpeaker;
 
                 json nodesObj = json::object();
-                for (const auto &[nodeId, node] : tree.nodes)
+                for (const auto& [nodeId, node] : tree.nodes)
                 {
                     json nodeJson;
                     if (node.speaker != defaultSpeaker)
@@ -1969,7 +2089,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
                     nodeJson["text"] = node.text;
 
                     json choicesArr = json::array();
-                    for (const auto &opt : node.options)
+                    for (const auto& opt : node.options)
                     {
                         json choiceJson;
                         choiceJson["text"] = opt.text;
@@ -1989,7 +2109,8 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
                 npcObj["dialogueTree"] = treeJson;
             }
             npcsArray.push_back(npcObj);
-            std::cout << "  Saved NPC: " << npc.GetType() << " at (" << npc.GetTileX() << ", " << npc.GetTileY() << ")" << std::endl;
+            std::cout << "  Saved NPC: " << npc.GetType() << " at (" << npc.GetTileX() << ", "
+                      << npc.GetTileY() << ")" << std::endl;
         }
     }
     j["npcs"] = npcsArray;
@@ -2013,7 +2134,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
 
     // Animated Tiles - save animation definitions and placements
     json animatedTilesArray = json::array();
-    for (const auto &anim : m_AnimatedTiles)
+    for (const auto& anim : m_AnimatedTiles)
     {
         json animJson;
         animJson["frames"] = anim.frames;
@@ -2027,7 +2148,7 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
     for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
     {
         json layerAnimObj = json::object();
-        const auto &animMap = m_Layers[layerIdx].animationMap;
+        const auto& animMap = m_Layers[layerIdx].animationMap;
         for (size_t i = 0; i < animMap.size(); ++i)
         {
             if (animMap[i] >= 0)
@@ -2060,15 +2181,18 @@ bool Tilemap::SaveMapToJSON(const std::string &filename, const std::vector<NonPl
         return false;
     }
 
-    file << j.dump(2); // Pretty print with 2-space indent
+    file << j.dump(2);  // Pretty print with 2-space indent
     file.close();
 
     std::cout << "Map saved to " << filename << std::endl;
     return true;
 }
 
-bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayerCharacter> *npcs,
-                              int *playerTileX, int *playerTileY, int *characterType)
+bool Tilemap::LoadMapFromJSON(const std::string& filename,
+                              std::vector<NonPlayerCharacter>* npcs,
+                              int* playerTileX,
+                              int* playerTileY,
+                              int* characterType)
 {
     using json = nlohmann::json;
 
@@ -2084,7 +2208,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     {
         file >> j;
     }
-    catch (const json::parse_error &e)
+    catch (const json::parse_error& e)
     {
         std::cerr << "ERROR: Failed to parse JSON: " << e.what() << std::endl;
         return false;
@@ -2109,24 +2233,26 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
 
     int loadWarningCount = 0;
     constexpr int kMaxLoadWarningsToPrint = 25;
-    auto reportLoadWarning = [&](const std::string &section, const std::string &key, const std::string &message)
+    auto reportLoadWarning =
+        [&](const std::string& section, const std::string& key, const std::string& message)
     {
         if (loadWarningCount < kMaxLoadWarningsToPrint)
         {
-            std::cerr << "WARN: LoadMapFromJSON[" << section << "] key '" << key << "': " << message << std::endl;
+            std::cerr << "WARN: LoadMapFromJSON[" << section << "] key '" << key << "': " << message
+                      << std::endl;
         }
         ++loadWarningCount;
     };
 
     // Helper to load sparse tile layer {"index": value}
-    auto loadTileLayer = [&](const std::string &name, std::function<void(int, int, int)> setTile)
+    auto loadTileLayer = [&](const std::string& name, std::function<void(int, int, int)> setTile)
     {
         if (!j.contains(name))
             return;
-        const auto &layer = j[name];
+        const auto& layer = j[name];
         if (layer.is_object())
         {
-            for (auto &[key, value] : layer.items())
+            for (auto& [key, value] : layer.items())
             {
                 try
                 {
@@ -2137,7 +2263,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setTile(x, y, tileID);
                 }
-                catch (const std::exception &e)
+                catch (const std::exception& e)
                 {
                     reportLoadWarning(name, key, e.what());
                 }
@@ -2146,14 +2272,15 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     };
 
     // Helper to load sparse rotation layer
-    auto loadRotationLayer = [&](const std::string &name, std::function<void(int, int, float)> setRot)
+    auto loadRotationLayer =
+        [&](const std::string& name, std::function<void(int, int, float)> setRot)
     {
         if (!j.contains(name))
             return;
-        const auto &layer = j[name];
+        const auto& layer = j[name];
         if (layer.is_object())
         {
-            for (auto &[key, value] : layer.items())
+            for (auto& [key, value] : layer.items())
             {
                 try
                 {
@@ -2164,7 +2291,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setRot(x, y, rot);
                 }
-                catch (const std::exception &e)
+                catch (const std::exception& e)
                 {
                     reportLoadWarning(name, key, e.what());
                 }
@@ -2173,14 +2300,14 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     };
 
     // Helper to load index array [idx1, idx2, ...]
-    auto loadIndexArray = [&](const std::string &name, std::function<void(int, int, bool)> setFlag)
+    auto loadIndexArray = [&](const std::string& name, std::function<void(int, int, bool)> setFlag)
     {
         if (!j.contains(name))
             return;
-        const auto &arr = j[name];
+        const auto& arr = j[name];
         if (arr.is_array())
         {
-            for (const auto &idx : arr)
+            for (const auto& idx : arr)
             {
                 try
                 {
@@ -2190,7 +2317,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     if (x >= 0 && x < width && y >= 0 && y < height)
                         setFlag(x, y, true);
                 }
-                catch (const std::exception &e)
+                catch (const std::exception& e)
                 {
                     reportLoadWarning(name, "[array]", e.what());
                 }
@@ -2199,28 +2326,24 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     };
 
     // Load collision and navigation
-    loadIndexArray("collision", [this](int x, int y, bool v)
-                   { SetTileCollision(x, y, v); });
-    loadIndexArray("navigation", [this](int x, int y, bool v)
-                   { SetNavigation(x, y, v); });
-    loadIndexArray("navmesh", [this](int x, int y, bool v)
-                   { SetNavigation(x, y, v); });
+    loadIndexArray("collision", [this](int x, int y, bool v) { SetTileCollision(x, y, v); });
+    loadIndexArray("navigation", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
+    loadIndexArray("navmesh", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
 
     // Load elevation
-    loadTileLayer("elevation", [this](int x, int y, int v)
-                  { SetElevation(x, y, v); });
+    loadTileLayer("elevation", [this](int x, int y, int v) { SetElevation(x, y, v); });
 
     // Load dynamic layers (new format)
-    bool sizeMismatch = false; // Track if layer data doesn't match new map size
+    bool sizeMismatch = false;  // Track if layer data doesn't match new map size
     if (j.contains("dynamicLayers") && j["dynamicLayers"].is_array())
     {
-        const auto &dynamicLayersArr = j["dynamicLayers"];
+        const auto& dynamicLayersArr = j["dynamicLayers"];
         m_Layers.clear();
         m_Layers.reserve(dynamicLayersArr.size());
 
         const size_t mapSize = static_cast<size_t>(width) * static_cast<size_t>(height);
 
-        for (const auto &layerJson : dynamicLayersArr)
+        for (const auto& layerJson : dynamicLayersArr)
         {
             TileLayer layer;
             layer.name = layerJson.value("name", "");
@@ -2231,7 +2354,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             // Load tiles (sparse object)
             if (layerJson.contains("tiles") && layerJson["tiles"].is_object())
             {
-                for (auto &[key, value] : layerJson["tiles"].items())
+                for (auto& [key, value] : layerJson["tiles"].items())
                 {
                     try
                     {
@@ -2242,10 +2365,10 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                         }
                         else
                         {
-                            sizeMismatch = true; // Index out of bounds for new size
+                            sizeMismatch = true;  // Index out of bounds for new size
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.tiles", key, e.what());
                     }
@@ -2255,7 +2378,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             // Load rotation (sparse object)
             if (layerJson.contains("rotation") && layerJson["rotation"].is_object())
             {
-                for (auto &[key, value] : layerJson["rotation"].items())
+                for (auto& [key, value] : layerJson["rotation"].items())
                 {
                     try
                     {
@@ -2265,7 +2388,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.rotation[index] = value.get<float>();
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.rotation", key, e.what());
                     }
@@ -2275,7 +2398,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             // Load noProjection (array of indices)
             if (layerJson.contains("noProjection") && layerJson["noProjection"].is_array())
             {
-                for (const auto &idx : layerJson["noProjection"])
+                for (const auto& idx : layerJson["noProjection"])
                 {
                     try
                     {
@@ -2285,7 +2408,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.noProjection[index] = true;
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.noProjection", "[array]", e.what());
                     }
@@ -2296,7 +2419,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             const char* ySortPlusKey = layerJson.contains("ySortPlus") ? "ySortPlus" : "ySorted";
             if (layerJson.contains(ySortPlusKey) && layerJson[ySortPlusKey].is_array())
             {
-                for (const auto &idx : layerJson[ySortPlusKey])
+                for (const auto& idx : layerJson[ySortPlusKey])
                 {
                     try
                     {
@@ -2306,7 +2429,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.ySortPlus[index] = true;
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.ySortPlus", "[array]", e.what());
                     }
@@ -2316,7 +2439,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             // Load ySortMinus (array of indices)
             if (layerJson.contains("ySortMinus") && layerJson["ySortMinus"].is_array())
             {
-                for (const auto &idx : layerJson["ySortMinus"])
+                for (const auto& idx : layerJson["ySortMinus"])
                 {
                     try
                     {
@@ -2326,7 +2449,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.ySortMinus[index] = true;
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.ySortMinus", "[array]", e.what());
                     }
@@ -2336,7 +2459,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             // Load structureId (sparse object)
             if (layerJson.contains("structureId") && layerJson["structureId"].is_object())
             {
-                for (auto &[key, value] : layerJson["structureId"].items())
+                for (auto& [key, value] : layerJson["structureId"].items())
                 {
                     try
                     {
@@ -2346,7 +2469,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                             layer.structureId[index] = value.get<int>();
                         }
                     }
-                    catch (const std::exception &e)
+                    catch (const std::exception& e)
                     {
                         reportLoadWarning("dynamicLayers.structureId", key, e.what());
                     }
@@ -2369,7 +2492,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     m_ParticleZones.clear();
     if (j.contains("particleZones") && j["particleZones"].is_array())
     {
-        for (const auto &zoneJson : j["particleZones"])
+        for (const auto& zoneJson : j["particleZones"])
         {
             ParticleZone zone;
             zone.position.x = zoneJson.value("x", 0.0f);
@@ -2388,31 +2511,34 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     m_NoProjectionStructures.clear();
     if (j.contains("noProjectionStructures") && j["noProjectionStructures"].is_array())
     {
-        for (const auto &structJson : j["noProjectionStructures"])
+        for (const auto& structJson : j["noProjectionStructures"])
         {
             NoProjectionStructure s;
             s.id = structJson.value("id", static_cast<int>(m_NoProjectionStructures.size()));
             s.name = structJson.value("name", "");
-            if (structJson.contains("leftAnchor") && structJson["leftAnchor"].is_array() && structJson["leftAnchor"].size() >= 2)
+            if (structJson.contains("leftAnchor") && structJson["leftAnchor"].is_array() &&
+                structJson["leftAnchor"].size() >= 2)
             {
                 s.leftAnchor.x = structJson["leftAnchor"][0].get<float>();
                 s.leftAnchor.y = structJson["leftAnchor"][1].get<float>();
             }
-            if (structJson.contains("rightAnchor") && structJson["rightAnchor"].is_array() && structJson["rightAnchor"].size() >= 2)
+            if (structJson.contains("rightAnchor") && structJson["rightAnchor"].is_array() &&
+                structJson["rightAnchor"].size() >= 2)
             {
                 s.rightAnchor.x = structJson["rightAnchor"][0].get<float>();
                 s.rightAnchor.y = structJson["rightAnchor"][1].get<float>();
             }
             m_NoProjectionStructures.push_back(s);
         }
-        std::cout << "Loaded " << m_NoProjectionStructures.size() << " no-projection structures" << std::endl;
+        std::cout << "Loaded " << m_NoProjectionStructures.size() << " no-projection structures"
+                  << std::endl;
     }
 
     // Load NPCs
     if (npcs && j.contains("npcs") && j["npcs"].is_array())
     {
         npcs->clear();
-        for (const auto &npcJson : j["npcs"])
+        for (const auto& npcJson : j["npcs"])
         {
             std::string type = npcJson.value("type", "");
             int tileX = npcJson.value("tileX", 0);
@@ -2434,7 +2560,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                     // Load dialogue tree (simplified format)
                     if (npcJson.contains("dialogueTree") && npcJson["dialogueTree"].is_object())
                     {
-                        const auto &treeJson = npcJson["dialogueTree"];
+                        const auto& treeJson = npcJson["dialogueTree"];
                         DialogueTree tree;
                         tree.id = treeJson.value("id", npc.GetType());
                         tree.startNodeId = treeJson.value("start", "start");
@@ -2442,7 +2568,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
 
                         if (treeJson.contains("nodes") && treeJson["nodes"].is_object())
                         {
-                            for (auto &[nodeId, nodeJson] : treeJson["nodes"].items())
+                            for (auto& [nodeId, nodeJson] : treeJson["nodes"].items())
                             {
                                 DialogueNode node;
                                 node.id = nodeId;
@@ -2451,14 +2577,16 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
 
                                 if (nodeJson.contains("choices") && nodeJson["choices"].is_array())
                                 {
-                                    for (const auto &choiceJson : nodeJson["choices"])
+                                    for (const auto& choiceJson : nodeJson["choices"])
                                     {
                                         DialogueOption opt;
                                         opt.text = choiceJson.value("text", "");
                                         opt.nextNodeId = choiceJson.value("goto", "");
-                                        opt.conditions = ParseConditionString(choiceJson.value("when", ""));
+                                        opt.conditions =
+                                            ParseConditionString(choiceJson.value("when", ""));
                                         if (choiceJson.contains("do"))
-                                            opt.consequences = ParseConsequenceArray(choiceJson["do"]);
+                                            opt.consequences =
+                                                ParseConsequenceArray(choiceJson["do"]);
                                         node.options.push_back(opt);
                                     }
                                 }
@@ -2478,7 +2606,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     // Load player position
     if (j.contains("player") && !j["player"].is_null())
     {
-        const auto &player = j["player"];
+        const auto& player = j["player"];
         if (playerTileX)
             *playerTileX = player.value("tileX", -1);
         if (playerTileY)
@@ -2491,7 +2619,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     if (j.contains("animatedTiles") && j["animatedTiles"].is_array())
     {
         m_AnimatedTiles.clear();
-        for (const auto &animJson : j["animatedTiles"])
+        for (const auto& animJson : j["animatedTiles"])
         {
             AnimatedTile anim;
             if (animJson.contains("frames") && animJson["frames"].is_array())
@@ -2501,24 +2629,26 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
             anim.frameDuration = animJson.value("frameDuration", 0.2f);
             m_AnimatedTiles.push_back(anim);
         }
-        std::cout << "Loaded " << m_AnimatedTiles.size() << " animated tile definitions" << std::endl;
+        std::cout << "Loaded " << m_AnimatedTiles.size() << " animated tile definitions"
+                  << std::endl;
     }
 
     // Load per-layer animation maps (new format)
     size_t mapSize = static_cast<size_t>(m_MapWidth * m_MapHeight);
     if (j.contains("layerAnimationMaps") && j["layerAnimationMaps"].is_array())
     {
-        const auto &layerAnimMaps = j["layerAnimationMaps"];
-        for (size_t layerIdx = 0; layerIdx < layerAnimMaps.size() && layerIdx < m_Layers.size(); ++layerIdx)
+        const auto& layerAnimMaps = j["layerAnimationMaps"];
+        for (size_t layerIdx = 0; layerIdx < layerAnimMaps.size() && layerIdx < m_Layers.size();
+             ++layerIdx)
         {
             if (layerAnimMaps[layerIdx].is_object())
             {
-                auto &animMap = m_Layers[layerIdx].animationMap;
+                auto& animMap = m_Layers[layerIdx].animationMap;
                 if (animMap.size() != mapSize)
                 {
                     animMap.assign(mapSize, -1);
                 }
-                for (auto &[key, value] : layerAnimMaps[layerIdx].items())
+                for (auto& [key, value] : layerAnimMaps[layerIdx].items())
                 {
                     size_t idx = static_cast<size_t>(std::stoi(key));
                     if (idx < animMap.size())
@@ -2533,12 +2663,12 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
     // Backwards compatibility: load old "animationMap" format into layer 0
     else if (j.contains("animationMap") && j["animationMap"].is_object())
     {
-        auto &animMap = m_Layers[0].animationMap;
+        auto& animMap = m_Layers[0].animationMap;
         if (animMap.size() != mapSize)
         {
             animMap.assign(mapSize, -1);
         }
-        for (auto &[key, value] : j["animationMap"].items())
+        for (auto& [key, value] : j["animationMap"].items())
         {
             size_t idx = static_cast<size_t>(std::stoi(key));
             if (idx < animMap.size())
@@ -2557,7 +2687,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
         {
             m_CornerCutBlocked.assign(mapSize, 0);
         }
-        for (auto &[key, value] : j["cornerCutBlocked"].items())
+        for (auto& [key, value] : j["cornerCutBlocked"].items())
         {
             size_t idx = static_cast<size_t>(std::stoi(key));
             if (idx < m_CornerCutBlocked.size())
@@ -2570,7 +2700,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
 
     // Debug: summarize animation state after load
     int animatedTileCount = 0;
-    for (const auto &layer : m_Layers)
+    for (const auto& layer : m_Layers)
     {
         for (int a : layer.animationMap)
         {
@@ -2578,14 +2708,14 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                 animatedTileCount++;
         }
     }
-    std::cout << "[DEBUG] Animation state after load: "
-              << m_AnimatedTiles.size() << " definitions, "
-              << animatedTileCount << " placed tiles across all layers" << std::endl;
+    std::cout << "[DEBUG] Animation state after load: " << m_AnimatedTiles.size()
+              << " definitions, " << animatedTileCount << " placed tiles across all layers"
+              << std::endl;
     for (size_t i = 0; i < m_AnimatedTiles.size(); ++i)
     {
-        const auto &anim = m_AnimatedTiles[i];
-        std::cout << "  Animation #" << i << ": " << anim.frames.size()
-                  << " frames, " << anim.frameDuration << "s/frame" << std::endl;
+        const auto& anim = m_AnimatedTiles[i];
+        std::cout << "  Animation #" << i << ": " << anim.frames.size() << " frames, "
+                  << anim.frameDuration << "s/frame" << std::endl;
     }
 
     if (loadWarningCount > 0)
@@ -2594,6 +2724,7 @@ bool Tilemap::LoadMapFromJSON(const std::string &filename, std::vector<NonPlayer
                   << " malformed/out-of-range entries while loading " << filename << std::endl;
     }
 
-    std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")" << std::endl;
+    std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")"
+              << std::endl;
     return true;
 }

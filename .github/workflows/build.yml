@@ -31,6 +31,19 @@ jobs:
           New-Item -ItemType Directory -Path assets -Force
           New-Item -ItemType Directory -Path shaders -Force
 
+      - name: Run clang-format
+        run: |
+          Get-ChildItem -Path src -Include *.cpp,*.h -Recurse | ForEach-Object {
+            clang-format -i $_.FullName
+          }
+          $diff = git diff --name-only
+          if ($diff) {
+            Write-Host "::error::clang-format found formatting issues in: $diff"
+            git diff
+            exit 1
+          }
+          Write-Host "All source files are properly formatted."
+
       - name: Configure CMake
         run: |
           cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows

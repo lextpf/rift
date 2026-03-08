@@ -1,8 +1,8 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <vector>
 #include <string>
+#include <vector>
 
 /**
  * @class VulkanShader
@@ -66,7 +66,7 @@ public:
      * vkDestroyShaderModule(device, module, nullptr);
      * @endcode
      */
-    static VkShaderModule CreateShaderModule(VkDevice device, const std::vector<uint32_t> &code);
+    static VkShaderModule CreateShaderModule(VkDevice device, const std::vector<uint32_t>& code);
 
     /**
      * @brief Load pre-compiled vertex shader SPIR-V from file.

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 /**
  * @struct DialogueCondition
@@ -45,7 +45,9 @@ struct DialogueCondition
      * @param v Expected value (for FLAG_EQUALS)
      */
     DialogueCondition(Type t, const std::string& k, const std::string& v = "")
-        : type(t), key(k), value(v) {}
+        : type(t), key(k), value(v)
+    {
+    }
 };
 
 /**
@@ -72,9 +74,9 @@ struct DialogueConsequence
      */
     enum class Type
     {
-        SET_FLAG,            ///< Set a boolean flag to true
-        CLEAR_FLAG,          ///< Remove/unset a flag key
-        SET_FLAG_VALUE,      ///< Set a flag to a specific string value
+        SET_FLAG,        ///< Set a boolean flag to true
+        CLEAR_FLAG,      ///< Remove/unset a flag key
+        SET_FLAG_VALUE,  ///< Set a flag to a specific string value
     };
 
     Type type = Type::SET_FLAG;  ///< The type of consequence
@@ -90,7 +92,9 @@ struct DialogueConsequence
      * @param v New value
      */
     DialogueConsequence(Type t, const std::string& k, const std::string& v = "")
-        : type(t), key(k), value(v) {}
+        : type(t), key(k), value(v)
+    {
+    }
 };
 
 /**
@@ -124,8 +128,9 @@ struct DialogueOption
      * @param t Display text
      * @param next Next node ID (empty to end dialogue)
      */
-    DialogueOption(const std::string& t, const std::string& next = "")
-        : text(t), nextNodeId(next) {}
+    DialogueOption(const std::string& t, const std::string& next = "") : text(t), nextNodeId(next)
+    {
+    }
 };
 
 /**
@@ -161,7 +166,9 @@ struct DialogueNode
      * @param txt Dialogue text
      */
     DialogueNode(const std::string& nodeId, const std::string& spk, const std::string& txt)
-        : id(nodeId), speaker(spk), text(txt) {}
+        : id(nodeId), speaker(spk), text(txt)
+    {
+    }
 
     /**
      * @brief Check if this is a terminal node.
@@ -173,10 +180,12 @@ struct DialogueNode
      */
     [[nodiscard]] bool IsTerminal() const
     {
-        if (options.empty()) return true;
+        if (options.empty())
+            return true;
         for (const auto& opt : options)
         {
-            if (!opt.nextNodeId.empty()) return false;
+            if (!opt.nextNodeId.empty())
+                return false;
         }
         return true;
     }
@@ -204,7 +213,7 @@ struct DialogueNode
  * r.options.push_back({"Goodbye", ""}); // End dialogue
  * t.AddNode(r);
  * @endcode
- * 
+ *
  * @par Architecture
  * Dialogues are organized as trees where each node represents a point
  * in the conversation. The JSON format uses a simplified syntax:
@@ -262,9 +271,9 @@ struct DialogueNode
  */
 struct DialogueTree
 {
-    std::string id;                                        ///< Unique tree identifier
-    std::string startNodeId;                               ///< ID of the entry point node
-    std::unordered_map<std::string, DialogueNode> nodes;   ///< All nodes keyed by ID
+    std::string id;                                       ///< Unique tree identifier
+    std::string startNodeId;                              ///< ID of the entry point node
+    std::unordered_map<std::string, DialogueNode> nodes;  ///< All nodes keyed by ID
 
     DialogueTree() = default;
 
@@ -274,7 +283,9 @@ struct DialogueTree
      * @param startNode ID of the starting node
      */
     DialogueTree(const std::string& treeId, const std::string& startNode)
-        : id(treeId), startNodeId(startNode) {}
+        : id(treeId), startNodeId(startNode)
+    {
+    }
 
     /**
      * @brief Get a node by ID.
@@ -291,17 +302,11 @@ struct DialogueTree
      * @brief Get the starting node for this tree.
      * @return Pointer to the start node, or nullptr if not found
      */
-    [[nodiscard]] const DialogueNode* GetStartNode() const
-    {
-        return GetNode(startNodeId);
-    }
+    [[nodiscard]] const DialogueNode* GetStartNode() const { return GetNode(startNodeId); }
 
     /**
      * @brief Add a node to the tree.
      * @param node The node to add (copied into the tree)
      */
-    void AddNode(const DialogueNode& node)
-    {
-        nodes[node.id] = node;
-    }
+    void AddNode(const DialogueNode& node) { nodes[node.id] = node; }
 };

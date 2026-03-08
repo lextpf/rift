@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Texture.h"
+#include "DialogueSystem.h"
 #include "GameCharacter.h"
 #include "IRenderer.h"
-#include "Tilemap.h"
 #include "PatrolRoute.h"
-#include "DialogueSystem.h"
+#include "Texture.h"
+#include "Tilemap.h"
 
 #include <glm/glm.hpp>
 #include <string>
@@ -28,23 +28,23 @@ class NonPlayerCharacter : public GameCharacter
 public:
     NonPlayerCharacter();
 
-    NonPlayerCharacter(const NonPlayerCharacter &) = delete;
-    NonPlayerCharacter &operator=(const NonPlayerCharacter &) = delete;
-    NonPlayerCharacter(NonPlayerCharacter &&) noexcept = default;
-    NonPlayerCharacter &operator=(NonPlayerCharacter &&) noexcept = default;
+    NonPlayerCharacter(const NonPlayerCharacter&) = delete;
+    NonPlayerCharacter& operator=(const NonPlayerCharacter&) = delete;
+    NonPlayerCharacter(NonPlayerCharacter&&) noexcept = default;
+    NonPlayerCharacter& operator=(NonPlayerCharacter&&) noexcept = default;
 
     /**
      * @brief Load NPC sprite sheet from file.
      * @param relativePath Path to sprite sheet (relative to working directory).
      * @return `true` if loaded successfully.
      */
-    bool Load(const std::string &relativePath);
+    bool Load(const std::string& relativePath);
 
     /**
      * @brief Upload sprite texture to the renderer.
      * @param renderer Reference to the active renderer.
      */
-    void UploadTextures(IRenderer &renderer);
+    void UploadTextures(IRenderer& renderer);
 
     /**
      * @brief Set NPC position by tile coordinates.
@@ -64,28 +64,28 @@ public:
      * If no patrol route is currently valid, this method attempts to build one
      * from the current tile with a maximum route length of 100 waypoints.
      */
-    void Update(float deltaTime, const Tilemap *tilemap, const glm::vec2 *playerPosition = nullptr);
+    void Update(float deltaTime, const Tilemap* tilemap, const glm::vec2* playerPosition = nullptr);
 
     /**
      * @brief Render the full NPC sprite.
      * @param renderer Active renderer.
      * @param cameraPos Camera position for world-to-screen conversion.
      */
-    void Render(IRenderer &renderer, glm::vec2 cameraPos) const;
+    void Render(IRenderer& renderer, glm::vec2 cameraPos) const;
 
     /**
      * @brief Render bottom half of sprite (for depth sorting).
      * @param renderer Active renderer.
      * @param cameraPos Camera position.
      */
-    void RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos) const;
+    void RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos) const;
 
     /**
      * @brief Render top half of sprite (for depth sorting).
      * @param renderer Active renderer.
      * @param cameraPos Camera position.
      */
-    void RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos) const;
+    void RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos) const;
 
     // --- Tile accessors ---
 
@@ -94,17 +94,17 @@ public:
 
     // --- Type/name/dialogue ---
 
-    const std::string &GetType() const { return m_Type; }
+    const std::string& GetType() const { return m_Type; }
     std::string GetSpritePath() const { return "assets/non-player/" + m_Type + ".png"; }
 
     bool IsStopped() const { return m_IsStopped; }
     void SetStopped(bool stopped) { m_IsStopped = stopped; }
 
-    const std::string &GetName() const { return m_Name; }
-    void SetName(const std::string &name) { m_Name = name; }
+    const std::string& GetName() const { return m_Name; }
+    void SetName(const std::string& name) { m_Name = name; }
 
-    const std::string &GetDialogue() const { return m_Dialogue; }
-    void SetDialogue(const std::string &dialogue) { m_Dialogue = dialogue; }
+    const std::string& GetDialogue() const { return m_Dialogue; }
+    void SetDialogue(const std::string& dialogue) { m_Dialogue = dialogue; }
 
     const DialogueTree& GetDialogueTree() const { return m_DialogueTree; }
     DialogueTree& GetDialogueTree() { return m_DialogueTree; }
@@ -117,7 +117,7 @@ public:
      * Uses maxRouteLength=100 for route generation.
      * @return `true` if valid route was created.
      */
-    bool ReinitializePatrolRoute(const Tilemap *tilemap);
+    bool ReinitializePatrolRoute(const Tilemap* tilemap);
 
     /**
      * @brief Reset animation to idle frame.

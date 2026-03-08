@@ -1,10 +1,13 @@
 #include "PatrolRoute.h"
 #include "Tilemap.h"
 
-#include <iostream>
 #include <algorithm>
+#include <iostream>
 
-bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tilemap, int maxRouteLength)
+bool PatrolRoute::Initialize(int startTileX,
+                             int startTileY,
+                             const Tilemap* tilemap,
+                             int maxRouteLength)
 {
     if (!tilemap)
     {
@@ -48,7 +51,7 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
         connectedTiles.push_back(current);
 
         auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
-        for (const auto &neighbor : neighbors)
+        for (const auto& neighbor : neighbors)
         {
             int idx = neighbor.y * mapWidth + neighbor.x;
             if (!visited[idx])
@@ -74,15 +77,15 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
     bool isSimpleCycle = connectedTiles.size() >= 3;
     if (isSimpleCycle)
     {
-        for (const auto &tile : connectedTiles)
+        for (const auto& tile : connectedTiles)
         {
             int neighborCount = 0;
             auto neighbors = GetValidNeighbors(tile.x, tile.y, tilemap);
-            for (const auto &neighbor : neighbors)
+            for (const auto& neighbor : neighbors)
             {
                 // Check if this neighbor is part of our collected set.
                 // We do a linear search here because the set is small (maxRouteLength).
-                for (const auto &ct : connectedTiles)
+                for (const auto& ct : connectedTiles)
                 {
                     if (ct == neighbor)
                     {
@@ -119,10 +122,10 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
             // Find the next tile: must be in our set and not yet visited.
             auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
             glm::ivec2 next(-1, -1);
-            for (const auto &neighbor : neighbors)
+            for (const auto& neighbor : neighbors)
             {
                 bool inSet = false;
-                for (const auto &ct : connectedTiles)
+                for (const auto& ct : connectedTiles)
                 {
                     if (ct == neighbor)
                     {
@@ -162,8 +165,8 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
         // Even non-cycles might loop back if the last tile is next to the first.
         if (m_Waypoints.size() >= 2)
         {
-            const glm::ivec2 &first = m_Waypoints.front();
-            const glm::ivec2 &last = m_Waypoints.back();
+            const glm::ivec2& first = m_Waypoints.front();
+            const glm::ivec2& last = m_Waypoints.back();
             m_IsClosed = AreAdjacent(last, first) || (last == first);
         }
     }
@@ -179,10 +182,10 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
     // Count unique tiles for the log message. Due to backtracking in DFS mode,
     // the waypoint list may contain the same tile multiple times.
     std::vector<glm::ivec2> uniqueTiles;
-    for (const auto &wp : m_Waypoints)
+    for (const auto& wp : m_Waypoints)
     {
         bool found = false;
-        for (const auto &ut : uniqueTiles)
+        for (const auto& ut : uniqueTiles)
         {
             if (ut == wp)
             {
@@ -197,17 +200,16 @@ bool PatrolRoute::Initialize(int startTileX, int startTileY, const Tilemap *tile
     }
 
     std::cout << "Created patrol route: " << m_Waypoints.size() << " waypoints, "
-              << uniqueTiles.size() << " unique tiles, mode="
-              << (m_IsClosed ? "loop" : "ping-pong")
+              << uniqueTiles.size() << " unique tiles, mode=" << (m_IsClosed ? "loop" : "ping-pong")
               << ", start=(" << startTileX << ", " << startTileY << ")" << std::endl;
 
     return true;
 }
 
 void PatrolRoute::DFSTraversal(glm::ivec2 current,
-                               std::vector<bool> &visited,
-                               std::vector<glm::ivec2> &path,
-                               const Tilemap *tilemap,
+                               std::vector<bool>& visited,
+                               std::vector<glm::ivec2>& path,
+                               const Tilemap* tilemap,
                                size_t maxLength)
 {
     if (path.size() >= maxLength)
@@ -223,7 +225,7 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
 
     auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
 
-    for (const auto &neighbor : neighbors)
+    for (const auto& neighbor : neighbors)
     {
         int neighborIndex = neighbor.y * mapWidth + neighbor.x;
         if (!visited[neighborIndex] && path.size() < maxLength)
@@ -252,14 +254,14 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
     }
 }
 
-bool PatrolRoute::GetNextWaypoint(int &tileX, int &tileY)
+bool PatrolRoute::GetNextWaypoint(int& tileX, int& tileY)
 {
     if (m_Waypoints.empty())
     {
         return false;
     }
 
-    const auto &waypoint = m_Waypoints[m_CurrentWaypointIndex];
+    const auto& waypoint = m_Waypoints[m_CurrentWaypointIndex];
     tileX = waypoint.x;
     tileY = waypoint.y;
 
@@ -267,7 +269,8 @@ bool PatrolRoute::GetNextWaypoint(int &tileX, int &tileY)
     {
         // Closed loop: wrap around using modulo.
         // Index goes 0, 1, 2, ..., N-1, 0, 1, 2, ... forever.
-        m_CurrentWaypointIndex = (m_CurrentWaypointIndex + 1) % static_cast<int>(m_Waypoints.size());
+        m_CurrentWaypointIndex =
+            (m_CurrentWaypointIndex + 1) % static_cast<int>(m_Waypoints.size());
     }
     else
     {
@@ -308,7 +311,9 @@ bool PatrolRoute::GetNextWaypoint(int &tileX, int &tileY)
     return true;
 }
 
-std::vector<glm::ivec2> PatrolRoute::GetValidNeighbors(int tileX, int tileY, const Tilemap *tilemap) const
+std::vector<glm::ivec2> PatrolRoute::GetValidNeighbors(int tileX,
+                                                       int tileY,
+                                                       const Tilemap* tilemap) const
 {
     std::vector<glm::ivec2> neighbors;
 
@@ -337,7 +342,7 @@ std::vector<glm::ivec2> PatrolRoute::GetValidNeighbors(int tileX, int tileY, con
     return neighbors;
 }
 
-bool PatrolRoute::IsValidTile(int tileX, int tileY, const Tilemap *tilemap) const
+bool PatrolRoute::IsValidTile(int tileX, int tileY, const Tilemap* tilemap) const
 {
     if (!tilemap)
     {
@@ -369,7 +374,7 @@ bool PatrolRoute::IsValidTile(int tileX, int tileY, const Tilemap *tilemap) cons
     return true;
 }
 
-bool PatrolRoute::AreAdjacent(const glm::ivec2 &a, const glm::ivec2 &b) const
+bool PatrolRoute::AreAdjacent(const glm::ivec2& a, const glm::ivec2& b) const
 {
     // Two tiles are adjacent if they differ by exactly 1 in X or Y, but not both.
     // This is Manhattan distance == 1, which corresponds to the 4 cardinal directions.

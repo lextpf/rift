@@ -66,14 +66,13 @@
  * @see ColumnProxy For 2D array syntax implementation
  * @see CollisionMap Similar structure for player collision
  */
-template<template<typename...> class Container>
-    requires RandomAccessContainerOf<Container<bool>, bool>
-    && requires(Container<bool>& c, std::size_t i)
-    {
-        c.resize(i, false);
-        { c.begin() };
-        { c.end() };
-    }
+template <template <typename...> class Container>
+    requires RandomAccessContainerOf<Container<bool>, bool> &&
+             requires(Container<bool>& c, std::size_t i) {
+                 c.resize(i, false);
+                 { c.begin() };
+                 { c.end() };
+             }
 class NavigationMap
 {
 public:
@@ -152,17 +151,15 @@ public:
         std::vector<int> indices;
         indices.reserve(m_Navigation.size());
         for (auto [i, val] : std::views::enumerate(m_Navigation))
-            if (val) indices.push_back(static_cast<int>(i));
+            if (val)
+                indices.push_back(static_cast<int>(i));
         return indices;
     }
 
     /**
      * @brief Clear all flags to `false` (not walkable).
      */
-    void Clear()
-    {
-        std::ranges::fill(m_Navigation, false);
-    }
+    void Clear() { std::ranges::fill(m_Navigation, false); }
 
     /// @brief Get width in tiles.
     [[nodiscard]] constexpr int GetWidth() const noexcept { return m_Width; }
@@ -185,9 +182,11 @@ public:
     /**
      * @brief Replace all map data in one call.
      *
-     * @param data   New data (must have size == w * h).
+     * @param data   New data (must
+     * have size == w * h).
      * @param width  New width.
      * @param height New height.
+     *
      * @return `true` if valid, `false` if size mismatch.
      */
     bool SetData(const container_type& data, int width, int height)

@@ -29,10 +29,10 @@
  */
 enum class CharacterDirection
 {
-    DOWN = 0,   ///< Facing down (towards camera, +Y direction)
-    UP = 1,     ///< Facing up (away from camera, -Y direction)
-    LEFT = 2,   ///< Facing left (-X direction)
-    RIGHT = 3   ///< Facing right (+X direction)
+    DOWN = 0,  ///< Facing down (towards camera, +Y direction)
+    UP = 1,    ///< Facing up (away from camera, -Y direction)
+    LEFT = 2,  ///< Facing left (-X direction)
+    RIGHT = 3  ///< Facing right (+X direction)
 };
 
 using Direction = CharacterDirection;     ///< Alias for PlayerCharacter code

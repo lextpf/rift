@@ -24,4 +24,4 @@ bool IsRendererAvailable(RendererAPI api);
  * @param window GLFW window handle for initialization.
  * @return Unique pointer to renderer instance, or nullptr on failure.
  */
-std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow *window);
+std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window);

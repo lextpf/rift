@@ -1,54 +1,54 @@
 #include "Game.h"
-#include "PlayerCharacter.h"
 #include "NonPlayerCharacter.h"
+#include "PlayerCharacter.h"
 #include "RendererFactory.h"
 
 #include <GLFW/glfw3.h>
-#include <iostream>
-#include <iomanip>
 #include <algorithm>
-#include <cmath>
-#include <chrono>
-#include <thread>
 #include <cctype>
+#include <chrono>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <thread>
 #include <vector>
 
-#include <glm/gtc/matrix_transform.hpp>
 #include <glad/glad.h>
+#include <glm/gtc/matrix_transform.hpp>
 
 // Defined in main.cpp - enables 2-second sleep after each draw call for debugging render order
-extern void SetDebugDrawSleep(GLFWwindow *window, bool enabled);
+extern void SetDebugDrawSleep(GLFWwindow* window, bool enabled);
 
 Game::Game()
-    : m_Window(nullptr)
-    , m_ScreenWidth(1360)
-    , m_ScreenHeight(960)
-    , m_TilesVisibleWidth(17)
-    , m_TilesVisibleHeight(12)
-    , m_ResizeSnapTimer(0.0f)
-    , m_PendingWindowSnap(false)
-    , m_CameraPosition(0.0f)
-    , m_CameraFollowTarget(0.0f)
-    , m_HasCameraFollowTarget(false)
-    , m_CameraZoom(1.0f)
-    , m_CameraTilt(0.2f)
-    , m_Enable3DEffect(false)
-    , m_GlobeSphereRadius(200.0f)
-    , m_FreeCameraMode(false)
-    , m_LastFrameTime(0.0f)
-    , m_PlayerPreviousPosition(0.0f)
-    , m_InDialogue(false)
-    , m_DialogueNPC(nullptr)
-    , m_DialogueText("")
-    , m_Renderer(nullptr)
-    , m_FpsUpdateTimer(0.0f)
-    , m_FpsConsoleTimer(0.0f)
-    , m_FrameCount(0)
-    , m_CurrentFps(0.0f)
-    , m_TargetFps(0.0f)
-    , m_DrawCallAccumulator(0)
-    , m_CurrentDrawCalls(0)
-    , m_RendererAPI(RendererAPI::OpenGL)
+    : m_Window(nullptr),
+      m_ScreenWidth(1360),
+      m_ScreenHeight(960),
+      m_TilesVisibleWidth(17),
+      m_TilesVisibleHeight(12),
+      m_ResizeSnapTimer(0.0f),
+      m_PendingWindowSnap(false),
+      m_CameraPosition(0.0f),
+      m_CameraFollowTarget(0.0f),
+      m_HasCameraFollowTarget(false),
+      m_CameraZoom(1.0f),
+      m_CameraTilt(0.2f),
+      m_Enable3DEffect(false),
+      m_GlobeSphereRadius(200.0f),
+      m_FreeCameraMode(false),
+      m_LastFrameTime(0.0f),
+      m_PlayerPreviousPosition(0.0f),
+      m_InDialogue(false),
+      m_DialogueNPC(nullptr),
+      m_DialogueText(""),
+      m_Renderer(nullptr),
+      m_FpsUpdateTimer(0.0f),
+      m_FpsConsoleTimer(0.0f),
+      m_FrameCount(0),
+      m_CurrentFps(0.0f),
+      m_TargetFps(0.0f),
+      m_DrawCallAccumulator(0),
+      m_CurrentDrawCalls(0),
+      m_RendererAPI(RendererAPI::OpenGL)
 {
 }
 
@@ -141,7 +141,7 @@ bool Game::Initialize()
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glfwSwapInterval(0); // VSync: 0 = disabled, 1 = enabled
+        glfwSwapInterval(0);  // VSync: 0 = disabled, 1 = enabled
     }
 
     if (m_RendererAPI == RendererAPI::OpenGL)
@@ -161,7 +161,7 @@ bool Game::Initialize()
         m_Renderer->Init();
         std::cout << "Renderer->Init() completed successfully" << std::endl;
     }
-    catch (const std::exception &e)
+    catch (const std::exception& e)
     {
         std::cerr << "Exception during Renderer initialization: " << e.what() << std::endl;
         return false;
@@ -190,8 +190,7 @@ bool Game::Initialize()
     m_Renderer->SetProjection(projection);
 
     // Load combined tilemap from a list of tileset files
-    std::vector<std::string> tilesetPaths =
-    {
+    std::vector<std::string> tilesetPaths = {
         "assets/overworld/cb5fa6a6-f88d-47ca-95d6-c73cc79f879d.png",
         "assets/overworld/5ee53950-ea54-41c5-93d3-991e1407cb8b.png",
         "assets/overworld/fd3ff88b-f533-4d40-947c-2c7e5e90839c.png",
@@ -205,26 +204,28 @@ bool Game::Initialize()
 
     // Load tilesets from current directory first, then try parent directory.
     // This handles both running from build/ subdirectory and project root.
-    bool loaded = m_Tilemap.LoadCombinedTilesets(tilesetPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
+    bool loaded = m_Tilemap.LoadCombinedTilesets(
+        tilesetPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
     if (!loaded)
     {
         std::vector<std::string> parentPaths = tilesetPaths;
-        for (auto &path : parentPaths)
+        for (auto& path : parentPaths)
         {
             path = "../" + path;
         }
-        loaded = m_Tilemap.LoadCombinedTilesets(parentPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
+        loaded = m_Tilemap.LoadCombinedTilesets(
+            parentPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
 
         if (!loaded)
         {
             std::cerr << "Failed to load combined tileset. Tried:" << std::endl;
             std::cerr << "  Current directory:" << std::endl;
-            for (const auto &path : tilesetPaths)
+            for (const auto& path : tilesetPaths)
             {
                 std::cerr << "    " << path << std::endl;
             }
             std::cerr << "  Parent directory:" << std::endl;
-            for (const auto &path : parentPaths)
+            for (const auto& path : parentPaths)
             {
                 std::cerr << "    " << path << std::endl;
             }
@@ -233,23 +234,22 @@ bool Game::Initialize()
     }
 
     // Initialize editor with available NPC types
-    m_Editor.Initialize({
-        "assets/non-player/f8cb6fd1-b8a5-44df-b017-c6cc9834353f.png",
-        "assets/non-player/ccdc6c30-ecf8-4d08-b5ef-1307d84eecf0.png",
-        "assets/non-player/8eb301d1-1dd4-4044-8718-72de1e7b981b.png",
-        "assets/non-player/5a5f49f1-32be-4645-b5ca-6c0817461253.png",
-        "assets/non-player/d06a4775-e373-4c7a-acfb-6b8fe5f01ca1.png",
-        "assets/non-player/908fc99d-b456-45a2-937c-074413e8f664.png",
-        "assets/non-player/f7e4604c-a458-4096-bbba-59149419c650.png",
-        "assets/non-player/94c6b5b9-99fa-4f3d-bab5-b93684c934e5.png"
-    });
+    m_Editor.Initialize({"assets/non-player/f8cb6fd1-b8a5-44df-b017-c6cc9834353f.png",
+                         "assets/non-player/ccdc6c30-ecf8-4d08-b5ef-1307d84eecf0.png",
+                         "assets/non-player/8eb301d1-1dd4-4044-8718-72de1e7b981b.png",
+                         "assets/non-player/5a5f49f1-32be-4645-b5ca-6c0817461253.png",
+                         "assets/non-player/d06a4775-e373-4c7a-acfb-6b8fe5f01ca1.png",
+                         "assets/non-player/908fc99d-b456-45a2-937c-074413e8f664.png",
+                         "assets/non-player/f7e4604c-a458-4096-bbba-59149419c650.png",
+                         "assets/non-player/94c6b5b9-99fa-4f3d-bab5-b93684c934e5.png"});
 
     // Try to load save from JSON first, if it exists
     // If loading fails, generate a default map
     int loadedPlayerTileX = -1;
     int loadedPlayerTileY = -1;
     int loadedCharacterType = -1;
-    bool mapLoaded = m_Tilemap.LoadMapFromJSON("save.json", &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
+    bool mapLoaded = m_Tilemap.LoadMapFromJSON(
+        "save.json", &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
     if (!mapLoaded)
     {
         std::cout << "No existing save found, generating default map" << std::endl;
@@ -264,25 +264,55 @@ bool Game::Initialize()
     }
 
     // Configure player asset paths
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE, "Walking", "assets/player/1135c14b-d3cb-414e-8b87-8dca516ba610.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE, "Running", "assets/player/2444a0be-9d2a-4b12-9921-4ca1956e7107.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE, "Bicycle", "assets/player/e6b68c46-ab34-4dbb-bca0-93710e3a433c.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
+                                       "Walking",
+                                       "assets/player/1135c14b-d3cb-414e-8b87-8dca516ba610.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
+                                       "Running",
+                                       "assets/player/2444a0be-9d2a-4b12-9921-4ca1956e7107.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
+                                       "Bicycle",
+                                       "assets/player/e6b68c46-ab34-4dbb-bca0-93710e3a433c.png");
 
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE, "Walking", "assets/player/5f3431e3-4835-4266-af9c-505b771122ee.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE, "Running", "assets/player/e2216c65-fef8-41c9-a5b8-911a962d7ae2.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE, "Bicycle", "assets/player/9ba37d2a-fe59-4fee-86d5-ca1e17bca11f.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
+                                       "Walking",
+                                       "assets/player/5f3431e3-4835-4266-af9c-505b771122ee.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
+                                       "Running",
+                                       "assets/player/e2216c65-fef8-41c9-a5b8-911a962d7ae2.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
+                                       "Bicycle",
+                                       "assets/player/9ba37d2a-fe59-4fee-86d5-ca1e17bca11f.png");
 
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE, "Walking", "assets/player/f3a3f051-382e-4653-8449-131d2a75548e.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE, "Running", "assets/player/b67d0c3e-b2d1-48bc-b0a9-2ea5a42037c8.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE, "Bicycle", "assets/player/1023c322-8f93-4f73-8772-7543bf832569.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
+                                       "Walking",
+                                       "assets/player/f3a3f051-382e-4653-8449-131d2a75548e.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
+                                       "Running",
+                                       "assets/player/b67d0c3e-b2d1-48bc-b0a9-2ea5a42037c8.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
+                                       "Bicycle",
+                                       "assets/player/1023c322-8f93-4f73-8772-7543bf832569.png");
 
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE, "Walking", "assets/player/1ce93276-4959-476f-adeb-508c86802567.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE, "Running", "assets/player/2f1d4723-c682-4d21-9991-af4f3513bdc1.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE, "Bicycle", "assets/player/980d60d7-3bbc-4c1f-9681-5b7f371d4605.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
+                                       "Walking",
+                                       "assets/player/1ce93276-4959-476f-adeb-508c86802567.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
+                                       "Running",
+                                       "assets/player/2f1d4723-c682-4d21-9991-af4f3513bdc1.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
+                                       "Bicycle",
+                                       "assets/player/980d60d7-3bbc-4c1f-9681-5b7f371d4605.png");
 
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE, "Walking", "assets/player/17d3da80-9b85-42e5-adf8-fd5823962f20.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE, "Running", "assets/player/2f079f34-3ea2-4c6a-a054-de5ba9c44e2f.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE, "Bicycle", "assets/player/e23ea083-b992-42dd-8dd2-690f246bc164.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
+                                       "Walking",
+                                       "assets/player/17d3da80-9b85-42e5-adf8-fd5823962f20.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
+                                       "Running",
+                                       "assets/player/2f079f34-3ea2-4c6a-a054-de5ba9c44e2f.png");
+    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
+                                       "Bicycle",
+                                       "assets/player/e23ea083-b992-42dd-8dd2-690f246bc164.png");
 
     // After tilemap is loaded, instead of manual sprite loads:
     // Use saved character type or default to BW1_MALE
@@ -300,7 +330,8 @@ bool Game::Initialize()
     {
         // For now, the textures will be uploaded when first used in DrawSpriteRegion
         // But we can add a public method to PlayerCharacter to upload textures if needed
-        std::cout << "PlayerCharacter sprites loaded, textures will be uploaded on first use" << std::endl;
+        std::cout << "PlayerCharacter sprites loaded, textures will be uploaded on first use"
+                  << std::endl;
     }
 
     // Camera viewport size
@@ -317,7 +348,8 @@ bool Game::Initialize()
 
     // Center camera on player's visual center
     // Player's visual center is at playerPos.y - HITBOX_HEIGHT (middle of 32px sprite)
-    glm::vec2 playerVisualCenter = glm::vec2(playerPos.x, playerPos.y - PlayerCharacter::HITBOX_HEIGHT);
+    glm::vec2 playerVisualCenter =
+        glm::vec2(playerPos.x, playerPos.y - PlayerCharacter::HITBOX_HEIGHT);
     m_CameraPosition = playerVisualCenter - glm::vec2(camWorldWidth / 2.0f, camWorldHeight / 2.0f);
     // Initialize follow target to current camera position
     m_CameraFollowTarget = m_CameraPosition;
@@ -331,10 +363,15 @@ bool Game::Initialize()
 
     std::cout << "Map size: " << m_Tilemap.GetMapWidth() << "x" << m_Tilemap.GetMapHeight()
               << " tiles = " << mapWidth << "x" << mapHeight << " pixels" << std::endl;
-    std::cout << "Camera view: " << camWorldWidth << "x" << camWorldHeight << " pixels (" << m_TilesVisibleWidth << " tiles wide, " << m_TilesVisibleHeight << " tiles tall)" << std::endl;
-    std::cout << "Player position: (" << playerPos.x << ", " << playerPos.y << ") - Tile (" << playerTileX << ", " << playerTileY << ")" << std::endl;
-    std::cout << "Camera position: (" << m_CameraPosition.x << ", " << m_CameraPosition.y << ")" << std::endl;
-    std::cout << "PlayerCharacter size: " << PlayerCharacter::RENDER_WIDTH << "x" << PlayerCharacter::RENDER_HEIGHT << " pixels (ONE TILE)" << std::endl;
+    std::cout << "Camera view: " << camWorldWidth << "x" << camWorldHeight << " pixels ("
+              << m_TilesVisibleWidth << " tiles wide, " << m_TilesVisibleHeight << " tiles tall)"
+              << std::endl;
+    std::cout << "Player position: (" << playerPos.x << ", " << playerPos.y << ") - Tile ("
+              << playerTileX << ", " << playerTileY << ")" << std::endl;
+    std::cout << "Camera position: (" << m_CameraPosition.x << ", " << m_CameraPosition.y << ")"
+              << std::endl;
+    std::cout << "PlayerCharacter size: " << PlayerCharacter::RENDER_WIDTH << "x"
+              << PlayerCharacter::RENDER_HEIGHT << " pixels (ONE TILE)" << std::endl;
 
     m_LastFrameTime = static_cast<float>(glfwGetTime());
 
@@ -347,7 +384,7 @@ bool Game::Initialize()
 
     // Initialize day & night cycle
     m_TimeManager.Initialize();
-    m_TimeManager.SetDayDuration(240.0f); // 240 seconds = 1 Game day
+    m_TimeManager.SetDayDuration(240.0f);  // 240 seconds = 1 Game day
     m_SkyRenderer.Initialize();
 
     // Initialize dialogue system
@@ -368,7 +405,8 @@ void Game::Run()
             float deltaTime = static_cast<float>(frameStartTime) - m_LastFrameTime;
             m_LastFrameTime = static_cast<float>(frameStartTime);
 
-            // Clamp deltaTime to prevent physics explosions after debugger pauses or window drag stalls
+            // Clamp deltaTime to prevent physics explosions after debugger pauses or window drag
+            // stalls
             constexpr float MAX_DELTA_TIME = 0.1f;
             deltaTime = std::min(deltaTime, MAX_DELTA_TIME);
 
@@ -378,11 +416,11 @@ void Game::Run()
                 Update(deltaTime);
                 Render();
             }
-            catch (const std::exception &e)
+            catch (const std::exception& e)
             {
                 std::cerr << "Exception in game loop: " << e.what() << std::endl;
                 std::cerr.flush();
-                break; // Exit loop on error
+                break;  // Exit loop on error
             }
             catch (...)
             {
@@ -434,7 +472,7 @@ void Game::Run()
             }
         }
     }
-    catch (const std::exception &e)
+    catch (const std::exception& e)
     {
         std::cerr << "Exception in Run(): " << e.what() << std::endl;
         std::cerr.flush();
@@ -468,7 +506,7 @@ void Game::Update(float deltaTime)
     // Update FPS counter
     m_FrameCount++;
     m_FpsUpdateTimer += deltaTime;
-    if (m_FpsUpdateTimer >= 1.0f) // Update FPS display every second
+    if (m_FpsUpdateTimer >= 1.0f)  // Update FPS display every second
     {
         m_CurrentFps = m_FrameCount / m_FpsUpdateTimer;
         m_CurrentDrawCalls = (m_FrameCount > 0) ? m_DrawCallAccumulator / m_FrameCount : 0;
@@ -481,7 +519,7 @@ void Game::Update(float deltaTime)
     m_FpsConsoleTimer += deltaTime;
     if (m_FpsConsoleTimer >= 1.0f)
     {
-        const char *renderer = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
+        const char* renderer = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
         float frameTimeMs = (m_CurrentFps > 0) ? (1000.0f / m_CurrentFps) : 0.0f;
         /*std::cout << "[" << renderer << "] "
                   << static_cast<int>(m_CurrentFps) << " FPS | "
@@ -533,10 +571,13 @@ void Game::Update(float deltaTime)
             m_DialogueSnapTimer += deltaTime;
             float duration = std::max(0.05f, m_DialogueSnapDuration);
             float t = std::clamp(m_DialogueSnapTimer / duration, 0.0f, 1.0f);
-            float smoothT = t * t * (3.0f - 2.0f * t); // Smoothstep easing
+            float smoothT = t * t * (3.0f - 2.0f * t);  // Smoothstep easing
 
-            glm::vec2 blendedPlayer = m_DialogueSnapPlayerStart + (m_DialogueSnapPlayerTarget - m_DialogueSnapPlayerStart) * smoothT;
-            glm::vec2 blendedNPC = m_DialogueSnapNPCStart + (m_DialogueSnapNPCTarget - m_DialogueSnapNPCStart) * smoothT;
+            glm::vec2 blendedPlayer =
+                m_DialogueSnapPlayerStart +
+                (m_DialogueSnapPlayerTarget - m_DialogueSnapPlayerStart) * smoothT;
+            glm::vec2 blendedNPC = m_DialogueSnapNPCStart +
+                                   (m_DialogueSnapNPCTarget - m_DialogueSnapNPCStart) * smoothT;
 
             m_Player.SetPositionRaw(blendedPlayer);
             m_DialogueNPC->SetPosition(blendedNPC);
@@ -554,7 +595,8 @@ void Game::Update(float deltaTime)
                 {
                     m_Player.SetPositionRaw(m_DialogueSnapPlayerTarget);
                 }
-                m_DialogueNPC->SetTilePosition(m_DialogueSnapNPCTileX, m_DialogueSnapNPCTileY, 16, true);
+                m_DialogueNPC->SetTilePosition(
+                    m_DialogueSnapNPCTileX, m_DialogueSnapNPCTileY, 16, true);
 
                 m_Player.Stop();
                 m_Player.SetDirection(m_DialogueSnapPlayerFacing);
@@ -590,7 +632,7 @@ void Game::Update(float deltaTime)
     // Update NPCs
     // During dialogue, freeze the NPC being talked to
     bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnapActive;
-    for (auto &npc : m_NPCs)
+    for (auto& npc : m_NPCs)
     {
         // Skip updating the NPC in dialogue
         if (inAnyDialogue && m_DialogueNPC == &npc)
@@ -643,11 +685,13 @@ void Game::Update(float deltaTime)
     // Camera follow target: use actual player position while moving for smooth tracking,
     // and tile center when idle so the camera settles on the grid.
     glm::vec2 playerCamPos = m_Player.GetPosition();
-    glm::vec2 playerVisualCenter = glm::vec2(playerCamPos.x, playerCamPos.y - PlayerCharacter::HITBOX_HEIGHT);
+    glm::vec2 playerVisualCenter =
+        glm::vec2(playerCamPos.x, playerCamPos.y - PlayerCharacter::HITBOX_HEIGHT);
     glm::vec2 smoothTarget = playerVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
     glm::vec2 playerBottomTileCenter = m_Player.GetCurrentTileCenter();
-    glm::vec2 tileVisualCenter = glm::vec2(playerBottomTileCenter.x, playerBottomTileCenter.y - PlayerCharacter::HITBOX_HEIGHT);
+    glm::vec2 tileVisualCenter = glm::vec2(
+        playerBottomTileCenter.x, playerBottomTileCenter.y - PlayerCharacter::HITBOX_HEIGHT);
     glm::vec2 gridTarget = tileVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
     // While WASD is held, follow the player directly; otherwise settle onto the grid
@@ -662,7 +706,7 @@ void Game::Update(float deltaTime)
         if (arrowKeysPressed)
         {
             // Base speed scales with zoom (faster when zoomed out for easier map navigation)
-            float cameraSpeed = 600.0f / m_CameraZoom; // Pixels per second
+            float cameraSpeed = 600.0f / m_CameraZoom;  // Pixels per second
 
             // Shift modifier for faster panning (2.5x)
             if (glfwGetKey(m_Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -694,7 +738,7 @@ void Game::Update(float deltaTime)
             snappedPos.x = std::round(m_CameraPosition.x / tileW) * tileW;
             snappedPos.y = std::round(m_CameraPosition.y / tileH) * tileH;
 
-            float alpha = expApproachAlpha(deltaTime, 0.5f); // Faster snap than player follow
+            float alpha = expApproachAlpha(deltaTime, 0.5f);  // Faster snap than player follow
             glm::vec2 newPos = m_CameraPosition + (snappedPos - m_CameraPosition) * alpha;
 
             // Snap exactly when very close to avoid jitter
@@ -780,7 +824,8 @@ void Game::Update(float deltaTime)
         // If no follow target and no Arrows or WASD, camera simply stays where it is.
     }
 
-    // Clamp camera to map bounds after snapping (skip in editor free-camera mode to allow panning beyond map)
+    // Clamp camera to map bounds after snapping (skip in editor free-camera mode to allow panning
+    // beyond map)
     if (!(m_Editor.IsActive() && m_FreeCameraMode))
     {
         float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
@@ -798,7 +843,7 @@ void Game::Update(float deltaTime)
 
     // Build an AABB from a bottom-center anchor point.
     // The anchor is at the character's feet; the box extends upward and outward.
-    auto makePlayerAABB = [&](const glm::vec2 &anchorPos) -> auto
+    auto makePlayerAABB = [&](const glm::vec2& anchorPos) -> auto
     {
         struct AABB
         {
@@ -819,14 +864,11 @@ void Game::Update(float deltaTime)
     };
 
     auto playerBox = makePlayerAABB(playerPos);
-    auto overlaps = [](const auto &a, const auto &b)
-    {
-        return (a.minX < b.maxX && a.maxX > b.minX &&
-                a.minY < b.maxY && a.maxY > b.minY);
-    };
+    auto overlaps = [](const auto& a, const auto& b)
+    { return (a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY); };
 
     // Check for player-NPC collisions and stop NPCs when colliding
-    for (auto &npc : m_NPCs)
+    for (auto& npc : m_NPCs)
     {
         auto npcBox = makePlayerAABB(npc.GetPosition());
         if (overlaps(playerBox, npcBox))
@@ -861,10 +903,12 @@ void Game::ConfigureRendererPerspective(float width, float height)
         float viewportDiagonal = std::sqrt(width * width + height * height);
         float baseRadius = m_GlobeSphereRadius / m_CameraZoom;
         // Minimum radius to prevent extreme distortion, but set lower to allow globe visibility
-        float minRadius = viewportDiagonal / static_cast<float>(rift::Pi * 2.0);  // Quarter of full coverage
+        float minRadius =
+            viewportDiagonal / static_cast<float>(rift::Pi * 2.0);  // Quarter of full coverage
         float effectiveSphereRadius = std::max(baseRadius, minRadius);
 
-        m_Renderer->SetFisheyePerspective(true, effectiveSphereRadius, horizonY, horizonScale, width, height);
+        m_Renderer->SetFisheyePerspective(
+            true, effectiveSphereRadius, horizonY, horizonScale, width, height);
     }
     else
     {
@@ -935,23 +979,21 @@ void Game::Render()
     const glm::vec2 originalCamera = m_CameraPosition;
     glm::vec2 renderCam = originalCamera;
     glm::vec2 renderSize(zoomedWidth, zoomedHeight);
-    glm::vec2 cullCam = originalCamera; // use unsnapped camera for visibility tests
+    glm::vec2 cullCam = originalCamera;  // use unsnapped camera for visibility tests
     glm::vec2 cullSize(zoomedWidth, zoomedHeight);
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
         const float pixelStepX = zoomedWidth / static_cast<float>(m_ScreenWidth);
         const float pixelStepY = zoomedHeight / static_cast<float>(m_ScreenHeight);
         auto snapToPixel = [](float value, float step)
-        {
-            return (step > 0.0f) ? std::round(value / step) * step : value;
-        };
+        { return (step > 0.0f) ? std::round(value / step) * step : value; };
         renderCam.x = snapToPixel(originalCamera.x, pixelStepX);
         renderCam.y = snapToPixel(originalCamera.y, pixelStepY);
     }
 
     // Calculate cull rectangle for tile visibility testing
-    // When 3D effect is enabled, we need to load more tiles because the perspective widens the view.
-    // renderCam may be pixel-snapped (OpenGL) for drawing; cullCam/cullSize use the unsnapped
+    // When 3D effect is enabled, we need to load more tiles because the perspective widens the
+    // view. renderCam may be pixel-snapped (OpenGL) for drawing; cullCam/cullSize use the unsnapped
     // camera to keep conservative tile visibility when the snap shifts by sub-pixels.
     if (m_Enable3DEffect)
     {
@@ -986,8 +1028,10 @@ void Game::Render()
     // Suspend perspective for character rendering
     m_Renderer->SuspendPerspective(true);
 
-    // Render no-projection tiles from background layers (buildings & entities that should appear upright)
-    m_Tilemap.RenderBackgroundLayersNoProjection(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
+    // Render no-projection tiles from background layers (buildings & entities that should appear
+    // upright)
+    m_Tilemap.RenderBackgroundLayersNoProjection(
+        *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Collect Y-sorted tiles from all layers
     auto ySortPlusTiles = m_Tilemap.GetVisibleYSortPlusTiles(cullCam, cullSize);
@@ -1002,15 +1046,15 @@ void Game::Render()
         // Higher values render later (in front) when Y coordinates match.
         enum Type
         {
-            PLAYER_TOP = 0,    // Player top half (renders first/behind at same Y)
+            PLAYER_TOP = 0,  // Player top half (renders first/behind at same Y)
             PLAYER_BOTTOM = 1,
             NPC_TOP = 2,
             NPC_BOTTOM = 3,
-            TILE = 4           // Tiles render last/in front at same Y
+            TILE = 4  // Tiles render last/in front at same Y
         } type;
-        float sortY;                       // Y coordinate for depth sorting
-        Tilemap::YSortPlusTile tile;         // Valid when type == TILE
-        const NonPlayerCharacter *npc;     // Valid when type == NPC_*
+        float sortY;                    // Y coordinate for depth sorting
+        Tilemap::YSortPlusTile tile;    // Valid when type == TILE
+        const NonPlayerCharacter* npc;  // Valid when type == NPC_*
     };
     // Reuse static vector to avoid allocation every frame
     static std::vector<RenderItem> renderList;
@@ -1023,7 +1067,7 @@ void Game::Render()
     // Skip tiles behind the sphere when full globe is visible
     int tileW = m_Tilemap.GetTileWidth();
     int tileH = m_Tilemap.GetTileHeight();
-    for (const auto &tile : ySortPlusTiles)
+    for (const auto& tile : ySortPlusTiles)
     {
         // Check if tile center is behind the sphere
         float screenX = static_cast<float>(tile.x * tileW) - renderCam.x + tileW * 0.5f;
@@ -1044,7 +1088,7 @@ void Game::Render()
     // The top half sorts slightly higher so it can appear behind tiles
     // that the character is walking past.
     // Skip NPCs behind the sphere when full globe is visible.
-    for (const auto &npc : m_NPCs)
+    for (const auto& npc : m_NPCs)
     {
         glm::vec2 npcPos = npc.GetPosition();
         float screenX = npcPos.x - renderCam.x;
@@ -1079,7 +1123,7 @@ void Game::Render()
         float playerScreenY = playerPos.y - renderCam.y;
         if (!m_Renderer->IsPointBehindSphere(glm::vec2(playerScreenX, playerScreenY)))
         {
-            float playerAnchorY = playerPos.y; // Bottom-center point
+            float playerAnchorY = playerPos.y;  // Bottom-center point
             RenderItem playerBottomItem;
             playerBottomItem.type = RenderItem::PLAYER_BOTTOM;
             playerBottomItem.sortY = playerAnchorY;
@@ -1099,83 +1143,95 @@ void Game::Render()
     // - Normal tiles (Y-sort+1): use epsilon tiebreaker (tile behind, player in front at same Y)
     // - Y-sort-1 tiles: use Y offset so tile renders in front at same Y, no tiebreaker
     // Use stable_sort to maintain consistent ordering for equal elements
-    std::stable_sort(renderList.begin(), renderList.end(),
-              [](const RenderItem &a, const RenderItem &b)
-              {
-                  bool aIsYSortMinusTile = (a.type == RenderItem::TILE && a.tile.ySortMinus);
-                  bool bIsYSortMinusTile = (b.type == RenderItem::TILE && b.tile.ySortMinus);
+    std::stable_sort(renderList.begin(),
+                     renderList.end(),
+                     [](const RenderItem& a, const RenderItem& b)
+                     {
+                         bool aIsYSortMinusTile = (a.type == RenderItem::TILE && a.tile.ySortMinus);
+                         bool bIsYSortMinusTile = (b.type == RenderItem::TILE && b.tile.ySortMinus);
 
-                  // If comparing a Y-sort-1 tile with an entity, use offset-based comparison
-                  // The offset makes the tile sort as if slightly lower, so it renders in front
-                  // when at the same actual Y, but behind when player has walked past
-                  bool aIsEntity = (a.type <= RenderItem::NPC_BOTTOM);
-                  bool bIsEntity = (b.type <= RenderItem::NPC_BOTTOM);
+                         // If comparing a Y-sort-1 tile with an entity, use offset-based comparison
+                         // The offset makes the tile sort as if slightly lower, so it renders in
+                         // front when at the same actual Y, but behind when player has walked past
+                         bool aIsEntity = (a.type <= RenderItem::NPC_BOTTOM);
+                         bool bIsEntity = (b.type <= RenderItem::NPC_BOTTOM);
 
-                  if ((aIsYSortMinusTile && bIsEntity) || (bIsYSortMinusTile && aIsEntity))
-                  {
-                      // Half-tile offset: player must be at least 8px in front to render in front
-                      float aSortY = a.sortY + (aIsYSortMinusTile ? 8.0f : 0.0f);
-                      float bSortY = b.sortY + (bIsYSortMinusTile ? 8.0f : 0.0f);
-                      // Use epsilon for float comparison to avoid flickering
-                      if (std::abs(aSortY - bSortY) > 0.1f)
-                          return aSortY < bSortY;
-                      // Within epsilon: entity first (behind), tile second (in front)
-                      return a.type < b.type;
-                  }
+                         if ((aIsYSortMinusTile && bIsEntity) || (bIsYSortMinusTile && aIsEntity))
+                         {
+                             // Half-tile offset: player must be at least 8px in front to render in
+                             // front
+                             float aSortY = a.sortY + (aIsYSortMinusTile ? 8.0f : 0.0f);
+                             float bSortY = b.sortY + (bIsYSortMinusTile ? 8.0f : 0.0f);
+                             // Use epsilon for float comparison to avoid flickering
+                             if (std::abs(aSortY - bSortY) > 0.1f)
+                                 return aSortY < bSortY;
+                             // Within epsilon: entity first (behind), tile second (in front)
+                             return a.type < b.type;
+                         }
 
-                  // Normal comparison with epsilon tiebreaker
-                  const float epsilon = 1.0f;
-                  if (std::abs(a.sortY - b.sortY) > epsilon)
-                      return a.sortY < b.sortY;
+                         // Normal comparison with epsilon tiebreaker
+                         const float epsilon = 1.0f;
+                         if (std::abs(a.sortY - b.sortY) > epsilon)
+                             return a.sortY < b.sortY;
 
-                  // Tiebreaker: higher type comes first (renders behind)
-                  // TILE(4) before PLAYER(0/1) = TILE renders first = TILE behind, PLAYER in front
-                  return a.type > b.type;
-              });
+                         // Tiebreaker: higher type comes first (renders behind)
+                         // TILE(4) before PLAYER(0/1) = TILE renders first = TILE behind, PLAYER in
+                         // front
+                         return a.type > b.type;
+                     });
 
     // Render sorted list
-    for (const auto &item : renderList)
+    for (const auto& item : renderList)
     {
         switch (item.type)
         {
-        case RenderItem::TILE:
-            // No-projection tiles render with perspective suspended (upright)
-            // Normal tiles render with perspective enabled
-            // Pass explicit flag to avoid RenderSingleTile re-reading from layer
-            if (item.tile.noProjection)
-            {
-                // Keep perspective suspended for no-projection tiles
-                // RenderSingleTile handles the upright rendering algorithm
-                m_Tilemap.RenderSingleTile(*m_Renderer, item.tile.x, item.tile.y,
-                                           item.tile.layer, m_CameraPosition, 1);
-            }
-            else
-            {
-                // Resume perspective for normal tile rendering
-                m_Renderer->SuspendPerspective(false);
-                m_Tilemap.RenderSingleTile(*m_Renderer, item.tile.x, item.tile.y,
-                                           item.tile.layer, m_CameraPosition, 0);
-                // Suspend perspective again for subsequent entities
-                m_Renderer->SuspendPerspective(true);
-            }
-            break;
-        case RenderItem::NPC_BOTTOM:
-            item.npc->RenderBottomHalf(*m_Renderer, m_CameraPosition);
-            break;
-        case RenderItem::NPC_TOP:
-            item.npc->RenderTopHalf(*m_Renderer, m_CameraPosition);
-            break;
-        case RenderItem::PLAYER_BOTTOM:
-            m_Player.RenderBottomHalf(*m_Renderer, m_CameraPosition);
-            break;
-        case RenderItem::PLAYER_TOP:
-            m_Player.RenderTopHalf(*m_Renderer, m_CameraPosition);
-            break;
+            case RenderItem::TILE:
+                // No-projection tiles render with perspective suspended (upright)
+                // Normal tiles render with perspective enabled
+                // Pass explicit flag to avoid RenderSingleTile re-reading from layer
+                if (item.tile.noProjection)
+                {
+                    // Keep perspective suspended for no-projection tiles
+                    // RenderSingleTile handles the upright rendering algorithm
+                    m_Tilemap.RenderSingleTile(*m_Renderer,
+                                               item.tile.x,
+                                               item.tile.y,
+                                               item.tile.layer,
+                                               m_CameraPosition,
+                                               1);
+                }
+                else
+                {
+                    // Resume perspective for normal tile rendering
+                    m_Renderer->SuspendPerspective(false);
+                    m_Tilemap.RenderSingleTile(*m_Renderer,
+                                               item.tile.x,
+                                               item.tile.y,
+                                               item.tile.layer,
+                                               m_CameraPosition,
+                                               0);
+                    // Suspend perspective again for subsequent entities
+                    m_Renderer->SuspendPerspective(true);
+                }
+                break;
+            case RenderItem::NPC_BOTTOM:
+                item.npc->RenderBottomHalf(*m_Renderer, m_CameraPosition);
+                break;
+            case RenderItem::NPC_TOP:
+                item.npc->RenderTopHalf(*m_Renderer, m_CameraPosition);
+                break;
+            case RenderItem::PLAYER_BOTTOM:
+                m_Player.RenderBottomHalf(*m_Renderer, m_CameraPosition);
+                break;
+            case RenderItem::PLAYER_TOP:
+                m_Player.RenderTopHalf(*m_Renderer, m_CameraPosition);
+                break;
         }
     }
 
     // Render no-projection tiles from foreground layers
-    m_Tilemap.RenderForegroundLayersNoProjection(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
+    m_Tilemap.RenderForegroundLayersNoProjection(
+        *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Render noProjection particles, particle system handles suspend internally
     m_Particles.Render(*m_Renderer, m_CameraPosition, true, false);
@@ -1195,9 +1251,9 @@ void Game::Render()
     m_Renderer->SuspendPerspective(true);
     glm::mat4 screenProjection = glm::ortho(0.0f, worldWidth, worldHeight, 0.0f);
     m_Renderer->SetProjection(screenProjection);
-    m_SkyRenderer.Render(*m_Renderer, m_TimeManager,
-                         static_cast<int>(worldWidth), static_cast<int>(worldHeight));
-    m_Renderer->SetProjection(projection); // Restore world projection
+    m_SkyRenderer.Render(
+        *m_Renderer, m_TimeManager, static_cast<int>(worldWidth), static_cast<int>(worldHeight));
+    m_Renderer->SetProjection(projection);  // Restore world projection
     m_Renderer->SuspendPerspective(false);
 
     // Render editor overlays and tile picker
@@ -1231,8 +1287,12 @@ void Game::Render()
     if (m_Editor.IsShowDebugInfo())
     {
         // Set up UI projection
-        glm::mat4 uiProjection = glm::ortho(0.0f, static_cast<float>(m_ScreenWidth),
-                                            static_cast<float>(m_ScreenHeight), 0.0f, -1.0f, 1.0f);
+        glm::mat4 uiProjection = glm::ortho(0.0f,
+                                            static_cast<float>(m_ScreenWidth),
+                                            static_cast<float>(m_ScreenHeight),
+                                            0.0f,
+                                            -1.0f,
+                                            1.0f);
         m_Renderer->SetProjection(uiProjection);
 
         // Format FPS text
@@ -1255,19 +1315,34 @@ void Game::Render()
         // Draw debug info on left side
         float lineHeight = 28.0f;
         float currentLine = 0.0f;
-        m_Renderer->DrawText(fpsText, glm::vec2(12.0f, 32.0f + lineHeight * currentLine++), 1.0f, glm::vec3(1.0f, 1.0f, 0.0f), 2.0f, 0.85f);
-        m_Renderer->DrawText(posText, glm::vec2(12.0f, 32.0f + lineHeight * currentLine++), 1.0f, glm::vec3(1.0f, 1.0f, 0.0f), 2.0f, 0.85f);
-        m_Renderer->DrawText(tileText, glm::vec2(12.0f, 32.0f + lineHeight * currentLine++), 1.0f, glm::vec3(1.0f, 1.0f, 0.0f), 2.0f, 0.85f);
+        m_Renderer->DrawText(fpsText,
+                             glm::vec2(12.0f, 32.0f + lineHeight * currentLine++),
+                             1.0f,
+                             glm::vec3(1.0f, 1.0f, 0.0f),
+                             2.0f,
+                             0.85f);
+        m_Renderer->DrawText(posText,
+                             glm::vec2(12.0f, 32.0f + lineHeight * currentLine++),
+                             1.0f,
+                             glm::vec3(1.0f, 1.0f, 0.0f),
+                             2.0f,
+                             0.85f);
+        m_Renderer->DrawText(tileText,
+                             glm::vec2(12.0f, 32.0f + lineHeight * currentLine++),
+                             1.0f,
+                             glm::vec3(1.0f, 1.0f, 0.0f),
+                             2.0f,
+                             0.85f);
 
         // Draw active quests section (with spacing and descriptions)
         auto activeQuests = m_GameState.GetActiveQuests();
         if (!activeQuests.empty())
         {
-            currentLine += 0.5f; // Add spacing before quests section
+            currentLine += 0.5f;  // Add spacing before quests section
             glm::vec3 questGold(1.0f, 0.85f, 0.2f);
             glm::vec3 descColor(0.9f, 0.75f, 0.5f);
 
-            for (const auto &quest : activeQuests)
+            for (const auto& quest : activeQuests)
             {
                 // Format quest name: "wolf_quest" -> "Wolf Quest"
                 std::string displayName = quest;
@@ -1279,7 +1354,8 @@ void Game::Render()
                         displayName[i] = ' ';
                         if (i + 1 < displayName.size())
                         {
-                            displayName[i + 1] = static_cast<char>(std::toupper(displayName[i + 1]));
+                            displayName[i + 1] =
+                                static_cast<char>(std::toupper(displayName[i + 1]));
                         }
                     }
                 }
@@ -1289,10 +1365,20 @@ void Game::Render()
                 }
 
                 // Draw quest title with exclamation mark
-                float questTextX = 52.0f; // X position where quest name starts
+                float questTextX = 52.0f;  // X position where quest name starts
                 glm::vec3 exclamYellow(1.0f, 1.0f, 0.0f);
-                m_Renderer->DrawText(">!<", glm::vec2(12.0f, 32.0f + lineHeight * currentLine), 1.0f, exclamYellow, 2.0f, 0.85f);
-                m_Renderer->DrawText(displayName, glm::vec2(questTextX, 32.0f + lineHeight * currentLine++), 1.0f, questGold, 2.0f, 0.85f);
+                m_Renderer->DrawText(">!<",
+                                     glm::vec2(12.0f, 32.0f + lineHeight * currentLine),
+                                     1.0f,
+                                     exclamYellow,
+                                     2.0f,
+                                     0.85f);
+                m_Renderer->DrawText(displayName,
+                                     glm::vec2(questTextX, 32.0f + lineHeight * currentLine++),
+                                     1.0f,
+                                     questGold,
+                                     2.0f,
+                                     0.85f);
 
                 // Draw quest description if available
                 std::string description = m_GameState.GetQuestDescription(quest);
@@ -1307,45 +1393,75 @@ void Game::Render()
                             ++cutPos;
                         description = description.substr(0, cutPos) + "...";
                     }
-                    m_Renderer->DrawText(description, glm::vec2(questTextX, 32.0f + lineHeight * currentLine++), 0.8f, descColor, 2.0f, 0.7f);
+                    m_Renderer->DrawText(description,
+                                         glm::vec2(questTextX, 32.0f + lineHeight * currentLine++),
+                                         0.8f,
+                                         descColor,
+                                         2.0f,
+                                         0.7f);
                 }
             }
         }
 
         // Draw renderer info on right side
-        const char *rendererName = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
+        const char* rendererName = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
         float rightMargin = static_cast<float>(m_ScreenWidth) - 12.0f;
 
         // Renderer name
         char rendererText[32];
         snprintf(rendererText, sizeof(rendererText), "%s", rendererName);
         float textWidth = strnlen(rendererText, sizeof(rendererText)) * 12.0f;
-        m_Renderer->DrawText(rendererText, glm::vec2(rightMargin - textWidth, 32.0f), 1.0f, glm::vec3(1.0f, 0.3f, 0.3f), 2.0f, 0.85f);
+        m_Renderer->DrawText(rendererText,
+                             glm::vec2(rightMargin - textWidth, 32.0f),
+                             1.0f,
+                             glm::vec3(1.0f, 0.3f, 0.3f),
+                             2.0f,
+                             0.85f);
 
         // Resolution
         char resText[32];
         snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
         textWidth = strnlen(resText, sizeof(resText)) * 12.0f;
-        m_Renderer->DrawText(resText, glm::vec2(rightMargin - textWidth, 32.0f + lineHeight), 1.0f, glm::vec3(1.0f, 0.3f, 0.3f), 2.0f, 0.85f);
+        m_Renderer->DrawText(resText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + lineHeight),
+                             1.0f,
+                             glm::vec3(1.0f, 0.3f, 0.3f),
+                             2.0f,
+                             0.85f);
 
         // Frame time
         char frameTimeText[32];
         float frameTimeMs = (m_CurrentFps > 0) ? (1000.0f / m_CurrentFps) : 0.0f;
         snprintf(frameTimeText, sizeof(frameTimeText), "%.2fms", frameTimeMs);
         textWidth = strnlen(frameTimeText, sizeof(frameTimeText)) * 12.0f;
-        m_Renderer->DrawText(frameTimeText, glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 2), 1.0f, glm::vec3(1.0f, 0.3f, 0.3f), 2.0f, 0.85f);
+        m_Renderer->DrawText(frameTimeText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 2),
+                             1.0f,
+                             glm::vec3(1.0f, 0.3f, 0.3f),
+                             2.0f,
+                             0.85f);
 
         // Zoom level
         char zoomText[32];
         snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_CameraZoom);
         textWidth = strnlen(zoomText, sizeof(zoomText)) * 12.0f;
-        m_Renderer->DrawText(zoomText, glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 3), 1.0f, glm::vec3(1.0f, 0.3f, 0.3f), 2.0f, 0.85f);
+        m_Renderer->DrawText(zoomText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 3),
+                             1.0f,
+                             glm::vec3(1.0f, 0.3f, 0.3f),
+                             2.0f,
+                             0.85f);
 
         // Draw calls (averaged over last second)
         char drawCallText[32];
         snprintf(drawCallText, sizeof(drawCallText), "Draws: %d", m_CurrentDrawCalls);
         textWidth = m_Renderer->GetTextWidth(drawCallText, 1.0f);
-        m_Renderer->DrawText(drawCallText, glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 4), 1.0f, glm::vec3(1.0f, 0.3f, 0.3f), 2.0f, 0.85f);
+        m_Renderer->DrawText(drawCallText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 4),
+                             1.0f,
+                             glm::vec3(1.0f, 0.3f, 0.3f),
+                             2.0f,
+                             0.85f);
 
         // Restore world projection (in case EndFrame flushes any batches)
         m_Renderer->SetProjection(projection);
@@ -1407,21 +1523,21 @@ bool Game::SwitchRenderer(RendererAPI api)
 
     if (api == m_RendererAPI)
     {
-        std::cout << "Already using " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        std::cout << "Already using " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan")
+                  << std::endl;
         return true;
     }
 
     if (!IsRendererAvailable(api))
     {
-        std::cerr << "Renderer API not available: " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        std::cerr << "Renderer API not available: "
+                  << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
         return false;
     }
 
     std::cout << "Switching renderer from "
-              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan")
-              << " to "
-              << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan")
-              << "..." << std::endl;
+              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << " to "
+              << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << "..." << std::endl;
 
     // Shutdown current renderer
     if (m_Renderer)
@@ -1513,8 +1629,10 @@ bool Game::SwitchRenderer(RendererAPI api)
 
     // Set viewport and projection
     m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
-    float worldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_CameraZoom;
-    float worldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_CameraZoom;
+    float worldWidth =
+        static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_CameraZoom;
+    float worldHeight =
+        static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_CameraZoom;
     ConfigureRendererPerspective(worldWidth, worldHeight);
     glm::mat4 projection = GetOrthoProjection(worldWidth, worldHeight);
     m_Renderer->SetProjection(projection);
@@ -1522,7 +1640,7 @@ bool Game::SwitchRenderer(RendererAPI api)
     // Re-upload textures to new renderer
     m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
     m_Player.UploadTextures(*m_Renderer);
-    for (auto &npc : m_NPCs)
+    for (auto& npc : m_NPCs)
     {
         npc.UploadTextures(*m_Renderer);
     }
@@ -1530,8 +1648,7 @@ bool Game::SwitchRenderer(RendererAPI api)
     m_SkyRenderer.UploadTextures(*m_Renderer);
 
     std::cout << "Renderer switch complete! Now using "
-              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan")
-              << std::endl;
+              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
 
     return true;
 }
@@ -1586,24 +1703,27 @@ void Game::SnapWindowToTileBoundaries()
     const int tileScreenSize = TILE_PIXEL_SIZE * PIXEL_SCALE;
 
     // Round down to nearest tile boundary, enforcing minimum dimensions
-    int snappedWidth = std::max(5 * tileScreenSize, (m_ScreenWidth / tileScreenSize) * tileScreenSize);
-    int snappedHeight = std::max(4 * tileScreenSize, (m_ScreenHeight / tileScreenSize) * tileScreenSize);
+    int snappedWidth =
+        std::max(5 * tileScreenSize, (m_ScreenWidth / tileScreenSize) * tileScreenSize);
+    int snappedHeight =
+        std::max(4 * tileScreenSize, (m_ScreenHeight / tileScreenSize) * tileScreenSize);
 
     // Only resize if not already snapped
     if (snappedWidth != m_ScreenWidth || snappedHeight != m_ScreenHeight)
     {
         glfwSetWindowSize(m_Window, snappedWidth, snappedHeight);
-        std::cout << "Window snapped to " << snappedWidth << "x" << snappedHeight
-                  << " (" << (snappedWidth / tileScreenSize) << "x" << (snappedHeight / tileScreenSize) << " tiles)" << std::endl;
+        std::cout << "Window snapped to " << snappedWidth << "x" << snappedHeight << " ("
+                  << (snappedWidth / tileScreenSize) << "x" << (snappedHeight / tileScreenSize)
+                  << " tiles)" << std::endl;
     }
 
     m_PendingWindowSnap = false;
 }
 
-void Game::FramebufferSizeCallback(GLFWwindow *window, int width, int height)
+void Game::FramebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
     // Get "this" back from the window's user data
-    Game *game = static_cast<Game *>(glfwGetWindowUserPointer(window));
+    Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
     if (game)
     {
         // Now we can call member functions
@@ -1611,11 +1731,11 @@ void Game::FramebufferSizeCallback(GLFWwindow *window, int width, int height)
     }
 }
 
-void Game::WindowRefreshCallback(GLFWwindow *window)
+void Game::WindowRefreshCallback(GLFWwindow* window)
 {
     // Called by the OS when the window needs repainting (e.g. during resize drag).
     // Re-renders the scene so the user sees game content instead of white fill.
-    Game *game = static_cast<Game *>(glfwGetWindowUserPointer(window));
+    Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
     if (game)
     {
         game->Render();
@@ -1624,24 +1744,22 @@ void Game::WindowRefreshCallback(GLFWwindow *window)
 
 EditorContext Game::MakeEditorContext()
 {
-    return EditorContext{
-        m_Window,
-        m_ScreenWidth,
-        m_ScreenHeight,
-        m_TilesVisibleWidth,
-        m_TilesVisibleHeight,
-        m_CameraPosition,
-        m_CameraFollowTarget,
-        m_HasCameraFollowTarget,
-        m_CameraZoom,
-        m_FreeCameraMode,
-        m_Enable3DEffect,
-        m_CameraTilt,
-        m_GlobeSphereRadius,
-        m_Tilemap,
-        m_Player,
-        m_NPCs,
-        *m_Renderer,
-        m_Particles
-    };
+    return EditorContext{m_Window,
+                         m_ScreenWidth,
+                         m_ScreenHeight,
+                         m_TilesVisibleWidth,
+                         m_TilesVisibleHeight,
+                         m_CameraPosition,
+                         m_CameraFollowTarget,
+                         m_HasCameraFollowTarget,
+                         m_CameraZoom,
+                         m_FreeCameraMode,
+                         m_Enable3DEffect,
+                         m_CameraTilt,
+                         m_GlobeSphereRadius,
+                         m_Tilemap,
+                         m_Player,
+                         m_NPCs,
+                         *m_Renderer,
+                         m_Particles};
 }

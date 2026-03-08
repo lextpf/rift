@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <glm/glm.hpp>
+#include <vector>
 
 #include "IRenderer.h"
 #include "Texture.h"
@@ -20,7 +20,8 @@ class TimeManager;
  * @par Twinkle Animation
  * Brightness oscillates using a sine wave:
  * @f[
- * brightness = baseBrightness \times (0.5 + 0.5 \times \sin(time \times twinkleSpeed + twinklePhase))
+ * brightness = baseBrightness \times (0.5 + 0.5 \times \sin(time \times twinkleSpeed +
+ * twinklePhase))
  * @f]
  *
  * @par Color Variation
@@ -31,12 +32,12 @@ class TimeManager;
  */
 struct Star
 {
-    glm::vec2 position;     ///< Normalized position (0-1) in sky space, mapped to screen on render
-    float baseBrightness;   ///< Base brightness (0-1), modulated by twinkle animation
-    float twinklePhase;     ///< Phase offset for twinkle sine wave (radians)
-    float twinkleSpeed;     ///< Twinkle frequency multiplier (higher = faster flicker)
-    float size;             ///< Size multiplier applied to base star texture size
-    glm::vec3 color;        ///< RGB color tint (typically near white with subtle hue)
+    glm::vec2 position;    ///< Normalized position (0-1) in sky space, mapped to screen on render
+    float baseBrightness;  ///< Base brightness (0-1), modulated by twinkle animation
+    float twinklePhase;    ///< Phase offset for twinkle sine wave (radians)
+    float twinkleSpeed;    ///< Twinkle frequency multiplier (higher = faster flicker)
+    float size;            ///< Size multiplier applied to base star texture size
+    glm::vec3 color;       ///< RGB color tint (typically near white with subtle hue)
 };
 
 /**
@@ -64,13 +65,13 @@ struct Star
  */
 struct LightRay
 {
-    float xPosition;    ///< Normalized X position (0-1) relative to light source spread
-    float originOffset; ///< Horizontal offset from sun center (-1 to 1, scaled by SUN_BAND_WIDTH)
-    float angle;        ///< Angle in radians from vertical (0 = straight down)
-    float length;       ///< Ray length multiplier (1.0 = MAX_RAY_LENGTH pixels)
-    float width;        ///< Ray width in pixels
-    float brightness;   ///< Base brightness (0-1), modulated by time-of-day
-    float phase;        ///< Animation phase offset for pulsing effect
+    float xPosition;     ///< Normalized X position (0-1) relative to light source spread
+    float originOffset;  ///< Horizontal offset from sun center (-1 to 1, scaled by SUN_BAND_WIDTH)
+    float angle;         ///< Angle in radians from vertical (0 = straight down)
+    float length;        ///< Ray length multiplier (1.0 = MAX_RAY_LENGTH pixels)
+    float width;         ///< Ray width in pixels
+    float brightness;    ///< Base brightness (0-1), modulated by time-of-day
+    float phase;         ///< Animation phase offset for pulsing effect
 };
 
 /**
@@ -97,12 +98,12 @@ struct LightRay
  */
 struct ShootingStar
 {
-    glm::vec2 position;     ///< Current screen-space position in pixels
-    glm::vec2 velocity;     ///< Movement vector (pixels per second)
-    float lifetime;         ///< Remaining lifetime in seconds
-    float maxLifetime;      ///< Total lifetime for fade calculations
-    float brightness;       ///< Peak brightness at lifetime midpoint
-    float length;           ///< Trail length in pixels (stretched behind velocity)
+    glm::vec2 position;  ///< Current screen-space position in pixels
+    glm::vec2 velocity;  ///< Movement vector (pixels per second)
+    float lifetime;      ///< Remaining lifetime in seconds
+    float maxLifetime;   ///< Total lifetime for fade calculations
+    float brightness;    ///< Peak brightness at lifetime midpoint
+    float length;        ///< Trail length in pixels (stretched behind velocity)
 };
 
 /**
@@ -110,8 +111,10 @@ struct ShootingStar
  * @brief Represents a glinting dew drop catching early morning sunlight.
  * @author Alex (https://github.com/lextpf)
  *
- * Dew sparkles appear during dawn/morning hours in the lower portion of the
- * screen, simulating sunlight catching morning dew on grass and foliage.
+ * Dew sparkles appear during dawn/morning hours in
+ * the lower portion of the
+ * screen, simulating sunlight catching morning dew on grass and
+ * foliage.
  *
  * @par Sparkle Animation
  * Each sparkle twinkles independently with a sharper, more "glint-like"
@@ -119,10 +122,10 @@ struct ShootingStar
  */
 struct DewSparkle
 {
-    glm::vec2 position;     ///< Normalized position (0-1), biased to lower screen
-    float phase;            ///< Animation phase offset for twinkle timing
-    float brightness;       ///< Base brightness (0-1)
-    float speed;            ///< Twinkle animation speed multiplier
+    glm::vec2 position;  ///< Normalized position (0-1), biased to lower screen
+    float phase;         ///< Animation phase offset for twinkle timing
+    float brightness;    ///< Base brightness (0-1)
+    float speed;         ///< Twinkle animation speed multiplier
 };
 
 /**
@@ -139,13 +142,19 @@ struct DewSparkle
  * |-------------------|-----------------|--------------------------------------|
  * | Stars             | Night/Dusk/Dawn | Twinkling stars with color variation |
  * | Background Stars  | Night           | Dimmer distant star field            |
- * | Shooting Stars    | Night           | Random meteor streaks                |
- * | Sun Rays          | Day             | God rays from sun position           |
- * | Moon Rays         | Night           | Softer rays from moon                |
- * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky wash        |
+ * | Shooting
+ * Stars    | Night           | Random meteor streaks                |
+ * | Sun Rays          | Day
+ * | God rays from sun position           |
+ * | Moon Rays         | Night           | Softer rays
+ * from moon                |
+ * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky
+ * wash        |
  * | Dawn Gradient     | Dawn            | Purple-to-orange sky gradient        |
- * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
- * | Dew Sparkles      | Morning         | Glinting ground-level sparkles       |
+
+ * * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
+ * | Dew
+ * Sparkles      | Morning         | Glinting ground-level sparkles       |
  *
  * @par Time Integration
  * Effects are driven by the TimeManager which provides:
@@ -156,14 +165,18 @@ struct DewSparkle
  *
  * @par Render Order
  * Effects are rendered in this order (back to front):
- * 1. Dawn gradient (full-screen color overlay)
+ * 1. Dawn gradient (full-screen color
+ * overlay)
  * 2. Dawn horizon glow (bottom of screen)
- * 3. Night atmospheric glow (horizon + subtle upper-sky shimmer)
+ * 3. Night atmospheric glow (horizon +
+ * subtle upper-sky shimmer)
  * 4. Background stars (dim, distant)
- * 5. Foreground stars (bright, twinkling)
+ * 5. Foreground stars (bright,
+ * twinkling)
  * 6. Shooting stars (with trails)
  * 7. Dew sparkles (morning only)
- * 8. Sun/Moon rays (god rays effect)
+ * 8. Sun/Moon
+ * rays (god rays effect)
  *
  * @par Procedural Textures
  * All textures are generated procedurally at initialization:
@@ -223,7 +236,7 @@ public:
      *
      * @param renderer The renderer to upload textures to.
      */
-    void UploadTextures(IRenderer &renderer);
+    void UploadTextures(IRenderer& renderer);
 
     /**
      * @brief Update time-based animations.
@@ -317,7 +330,8 @@ private:
     /**
      * @brief Generate dew sparkle positions.
      *
-     * Creates sparkle points biased toward the lower portion of the screen.
+     * Creates sparkle points biased
+     * toward the lower portion of the screen.
      */
     void GenerateDewSparkles();
 
@@ -367,7 +381,10 @@ private:
      * @param screenWidth  Screen width for position mapping.
      * @param screenHeight Screen height for position mapping.
      */
-    void RenderStars(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderStars(IRenderer& renderer,
+                     const TimeManager& time,
+                     int screenWidth,
+                     int screenHeight);
 
     /**
      * @brief Render active shooting stars with trails.
@@ -377,20 +394,30 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderShootingStars(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderShootingStars(IRenderer& renderer,
+                             const TimeManager& time,
+                             int screenWidth,
+                             int screenHeight);
 
     /**
      * @brief Render subtle nighttime atmospheric glow.
      *
-     * Draws a faint horizon wash and occasional top-edge shimmer while
+     * Draws a faint horizon
+     * wash and occasional top-edge shimmer while
      * star visibility is high.
      *
+     *
      * @param renderer     Renderer interface.
-     * @param time         TimeManager for night visibility.
+     * @param time         TimeManager for night
+     * visibility.
      * @param screenWidth  Screen width.
-     * @param screenHeight Screen height.
+     * @param screenHeight Screen
+     * height.
      */
-    void RenderAtmosphericGlow(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderAtmosphericGlow(IRenderer& renderer,
+                               const TimeManager& time,
+                               int screenWidth,
+                               int screenHeight);
 
     /**
      * @brief Render god rays emanating from the sun.
@@ -403,7 +430,10 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderSunRays(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderSunRays(IRenderer& renderer,
+                       const TimeManager& time,
+                       int screenWidth,
+                       int screenHeight);
 
     /**
      * @brief Render softer rays from the moon.
@@ -415,7 +445,10 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderMoonRays(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderMoonRays(IRenderer& renderer,
+                        const TimeManager& time,
+                        int screenWidth,
+                        int screenHeight);
 
     /// @}
 
@@ -434,7 +467,10 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderDawnHorizonGlow(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderDawnHorizonGlow(IRenderer& renderer,
+                               const TimeManager& time,
+                               int screenWidth,
+                               int screenHeight);
 
     /**
      * @brief Render vertical dawn gradient overlay.
@@ -447,7 +483,10 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderDawnGradient(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderDawnGradient(IRenderer& renderer,
+                            const TimeManager& time,
+                            int screenWidth,
+                            int screenHeight);
 
     /**
      * @brief Render morning dew sparkle effects.
@@ -459,7 +498,10 @@ private:
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
-    void RenderDewSparkles(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void RenderDewSparkles(IRenderer& renderer,
+                           const TimeManager& time,
+                           int screenWidth,
+                           int screenHeight);
 
     /// @}
 
@@ -513,11 +555,11 @@ private:
     /// @name Texture Size Constants
     /// @brief Dimensions for procedurally generated textures.
     /// @{
-    static constexpr int RAY_TEXTURE_WIDTH = 64;       ///< Ray texture width (narrow)
-    static constexpr int RAY_TEXTURE_HEIGHT = 512;     ///< Ray texture height (tall for length)
-    static constexpr int STAR_TEXTURE_SIZE = 64;       ///< Star point texture size
-    static constexpr int STAR_GLOW_TEXTURE_SIZE = 128; ///< Star glow texture size
-    static constexpr int GLOW_TEXTURE_SIZE = 256;      ///< Atmospheric glow texture size
+    static constexpr int RAY_TEXTURE_WIDTH = 64;        ///< Ray texture width (narrow)
+    static constexpr int RAY_TEXTURE_HEIGHT = 512;      ///< Ray texture height (tall for length)
+    static constexpr int STAR_TEXTURE_SIZE = 64;        ///< Star point texture size
+    static constexpr int STAR_GLOW_TEXTURE_SIZE = 128;  ///< Star glow texture size
+    static constexpr int GLOW_TEXTURE_SIZE = 256;       ///< Atmospheric glow texture size
     /// @}
 
     /// @name Rendering Constants
@@ -525,13 +567,15 @@ private:
     /// @{
     static constexpr int STAR_COUNT = 600;             ///< Number of foreground stars
     static constexpr int BACKGROUND_STAR_COUNT = 400;  ///< Number of background stars
-    static constexpr int SUN_RAY_COUNT = 3;            ///< Number of sun rays (spread across ~2/3 of screen)
-    static constexpr int MOON_RAY_COUNT = 3;           ///< Number of moon rays (very subtle)
-    static constexpr int DEW_SPARKLE_COUNT = 4;        ///< Number of dew sparkles
-    static constexpr float MAX_RAY_LENGTH = 1200.0f;   ///< Maximum ray length in pixels
-    static constexpr float RAY_WIDTH = 80.0f;          ///< Base ray width in pixels
-    static constexpr float SUN_RAY_SPREAD = 120.0f;    ///< Total fan spread angle in degrees (~2/3 screen)
-    static constexpr float SUN_BAND_WIDTH = 0.35f;     ///< Width of sun origin band (fraction of screen width)
+    static constexpr int SUN_RAY_COUNT = 3;   ///< Number of sun rays (spread across ~2/3 of screen)
+    static constexpr int MOON_RAY_COUNT = 3;  ///< Number of moon rays (very subtle)
+    static constexpr int DEW_SPARKLE_COUNT = 4;       ///< Number of dew sparkles
+    static constexpr float MAX_RAY_LENGTH = 1200.0f;  ///< Maximum ray length in pixels
+    static constexpr float RAY_WIDTH = 80.0f;         ///< Base ray width in pixels
+    static constexpr float SUN_RAY_SPREAD =
+        120.0f;  ///< Total fan spread angle in degrees (~2/3 screen)
+    static constexpr float SUN_BAND_WIDTH =
+        0.35f;  ///< Width of sun origin band (fraction of screen width)
     /// @}
 
     bool m_Initialized;  ///< True after Initialize() completes successfully

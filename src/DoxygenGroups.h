@@ -2,13 +2,13 @@
  * @file DoxygenGroups.h
  * @brief Doxygen module definitions and hierarchical documentation structure.
  * @author Alex (https://github.com/lextpf)
- * 
+ *
  * This file defines the logical groupings (modules) used throughout the codebase
  * documentation. Each module represents a cohesive subsystem of the game engine.
- * 
+ *
  * @par Architecture Overview
  * The game engine is organized into five primary subsystems:
- * 
+ *
  * \htmlonly
  * <pre class="mermaid">
  * flowchart LR
@@ -37,15 +37,15 @@
 /**
  * @defgroup Core Core Engine
  * @brief Core engine components including the main game loop, state management, and orchestration.
- * 
+ *
  * The Core module provides the foundational infrastructure for the game:
- * 
+ *
  * @par Responsibilities
  * - **Game Loop**: Implements a variable-timestep game loop
  * - **State Management**: Handles transitions between game modes
  * - **System Orchestration**: Coordinates updates across all subsystems
  * - **Resource Lifetime**: Manages initialization and shutdown of game resources
- * 
+ *
  * @par Game Loop Model
  * The game uses a semi-fixed timestep model:
  * @code
@@ -56,7 +56,7 @@
  *     Render();
  * }
  * @endcode
- * 
+ *
  * @par Update Order
  * 1. Input processing (keyboard, mouse)
  * 2. Player movement and collision
@@ -64,26 +64,26 @@
  * 4. Camera following
  * 5. Animation updates
  * 6. Rendering
- * 
+ *
  * @see Game
  */
 
 /**
  * @defgroup Rendering Rendering System
  * @brief Graphics abstraction layer supporting OpenGL and Vulkan backends.
- * 
+ *
  * The Rendering module provides a unified interface for 2D sprite rendering,
  * abstracting away the differences between graphics APIs.
- * 
+ *
  * @par Design Pattern
  * Uses the **Strategy Pattern** via the IRenderer interface, allowing runtime
  * selection of the graphics backend without changing game code.
- * 
+ *
  * @par Coordinate System
  * - **World Space**: Game coordinates in pixels, origin at top-left
  * - **Screen Space**: Pixel coordinates after camera transformation
  * - **Normalized Device Coordinates (NDC)**: -1 to 1 range used by GPU
- * 
+ *
  * @par Transformation Pipeline
  * @f[
  * \vec{p}_{screen} = \vec{p}_{world} - \vec{p}_{camera}
@@ -116,7 +116,7 @@
  * @par Sprite Batching
  * Both renderers support sprite batching for efficient rendering of tilemaps
  * and multiple entities in a single draw call.
- * 
+ *
  * @par Coordinate Transformation
  * Mouse input must be transformed through three coordinate spaces to determine
  * which tile the cursor is over. The camera can pan (move) and zoom,
@@ -174,16 +174,16 @@
  * int tileX = static_cast<int>(std::floor(worldX / tileSize));
  * int tileY = static_cast<int>(std::floor(worldY / tileSize));
  * @endcode
- * 
+ *
  * @see IRenderer, OpenGLRenderer, VulkanRenderer
  */
 
 /**
  * @defgroup World World System
  * @brief Game world representation including tilemaps, collision detection, and navigation.
- * 
+ *
  * The World module manages the static game environment and provides spatial queries.
- * 
+ *
  * @par Tilemap System
  * The tilemap uses a 10-layer architecture for depth sorting:
  *
@@ -201,35 +201,35 @@
  * | 7     | Overlay       | 120          | Overlay effects     |
  * | 8     | Overlay2      | 130          | Additional overlay  |
  * | 9     | Overlay3      | 140          | Top-most overlay    |
- * 
+ *
  * @par Tile Indexing
  * Tiles are stored in row-major order:
  * @f[
  * i = y \times w + x
  * @f]
- * 
+ *
  * @par Collision Detection
  * Uses Axis-Aligned Bounding Box (AABB) collision with a discrete tile grid:
  * @f[
  * c = (A_{min} < B_{max}) \land (A_{max} > B_{min})
  * @f]
- * 
+ *
  * Applied to both X and Y axes for 2D collision.
- * 
+ *
  * @par Navigation Map
  * The navigation system provides walkability information for NPC pathfinding.
  * It's independent of collision (a tile can have collision but be walkable,
  * useful for triggers or special tiles).
- * 
+ *
  * @see Tilemap, CollisionMap, NavigationMap
  */
 
 /**
  * @defgroup Entities Entity System
  * @brief Game entities including the player character and non-player characters (NPCs).
- * 
+ *
  * The Entities module manages all dynamic objects in the game world.
- * 
+ *
  * @par Position Convention
  * All entities store their position as **anchor position** (bottom-center of sprite):
  * @f[
@@ -250,13 +250,13 @@
  * @f[
  * h_{max} = (anchor_x + \frac{w}{2}, anchor_y)
  * @f]
- * 
+ *
  * @par Animation System
  * Sprites use a frame-based animation system with walk cycles:
  * - 4 directions (Down, Up, Left, Right)
  * - 3 frames per direction (Idle, Step Left, Step Right)
  * - Walk sequence: [Step Left, Idle, Step Right, Idle] (4-frame cycle)
- * 
+ *
  * @par Movement Modes
  * Player supports three movement modes with different speeds:
  * | Mode     | Speed  | Multiplier |
@@ -264,7 +264,7 @@
  * | Walking  | 80     | 1.0x       |
  * | Running  | 152    | 1.9x       |
  * | Bicycle  | 160    | 2.0x       |
- * 
+ *
  * @see PlayerCharacter, NonPlayerCharacter
  */
 

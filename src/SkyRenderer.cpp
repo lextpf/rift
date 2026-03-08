@@ -3,22 +3,20 @@
 
 #include "MathConstants.h"
 
+#include <algorithm>
 #include <cmath>
 #include <random>
-#include <algorithm>
 
 SkyRenderer::SkyRenderer()
-    : m_Time(0.0f)
-    , m_ShootingStarTimer(0.0f)
-    , m_LastScreenWidth(0.0f)
-    , m_LastScreenHeight(0.0f)
-    , m_Initialized(false)
+    : m_Time(0.0f),
+      m_ShootingStarTimer(0.0f),
+      m_LastScreenWidth(0.0f),
+      m_LastScreenHeight(0.0f),
+      m_Initialized(false)
 {
 }
 
-SkyRenderer::~SkyRenderer()
-{
-}
+SkyRenderer::~SkyRenderer() {}
 
 void SkyRenderer::Initialize()
 {
@@ -72,7 +70,7 @@ void SkyRenderer::Initialize()
     m_Initialized = true;
 }
 
-void SkyRenderer::UploadTextures(IRenderer &renderer)
+void SkyRenderer::UploadTextures(IRenderer& renderer)
 {
     if (!m_Initialized)
         return;
@@ -84,18 +82,22 @@ void SkyRenderer::UploadTextures(IRenderer &renderer)
     renderer.UploadTexture(m_GlowTexture);
 }
 
-void SkyRenderer::Update(float deltaTime, const TimeManager &time)
+void SkyRenderer::Update(float deltaTime, const TimeManager& time)
 {
     m_Time += deltaTime;
 
     // Update shooting stars during night
     if (time.GetStarVisibility() > 0.3f && time.GetWeather() == WeatherState::Clear)
     {
-        UpdateShootingStars(deltaTime, static_cast<int>(m_LastScreenWidth), static_cast<int>(m_LastScreenHeight));
+        UpdateShootingStars(
+            deltaTime, static_cast<int>(m_LastScreenWidth), static_cast<int>(m_LastScreenHeight));
     }
 }
 
-void SkyRenderer::Render(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::Render(IRenderer& renderer,
+                         const TimeManager& time,
+                         int screenWidth,
+                         int screenHeight)
 {
     if (!m_Initialized)
         return;
@@ -171,7 +173,7 @@ void SkyRenderer::GenerateRayTexture()
             // Vertical fade: bright at top, fading toward bottom
             // Smooth curve that starts bright and gradually fades
             float verticalFade = 1.0f - progress;
-            verticalFade = std::pow(verticalFade, 0.4f); // Gentle fade curve
+            verticalFade = std::pow(verticalFade, 0.4f);  // Gentle fade curve
 
             // Horizontal fade: very soft gaussian for diffuse ray edges
             float horizontalFade = std::exp(-distFromCenter * distFromCenter * 3.0f);
@@ -189,7 +191,8 @@ void SkyRenderer::GenerateRayTexture()
             pixels[idx + 0] = 255;
             pixels[idx + 1] = 255;
             pixels[idx + 2] = 255;
-            pixels[idx + 3] = static_cast<unsigned char>(std::max(0.0f, std::min(alpha * 255.0f, 255.0f)));
+            pixels[idx + 3] =
+                static_cast<unsigned char>(std::max(0.0f, std::min(alpha * 255.0f, 255.0f)));
         }
     }
 
@@ -237,7 +240,8 @@ void SkyRenderer::GenerateStarTexture()
             pixels[idx + 0] = 255;
             pixels[idx + 1] = 255;
             pixels[idx + 2] = 255;
-            pixels[idx + 3] = static_cast<unsigned char>(std::max(0.0f, std::min(intensity * 255.0f, 255.0f)));
+            pixels[idx + 3] =
+                static_cast<unsigned char>(std::max(0.0f, std::min(intensity * 255.0f, 255.0f)));
         }
     }
 
@@ -276,7 +280,8 @@ void SkyRenderer::GenerateStarGlowTexture()
         }
     }
 
-    m_StarGlowTexture.LoadFromData(pixels.data(), STAR_GLOW_TEXTURE_SIZE, STAR_GLOW_TEXTURE_SIZE, 4, false);
+    m_StarGlowTexture.LoadFromData(
+        pixels.data(), STAR_GLOW_TEXTURE_SIZE, STAR_GLOW_TEXTURE_SIZE, 4, false);
 }
 
 void SkyRenderer::GenerateShootingStarTexture()
@@ -294,7 +299,7 @@ void SkyRenderer::GenerateShootingStarTexture()
         {
             int idx = (y * width + x) * 4;
 
-            float progress = static_cast<float>(x) / width; // 0 at left (head), 1 at right (tail)
+            float progress = static_cast<float>(x) / width;  // 0 at left (head), 1 at right (tail)
             float distFromCenter = std::abs(y - centerY) / centerY;
 
             // Bright head fading to dim tail
@@ -335,7 +340,7 @@ void SkyRenderer::GenerateLightRays()
 
         // Origin offset - rays originate from different points along the "sun band"
         // Distribute across the band with some randomness
-        float baseOrigin = (static_cast<float>(i) / (SUN_RAY_COUNT - 1)) * 2.0f - 1.0f; // -1 to 1
+        float baseOrigin = (static_cast<float>(i) / (SUN_RAY_COUNT - 1)) * 2.0f - 1.0f;  // -1 to 1
         ray.originOffset = baseOrigin + (posDist(rng) - 0.5f) * 0.3f;
         ray.originOffset = std::max(-1.0f, std::min(1.0f, ray.originOffset));
 
@@ -356,7 +361,7 @@ void SkyRenderer::GenerateLightRays()
         float offset = (posDist(rng) - 0.5f) * 0.15f;
         ray.xPosition = std::max(0.1f, std::min(0.9f, basePos + offset));
 
-        ray.originOffset = (posDist(rng) - 0.5f) * 0.5f; // Slight origin variation
+        ray.originOffset = (posDist(rng) - 0.5f) * 0.5f;  // Slight origin variation
         ray.angle = (posDist(rng) - 0.5f) * 0.3f;
         ray.length = 0.3f + posDist(rng) * 0.4f;
         ray.width = 0.7f + posDist(rng) * 0.3f;
@@ -451,11 +456,14 @@ glm::vec2 SkyRenderer::GetLightSourcePosition(float arc, int screenWidth, int sc
     float x = screenWidth * (1.0f - arc);
     // Position at top of screen, arcing slightly
     float arcHeight = 1.0f - std::pow(2.0f * arc - 1.0f, 2.0f);
-    float y = 20.0f - arcHeight * 40.0f; // Near top of viewport
+    float y = 20.0f - arcHeight * 40.0f;  // Near top of viewport
     return glm::vec2(x, y);
 }
 
-void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderStars(IRenderer& renderer,
+                              const TimeManager& time,
+                              int screenWidth,
+                              int screenHeight)
 {
     float visibility = time.GetStarVisibility();
     if (visibility < 0.01f)
@@ -469,13 +477,14 @@ void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int 
 
     // Stars appear gradually - brightest first, then dimmer ones fade in
     // visibility goes 0->1 as night falls, use it to threshold which stars appear
-    float appearThreshold = 1.0f - visibility * 2.0f; // At full night, threshold is -1 (all visible)
+    float appearThreshold =
+        1.0f - visibility * 2.0f;  // At full night, threshold is -1 (all visible)
 
     // First pass: Background stars - only show some, gradually
     int bgCount = 0;
     int maxBgStars = static_cast<int>(m_BackgroundStars.size() * visibility * 0.4f);
 
-    for (const auto &star : m_BackgroundStars)
+    for (const auto& star : m_BackgroundStars)
     {
         if (bgCount >= maxBgStars)
             break;
@@ -484,25 +493,23 @@ void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int 
         if (star.baseBrightness < appearThreshold)
             continue;
 
-        float twinkle = 0.6f + 0.4f * std::sin(m_Time * star.twinkleSpeed * 1.5f + star.twinklePhase);
+        float twinkle =
+            0.6f + 0.4f * std::sin(m_Time * star.twinkleSpeed * 1.5f + star.twinklePhase);
         float brightness = star.baseBrightness * twinkle * visibility * 0.3f;
 
         if (brightness < 0.01f)
             continue;
 
-        glm::vec2 screenPos(
-            star.position.x * screenWidth,
-            star.position.y * screenHeight);
+        glm::vec2 screenPos(star.position.x * screenWidth, star.position.y * screenHeight);
 
         float size = 1.0f + star.size * 1.2f;
 
-        renderer.DrawSpriteAlpha(
-            m_StarTexture,
-            screenPos - glm::vec2(size * 0.5f),
-            glm::vec2(size),
-            0.0f,
-            glm::vec4(star.color, brightness),
-            true);
+        renderer.DrawSpriteAlpha(m_StarTexture,
+                                 screenPos - glm::vec2(size * 0.5f),
+                                 glm::vec2(size),
+                                 0.0f,
+                                 glm::vec4(star.color, brightness),
+                                 true);
         bgCount++;
     }
 
@@ -510,7 +517,7 @@ void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int 
     int starCount = 0;
     int maxStars = static_cast<int>(m_Stars.size() * visibility * 0.6f);
 
-    for (const auto &star : m_Stars)
+    for (const auto& star : m_Stars)
     {
         if (starCount >= maxStars)
             break;
@@ -533,9 +540,7 @@ void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int 
         if (brightness < 0.01f)
             continue;
 
-        glm::vec2 screenPos(
-            star.position.x * screenWidth,
-            star.position.y * screenHeight);
+        glm::vec2 screenPos(star.position.x * screenWidth, star.position.y * screenHeight);
 
         // Subtle glow on bright sparkle moments
         if (brightness > 0.25f && sparkle > 0.3f)
@@ -543,30 +548,31 @@ void SkyRenderer::RenderStars(IRenderer &renderer, const TimeManager &time, int 
             float glowSize = (6.0f + star.size * 8.0f);
             float glowAlpha = (brightness - 0.25f) * 0.1f;
 
-            renderer.DrawSpriteAlpha(
-                m_StarGlowTexture,
-                screenPos - glm::vec2(glowSize * 0.5f),
-                glm::vec2(glowSize),
-                0.0f,
-                glm::vec4(star.color, glowAlpha),
-                true);
+            renderer.DrawSpriteAlpha(m_StarGlowTexture,
+                                     screenPos - glm::vec2(glowSize * 0.5f),
+                                     glm::vec2(glowSize),
+                                     0.0f,
+                                     glm::vec4(star.color, glowAlpha),
+                                     true);
         }
 
         // Main star - small
         float size = (1.5f + star.size * 3.0f) * (0.5f + brightness * 0.5f);
 
-        renderer.DrawSpriteAlpha(
-            m_StarTexture,
-            screenPos - glm::vec2(size * 0.5f),
-            glm::vec2(size),
-            0.0f,
-            glm::vec4(star.color, brightness * 0.7f),
-            true);
+        renderer.DrawSpriteAlpha(m_StarTexture,
+                                 screenPos - glm::vec2(size * 0.5f),
+                                 glm::vec2(size),
+                                 0.0f,
+                                 glm::vec4(star.color, brightness * 0.7f),
+                                 true);
         starCount++;
     }
 }
 
-void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderSunRays(IRenderer& renderer,
+                                const TimeManager& time,
+                                int screenWidth,
+                                int screenHeight)
 {
     float sunArc = time.GetSunArc();
     if (sunArc < 0.0f)
@@ -600,7 +606,7 @@ void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, in
     }
 
     int rayIndex = 0;
-    for (const auto &ray : m_SunRays)
+    for (const auto& ray : m_SunRays)
     {
         // Staggered cycles - each ray on its own timeline
         float rayStartDelay = rayIndex * 4.0f;
@@ -624,7 +630,7 @@ void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, in
         if (cycle < 0.20f)
         {
             fadeAlpha = cycle / 0.20f;
-            fadeAlpha = fadeAlpha * fadeAlpha; // Ease in
+            fadeAlpha = fadeAlpha * fadeAlpha;  // Ease in
         }
         else if (cycle < 0.70f)
         {
@@ -633,7 +639,7 @@ void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, in
         else
         {
             float fadeProgress = (cycle - 0.70f) / 0.30f;
-            fadeAlpha = 1.0f - fadeProgress * fadeProgress; // Ease out
+            fadeAlpha = 1.0f - fadeProgress * fadeProgress;  // Ease out
         }
 
         float alpha = baseIntensity * ray.brightness * fadeAlpha;
@@ -673,28 +679,29 @@ void SkyRenderer::RenderSunRays(IRenderer &renderer, const TimeManager &time, in
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
-        renderer.DrawSpriteAlpha(
-            m_RayTexture,
-            glowPos,
-            glm::vec2(glowWidth, glowLength),
-            rayAngleDeg,
-            glm::vec4(rayColor, alpha * 0.4f),
-            true);
+        renderer.DrawSpriteAlpha(m_RayTexture,
+                                 glowPos,
+                                 glm::vec2(glowWidth, glowLength),
+                                 rayAngleDeg,
+                                 glm::vec4(rayColor, alpha * 0.4f),
+                                 true);
 
         // Main ray
-        renderer.DrawSpriteAlpha(
-            m_RayTexture,
-            rayPos,
-            glm::vec2(rayWidth, rayLength),
-            rayAngleDeg,
-            glm::vec4(rayColor, alpha),
-            true);
+        renderer.DrawSpriteAlpha(m_RayTexture,
+                                 rayPos,
+                                 glm::vec2(rayWidth, rayLength),
+                                 rayAngleDeg,
+                                 glm::vec4(rayColor, alpha),
+                                 true);
 
         rayIndex++;
     }
 }
 
-void SkyRenderer::RenderMoonRays(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderMoonRays(IRenderer& renderer,
+                                 const TimeManager& time,
+                                 int screenWidth,
+                                 int screenHeight)
 {
     float moonArc = time.GetMoonArc();
     if (moonArc < 0.0f)
@@ -721,7 +728,7 @@ void SkyRenderer::RenderMoonRays(IRenderer &renderer, const TimeManager &time, i
         baseIntensity *= (1.0f - moonArc) / 0.1f;
 
     int rayIndex = 0;
-    for (const auto &ray : m_MoonRays)
+    for (const auto& ray : m_MoonRays)
     {
         // Staggered cycles
         float rayStartDelay = rayIndex * 6.0f;
@@ -790,22 +797,20 @@ void SkyRenderer::RenderMoonRays(IRenderer &renderer, const TimeManager &time, i
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
-        renderer.DrawSpriteAlpha(
-            m_RayTexture,
-            glowPos,
-            glm::vec2(glowWidth, glowLength),
-            rayAngleDeg,
-            glm::vec4(moonColor, alpha * 0.5f),
-            true);
+        renderer.DrawSpriteAlpha(m_RayTexture,
+                                 glowPos,
+                                 glm::vec2(glowWidth, glowLength),
+                                 rayAngleDeg,
+                                 glm::vec4(moonColor, alpha * 0.5f),
+                                 true);
 
         // Main beam
-        renderer.DrawSpriteAlpha(
-            m_RayTexture,
-            rayPos,
-            glm::vec2(rayWidth, rayLength),
-            rayAngleDeg,
-            glm::vec4(moonColor, alpha),
-            true);
+        renderer.DrawSpriteAlpha(m_RayTexture,
+                                 rayPos,
+                                 glm::vec2(rayWidth, rayLength),
+                                 rayAngleDeg,
+                                 glm::vec4(moonColor, alpha),
+                                 true);
 
         rayIndex++;
     }
@@ -827,7 +832,7 @@ void SkyRenderer::UpdateShootingStars(float deltaTime, int screenWidth, int scre
 
     // Spawn new shooting stars occasionally
     m_ShootingStarTimer += deltaTime;
-    float spawnInterval = 4.0f + std::sin(m_Time * 0.1f) * 2.0f; // 2-6 seconds between spawns
+    float spawnInterval = 4.0f + std::sin(m_Time * 0.1f) * 2.0f;  // 2-6 seconds between spawns
 
     if (m_ShootingStarTimer >= spawnInterval && m_ShootingStars.size() < 2)
     {
@@ -874,13 +879,16 @@ void SkyRenderer::SpawnShootingStar(int screenWidth, int screenHeight)
     m_ShootingStars.push_back(star);
 }
 
-void SkyRenderer::RenderShootingStars(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderShootingStars(IRenderer& renderer,
+                                      const TimeManager& time,
+                                      int screenWidth,
+                                      int screenHeight)
 {
     float visibility = time.GetStarVisibility();
     if (visibility < 0.3f)
         return;
 
-    for (const auto &star : m_ShootingStars)
+    for (const auto& star : m_ShootingStars)
     {
         float fadeIn = std::min(1.0f, (star.maxLifetime - star.lifetime) / 0.08f);
         float fadeOut = std::min(1.0f, star.lifetime / 0.12f);
@@ -889,20 +897,23 @@ void SkyRenderer::RenderShootingStars(IRenderer &renderer, const TimeManager &ti
         if (alpha < 0.01f)
             continue;
 
-        float angle = std::atan2(star.velocity.y, star.velocity.x) * 180.0f / static_cast<float>(rift::Pi);
+        float angle =
+            std::atan2(star.velocity.y, star.velocity.x) * 180.0f / static_cast<float>(rift::Pi);
         glm::vec2 size(star.length, 3.0f);
 
-        renderer.DrawSpriteAlpha(
-            m_ShootingStarTexture,
-            star.position - glm::vec2(0, 1.5f),
-            size,
-            angle,
-            glm::vec4(1.0f, 1.0f, 1.0f, alpha),
-            true);
+        renderer.DrawSpriteAlpha(m_ShootingStarTexture,
+                                 star.position - glm::vec2(0, 1.5f),
+                                 size,
+                                 angle,
+                                 glm::vec4(1.0f, 1.0f, 1.0f, alpha),
+                                 true);
     }
 }
 
-void SkyRenderer::RenderAtmosphericGlow(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderAtmosphericGlow(IRenderer& renderer,
+                                        const TimeManager& time,
+                                        int screenWidth,
+                                        int screenHeight)
 {
     float visibility = time.GetStarVisibility();
     if (visibility < 0.2f)
@@ -913,11 +924,10 @@ void SkyRenderer::RenderAtmosphericGlow(IRenderer &renderer, const TimeManager &
 
     // Bottom horizon glow
     float glowHeight = screenHeight * 0.12f;
-    renderer.DrawColoredRect(
-        glm::vec2(0, screenHeight - glowHeight),
-        glm::vec2(static_cast<float>(screenWidth), glowHeight),
-        glm::vec4(0.08f, 0.12f, 0.25f, horizonGlowAlpha),
-        true);
+    renderer.DrawColoredRect(glm::vec2(0, screenHeight - glowHeight),
+                             glm::vec2(static_cast<float>(screenWidth), glowHeight),
+                             glm::vec4(0.08f, 0.12f, 0.25f, horizonGlowAlpha),
+                             true);
 
     // Occasional subtle shimmer at top
     float shimmer = std::sin(m_Time * 0.25f) * 0.5f + 0.5f;
@@ -925,11 +935,10 @@ void SkyRenderer::RenderAtmosphericGlow(IRenderer &renderer, const TimeManager &
 
     if (auroraAlpha > 0.003f)
     {
-        renderer.DrawColoredRect(
-            glm::vec2(0, 0),
-            glm::vec2(static_cast<float>(screenWidth), screenHeight * 0.04f),
-            glm::vec4(0.15f, 0.3f, 0.25f, auroraAlpha),
-            true);
+        renderer.DrawColoredRect(glm::vec2(0, 0),
+                                 glm::vec2(static_cast<float>(screenWidth), screenHeight * 0.04f),
+                                 glm::vec4(0.15f, 0.3f, 0.25f, auroraAlpha),
+                                 true);
     }
 }
 
@@ -940,7 +949,7 @@ void SkyRenderer::GenerateDewSparkles()
 
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> posDistX(0.0f, 1.0f);
-    std::uniform_real_distribution<float> posDistY(0.55f, 1.0f); // Lower screen band
+    std::uniform_real_distribution<float> posDistY(0.55f, 1.0f);  // Lower screen band
     std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(2.0 * rift::Pi));
     std::uniform_real_distribution<float> brightDist(0.4f, 1.0f);
     std::uniform_real_distribution<float> speedDist(1.5f, 5.0f);
@@ -956,7 +965,10 @@ void SkyRenderer::GenerateDewSparkles()
     }
 }
 
-void SkyRenderer::RenderDawnHorizonGlow(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderDawnHorizonGlow(IRenderer& renderer,
+                                        const TimeManager& time,
+                                        int screenWidth,
+                                        int screenHeight)
 {
     float dawnIntensity = time.GetDawnIntensity();
     if (dawnIntensity < 0.01f)
@@ -969,25 +981,26 @@ void SkyRenderer::RenderDawnHorizonGlow(IRenderer &renderer, const TimeManager &
     float glowSize = std::max(sw, sh) * 2.5f;
 
     // Large soft glow from bottom center (sunrise direction)
-    renderer.DrawSpriteAlpha(
-        m_GlowTexture,
-        glm::vec2(sw * 0.5f - glowSize * 0.5f, sh - glowSize * 0.3f),
-        glm::vec2(glowSize, glowSize),
-        0.0f,
-        glm::vec4(1.0f, 0.6f, 0.4f, dawnIntensity * 0.15f),
-        true);
+    renderer.DrawSpriteAlpha(m_GlowTexture,
+                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh - glowSize * 0.3f),
+                             glm::vec2(glowSize, glowSize),
+                             0.0f,
+                             glm::vec4(1.0f, 0.6f, 0.4f, dawnIntensity * 0.15f),
+                             true);
 
     // Secondary softer glow higher up
-    renderer.DrawSpriteAlpha(
-        m_GlowTexture,
-        glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.3f - glowSize * 0.5f),
-        glm::vec2(glowSize, glowSize),
-        0.0f,
-        glm::vec4(1.0f, 0.7f, 0.55f, dawnIntensity * 0.08f),
-        true);
+    renderer.DrawSpriteAlpha(m_GlowTexture,
+                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.3f - glowSize * 0.5f),
+                             glm::vec2(glowSize, glowSize),
+                             0.0f,
+                             glm::vec4(1.0f, 0.7f, 0.55f, dawnIntensity * 0.08f),
+                             true);
 }
 
-void SkyRenderer::RenderDawnGradient(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderDawnGradient(IRenderer& renderer,
+                                     const TimeManager& time,
+                                     int screenWidth,
+                                     int screenHeight)
 {
     float dawnIntensity = time.GetDawnIntensity();
     if (dawnIntensity < 0.01f)
@@ -1000,25 +1013,26 @@ void SkyRenderer::RenderDawnGradient(IRenderer &renderer, const TimeManager &tim
     float glowSize = std::max(sw, sh) * 2.0f;
 
     // Large soft glow from top (pre-dawn sky color)
-    renderer.DrawSpriteAlpha(
-        m_GlowTexture,
-        glm::vec2(sw * 0.5f - glowSize * 0.5f, -glowSize * 0.6f),
-        glm::vec2(glowSize, glowSize),
-        0.0f,
-        glm::vec4(0.6f, 0.4f, 0.7f, dawnIntensity * 0.1f),
-        true);
+    renderer.DrawSpriteAlpha(m_GlowTexture,
+                             glm::vec2(sw * 0.5f - glowSize * 0.5f, -glowSize * 0.6f),
+                             glm::vec2(glowSize, glowSize),
+                             0.0f,
+                             glm::vec4(0.6f, 0.4f, 0.7f, dawnIntensity * 0.1f),
+                             true);
 
     // Overall soft pink tint across screen
-    renderer.DrawSpriteAlpha(
-        m_GlowTexture,
-        glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.5f - glowSize * 0.5f),
-        glm::vec2(glowSize, glowSize),
-        0.0f,
-        glm::vec4(1.0f, 0.65f, 0.6f, dawnIntensity * 0.06f),
-        true);
+    renderer.DrawSpriteAlpha(m_GlowTexture,
+                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.5f - glowSize * 0.5f),
+                             glm::vec2(glowSize, glowSize),
+                             0.0f,
+                             glm::vec4(1.0f, 0.65f, 0.6f, dawnIntensity * 0.06f),
+                             true);
 }
 
-void SkyRenderer::RenderDewSparkles(IRenderer &renderer, const TimeManager &time, int screenWidth, int screenHeight)
+void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
+                                    const TimeManager& time,
+                                    int screenWidth,
+                                    int screenHeight)
 {
     float sunArc = time.GetSunArc();
 
@@ -1029,9 +1043,9 @@ void SkyRenderer::RenderDewSparkles(IRenderer &renderer, const TimeManager &time
     // Fade in at sunrise, peak around sunArc 0.1, fade out by 0.25
     float visibility;
     if (sunArc < 0.1f)
-        visibility = sunArc / 0.1f; // Fade in
+        visibility = sunArc / 0.1f;  // Fade in
     else
-        visibility = 1.0f - (sunArc - 0.1f) / 0.15f; // Fade out
+        visibility = 1.0f - (sunArc - 0.1f) / 0.15f;  // Fade out
 
     visibility = std::max(0.0f, std::min(1.0f, visibility));
     if (visibility < 0.01f)
@@ -1040,12 +1054,12 @@ void SkyRenderer::RenderDewSparkles(IRenderer &renderer, const TimeManager &time
     float sw = static_cast<float>(screenWidth);
     float sh = static_cast<float>(screenHeight);
 
-    for (const auto &sparkle : m_DewSparkles)
+    for (const auto& sparkle : m_DewSparkles)
     {
         // Sharp twinkle - brief bright flashes
         float twinkle = std::sin(m_Time * sparkle.speed + sparkle.phase);
-        twinkle = std::max(0.0f, twinkle - 0.5f) / 0.5f; // Only top 50% of sine wave
-        twinkle = twinkle * twinkle;                     // Sharp peaks
+        twinkle = std::max(0.0f, twinkle - 0.5f) / 0.5f;  // Only top 50% of sine wave
+        twinkle = twinkle * twinkle;                      // Sharp peaks
 
         float brightness = sparkle.brightness * twinkle * visibility * 0.8f;
         if (brightness < 0.08f)
@@ -1056,12 +1070,11 @@ void SkyRenderer::RenderDewSparkles(IRenderer &renderer, const TimeManager &time
         // Small bright point with warm golden color
         float size = 2.0f + brightness * 3.0f;
 
-        renderer.DrawSpriteAlpha(
-            m_StarTexture,
-            screenPos - glm::vec2(size * 0.5f),
-            glm::vec2(size),
-            0.0f,
-            glm::vec4(1.0f, 0.92f, 0.65f, brightness),
-            true);
+        renderer.DrawSpriteAlpha(m_StarTexture,
+                                 screenPos - glm::vec2(size * 0.5f),
+                                 glm::vec2(size),
+                                 0.0f,
+                                 glm::vec4(1.0f, 0.92f, 0.65f, brightness),
+                                 true);
     }
 }

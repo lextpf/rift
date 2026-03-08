@@ -3,9 +3,9 @@
 #include "IRenderer.h"
 #include "Texture.h"
 
-#include <vector>
-#include <random>
 #include <glm/glm.hpp>
+#include <random>
+#include <vector>
 
 class Tilemap;
 
@@ -50,18 +50,18 @@ enum class ParticleType
  */
 struct Particle
 {
-    glm::vec2 position;     ///< World position (pixels).
-    glm::vec2 velocity;     ///< Movement per second (pixels/s).
-    glm::vec4 color;        ///< RGBA color (alpha may animate).
-    float size;             ///< Sprite size in pixels.
-    float lifetime;         ///< Remaining life (seconds).
-    float maxLifetime;      ///< Original lifetime for fade calculations.
-    float phase;            ///< Random phase offset for oscillation effects.
-    float rotation;         ///< Sprite rotation (degrees).
-    bool additive;          ///< Use additive blending for glow.
-    bool noProjection;      ///< Render without perspective distortion.
-    int zoneIndex;          ///< Spawning zone index (-1 for orphaned).
-    ParticleType type;      ///< Particle behavior type.
+    glm::vec2 position;  ///< World position (pixels).
+    glm::vec2 velocity;  ///< Movement per second (pixels/s).
+    glm::vec4 color;     ///< RGBA color (alpha may animate).
+    float size;          ///< Sprite size in pixels.
+    float lifetime;      ///< Remaining life (seconds).
+    float maxLifetime;   ///< Original lifetime for fade calculations.
+    float phase;         ///< Random phase offset for oscillation effects.
+    float rotation;      ///< Sprite rotation (degrees).
+    bool additive;       ///< Use additive blending for glow.
+    bool noProjection;   ///< Render without perspective distortion.
+    int zoneIndex;       ///< Spawning zone index (-1 for orphaned).
+    ParticleType type;   ///< Particle behavior type.
 };
 
 /**
@@ -79,15 +79,24 @@ struct Particle
  */
 struct ParticleZone
 {
-    glm::vec2 position;     ///< Top-left corner (world pixels).
-    glm::vec2 size;         ///< Width and height (world pixels).
-    ParticleType type;      ///< Type of particles to emit.
-    bool enabled;           ///< Whether spawning is active.
-    bool noProjection;      ///< Particles ignore perspective.
+    glm::vec2 position;  ///< Top-left corner (world pixels).
+    glm::vec2 size;      ///< Width and height (world pixels).
+    ParticleType type;   ///< Type of particles to emit.
+    bool enabled;        ///< Whether spawning is active.
+    bool noProjection;   ///< Particles ignore perspective.
 
-    ParticleZone() : position(0.0f), size(32.0f), type(ParticleType::Firefly), enabled(true), noProjection(false) {}
+    ParticleZone()
+        : position(0.0f),
+          size(32.0f),
+          type(ParticleType::Firefly),
+          enabled(true),
+          noProjection(false)
+    {
+    }
     ParticleZone(glm::vec2 pos, glm::vec2 sz, ParticleType t)
-        : position(pos), size(sz), type(t), enabled(true), noProjection(false) {}
+        : position(pos), size(sz), type(t), enabled(true), noProjection(false)
+    {
+    }
 };
 
 /**
@@ -120,13 +129,19 @@ struct ParticleZone
  * | Type     | Spawn Rate | Lifetime | Size    | Special Behavior           |
  * |----------|------------|----------|---------|----------------------------|
  * | Firefly  | 3/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
- * | Rain     | 50/s       | 2s       | 10-14px | Fast fall, angled sprite   |
- * | Snow     | 12/s       | 15s      | 1.5-3px | Slow fall, rotation        |
- * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
+ * | Rain     | 50/s
+ * | 2s       | 10-14px | Fast fall, angled sprite   |
+ * | Snow     | 12/s       | 15s | 1.5-3px |
+ * Slow fall, rotation        |
+ * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift,
+ * low alpha |
  * | Sparkles | 18/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * | Wisp     | 4/s        | 4-7s     | 2-4px   | Spiral movement, colors    |
- * | Lantern  | 0.5/s      | 10-15s   | 4x zone | Night-only glow            |
- * | Sunshine | 0.8/s      | 5-9s     | 40-64px | Angled rays, day/night     |
+ * |
+ * Wisp     | 4/s        | 4-7s     | 2-4px   | Spiral movement, colors    |
+ * | Lantern  | 0.5/s
+ * | 10-15s   | 4x zone | Night-only glow            |
+ * | Sunshine | 0.8/s      | 5-9s     |
+ * 40-64px | Angled rays, day/night     |
  *
  * @section particle_lifecycle Particle Lifecycle
  * @htmlonly
@@ -198,7 +213,7 @@ public:
      *
      * @param renderer The renderer to upload textures to.
      */
-    void UploadTextures(IRenderer &renderer);
+    void UploadTextures(IRenderer& renderer);
 
     /**
      * @brief Set the zone list for particle spawning.
@@ -211,7 +226,11 @@ public:
      * @param width  Tile width in pixels.
      * @param height Tile height in pixels.
      */
-    void SetTileSize(int width, int height) { m_TileWidth = width; m_TileHeight = height; }
+    void SetTileSize(int width, int height)
+    {
+        m_TileWidth = width;
+        m_TileHeight = height;
+    }
 
     /**
      * @brief Set tilemap reference for structure bound queries.
@@ -261,7 +280,10 @@ public:
      * @param noProjectionOnly If true, only render no-projection particles.
      * @param renderAll If true, render all particles regardless of projection flag.
      */
-    void Render(IRenderer& renderer, glm::vec2 cameraPos, bool noProjectionOnly = false, bool renderAll = true);
+    void Render(IRenderer& renderer,
+                glm::vec2 cameraPos,
+                bool noProjectionOnly = false,
+                bool renderAll = true);
 
     /**
      * @brief Get read-only access to the particle pool.
@@ -298,9 +320,9 @@ private:
     /// @name Particle Pool
     /// @{
 
-    std::vector<Particle> m_Particles;            ///< Active particle pool.
-    const std::vector<ParticleZone>* m_Zones;     ///< Zone list (owned by Tilemap).
-    const Tilemap* m_Tilemap;                     ///< Tilemap for structure queries.
+    std::vector<Particle> m_Particles;         ///< Active particle pool.
+    const std::vector<ParticleZone>* m_Zones;  ///< Zone list (owned by Tilemap).
+    const Tilemap* m_Tilemap;                  ///< Tilemap for structure queries.
 
     /// @}
 
@@ -319,8 +341,8 @@ private:
     /// @name Random Number Generation
     /// @{
 
-    std::mt19937 m_Rng;                             ///< Mersenne Twister RNG.
-    std::uniform_real_distribution<float> m_Dist01; ///< Uniform [0, 1) distribution.
+    std::mt19937 m_Rng;                              ///< Mersenne Twister RNG.
+    std::uniform_real_distribution<float> m_Dist01;  ///< Uniform [0, 1) distribution.
 
     /// @}
 
@@ -338,9 +360,9 @@ private:
         glm::vec2 uvMax;  ///< Bottom-right UV coordinate.
     };
 
-    Texture m_AtlasTexture;                              ///< Combined particle texture atlas.
-    AtlasRegion m_AtlasRegions[8];                       ///< UV regions indexed by ParticleType.
-    bool m_TexturesLoaded;                               ///< Whether LoadTextures() succeeded.
+    Texture m_AtlasTexture;         ///< Combined particle texture atlas.
+    AtlasRegion m_AtlasRegions[8];  ///< UV regions indexed by ParticleType.
+    bool m_TexturesLoaded;          ///< Whether LoadTextures() succeeded.
 
     /**
      * @brief Build the texture atlas from individual particle textures.
@@ -356,7 +378,7 @@ private:
      * @param[out] width  Output width.
      * @param[out] height Output height.
      */
-    void GenerateLanternPixels(std::vector<unsigned char> &pixels, int &width, int &height);
+    void GenerateLanternPixels(std::vector<unsigned char>& pixels, int& width, int& height);
 
     /**
      * @brief Generate the sunshine ray texture procedurally.
@@ -364,7 +386,7 @@ private:
      * @param[out] width  Output width.
      * @param[out] height Output height.
      */
-    void GenerateSunshinePixels(std::vector<unsigned char> &pixels, int &width, int &height);
+    void GenerateSunshinePixels(std::vector<unsigned char>& pixels, int& width, int& height);
 
     /// @}
 };

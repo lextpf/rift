@@ -1,7 +1,7 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <glad/glad.h>
@@ -63,7 +63,8 @@
  * @code
  * // From file:
  * Texture tex;
- * tex.LoadFromFile("sprites/player.png");  // Loads to CPU; creates OpenGL texture if a GL context is active
+ * tex.LoadFromFile("sprites/player.png");  // Loads to CPU; creates OpenGL texture if a GL context
+ * is active
  *
  * // From procedural data:
  * std::vector<unsigned char> pixels(64 * 64 * 4);
@@ -109,14 +110,14 @@ public:
      * Textures cannot be copied because they own GPU resources.
      * Use std::move() to transfer ownership instead.
      */
-    Texture(const Texture &) = delete;
+    Texture(const Texture&) = delete;
 
     /**
      * @brief Copy assignment (deleted).
      *
      * Textures cannot be copied because they own GPU resources.
      */
-    Texture &operator=(const Texture &) = delete;
+    Texture& operator=(const Texture&) = delete;
 
     /**
      * @brief Move constructor.
@@ -126,7 +127,7 @@ public:
      *
      * @param other Texture to move from (will be emptied).
      */
-    Texture(Texture &&other) noexcept;
+    Texture(Texture&& other) noexcept;
 
     /**
      * @brief Move assignment operator.
@@ -137,7 +138,7 @@ public:
      * @param other Texture to move from (will be emptied).
      * @return Reference to this texture.
      */
-    Texture &operator=(Texture &&other) noexcept;
+    Texture& operator=(Texture&& other) noexcept;
 
     /**
      * @brief Destructor releases all resources.
@@ -170,7 +171,7 @@ public:
      * @param path Path to image file (relative or absolute).
      * @return true if loaded successfully, false on error (logged to stderr).
      */
-    bool LoadFromFile(const std::string &path);
+    bool LoadFromFile(const std::string& path);
 
     /**
      * @brief Load texture from raw pixel data.
@@ -192,7 +193,7 @@ public:
      * @param flipY   If true, flip image vertically for OpenGL coordinates.
      * @return true if loaded successfully, false on invalid parameters.
      */
-    bool LoadFromData(unsigned char *data, int width, int height, int channels, bool flipY = true);
+    bool LoadFromData(unsigned char* data, int width, int height, int channels, bool flipY = true);
 
     /// @}
 
@@ -285,7 +286,10 @@ public:
      * @post All m_Vulkan* handles are valid.
      * @throws std::runtime_error on Vulkan API failures.
      */
-    void CreateVulkanTexture(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+    void CreateVulkanTexture(VkDevice device,
+                             VkPhysicalDevice physicalDevice,
+                             VkCommandPool commandPool,
+                             VkQueue queue);
 
     /**
      * @brief Destroy Vulkan texture resources.
@@ -347,7 +351,7 @@ private:
      * @param data  Pixel data to upload.
      * @param flipY Unused (flip is handled before this call).
      */
-    void CreateOpenGLTexture(unsigned char *data, bool flipY);
+    void CreateOpenGLTexture(unsigned char* data, bool flipY);
 
     static std::uint64_t s_CurrentOpenGLContextGeneration;
 
@@ -356,7 +360,7 @@ private:
     /// @name OpenGL Resources
     /// @{
     unsigned int m_OpenGLID{0};
-    void *m_OpenGLContextTag{nullptr};
+    void* m_OpenGLContextTag{nullptr};
     std::uint64_t m_OpenGLContextGeneration{0};
     /// @}
 

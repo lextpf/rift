@@ -1,68 +1,67 @@
 #include "NonPlayerCharacter.h"
 
-#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
-#include <random>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+#include <random>
 
 namespace
 {
-    std::mt19937 &GetNpcRng()
-    {
-        static std::mt19937 rng(std::random_device{}());
-        return rng;
-    }
-
-    // Width of each NPC sprite frame in pixels.
-    constexpr int NPC_SPRITE_WIDTH = 32;
-
-    // Height of each NPC sprite frame in pixels.
-    constexpr int NPC_SPRITE_HEIGHT = 32;
-
-    // Number of walking animation frames per direction.
-    constexpr int NPC_WALK_FRAMES = 3;
-
-    // Time between animation frame changes (seconds).
-    constexpr float NPC_ANIM_SPEED = 0.15f;
-
-    // NPC hitbox half-width for collision detection.
-    constexpr float NPC_HALF_WIDTH = 8.0f;
-
-    // NPC hitbox height for collision detection.
-    constexpr float NPC_HITBOX_HEIGHT = 16.0f;
-
-    // Distance threshold for reaching a waypoint (pixels).
-    constexpr float WAYPOINT_REACH_THRESHOLD = 0.5f;
-
-    // Minimum movement distance to avoid division by zero.
-    constexpr float MIN_MOVEMENT_DIST = 0.001f;
+std::mt19937& GetNpcRng()
+{
+    static std::mt19937 rng(std::random_device{}());
+    return rng;
 }
 
+// Width of each NPC sprite frame in pixels.
+constexpr int NPC_SPRITE_WIDTH = 32;
+
+// Height of each NPC sprite frame in pixels.
+constexpr int NPC_SPRITE_HEIGHT = 32;
+
+// Number of walking animation frames per direction.
+constexpr int NPC_WALK_FRAMES = 3;
+
+// Time between animation frame changes (seconds).
+constexpr float NPC_ANIM_SPEED = 0.15f;
+
+// NPC hitbox half-width for collision detection.
+constexpr float NPC_HALF_WIDTH = 8.0f;
+
+// NPC hitbox height for collision detection.
+constexpr float NPC_HITBOX_HEIGHT = 16.0f;
+
+// Distance threshold for reaching a waypoint (pixels).
+constexpr float WAYPOINT_REACH_THRESHOLD = 0.5f;
+
+// Minimum movement distance to avoid division by zero.
+constexpr float MIN_MOVEMENT_DIST = 0.001f;
+}  // namespace
+
 NonPlayerCharacter::NonPlayerCharacter()
-    : GameCharacter()
-    , m_TileX(0)
-    , m_TileY(0)
-    , m_TargetTileX(0)
-    , m_TargetTileY(0)
-    , m_WaitTimer(0.0f)
-    , m_IsStopped(false)
-    , m_StandingStill(false)
-    , m_LookAroundTimer(0.0f)
-    , m_RandomStandStillCheckTimer(0.0f)
-    , m_RandomStandStillTimer(0.0f)
-    , m_Dialogue("Hello! How are you today?")
+    : GameCharacter(),
+      m_TileX(0),
+      m_TileY(0),
+      m_TargetTileX(0),
+      m_TargetTileY(0),
+      m_WaitTimer(0.0f),
+      m_IsStopped(false),
+      m_StandingStill(false),
+      m_LookAroundTimer(0.0f),
+      m_RandomStandStillCheckTimer(0.0f),
+      m_RandomStandStillTimer(0.0f),
+      m_Dialogue("Hello! How are you today?")
 {
     m_Speed = 25.0f;
 }
 
-bool NonPlayerCharacter::Load(const std::string &relativePath)
+bool NonPlayerCharacter::Load(const std::string& relativePath)
 {
     // Extract NPC type from filename
     size_t lastSlash = relativePath.find_last_of('/');
-    std::string filename = (lastSlash != std::string::npos)
-                               ? relativePath.substr(lastSlash + 1)
-                               : relativePath;
+    std::string filename =
+        (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
 
     // Remove .png extension if present
     if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".png")
@@ -82,15 +81,15 @@ bool NonPlayerCharacter::Load(const std::string &relativePath)
         std::string altPath = "../" + path;
         if (!m_SpriteSheet.LoadFromFile(altPath))
         {
-            std::cerr << "Failed to load NPC sprite sheet: "
-                      << path << " or " << altPath << std::endl;
+            std::cerr << "Failed to load NPC sprite sheet: " << path << " or " << altPath
+                      << std::endl;
             return false;
         }
     }
     return true;
 }
 
-void NonPlayerCharacter::UploadTextures(IRenderer &renderer)
+void NonPlayerCharacter::UploadTextures(IRenderer& renderer)
 {
     renderer.UploadTexture(m_SpriteSheet);
 }
@@ -137,7 +136,9 @@ glm::vec2 NonPlayerCharacter::GetSpriteCoords(int frame, NPCDirection dir) const
     return glm::vec2(static_cast<float>(spriteX), static_cast<float>(spriteY));
 }
 
-void NonPlayerCharacter::Update(float deltaTime, const Tilemap *tilemap, const glm::vec2 *playerPosition)
+void NonPlayerCharacter::Update(float deltaTime,
+                                const Tilemap* tilemap,
+                                const glm::vec2* playerPosition)
 {
     if (!tilemap)
         return;
@@ -161,8 +162,8 @@ void NonPlayerCharacter::Update(float deltaTime, const Tilemap *tilemap, const g
         float playerMinY = playerPosition->y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
 
         // AABB intersection test
-        if (npcMinX < playerMaxX && npcMaxX > playerMinX &&
-            npcMinY < playerMaxY && npcMaxY > playerMinY)
+        if (npcMinX < playerMaxX && npcMaxX > playerMinX && npcMinY < playerMaxY &&
+            npcMaxY > playerMinY)
         {
             isCollidingWithPlayer = true;
             m_WaitTimer = 0.5f;
@@ -298,9 +299,8 @@ void NonPlayerCharacter::Update(float deltaTime, const Tilemap *tilemap, const g
         if (!wouldCollide)
         {
             m_Position = newPosition;
-            UpdateDirectionFromMovement(
-                static_cast<int>(dir.x > 0) - static_cast<int>(dir.x < 0),
-                static_cast<int>(dir.y > 0) - static_cast<int>(dir.y < 0));
+            UpdateDirectionFromMovement(static_cast<int>(dir.x > 0) - static_cast<int>(dir.x < 0),
+                                        static_cast<int>(dir.y > 0) - static_cast<int>(dir.y < 0));
         }
         else
         {
@@ -315,8 +315,7 @@ void NonPlayerCharacter::UpdateLookAround(float deltaTime)
     if (m_LookAroundTimer <= 0.0f)
     {
         static const NPCDirection directions[] = {
-            NPCDirection::LEFT, NPCDirection::RIGHT,
-            NPCDirection::UP, NPCDirection::DOWN};
+            NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
         m_Direction = directions[GetNpcRng()() % 4];
         m_LookAroundTimer = 2.0f;
     }
@@ -330,8 +329,7 @@ void NonPlayerCharacter::EnterStandingStillMode(bool isRandom, float duration)
     ResetAnimation();
 
     static const NPCDirection directions[] = {
-        NPCDirection::LEFT, NPCDirection::RIGHT,
-        NPCDirection::UP, NPCDirection::DOWN};
+        NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
     m_Direction = directions[GetNpcRng()() % 4];
 }
 
@@ -347,7 +345,8 @@ void NonPlayerCharacter::UpdateDirectionFromMovement(int dx, int dy)
     }
 }
 
-bool NonPlayerCharacter::CheckPlayerCollision(const glm::vec2 &newPosition, const glm::vec2 *playerPos) const
+bool NonPlayerCharacter::CheckPlayerCollision(const glm::vec2& newPosition,
+                                              const glm::vec2* playerPos) const
 {
     if (!playerPos)
         return false;
@@ -362,11 +361,11 @@ bool NonPlayerCharacter::CheckPlayerCollision(const glm::vec2 &newPosition, cons
     float playerMaxY = playerPos->y - COLLISION_EPS;
     float playerMinY = playerPos->y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
 
-    return npcMinX < playerMaxX && npcMaxX > playerMinX &&
-           npcMinY < playerMaxY && npcMaxY > playerMinY;
+    return npcMinX < playerMaxX && npcMaxX > playerMinX && npcMinY < playerMaxY &&
+           npcMaxY > playerMinY;
 }
 
-bool NonPlayerCharacter::ReinitializePatrolRoute(const Tilemap *tilemap)
+bool NonPlayerCharacter::ReinitializePatrolRoute(const Tilemap* tilemap)
 {
     if (!tilemap)
         return false;
@@ -395,7 +394,7 @@ void NonPlayerCharacter::ResetAnimationToIdle()
     ResetAnimation();
 }
 
-void NonPlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos) const
+void NonPlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos) const
 {
     constexpr float spriteWidth = static_cast<float>(NPC_SPRITE_WIDTH);
     constexpr float spriteHeight = static_cast<float>(NPC_SPRITE_HEIGHT);
@@ -403,7 +402,8 @@ void NonPlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos) const
     // Convert world position to screen space
     glm::vec2 bottomCenter = m_Position - cameraPos;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -415,8 +415,10 @@ void NonPlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos) const
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             bottomCenter = renderer.ProjectPoint(bottomCenter);
         }
@@ -426,18 +428,17 @@ void NonPlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos) const
     glm::vec2 renderPos = bottomCenter - glm::vec2(spriteWidth / 2.0f, spriteHeight);
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
-    renderer.DrawSpriteRegion(
-        m_SpriteSheet,
-        renderPos,
-        glm::vec2(spriteWidth, spriteHeight),
-        spriteCoords,
-        glm::vec2(spriteWidth, spriteHeight),
-        0.0f,
-        glm::vec3(1.0f),
-        false);
+    renderer.DrawSpriteRegion(m_SpriteSheet,
+                              renderPos,
+                              glm::vec2(spriteWidth, spriteHeight),
+                              spriteCoords,
+                              glm::vec2(spriteWidth, spriteHeight),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
 }
 
-void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos) const
+void NonPlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos) const
 {
     constexpr float spriteWidth = static_cast<float>(NPC_SPRITE_WIDTH);
     constexpr float spriteHeight = static_cast<float>(NPC_SPRITE_HEIGHT);
@@ -447,7 +448,8 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
     glm::vec2 bottomCenter = m_Position - cameraPos;
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -459,8 +461,10 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             bottomCenter = renderer.ProjectPoint(bottomCenter);
         }
@@ -472,19 +476,18 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraP
     // Draw lower 16 pixels (feet area)
     glm::vec2 bottomHalfCoords = spriteCoords;
     renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(
-        m_SpriteSheet,
-        renderPos + glm::vec2(0.0f, halfHeight),
-        glm::vec2(spriteWidth, halfHeight),
-        bottomHalfCoords,
-        glm::vec2(spriteWidth, halfHeight),
-        0.0f,
-        glm::vec3(1.0f),
-        false);
+    renderer.DrawSpriteRegion(m_SpriteSheet,
+                              renderPos + glm::vec2(0.0f, halfHeight),
+                              glm::vec2(spriteWidth, halfHeight),
+                              bottomHalfCoords,
+                              glm::vec2(spriteWidth, halfHeight),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
     renderer.SuspendPerspective(false);
 }
 
-void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos) const
+void NonPlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos) const
 {
     constexpr float spriteWidth = static_cast<float>(NPC_SPRITE_WIDTH);
     constexpr float spriteHeight = static_cast<float>(NPC_SPRITE_HEIGHT);
@@ -494,7 +497,8 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     glm::vec2 bottomCenter = m_Position - cameraPos;
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -506,8 +510,10 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             bottomCenter = renderer.ProjectPoint(bottomCenter);
         }
@@ -520,14 +526,13 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     glm::vec2 topHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
 
     renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(
-        m_SpriteSheet,
-        renderPos,
-        glm::vec2(spriteWidth, halfHeight),
-        topHalfCoords,
-        glm::vec2(spriteWidth, halfHeight),
-        0.0f,
-        glm::vec3(1.0f),
-        false);
+    renderer.DrawSpriteRegion(m_SpriteSheet,
+                              renderPos,
+                              glm::vec2(spriteWidth, halfHeight),
+                              topHalfCoords,
+                              glm::vec2(spriteWidth, halfHeight),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
     renderer.SuspendPerspective(false);
 }

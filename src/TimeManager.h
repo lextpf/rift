@@ -40,8 +40,8 @@ enum class TimePeriod
  */
 enum class WeatherState
 {
-    Clear,      ///< Full sun/moon visibility, stars visible at night
-    Overcast    ///< Dimmed lighting, no celestial bodies, no stars
+    Clear,    ///< Full sun/moon visibility, stars visible at night
+    Overcast  ///< Dimmed lighting, no celestial bodies, no stars
 };
 
 /**
@@ -115,15 +115,22 @@ enum class WeatherState
  *
  * @par Ambient Color Transitions
  * Colors smoothly interpolate between key times:
- * | Time  | Ambient Color      | Description              |
+ * | Time  |
+ * Ambient Color      | Description              |
+ *
  * |-------|--------------------|--------------------------|
- * | 00:00 | (0.30, 0.30, 0.45) | Deep night blue          |
+ * | 00:00 | (0.30, 0.30, 0.45) | Deep
+ * night blue          |
  * | 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn      |
- * | 05:00 | (0.85, 0.75, 0.70) | Dawn warm light starts   |
- * | 07:00 | (0.95, 0.93, 0.90) | Morning warm white       |
+ * | 05:00 |
+ * (0.85, 0.75, 0.70) | Dawn warm light starts   |
+ * | 07:00 | (0.95, 0.93, 0.90) | Morning warm
+ * white       |
  * | 10:00 | (1.00, 1.00, 0.98) | Midday neutral daylight  |
- * | 18:00 | (0.95, 0.90, 0.82) | Afternoon to dusk warmth |
- * | 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange        |
+ * | 18:00 | (0.95,
+ * 0.90, 0.82) | Afternoon to dusk warmth |
+ * | 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange |
+ *
  * | 22:00 | (0.50, 0.50, 0.65) | Evening blue             |
  *
  * @par Time Scale
@@ -375,13 +382,17 @@ public:
     /**
      * @brief Set the duration of one full day in real seconds.
      *
-     * Lower values = faster day/night cycle.
+     * Lower values =
+     * faster day/night cycle.
      * - 600s (10 min) = fast for testing
-     * - 1800s (30 min) = moderate gameplay
+     * - 1800s (30 min) =
+     * moderate gameplay
      * - 3600s (1 hour) = realistic feel
      *
-     * @param seconds Real-time seconds for one complete day.
-     *                Must be > 0. Values <= 0 are clamped to a tiny positive value.
+     * @param seconds
+     * Real-time seconds for one complete day.
+     *                Must be > 0. Values <= 0 are
+     * clamped to a tiny positive value.
      */
     void SetDayDuration(float seconds) { m_DayDuration = (seconds > 0.0f) ? seconds : 0.001f; }
 
@@ -404,10 +415,12 @@ public:
     /**
      * @brief Advance time by a specified amount.
      *
-     * Wraps across midnight and updates day count for both positive and
+     * Wraps across midnight and
+     * updates day count for both positive and
      * negative advances.
      *
-     * @param hours Hours to advance (can be negative to go back).
+     * @param hours
+     * Hours to advance (can be negative to go back).
      */
     void AdvanceTime(float hours);
 
@@ -459,12 +472,12 @@ private:
 
     /// @name State
     /// @{
-    float m_CurrentTime;    ///< Current time in hours (0.0-24.0)
-    int m_DayCount;         ///< Days elapsed (for moon phases)
-    float m_TimeScale;      ///< Time progression multiplier (1.0 = normal)
-    float m_DayDuration;    ///< Real seconds per game day
-    WeatherState m_Weather; ///< Current weather condition
-    bool m_Paused{false};   ///< Whether time progression is paused
+    float m_CurrentTime;     ///< Current time in hours (0.0-24.0)
+    int m_DayCount;          ///< Days elapsed (for moon phases)
+    float m_TimeScale;       ///< Time progression multiplier (1.0 = normal)
+    float m_DayDuration;     ///< Real seconds per game day
+    WeatherState m_Weather;  ///< Current weather condition
+    bool m_Paused{false};    ///< Whether time progression is paused
     /// @}
 
     /// @name Time Period Boundaries

@@ -3,11 +3,12 @@ REM ============================================================================
 REM build.bat - Complete build pipeline for rift
 REM ============================================================================
 REM This script:
-REM   1. Builds Debug and Release configurations
-REM   2. Compiles shaders to SPIR-V
-REM   3. Copies assets to build folders
-REM   4. Verifies shader binaries in build folders
-REM   5. Generates Doxygen documentation
+REM   1. Runs clang-format on source files
+REM   2. Builds Debug and Release configurations
+REM   3. Compiles shaders to SPIR-V
+REM   4. Copies assets to build folders
+REM   5. Verifies shader binaries in build folders
+REM   6. Generates Doxygen documentation
 REM ============================================================================
 
 setlocal enabledelayedexpansion
@@ -22,9 +23,31 @@ echo ===========================================================================
 echo.
 
 REM ============================================================================
-REM STEP 1: Build the project
+REM STEP 1: Run clang-format
 REM ============================================================================
-echo [1/5] Building project (Debug and Release)...
+echo [1/6] Running clang-format...
+echo ----------------------------------------------------------------------------
+
+where clang-format >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo WARNING: clang-format not found!
+    echo Skipping code formatting.
+    echo To format code, install clang-format via LLVM: https://llvm.org/
+    goto :skip_clang_format
+)
+
+echo Formatting source files in src\...
+for %%f in (src\*.cpp src\*.h) do (
+    clang-format -i "%%f"
+)
+echo [1/6] clang-format complete!
+:skip_clang_format
+echo.
+
+REM ============================================================================
+REM STEP 2: Build the project
+REM ============================================================================
+echo [2/6] Building project (Debug and Release)...
 echo ----------------------------------------------------------------------------
 
 if not exist build mkdir build
@@ -57,13 +80,13 @@ if %errorlevel% neq 0 (
 )
 
 cd /d "%SCRIPT_DIR%"
-echo [1/5] Build complete!
+echo [2/6] Build complete!
 echo.
 
 REM ============================================================================
-REM STEP 2: Compile shaders
+REM STEP 3: Compile shaders
 REM ============================================================================
-echo [2/5] Compiling shaders...
+echo [3/6] Compiling shaders...
 echo ----------------------------------------------------------------------------
 
 set "SHADERS_COMPILED=0"
@@ -94,14 +117,14 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 set "SHADERS_COMPILED=1"
-echo [2/5] Shaders compiled successfully!
+echo [3/6] Shaders compiled successfully!
 :skip_shaders
 echo.
 
 REM ============================================================================
-REM STEP 3: Copy assets to build folders
+REM STEP 4: Copy assets to build folders
 REM ============================================================================
-echo [3/5] Copying assets to build folders...
+echo [4/6] Copying assets to build folders...
 echo ----------------------------------------------------------------------------
 
 REM Create directories if they don't exist
@@ -146,13 +169,13 @@ if "!SAVE_COPIED!"=="0" (
     echo Save files copied to Debug and Release folders.
 )
 
-echo [3/5] Assets copied successfully!
+echo [4/6] Assets copied successfully!
 echo.
 
 REM ============================================================================
-REM STEP 4: Verify shader binaries
+REM STEP 5: Verify shader binaries
 REM ============================================================================
-echo [4/5] Verifying shader binaries...
+echo [5/6] Verifying shader binaries...
 echo ----------------------------------------------------------------------------
 
 set "MISSING_SHADER_BINARIES=0"
@@ -185,9 +208,9 @@ if "%MISSING_SHADER_BINARIES%"=="1" (
 echo.
 
 REM ============================================================================
-REM STEP 5: Generate Doxygen documentation
+REM STEP 6: Generate Doxygen documentation
 REM ============================================================================
-echo [5/5] Generating Doxygen documentation...
+echo [6/6] Generating Doxygen documentation...
 echo ----------------------------------------------------------------------------
 
 REM Check if doxygen is available
@@ -210,7 +233,7 @@ doxygen build\Doxyfile
 if %ERRORLEVEL% NEQ 0 (
     echo WARNING: Doxygen generation had issues, but continuing...
 ) else (
-    echo [5/5] Documentation generated successfully!
+    echo [6/6] Documentation generated successfully!
 )
 :skip_doxygen
 echo.

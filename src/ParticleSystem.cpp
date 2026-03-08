@@ -9,16 +9,25 @@
 #include <iostream>
 
 ParticleSystem::ParticleSystem()
-    : m_Zones(nullptr)                             // Particle zones from tilemap
-    , m_Tilemap(nullptr)                           // Reference to tilemap for structure queries
-    // TODO: Retrieve tile size from tilemap
-    , m_TileWidth(32)                              // Tile dimensions for coordinate conversion
-    , m_TileHeight(32), m_MaxParticlesPerZone(25)  // Particle density cap per zone
-    , m_Time(0.0f)                                 // Accumulated time for animation cycles
-    , m_NightFactor(0.0f)                          // Day & night blend (0 = day, 1 = night)
-    , m_Rng(std::random_device{}())                // Seeded Mersenne Twister RNG
-    , m_Dist01(0.0f, 1.0f)                         // Uniform distribution for random values
-    , m_TexturesLoaded(false)                      // Lazy-load flag for particle sprites
+    : m_Zones(nullptr)  // Particle zones from tilemap
+      ,
+      m_Tilemap(nullptr)  // Reference to tilemap for structure queries
+      // TODO: Retrieve tile size from tilemap
+      ,
+      m_TileWidth(32)  // Tile dimensions for coordinate conversion
+      ,
+      m_TileHeight(32),
+      m_MaxParticlesPerZone(25)  // Particle density cap per zone
+      ,
+      m_Time(0.0f)  // Accumulated time for animation cycles
+      ,
+      m_NightFactor(0.0f)  // Day & night blend (0 = day, 1 = night)
+      ,
+      m_Rng(std::random_device{}())  // Seeded Mersenne Twister RNG
+      ,
+      m_Dist01(0.0f, 1.0f)  // Uniform distribution for random values
+      ,
+      m_TexturesLoaded(false)  // Lazy-load flag for particle sprites
 {
     m_Particles.reserve(500);  // Pre-allocate to reduce reallocations
 }
@@ -30,7 +39,7 @@ bool ParticleSystem::LoadTextures()
     return true;
 }
 
-void ParticleSystem::UploadTextures(IRenderer &renderer)
+void ParticleSystem::UploadTextures(IRenderer& renderer)
 {
     if (!m_TexturesLoaded)
         return;
@@ -51,13 +60,13 @@ void ParticleSystem::BuildAtlas()
     };
 
     TextureSource sources[8];
-    const char *filePaths[6] = {
-        "assets/particles/304502d7-426b-4abc-a608-ff01a185df96.png", // Firefly
-        "assets/particles/9509e404-2fce-4fbf-a082-720f85e7244e.png", // Rain
-        "assets/particles/6f9d2bcf-8e79-493f-b468-85040a945d06.png", // Snow
-        "assets/particles/14b6ffec-3289-417b-b99c-82d1ed2a9944.png", // Fog
-        "assets/particles/536fa219-58a1-4220-9171-a8520d126f44.png", // Sparkles
-        "assets/particles/ead11602-6c24-45dc-b657-03d637e2a543.png"  // Wisp
+    const char* filePaths[6] = {
+        "assets/particles/304502d7-426b-4abc-a608-ff01a185df96.png",  // Firefly
+        "assets/particles/9509e404-2fce-4fbf-a082-720f85e7244e.png",  // Rain
+        "assets/particles/6f9d2bcf-8e79-493f-b468-85040a945d06.png",  // Snow
+        "assets/particles/14b6ffec-3289-417b-b99c-82d1ed2a9944.png",  // Fog
+        "assets/particles/536fa219-58a1-4220-9171-a8520d126f44.png",  // Sparkles
+        "assets/particles/ead11602-6c24-45dc-b657-03d637e2a543.png"   // Wisp
     };
 
     // Load file-based textures temporarily to get their pixel data
@@ -120,17 +129,15 @@ void ParticleSystem::BuildAtlas()
         if (currentX + w > atlasWidth)
         {
             currentX = 0;
-            currentY += rowHeight + 1; // 1px padding
+            currentY += rowHeight + 1;  // 1px padding
             rowHeight = 0;
         }
 
         // Store UV coordinates (normalized)
-        m_AtlasRegions[i].uvMin = glm::vec2(
-            static_cast<float>(currentX) / atlasWidth,
-            static_cast<float>(currentY) / atlasHeight);
-        m_AtlasRegions[i].uvMax = glm::vec2(
-            static_cast<float>(currentX + w) / atlasWidth,
-            static_cast<float>(currentY + h) / atlasHeight);
+        m_AtlasRegions[i].uvMin = glm::vec2(static_cast<float>(currentX) / atlasWidth,
+                                            static_cast<float>(currentY) / atlasHeight);
+        m_AtlasRegions[i].uvMax = glm::vec2(static_cast<float>(currentX + w) / atlasWidth,
+                                            static_cast<float>(currentY + h) / atlasHeight);
 
         // Copy pixels to atlas (source already flipped by stbi for OpenGL)
         for (int y = 0; y < h; y++)
@@ -159,7 +166,7 @@ void ParticleSystem::BuildAtlas()
             }
         }
 
-        currentX += w + 1; // 1px padding
+        currentX += w + 1;  // 1px padding
         rowHeight = std::max(rowHeight, h);
     }
 
@@ -169,7 +176,9 @@ void ParticleSystem::BuildAtlas()
     std::cout << "Particle atlas built: " << atlasWidth << "x" << atlasHeight << std::endl;
 }
 
-void ParticleSystem::GenerateLanternPixels(std::vector<unsigned char> &pixels, int &width, int &height)
+void ParticleSystem::GenerateLanternPixels(std::vector<unsigned char>& pixels,
+                                           int& width,
+                                           int& height)
 {
     width = 256;
     height = 256;
@@ -206,7 +215,9 @@ void ParticleSystem::GenerateLanternPixels(std::vector<unsigned char> &pixels, i
     }
 }
 
-void ParticleSystem::GenerateSunshinePixels(std::vector<unsigned char> &pixels, int &width, int &height)
+void ParticleSystem::GenerateSunshinePixels(std::vector<unsigned char>& pixels,
+                                            int& width,
+                                            int& height)
 {
     width = 48;
     height = 192;
@@ -264,7 +275,7 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
     // Update existing particles
     for (auto it = m_Particles.begin(); it != m_Particles.end();)
     {
-        Particle &p = *it;
+        Particle& p = *it;
 
         // Decrease lifetime
         p.lifetime -= deltaTime;
@@ -290,169 +301,173 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         // Type-specific behavior
         switch (pType)
         {
-        case ParticleType::Firefly:
-        {
-            // Gentle random drift
-            float driftX = std::sin(m_Time * 2.0f + p.phase) * 10.0f;
-            float driftY = std::cos(m_Time * 1.5f + p.phase * 1.3f) * 8.0f;
-            p.position.x += driftX * deltaTime;
-            p.position.y += driftY * deltaTime;
-
-            // Slow rotation as they drift
-            float rotationSpeed = 20.0f + (p.phase / 6.28f) * 40.0f; // 20-60 degrees per second
-            if (std::fmod(p.phase, 2.0f) < 1.0f)
-                rotationSpeed = -rotationSpeed;
-            p.rotation += rotationSpeed * deltaTime;
-
-            // Pulsing glow, alpha oscillates between 0.2 and 0.8
-            float pulse = 0.5f + 0.5f * std::sin(m_Time * 4.0f + p.phase);
-            float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.3f));
-            float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.5f);
-            p.color.a = pulse * lifeFade * fadeIn * 0.8f;
-            break;
-        }
-        case ParticleType::Rain:
-        {
-            // Fade in smoothly over first 0.15 seconds
-            float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.15f);
-            // Target alpha stored in phase
-            p.color.a = fadeIn * p.phase;
-
-            // Check if rain has fallen below its zone
-            if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
+            case ParticleType::Firefly:
             {
-                const auto &zone = (*m_Zones)[p.zoneIndex];
+                // Gentle random drift
+                float driftX = std::sin(m_Time * 2.0f + p.phase) * 10.0f;
+                float driftY = std::cos(m_Time * 1.5f + p.phase * 1.3f) * 8.0f;
+                p.position.x += driftX * deltaTime;
+                p.position.y += driftY * deltaTime;
 
-                // Vary ground height per particle using position.x as seed
-                // This creates natural variation so rain doesn't end on same line
-                float heightVariation = std::fmod(std::abs(p.position.x * 7.3f + p.phase * 100.0f), 60.0f);
-                float groundY = zone.position.y + zone.size.y + 20.0f + heightVariation;
-                if (p.position.y > groundY)
-                {
-                    p.lifetime = 0.0f;
-                }
-            }
-            break;
-        }
-        case ParticleType::Snow:
-        {
-            // Snow drifts side to side
-            float drift = std::sin(m_Time * 1.5f + p.phase) * 20.0f;
-            p.position.x += drift * deltaTime;
+                // Slow rotation as they drift
+                float rotationSpeed =
+                    20.0f + (p.phase / 6.28f) * 40.0f;  // 20-60 degrees per second
+                if (std::fmod(p.phase, 2.0f) < 1.0f)
+                    rotationSpeed = -rotationSpeed;
+                p.rotation += rotationSpeed * deltaTime;
 
-            // Rotate as it falls
-            float rotationSpeed = 30.0f + (p.phase / 6.28f) * 60.0f; // 30-90 degrees per second
-            if (std::fmod(p.phase, 2.0f) < 1.0f)
-                rotationSpeed = -rotationSpeed; // Half rotate clockwise, half counter-clockwise
-            p.rotation += rotationSpeed * deltaTime;
-
-            // Check if snow has fallen below its zone
-            if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
-            {
-                const auto &zone = (*m_Zones)[p.zoneIndex];
-                if (p.position.y > zone.position.y + zone.size.y + 50.0f)
-                {
-                    p.lifetime = 0.0f;
-                }
-            }
-            break;
-        }
-        case ParticleType::Fog:
-        {
-            // Fog drifts very slowly
-            float driftX = std::sin(m_Time * 0.15f + p.phase) * 2.5f;
-            float driftY = std::cos(m_Time * 0.1f + p.phase * 0.5f) * 1.0f;
-
-            // Add subtle swirling motion for smoky effect
-            float swirl = std::sin(m_Time * 0.4f + p.phase * 2.0f) * 1.5f;
-            p.position.x += (driftX + swirl) * deltaTime;
-            p.position.y += driftY * deltaTime;
-
-            // Slow pulsing alpha
-            float pulse = 0.9f + 0.1f * std::sin(m_Time * 0.25f + p.phase);
-
-            // Long fade in and fade out for smooth feathered appearance
-            float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
-            float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 4.0f);
-
-            // More visible during day, significantly less at night
-            float dayBoost = 1.0f + (1.0f - m_NightFactor) * 0.4f;
-            float nightReduce = 1.0f - m_NightFactor * 0.6f;
-            p.color.a = pulse * lifeFade * fadeIn * 0.28f * dayBoost * nightReduce;
-            break;
-        }
-        case ParticleType::Sparkles:
-        {
-            // Instant sparkle, bright flash then fade
-            float lifeRatio = 1.0f - (p.lifetime / p.maxLifetime); // 0 at start, 1 at end
-            float flash = lifeRatio < 0.15f ? 1.0f : 0.0f;         // Bright only in first 15% of life
-            p.color.a = flash;
-            break;
-        }
-        case ParticleType::Wisp:
-        {
-            // Magical spiraling movement
-            float spiralX = std::sin(m_Time * 1.5f + p.phase) * 20.0f;
-            float spiralY = std::cos(m_Time * 1.2f + p.phase * 0.7f) * 15.0f;
-            float wobble = std::sin(m_Time * 3.0f + p.phase * 2.0f) * 8.0f;
-            p.position.x += (spiralX + wobble) * deltaTime;
-            p.position.y += spiralY * deltaTime;
-
-            // Gentle rotation
-            float rotSpeed = 45.0f + (p.phase / 6.28f) * 30.0f; // 45-75 deg/sec
-            if (std::fmod(p.phase, 2.0f) < 1.0f)
-                rotSpeed = -rotSpeed;
-            p.rotation += rotSpeed * deltaTime;
-
-            // Pulsing glow effect
-            float twinkle = 0.5f + 0.5f * std::sin(m_Time * 4.0f + p.phase * 3.0f);
-            float shimmer = 0.8f + 0.2f * std::sin(m_Time * 7.0f + p.phase);
-            float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.25f));
-            float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 1.0f);
-            p.color.a = twinkle * shimmer * lifeFade * fadeIn * 0.85f;
-            break;
-        }
-        case ParticleType::Lantern:
-        {
-            // Stationary glow, only visible at night
-            // Completely off during daytime
-            if (m_NightFactor < 0.05f)
-            {
-                p.color.a = 0.0f;
+                // Pulsing glow, alpha oscillates between 0.2 and 0.8
+                float pulse = 0.5f + 0.5f * std::sin(m_Time * 4.0f + p.phase);
+                float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.3f));
+                float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.5f);
+                p.color.a = pulse * lifeFade * fadeIn * 0.8f;
                 break;
             }
-            float pulse = 0.9f + 0.1f * std::sin(m_Time * 1.5f + p.phase);
-            float flicker = 0.97f + 0.03f * std::sin(m_Time * 6.0f + p.phase * 2.0f);
+            case ParticleType::Rain:
+            {
+                // Fade in smoothly over first 0.15 seconds
+                float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.15f);
+                // Target alpha stored in phase
+                p.color.a = fadeIn * p.phase;
 
-            // Night factor controls visibility
-            float nightAlpha = m_NightFactor * 0.35f;
-            p.color.a = pulse * flicker * nightAlpha;
-            break;
-        }
-        case ParticleType::Sunshine:
-        {
-            // Sun & moon rays, yellow during day, blue during night
-            // Very gentle shimmer effect
-            float shimmer = 0.95f + 0.05f * std::sin(m_Time * 1.2f + p.phase);
-            float flicker = 0.97f + 0.03f * std::sin(m_Time * 3.0f + p.phase * 1.5f);
+                // Check if rain has fallen below its zone
+                if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
+                {
+                    const auto& zone = (*m_Zones)[p.zoneIndex];
 
-            // Fade in and out very smoothly
-            float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
-            float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 2.0f);
+                    // Vary ground height per particle using position.x as seed
+                    // This creates natural variation so rain doesn't end on same line
+                    float heightVariation =
+                        std::fmod(std::abs(p.position.x * 7.3f + p.phase * 100.0f), 60.0f);
+                    float groundY = zone.position.y + zone.size.y + 20.0f + heightVariation;
+                    if (p.position.y > groundY)
+                    {
+                        p.lifetime = 0.0f;
+                    }
+                }
+                break;
+            }
+            case ParticleType::Snow:
+            {
+                // Snow drifts side to side
+                float drift = std::sin(m_Time * 1.5f + p.phase) * 20.0f;
+                p.position.x += drift * deltaTime;
 
-            // Interpolate color between golden yellow (day) and pale blue (night)
-            // Day color: warm golden (1.0, 0.9, 0.5)
-            // Night color: cool blue (0.5, 0.7, 1.0)
-            float nightBlend = m_NightFactor;
-            p.color.r = 1.0f * (1.0f - nightBlend) + 0.5f * nightBlend;
-            p.color.g = 0.9f * (1.0f - nightBlend) + 0.7f * nightBlend;
-            p.color.b = 0.5f * (1.0f - nightBlend) + 1.0f * nightBlend;
+                // Rotate as it falls
+                float rotationSpeed =
+                    30.0f + (p.phase / 6.28f) * 60.0f;  // 30-90 degrees per second
+                if (std::fmod(p.phase, 2.0f) < 1.0f)
+                    rotationSpeed =
+                        -rotationSpeed;  // Half rotate clockwise, half counter-clockwise
+                p.rotation += rotationSpeed * deltaTime;
 
-            // Subtle alpha
-            float baseAlpha = 0.16f + (1.0f - m_NightFactor) * 0.06f;
-            p.color.a = shimmer * flicker * lifeFade * fadeIn * baseAlpha;
-            break;
-        }
+                // Check if snow has fallen below its zone
+                if (hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
+                {
+                    const auto& zone = (*m_Zones)[p.zoneIndex];
+                    if (p.position.y > zone.position.y + zone.size.y + 50.0f)
+                    {
+                        p.lifetime = 0.0f;
+                    }
+                }
+                break;
+            }
+            case ParticleType::Fog:
+            {
+                // Fog drifts very slowly
+                float driftX = std::sin(m_Time * 0.15f + p.phase) * 2.5f;
+                float driftY = std::cos(m_Time * 0.1f + p.phase * 0.5f) * 1.0f;
+
+                // Add subtle swirling motion for smoky effect
+                float swirl = std::sin(m_Time * 0.4f + p.phase * 2.0f) * 1.5f;
+                p.position.x += (driftX + swirl) * deltaTime;
+                p.position.y += driftY * deltaTime;
+
+                // Slow pulsing alpha
+                float pulse = 0.9f + 0.1f * std::sin(m_Time * 0.25f + p.phase);
+
+                // Long fade in and fade out for smooth feathered appearance
+                float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
+                float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 4.0f);
+
+                // More visible during day, significantly less at night
+                float dayBoost = 1.0f + (1.0f - m_NightFactor) * 0.4f;
+                float nightReduce = 1.0f - m_NightFactor * 0.6f;
+                p.color.a = pulse * lifeFade * fadeIn * 0.28f * dayBoost * nightReduce;
+                break;
+            }
+            case ParticleType::Sparkles:
+            {
+                // Instant sparkle, bright flash then fade
+                float lifeRatio = 1.0f - (p.lifetime / p.maxLifetime);  // 0 at start, 1 at end
+                float flash = lifeRatio < 0.15f ? 1.0f : 0.0f;  // Bright only in first 15% of life
+                p.color.a = flash;
+                break;
+            }
+            case ParticleType::Wisp:
+            {
+                // Magical spiraling movement
+                float spiralX = std::sin(m_Time * 1.5f + p.phase) * 20.0f;
+                float spiralY = std::cos(m_Time * 1.2f + p.phase * 0.7f) * 15.0f;
+                float wobble = std::sin(m_Time * 3.0f + p.phase * 2.0f) * 8.0f;
+                p.position.x += (spiralX + wobble) * deltaTime;
+                p.position.y += spiralY * deltaTime;
+
+                // Gentle rotation
+                float rotSpeed = 45.0f + (p.phase / 6.28f) * 30.0f;  // 45-75 deg/sec
+                if (std::fmod(p.phase, 2.0f) < 1.0f)
+                    rotSpeed = -rotSpeed;
+                p.rotation += rotSpeed * deltaTime;
+
+                // Pulsing glow effect
+                float twinkle = 0.5f + 0.5f * std::sin(m_Time * 4.0f + p.phase * 3.0f);
+                float shimmer = 0.8f + 0.2f * std::sin(m_Time * 7.0f + p.phase);
+                float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.25f));
+                float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 1.0f);
+                p.color.a = twinkle * shimmer * lifeFade * fadeIn * 0.85f;
+                break;
+            }
+            case ParticleType::Lantern:
+            {
+                // Stationary glow, only visible at night
+                // Completely off during daytime
+                if (m_NightFactor < 0.05f)
+                {
+                    p.color.a = 0.0f;
+                    break;
+                }
+                float pulse = 0.9f + 0.1f * std::sin(m_Time * 1.5f + p.phase);
+                float flicker = 0.97f + 0.03f * std::sin(m_Time * 6.0f + p.phase * 2.0f);
+
+                // Night factor controls visibility
+                float nightAlpha = m_NightFactor * 0.35f;
+                p.color.a = pulse * flicker * nightAlpha;
+                break;
+            }
+            case ParticleType::Sunshine:
+            {
+                // Sun & moon rays, yellow during day, blue during night
+                // Very gentle shimmer effect
+                float shimmer = 0.95f + 0.05f * std::sin(m_Time * 1.2f + p.phase);
+                float flicker = 0.97f + 0.03f * std::sin(m_Time * 3.0f + p.phase * 1.5f);
+
+                // Fade in and out very smoothly
+                float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
+                float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 2.0f);
+
+                // Interpolate color between golden yellow (day) and pale blue (night)
+                // Day color: warm golden (1.0, 0.9, 0.5)
+                // Night color: cool blue (0.5, 0.7, 1.0)
+                float nightBlend = m_NightFactor;
+                p.color.r = 1.0f * (1.0f - nightBlend) + 0.5f * nightBlend;
+                p.color.g = 0.9f * (1.0f - nightBlend) + 0.7f * nightBlend;
+                p.color.b = 0.5f * (1.0f - nightBlend) + 1.0f * nightBlend;
+
+                // Subtle alpha
+                float baseAlpha = 0.16f + (1.0f - m_NightFactor) * 0.06f;
+                p.color.a = shimmer * flicker * lifeFade * fadeIn * baseAlpha;
+                break;
+            }
         }
 
         ++it;
@@ -464,12 +479,12 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
     // Spawn new particles for each zone
     for (size_t i = 0; i < m_Zones->size(); ++i)
     {
-        const ParticleZone &zone = (*m_Zones)[i];
+        const ParticleZone& zone = (*m_Zones)[i];
         if (!zone.enabled)
             continue;
 
         // Check if zone is visible in current view
-        float margin = 80.0f; // 5 tiles of margin to spawn offscreen
+        float margin = 80.0f;  // 5 tiles of margin to spawn offscreen
         bool visible = !(zone.position.x + zone.size.x < cameraPos.x - margin ||
                          zone.position.x > cameraPos.x + viewSize.x + margin ||
                          zone.position.y + zone.size.y < cameraPos.y - margin ||
@@ -484,7 +499,7 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
         // Count particles for this zone
         size_t zoneParticleCount = 0;
-        for (const auto &p : m_Particles)
+        for (const auto& p : m_Particles)
         {
             if (p.zoneIndex == static_cast<int>(i))
                 zoneParticleCount++;
@@ -494,32 +509,32 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         float spawnRate;
         switch (zone.type)
         {
-        case ParticleType::Firefly:
-            spawnRate = 3.0f;
-            break;
-        case ParticleType::Rain:
-            spawnRate = 50.0f;
-            break;
-        case ParticleType::Snow:
-            spawnRate = 12.0f;
-            break;
-        case ParticleType::Fog:
-            spawnRate = 3.0f; // Sparse, smoky wisps
-            break;
-        case ParticleType::Sparkles:
-            spawnRate = 18.0f;
-            break;
-        case ParticleType::Wisp:
-            spawnRate = 4.0f; // Magical wisps
-            break;
-        case ParticleType::Lantern:
-            spawnRate = 0.5f; // Very slow, just maintain 1-2 glows
-            break;
-        case ParticleType::Sunshine:
-            spawnRate = 0.8f; // Sparse sun & moon rays
-            break;
-        default:
-            spawnRate = 5.0f;
+            case ParticleType::Firefly:
+                spawnRate = 3.0f;
+                break;
+            case ParticleType::Rain:
+                spawnRate = 50.0f;
+                break;
+            case ParticleType::Snow:
+                spawnRate = 12.0f;
+                break;
+            case ParticleType::Fog:
+                spawnRate = 3.0f;  // Sparse, smoky wisps
+                break;
+            case ParticleType::Sparkles:
+                spawnRate = 18.0f;
+                break;
+            case ParticleType::Wisp:
+                spawnRate = 4.0f;  // Magical wisps
+                break;
+            case ParticleType::Lantern:
+                spawnRate = 0.5f;  // Very slow, just maintain 1-2 glows
+                break;
+            case ParticleType::Sunshine:
+                spawnRate = 0.8f;  // Sparse sun & moon rays
+                break;
+            default:
+                spawnRate = 5.0f;
         }
 
         // Scale spawn rate by zone size
@@ -538,38 +553,38 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
     }
 }
 
-void ParticleSystem::SpawnParticleInZone(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnParticleInZone(int zoneIndex, const ParticleZone& zone)
 {
     switch (zone.type)
     {
-    case ParticleType::Firefly:
-        SpawnFirefly(zoneIndex, zone);
-        break;
-    case ParticleType::Rain:
-        SpawnRain(zoneIndex, zone);
-        break;
-    case ParticleType::Snow:
-        SpawnSnow(zoneIndex, zone);
-        break;
-    case ParticleType::Fog:
-        SpawnFog(zoneIndex, zone);
-        break;
-    case ParticleType::Sparkles:
-        SpawnSparkles(zoneIndex, zone);
-        break;
-    case ParticleType::Wisp:
-        SpawnWisp(zoneIndex, zone);
-        break;
-    case ParticleType::Lantern:
-        SpawnLantern(zoneIndex, zone);
-        break;
-    case ParticleType::Sunshine:
-        SpawnSunshine(zoneIndex, zone);
-        break;
+        case ParticleType::Firefly:
+            SpawnFirefly(zoneIndex, zone);
+            break;
+        case ParticleType::Rain:
+            SpawnRain(zoneIndex, zone);
+            break;
+        case ParticleType::Snow:
+            SpawnSnow(zoneIndex, zone);
+            break;
+        case ParticleType::Fog:
+            SpawnFog(zoneIndex, zone);
+            break;
+        case ParticleType::Sparkles:
+            SpawnSparkles(zoneIndex, zone);
+            break;
+        case ParticleType::Wisp:
+            SpawnWisp(zoneIndex, zone);
+            break;
+        case ParticleType::Lantern:
+            SpawnLantern(zoneIndex, zone);
+            break;
+        case ParticleType::Sunshine:
+            SpawnSunshine(zoneIndex, zone);
+            break;
     }
 }
 
-void ParticleSystem::SpawnFirefly(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnFirefly(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -587,8 +602,8 @@ void ParticleSystem::SpawnFirefly(int zoneIndex, const ParticleZone &zone)
     // Yellow-green glow color
     p.color = glm::vec4(1.0f, 0.9f + m_Dist01(m_Rng) * 0.1f, 0.3f + m_Dist01(m_Rng) * 0.2f, 0.0f);
 
-    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;     // 2-4 pixels
-    p.lifetime = 4.0f + m_Dist01(m_Rng) * 5.0f; // Live longer
+    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;      // 2-4 pixels
+    p.lifetime = 4.0f + m_Dist01(m_Rng) * 5.0f;  // Live longer
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
     p.rotation = 0.0f;
@@ -597,7 +612,7 @@ void ParticleSystem::SpawnFirefly(int zoneIndex, const ParticleZone &zone)
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnRain(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnRain(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -606,27 +621,27 @@ void ParticleSystem::SpawnRain(int zoneIndex, const ParticleZone &zone)
 
     // Spawn at top of zone
     p.position.x = zone.position.x + m_Dist01(m_Rng) * zone.size.x;
-    p.position.y = zone.position.y + m_Dist01(m_Rng) * 10.0f; // Near top of zone
+    p.position.y = zone.position.y + m_Dist01(m_Rng) * 10.0f;  // Near top of zone
 
     // Fall straight down
     p.velocity.x = 0.0f;
-    p.velocity.y = 150.0f + m_Dist01(m_Rng) * 100.0f; // 150-250 downward
+    p.velocity.y = 150.0f + m_Dist01(m_Rng) * 100.0f;  // 150-250 downward
 
     // Light blue-white color, start transparent, fade in
     float targetAlpha = 0.5f + m_Dist01(m_Rng) * 0.3f;
-    p.color = glm::vec4(0.8f, 0.85f, 1.0f, 0.0f); // Start invisible
-    p.phase = targetAlpha;                        // Store target alpha in phase field
+    p.color = glm::vec4(0.8f, 0.85f, 1.0f, 0.0f);  // Start invisible
+    p.phase = targetAlpha;                         // Store target alpha in phase field
 
-    p.size = 10.0f + m_Dist01(m_Rng) * 4.0f; // 10-14 pixels
+    p.size = 10.0f + m_Dist01(m_Rng) * 4.0f;  // 10-14 pixels
     p.lifetime = 2.0f;
     p.maxLifetime = p.lifetime;
-    p.rotation = -35.0f - m_Dist01(m_Rng) * 30.0f; // -35 to -65 degrees
+    p.rotation = -35.0f - m_Dist01(m_Rng) * 30.0f;  // -35 to -65 degrees
     p.additive = false;
 
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnSnow(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnSnow(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -635,26 +650,26 @@ void ParticleSystem::SpawnSnow(int zoneIndex, const ParticleZone &zone)
 
     // Spawn at top of zone
     p.position.x = zone.position.x + m_Dist01(m_Rng) * zone.size.x;
-    p.position.y = zone.position.y + m_Dist01(m_Rng) * 10.0f; // Near top of zone
+    p.position.y = zone.position.y + m_Dist01(m_Rng) * 10.0f;  // Near top of zone
 
     // Gentle slow fall with light drift
     p.velocity.x = (m_Dist01(m_Rng) - 0.5f) * 12.0f;
-    p.velocity.y = 12.0f + m_Dist01(m_Rng) * 10.0f; // 12-22 pixels/sec
+    p.velocity.y = 12.0f + m_Dist01(m_Rng) * 10.0f;  // 12-22 pixels/sec
 
     // Bright white color with additive blending for glow
     p.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.35f + m_Dist01(m_Rng) * 0.15f);
 
-    p.size = 1.5f + m_Dist01(m_Rng) * 1.5f; // 1.5-3 pixels
+    p.size = 1.5f + m_Dist01(m_Rng) * 1.5f;  // 1.5-3 pixels
     p.lifetime = 15.0f;
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
     p.rotation = 0.0f;
-    p.additive = true; // Additive blending for brighter snow
+    p.additive = true;  // Additive blending for brighter snow
 
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnFog(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnFog(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -671,11 +686,11 @@ void ParticleSystem::SpawnFog(int zoneIndex, const ParticleZone &zone)
 
     // White/grey color with slight variation
     float grey = 0.88f + m_Dist01(m_Rng) * 0.12f;
-    p.color = glm::vec4(grey, grey, grey, 0.0f); // Alpha set by update
+    p.color = glm::vec4(grey, grey, grey, 0.0f);  // Alpha set by update
 
     // Large particles for smokey, feathered appearance
-    p.size = 48.0f + m_Dist01(m_Rng) * 48.0f;     // 48-96 pixels
-    p.lifetime = 18.0f + m_Dist01(m_Rng) * 12.0f; // 18-30 seconds
+    p.size = 48.0f + m_Dist01(m_Rng) * 48.0f;      // 48-96 pixels
+    p.lifetime = 18.0f + m_Dist01(m_Rng) * 12.0f;  // 18-30 seconds
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
     p.rotation = 0.0f;
@@ -684,7 +699,7 @@ void ParticleSystem::SpawnFog(int zoneIndex, const ParticleZone &zone)
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnSparkles(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnSparkles(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -703,17 +718,17 @@ void ParticleSystem::SpawnSparkles(int zoneIndex, const ParticleZone &zone)
     float warmth = m_Dist01(m_Rng) * 0.3f;
     p.color = glm::vec4(1.0f, 1.0f - warmth * 0.2f, 1.0f - warmth, 1.0f);
 
-    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;     // 2-4 pixels
-    p.lifetime = 0.5f + m_Dist01(m_Rng) * 0.5f; // 0.5-1.0 seconds
+    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;      // 2-4 pixels
+    p.lifetime = 0.5f + m_Dist01(m_Rng) * 0.5f;  // 0.5-1.0 seconds
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
     p.rotation = 0.0f;
-    p.additive = true; // Additive for glow effect
+    p.additive = true;  // Additive for glow effect
 
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnWisp(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnWisp(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -726,28 +741,28 @@ void ParticleSystem::SpawnWisp(int zoneIndex, const ParticleZone &zone)
 
     // Gentle base drift
     p.velocity.x = (m_Dist01(m_Rng) - 0.5f) * 8.0f;
-    p.velocity.y = (m_Dist01(m_Rng) - 0.5f) * 6.0f - 5.0f; // Slight upward tendency
+    p.velocity.y = (m_Dist01(m_Rng) - 0.5f) * 6.0f - 5.0f;  // Slight upward tendency
 
     // Magical color variation
     float colorChoice = m_Dist01(m_Rng);
     if (colorChoice < 0.33f)
-        p.color = glm::vec4(0.6f, 0.8f, 1.0f, 0.0f); // Cyan
+        p.color = glm::vec4(0.6f, 0.8f, 1.0f, 0.0f);  // Cyan
     else if (colorChoice < 0.66f)
-        p.color = glm::vec4(0.8f, 0.6f, 1.0f, 0.0f); // Purple
+        p.color = glm::vec4(0.8f, 0.6f, 1.0f, 0.0f);  // Purple
     else
-        p.color = glm::vec4(0.9f, 0.9f, 1.0f, 0.0f); // White-blue
+        p.color = glm::vec4(0.9f, 0.9f, 1.0f, 0.0f);  // White-blue
 
-    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;     // 2-4 pixels
-    p.lifetime = 4.0f + m_Dist01(m_Rng) * 3.0f; // 4-7 seconds
+    p.size = 2.0f + m_Dist01(m_Rng) * 2.0f;      // 2-4 pixels
+    p.lifetime = 4.0f + m_Dist01(m_Rng) * 3.0f;  // 4-7 seconds
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
-    p.rotation = m_Dist01(m_Rng) * 360.0f; // Random starting rotation
-    p.additive = true;                     // Glowing ethereal effect
+    p.rotation = m_Dist01(m_Rng) * 360.0f;  // Random starting rotation
+    p.additive = true;                      // Glowing ethereal effect
 
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnLantern(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnLantern(int zoneIndex, const ParticleZone& zone)
 {
     Particle p;
     p.zoneIndex = zoneIndex;
@@ -772,19 +787,19 @@ void ParticleSystem::SpawnLantern(int zoneIndex, const ParticleZone &zone)
     p.maxLifetime = p.lifetime;
     p.phase = m_Dist01(m_Rng) * 6.28f;
     p.rotation = 0.0f;
-    p.additive = true; // Additive blending for glow effect
+    p.additive = true;  // Additive blending for glow effect
 
     m_Particles.push_back(p);
 }
 
-void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
+void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone& zone)
 {
     // Helper: Check if a point is covered by a sunshine ray
     // Rays are rotated rectangles with 1:4 aspect ratio (width:height)
-    auto pointInRay = [](glm::vec2 point, const Particle &ray) -> bool
+    auto pointInRay = [](glm::vec2 point, const Particle& ray) -> bool
     {
         float halfWidth = ray.size * 0.5f;
-        float halfHeight = ray.size * 2.0f; // 1:4 aspect ratio
+        float halfHeight = ray.size * 2.0f;  // 1:4 aspect ratio
 
         // Transform point to ray's local space (centered, axis-aligned)
         glm::vec2 local = point - ray.position;
@@ -793,9 +808,7 @@ void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
         float radians = glm::radians(-ray.rotation);
         float cosR = std::cos(radians);
         float sinR = std::sin(radians);
-        glm::vec2 rotated(
-            local.x * cosR - local.y * sinR,
-            local.x * sinR + local.y * cosR);
+        glm::vec2 rotated(local.x * cosR - local.y * sinR, local.x * sinR + local.y * cosR);
 
         // Check if within bounds
         return std::abs(rotated.x) <= halfWidth && std::abs(rotated.y) <= halfHeight;
@@ -805,7 +818,7 @@ void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
     auto countRaysAtPoint = [&](glm::vec2 point) -> int
     {
         int count = 0;
-        for (const auto &existing : m_Particles)
+        for (const auto& existing : m_Particles)
         {
             if (existing.type == ParticleType::Sunshine && pointInRay(point, existing))
                 count++;
@@ -826,16 +839,15 @@ void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
         const int numSamples = 7;
         for (int i = 0; i < numSamples; i++)
         {
-            float t = (i / (float)(numSamples - 1)) - 0.5f; // -0.5 to 0.5
+            float t = (i / (float)(numSamples - 1)) - 0.5f;  // -0.5 to 0.5
             float localY = t * halfHeight * 2.0f;
 
             // Sample center and both edges at this height
             for (float xOffset : {0.0f, -halfWidth * 0.7f, halfWidth * 0.7f})
             {
                 // Transform sample point to world space
-                glm::vec2 sampleWorld(
-                    pos.x + xOffset * cosR - localY * sinR,
-                    pos.y + xOffset * sinR + localY * cosR);
+                glm::vec2 sampleWorld(pos.x + xOffset * cosR - localY * sinR,
+                                      pos.y + xOffset * sinR + localY * cosR);
 
                 // If 2+ rays already cover this point, adding another would make 3+
                 if (countRaysAtPoint(sampleWorld) >= 2)
@@ -860,21 +872,21 @@ void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
         p.velocity.y = 0.0f;
 
         // Base color, will be tinted by update based on day/night
-        p.color = glm::vec4(1.0f, 0.9f, 0.5f, 0.0f); // Alpha set by update
+        p.color = glm::vec4(1.0f, 0.9f, 0.5f, 0.0f);  // Alpha set by update
 
         // Elongated beam size, texture is 48x192 (1:4 aspect)
-        p.size = 40.0f + m_Dist01(m_Rng) * 24.0f; // 40-64 pixels wide
+        p.size = 40.0f + m_Dist01(m_Rng) * 24.0f;  // 40-64 pixels wide
 
-        p.lifetime = 5.0f + m_Dist01(m_Rng) * 4.0f; // 5-9 seconds
+        p.lifetime = 5.0f + m_Dist01(m_Rng) * 4.0f;  // 5-9 seconds
         p.maxLifetime = p.lifetime;
         p.phase = m_Dist01(m_Rng) * 6.28f;
 
         // Angled rays, slight variation around diagonal
         // Rays come from upper-left or upper-right at various angles
-        float baseAngle = (m_Dist01(m_Rng) < 0.5f) ? -18.0f : 18.0f; // Left or right leaning
-        p.rotation = baseAngle + (m_Dist01(m_Rng) - 0.5f) * 20.0f;   // +/- 10 degree variation
+        float baseAngle = (m_Dist01(m_Rng) < 0.5f) ? -18.0f : 18.0f;  // Left or right leaning
+        p.rotation = baseAngle + (m_Dist01(m_Rng) - 0.5f) * 20.0f;    // +/- 10 degree variation
 
-        p.additive = true; // Glowing effect
+        p.additive = true;  // Glowing effect
 
         // Check if this ray would create overcrowded spots (3+ rays at same point)
         if (!wouldOvercrowd(p.position, p.rotation, p.size))
@@ -886,7 +898,10 @@ void ParticleSystem::SpawnSunshine(int zoneIndex, const ParticleZone &zone)
     // After 3 failed attempts, skip spawning this frame
 }
 
-void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noProjectionOnly, bool renderAll)
+void ParticleSystem::Render(IRenderer& renderer,
+                            glm::vec2 cameraPos,
+                            bool noProjectionOnly,
+                            bool renderAll)
 {
     // For noProjection particles, we need to:
     // 1. Calculate positions while perspective is enabled
@@ -909,7 +924,7 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
     std::vector<ParticleRenderData> regularBatch;
 
     // First pass: Calculate all positions (ProjectPoint works while perspective enabled)
-    for (const Particle &p : m_Particles)
+    for (const Particle& p : m_Particles)
     {
         bool isNoProjection = false;
         if (m_Zones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_Zones->size()))
@@ -949,7 +964,8 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
 
             // Get the actual structure bounds from the tilemap
             int minTileX, maxTileX, minTileY, maxTileY;
-            if (m_Tilemap->FindNoProjectionStructureBounds(tileX, tileY, minTileX, maxTileX, minTileY, maxTileY))
+            if (m_Tilemap->FindNoProjectionStructureBounds(
+                    tileX, tileY, minTileX, maxTileX, minTileY, maxTileY))
             {
                 // Structure bounds in pixels
                 float leftPixelX = static_cast<float>(minTileX * m_TileWidth);
@@ -969,9 +985,10 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
                 float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
                 float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-                bool anchorInViewport = perspState.enabled &&
-                    anchorScreenX >= -widthPadding && anchorScreenX <= perspState.viewWidth + widthPadding &&
-                    anchorScreenY >= -heightPadding && anchorScreenY <= perspState.viewHeight + heightPadding;
+                bool anchorInViewport = perspState.enabled && anchorScreenX >= -widthPadding &&
+                                        anchorScreenX <= perspState.viewWidth + widthPadding &&
+                                        anchorScreenY >= -heightPadding &&
+                                        anchorScreenY <= perspState.viewHeight + heightPadding;
 
                 float scaleX = 1.0f;
                 glm::vec2 projectedLeft(anchorScreenX, anchorScreenY);
@@ -980,8 +997,8 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
                 {
                     // Project bottom-left and bottom-right corners
                     projectedLeft = renderer.ProjectPoint(glm::vec2(anchorScreenX, anchorScreenY));
-                    glm::vec2 projectedRight = renderer.ProjectPoint(
-                        glm::vec2(rightPixelX - cameraPos.x, anchorScreenY));
+                    glm::vec2 projectedRight =
+                        renderer.ProjectPoint(glm::vec2(rightPixelX - cameraPos.x, anchorScreenY));
 
                     // Calculate horizontal scale based on projected width
                     float originalWidth = rightPixelX - leftPixelX;
@@ -1021,9 +1038,10 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
             float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
             float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-            bool inViewport = perspState.enabled &&
-                data.screenPos.x >= -widthPadding && data.screenPos.x <= perspState.viewWidth + widthPadding &&
-                data.screenPos.y >= -heightPadding && data.screenPos.y <= perspState.viewHeight + heightPadding;
+            bool inViewport = perspState.enabled && data.screenPos.x >= -widthPadding &&
+                              data.screenPos.x <= perspState.viewWidth + widthPadding &&
+                              data.screenPos.y >= -heightPadding &&
+                              data.screenPos.y <= perspState.viewHeight + heightPadding;
 
             if (inViewport)
             {
@@ -1038,10 +1056,9 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
             // Use generous padding to account for particle size and partial visibility
             float padding = std::max(data.size.x, data.size.y) * 2.0f + 50.0f;
 
-            bool outsideViewport = data.screenPos.x < -padding ||
-                                   data.screenPos.x > perspState.viewWidth + padding ||
-                                   data.screenPos.y < -padding ||
-                                   data.screenPos.y > perspState.viewHeight + padding;
+            bool outsideViewport =
+                data.screenPos.x < -padding || data.screenPos.x > perspState.viewWidth + padding ||
+                data.screenPos.y < -padding || data.screenPos.y > perspState.viewHeight + padding;
 
             if (outsideViewport)
                 continue;
@@ -1055,12 +1072,12 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
     }
 
     // Lambda to draw a particle using the texture atlas
-    auto drawParticle = [&](const ParticleRenderData &data)
+    auto drawParticle = [&](const ParticleRenderData& data)
     {
         if (m_TexturesLoaded)
         {
             int typeIndex = static_cast<int>(data.type);
-            const AtlasRegion &region = m_AtlasRegions[typeIndex];
+            const AtlasRegion& region = m_AtlasRegions[typeIndex];
 
             glm::vec2 renderSize = data.size;
             // Sunshine uses elongated beam texture (48x192 aspect ratio = 1:4)
@@ -1082,9 +1099,14 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
                 renderSize.x *= flipScale;
             }
             glm::vec2 centeredPos = data.screenPos - renderSize * 0.5f;
-            renderer.DrawSpriteAtlas(m_AtlasTexture, centeredPos, renderSize,
-                                     region.uvMin, region.uvMax,
-                                     data.rotation, data.color, data.additive);
+            renderer.DrawSpriteAtlas(m_AtlasTexture,
+                                     centeredPos,
+                                     renderSize,
+                                     region.uvMin,
+                                     region.uvMax,
+                                     data.rotation,
+                                     data.color,
+                                     data.additive);
         }
         else
         {
@@ -1097,10 +1119,8 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
 
     // Sort batches by blend mode to minimize draw calls
     // Non-additive (false) sorts before additive (true)
-    auto sortByBlendMode = [](const ParticleRenderData &a, const ParticleRenderData &b)
-    {
-        return a.additive < b.additive;
-    };
+    auto sortByBlendMode = [](const ParticleRenderData& a, const ParticleRenderData& b)
+    { return a.additive < b.additive; };
 
     std::sort(noProjectionBatch.begin(), noProjectionBatch.end(), sortByBlendMode);
     std::sort(regularBatch.begin(), regularBatch.end(), sortByBlendMode);
@@ -1109,7 +1129,7 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
     if (!noProjectionBatch.empty())
     {
         renderer.SuspendPerspective(true);
-        for (const auto &data : noProjectionBatch)
+        for (const auto& data : noProjectionBatch)
         {
             drawParticle(data);
         }
@@ -1117,7 +1137,7 @@ void ParticleSystem::Render(IRenderer &renderer, glm::vec2 cameraPos, bool noPro
     }
 
     // Draw regular particles normally
-    for (const auto &data : regularBatch)
+    for (const auto& data : regularBatch)
     {
         drawParticle(data);
     }

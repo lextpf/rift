@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <limits>
 
 #ifdef _WIN32
@@ -14,7 +14,7 @@
 #include <windows.h>
 #endif
 
-VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vector<uint32_t> &code)
+VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vector<uint32_t>& code)
 {
     if (code.empty())
     {
@@ -52,10 +52,10 @@ std::filesystem::path GetExecutableDirectory()
 #endif
 }
 
-std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string &filename)
+std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string& filename)
 {
     std::vector<std::filesystem::path> paths;
-    auto addUnique = [&paths](const std::filesystem::path &path)
+    auto addUnique = [&paths](const std::filesystem::path& path)
     {
         if (std::find(paths.begin(), paths.end(), path) == paths.end())
         {
@@ -79,7 +79,7 @@ std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string &fil
     return paths;
 }
 
-std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path &path)
+std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
 {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
 
@@ -111,11 +111,12 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path &path)
         std::cerr << "SPIR-V file is too large: " << path.string() << std::endl;
         return {};
     }
-    const size_t wordCount = static_cast<size_t>(streamSize / static_cast<std::streamoff>(sizeof(uint32_t)));
+    const size_t wordCount =
+        static_cast<size_t>(streamSize / static_cast<std::streamoff>(sizeof(uint32_t)));
     std::vector<uint32_t> buffer(wordCount);
 
     file.seekg(0);
-    file.read(reinterpret_cast<char *>(buffer.data()), streamSize);
+    file.read(reinterpret_cast<char*>(buffer.data()), streamSize);
     if (!file)
     {
         std::cerr << "Failed to read full SPIR-V file: " << path.string() << std::endl;
@@ -134,10 +135,10 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path &path)
 }
 
 // Load SPIR-V file from common runtime locations.
-static std::vector<uint32_t> ReadSPIRVFile(const std::string &filename)
+static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
 {
     std::vector<std::filesystem::path> attemptedPaths;
-    for (const auto &candidate : BuildShaderSearchPaths(filename))
+    for (const auto& candidate : BuildShaderSearchPaths(filename))
     {
         attemptedPaths.push_back(candidate);
         std::vector<uint32_t> code = ReadSPIRVFromPath(candidate);
@@ -149,13 +150,13 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string &filename)
 
     std::cerr << "Failed to load SPIR-V file: " << filename << std::endl;
     std::cerr << "Checked paths:" << std::endl;
-    for (const auto &path : attemptedPaths)
+    for (const auto& path : attemptedPaths)
     {
         std::cerr << "  - " << path.string() << std::endl;
     }
     return {};
 }
-} // namespace
+}  // namespace
 
 std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 {
@@ -165,7 +166,8 @@ std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
     {
         std::cerr << "Warning: Could not load shaders/sprite.vert.spv" << std::endl;
         std::cerr << "Please compile shaders/sprite.vert to SPIR-V using:" << std::endl;
-        std::cerr << "  glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv" << std::endl;
+        std::cerr << "  glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv"
+                  << std::endl;
     }
     return code;
 }
@@ -178,7 +180,8 @@ std::vector<uint32_t> VulkanShader::GetFragmentShaderSPIRV()
     {
         std::cerr << "Warning: Could not load shaders/sprite.frag.spv" << std::endl;
         std::cerr << "Please compile shaders/sprite.frag to SPIR-V using:" << std::endl;
-        std::cerr << "  glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv" << std::endl;
+        std::cerr << "  glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv"
+                  << std::endl;
     }
     return code;
 }

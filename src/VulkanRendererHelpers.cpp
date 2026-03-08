@@ -1,10 +1,13 @@
-#include "VulkanRenderer.h"
-#include "VulkanCommon.h"
 #include "Texture.h"
+#include "VulkanCommon.h"
+#include "VulkanRenderer.h"
 
 #include <cstring>
 
-void VulkanRenderer::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void VulkanRenderer::TransitionImageLayout(VkImage image,
+                                           VkFormat format,
+                                           VkImageLayout oldLayout,
+                                           VkImageLayout newLayout)
 {
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
@@ -31,7 +34,8 @@ void VulkanRenderer::TransitionImageLayout(VkImage image, VkFormat format, VkIma
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -43,10 +47,14 @@ void VulkanRenderer::TransitionImageLayout(VkImage image, VkFormat format, VkIma
         throw std::runtime_error("Unsupported layout transition!");
     }
 
-    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(
+        commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer, VkImage image, uint32_t width, uint32_t height)
+void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer,
+                                                VkImage image,
+                                                uint32_t width,
+                                                uint32_t height)
 {
     VkCommandBufferAllocateInfo cmdAllocInfo{};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -78,8 +86,16 @@ void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer, VkImage 
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
 
     // Copy staging buffer to image
     VkBufferImageCopy region{};
@@ -92,8 +108,8 @@ void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer, VkImage 
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {width, height, 1};
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdCopyBufferToImage(
+        commandBuffer, stagingBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     // Transition to shader read
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -101,8 +117,16 @@ void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer, VkImage 
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
 
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -116,7 +140,10 @@ void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer, VkImage 
     vkFreeCommandBuffers(m_Device, m_CommandPool, 1, &commandBuffer);
 }
 
-void VulkanRenderer::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void VulkanRenderer::CopyBufferToImage(VkBuffer buffer,
+                                       VkImage image,
+                                       uint32_t width,
+                                       uint32_t height)
 {
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
@@ -131,7 +158,8 @@ void VulkanRenderer::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t 
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {width, height, 1};
 
-    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdCopyBufferToImage(
+        commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
 void VulkanRenderer::CreateTextureSampler()
@@ -154,12 +182,12 @@ void VulkanRenderer::CreateTextureSampler()
     VK_CHECK(vkCreateSampler(m_Device, &samplerInfo, nullptr, &m_TextureSampler));
 }
 
-VulkanRenderer::TextureResources &VulkanRenderer::GetOrCreateTexture(const Texture &texture)
+VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Texture& texture)
 {
     // Use the Texture object's address as the unique cache key.
     // Each Texture object occupies a unique memory location, so this guarantees
     // no collisions between different textures (unlike a size-based hash).
-    const Texture *textureKey = &texture;
+    const Texture* textureKey = &texture;
 
     // Check if texture already exists in cache
     auto it = m_TextureCache.find(textureKey);
@@ -207,10 +235,11 @@ VulkanRenderer::TextureResources &VulkanRenderer::GetOrCreateTexture(const Textu
     }
 
     // Texture doesn't have Vulkan resources yet - need to create them
-    // But we can't call CreateVulkanTexture from here because we don't have access to the Texture's private methods
-    // So we'll return white texture for now and log a warning
-    std::cerr << "Warning: Texture " << static_cast<const void *>(textureKey) << " (size " << width << "x" << height
-              << ") not uploaded to Vulkan yet. Using white texture fallback." << std::endl;
+    // But we can't call CreateVulkanTexture from here because we don't have access to the Texture's
+    // private methods So we'll return white texture for now and log a warning
+    std::cerr << "Warning: Texture " << static_cast<const void*>(textureKey) << " (size " << width
+              << "x" << height << ") not uploaded to Vulkan yet. Using white texture fallback."
+              << std::endl;
     std::cerr.flush();
 #endif
 
@@ -223,4 +252,3 @@ VulkanRenderer::TextureResources &VulkanRenderer::GetOrCreateTexture(const Textu
     m_TextureCache[textureKey] = resources;
     return m_TextureCache[textureKey];
 }
-

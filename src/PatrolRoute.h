@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <glm/glm.hpp>
+#include <vector>
 
 class Tilemap;
 
@@ -162,7 +162,10 @@ public:
      * @param maxRouteLength Upper bound for collected route tiles/steps (default: 100).
      * @return `true` if valid route created (>= 2 waypoints).
      */
-    bool Initialize(int startTileX, int startTileY, const Tilemap *tilemap, int maxRouteLength = 100);
+    bool Initialize(int startTileX,
+                    int startTileY,
+                    const Tilemap* tilemap,
+                    int maxRouteLength = 100);
 
     /**
      * @brief Get the next waypoint and advance iteration.
@@ -174,7 +177,7 @@ public:
      * @param[out] tileY Target tile row.
      * @return `true` if valid waypoint returned.
      */
-    bool GetNextWaypoint(int &tileX, int &tileY);
+    bool GetNextWaypoint(int& tileX, int& tileY);
 
     /**
      * @brief Get current waypoint index.
@@ -222,9 +225,9 @@ private:
      * @param maxLength Maximum path length.
      */
     void DFSTraversal(glm::ivec2 current,
-                      std::vector<bool> &visited,
-                      std::vector<glm::ivec2> &path,
-                      const Tilemap *tilemap,
+                      std::vector<bool>& visited,
+                      std::vector<glm::ivec2>& path,
+                      const Tilemap* tilemap,
                       size_t maxLength);
 
     /**
@@ -235,7 +238,7 @@ private:
      * @param tilemap Tilemap for navigation queries.
      * @return Vector of valid neighbor coordinates.
      */
-    std::vector<glm::ivec2> GetValidNeighbors(int tileX, int tileY, const Tilemap *tilemap) const;
+    std::vector<glm::ivec2> GetValidNeighbors(int tileX, int tileY, const Tilemap* tilemap) const;
 
     /**
      * @brief Check if a tile is walkable.
@@ -245,7 +248,7 @@ private:
      * @param tilemap Tilemap for navigation queries.
      * @return `true` if tile is walkable.
      */
-    bool IsValidTile(int tileX, int tileY, const Tilemap *tilemap) const;
+    bool IsValidTile(int tileX, int tileY, const Tilemap* tilemap) const;
 
     /**
      * @brief Check if two tiles are adjacent (Manhattan distance = 1).
@@ -253,10 +256,10 @@ private:
      * @param b Second tile.
      * @return `true` if cardinally adjacent.
      */
-    bool AreAdjacent(const glm::ivec2 &a, const glm::ivec2 &b) const;
+    bool AreAdjacent(const glm::ivec2& a, const glm::ivec2& b) const;
 
-    std::vector<glm::ivec2> m_Waypoints;      ///< Patrol waypoints (includes backtracks).
-    int m_CurrentWaypointIndex{0};            ///< Current position in waypoint array.
-    bool m_IsClosed{false};                   ///< True = loop mode, false = ping-pong.
-    bool m_PingPongForward{true};             ///< Direction for ping-pong traversal.
+    std::vector<glm::ivec2> m_Waypoints;  ///< Patrol waypoints (includes backtracks).
+    int m_CurrentWaypointIndex{0};        ///< Current position in waypoint array.
+    bool m_IsClosed{false};               ///< True = loop mode, false = ping-pong.
+    bool m_PingPongForward{true};         ///< Direction for ping-pong traversal.
 };

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "Tilemap.h"
-#include "PlayerCharacter.h"
+#include "IRenderer.h"
 #include "NonPlayerCharacter.h"
 #include "ParticleSystem.h"
-#include "IRenderer.h"
+#include "PlayerCharacter.h"
+#include "Tilemap.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -117,7 +117,7 @@ public:
      * @brief Initialize editor with available NPC types.
      * @param npcTypes List of NPC sprite paths.
      */
-    void Initialize(const std::vector<std::string> &npcTypes);
+    void Initialize(const std::vector<std::string>& npcTypes);
 
     bool IsActive() const { return m_EditorMode; }
     void SetActive(bool active);
@@ -166,28 +166,36 @@ private:
     void RenderNoProjectionOverlays(const EditorContext& ctx);
     void RenderNoProjectionAnchorsImpl(const EditorContext& ctx);
     void RenderStructureOverlays(const EditorContext& ctx);
-    void RenderLayerFlagOverlays(const EditorContext& ctx,bool editMode,
-                                  bool (Tilemap::*getter)(int, int, size_t) const,
-                                  const glm::vec3& color);
+    void RenderLayerFlagOverlays(const EditorContext& ctx,
+                                 bool editMode,
+                                 bool (Tilemap::*getter)(int, int, size_t) const,
+                                 const glm::vec3& color);
     void RenderYSortPlusOverlays(const EditorContext& ctx);
     void RenderYSortMinusOverlays(const EditorContext& ctx);
     void RenderParticleZoneOverlays(const EditorContext& ctx);
     void RenderNPCDebugInfo(const EditorContext& ctx);
     void RenderCornerCuttingOverlays(const EditorContext& ctx);
-    void RenderLayerOverlay(const EditorContext& ctx,int layerIndex, const glm::vec4& color);
+    void RenderLayerOverlay(const EditorContext& ctx, int layerIndex, const glm::vec4& color);
     void RenderPlacementPreview(const EditorContext& ctx);
 
     void RecalculateNPCPatrolRoutes(const EditorContext& ctx);
 
     void CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const;
     float GetCompensatedTileRotation() const;
-    void SetLayerFlagAtTile(const EditorContext& ctx,int tileX, int tileY,
+    void SetLayerFlagAtTile(const EditorContext& ctx,
+                            int tileX,
+                            int tileY,
                             void (Tilemap::*setter)(int, int, size_t, bool),
                             const std::string& flagName);
 
-    struct TileZoneRect { float x, y, w, h; };
-    TileZoneRect CalculateParticleZoneRect(float worldX, float worldY,
-                                           int tileWidth, int tileHeight) const;
+    struct TileZoneRect
+    {
+        float x, y, w, h;
+    };
+    TileZoneRect CalculateParticleZoneRect(float worldX,
+                                           float worldY,
+                                           int tileWidth,
+                                           int tileHeight) const;
 
     /// @name Mode Flags
     /// @{

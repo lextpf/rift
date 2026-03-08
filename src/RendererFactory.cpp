@@ -5,7 +5,6 @@
 #include <iostream>
 #include <memory>
 
-
 // Checks if a renderer API was compiled into this build.
 bool IsRendererAvailable(RendererAPI api)
 {
@@ -25,9 +24,10 @@ bool IsRendererAvailable(RendererAPI api)
 // Creates a renderer instance for the requested API.
 // Falls back to OpenGL if the requested API is unavailable.
 // Returns nullptr if no renderer can be created.
-std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow *window)
+std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
 {
-    std::cout << "CreateRenderer() called with API: " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+    std::cout << "CreateRenderer() called with API: "
+              << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
     std::cout.flush();
 
     if (!IsRendererAvailable(api))
@@ -55,7 +55,7 @@ std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow *window)
                 std::cout.flush();
                 return renderer;
             }
-            catch (const std::exception &e)
+            catch (const std::exception& e)
             {
                 std::cerr << "Exception creating Vulkan renderer: " << e.what() << std::endl;
                 std::cerr.flush();

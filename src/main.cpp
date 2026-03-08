@@ -1,5 +1,5 @@
-/*  ==============================================================================================  *
- *                                                                                                
+/*  ============================================================================================== *
+ *
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠳⣶⡤
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⣾⣦⡀
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣈⣻⡧⢀
@@ -12,10 +12,10 @@
  *           ###    ### ########### ###            ###        ⠀⠀⠀⠀⢸⡏⣾⡿⠁⠀⠀⠀⢿⣼⣷⠁
  *                                                            ⠀⠀⠀⠀⠘⠷⢿⣧⡀⠀⠀⠀⠈⠛⢿⣆
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠈
- *                                  << G A M E   E N G I N E >>                        
- *                                                                                                  
- *  ==============================================================================================  *
- * 
+ *                                  << G A M E   E N G I N E >>
+ *
+ *  ============================================================================================== *
+ *
  *      A 2.5D game engine featuring dual graphics backends (OpenGL 4.6 &
  *      Vulkan 1.0), dynamic day/night cycles, tile-based worlds, NPC
  *      pathfinding, and a built-in level editor.
@@ -32,11 +32,11 @@
 #include <iostream>
 
 #ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#include <fcntl.h>
-#include <signal.h>
 #include <eh.h>
+#include <fcntl.h>
+#include <io.h>
+#include <signal.h>
+#include <windows.h>
 
 /**
  * @brief Signal-based crash handler for fatal errors.
@@ -55,7 +55,7 @@ void CrashHandler(int sig)
     exit(1);
 }
 
-#endif // _WIN32
+#endif  // _WIN32
 
 int main()
 {
@@ -68,15 +68,17 @@ int main()
     signal(SIGINT, CrashHandler);
 
     // Translate structured exceptions (SEH) to C++ exceptions
-    _set_se_translator([](unsigned int code, struct _EXCEPTION_POINTERS *ep)
-                       {
-        (void)ep; // Unused parameter
+    _set_se_translator(
+        [](unsigned int code, struct _EXCEPTION_POINTERS* ep)
+        {
+            (void)ep;  // Unused parameter
 
-        std::ofstream logFile("rift.txt", std::ios::app);
-        logFile << "SEH EXCEPTION: Code " << code << std::endl;
-        logFile.flush();
-        logFile.close();
-        throw std::runtime_error("SEH Exception"); });
+            std::ofstream logFile("rift.txt", std::ios::app);
+            logFile << "SEH EXCEPTION: Code " << code << std::endl;
+            logFile.flush();
+            logFile.close();
+            throw std::runtime_error("SEH Exception");
+        });
 #endif
 
     // ------------------------------------------------------------------------
@@ -91,9 +93,9 @@ int main()
 #ifdef _WIN32
     if (AllocConsole())
     {
-        FILE *pCout;
-        FILE *pCin;
-        FILE *pCerr;
+        FILE* pCout;
+        FILE* pCin;
+        FILE* pCerr;
 
         freopen_s(&pCout, "CONOUT$", "w", stdout);
         freopen_s(&pCin, "CONIN$", "r", stdin);
@@ -135,7 +137,7 @@ int main()
             game.SetTargetFps(500.0f);
             game.Run();
         }
-        catch (const std::exception &e)
+        catch (const std::exception& e)
         {
             std::cerr << "Exception during game loop: " << e.what() << std::endl;
             logFile << "EXCEPTION in game loop: " << e.what() << std::endl;
@@ -150,7 +152,7 @@ int main()
         game.Shutdown();
         std::cout << "Game shutdown complete" << std::endl;
     }
-    catch (const std::exception &e)
+    catch (const std::exception& e)
     {
         std::cerr << "Exception in main: " << e.what() << std::endl;
         std::cerr << "Press Enter to exit..." << std::endl;

@@ -1,34 +1,34 @@
 #include "PlayerCharacter.h"
-#include "Tilemap.h"
 #include "IRenderer.h"
+#include "Tilemap.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <optional>
-#include <glm/gtc/matrix_transform.hpp>
 
 namespace
 {
-    // Width of each player sprite frame in pixels.
-    constexpr float SPRITE_WIDTH_F = 32.0f;
+// Width of each player sprite frame in pixels.
+constexpr float SPRITE_WIDTH_F = 32.0f;
 
-    // Height of each player sprite frame in pixels.
-    constexpr float SPRITE_HEIGHT_F = 32.0f;
+// Height of each player sprite frame in pixels.
+constexpr float SPRITE_HEIGHT_F = 32.0f;
 
-    // Half the sprite height (for split rendering).
-    constexpr float SPRITE_HALF_HEIGHT = 16.0f;
+// Half the sprite height (for split rendering).
+constexpr float SPRITE_HALF_HEIGHT = 16.0f;
 
-    // Number of walking animation frames per direction.
-    constexpr int WALK_FRAMES = 3;
+// Number of walking animation frames per direction.
+constexpr int WALK_FRAMES = 3;
 
-    // NPC hitbox height for player-NPC collision checks.
-    constexpr float NPC_HITBOX_HEIGHT = 16.0f;
+// NPC hitbox height for player-NPC collision checks.
+constexpr float NPC_HITBOX_HEIGHT = 16.0f;
 
-    // Maximum slide distance for corner-cutting (pixels).
-    constexpr float MAX_SLIDE_DISTANCE = 16.0f;
-}
+// Maximum slide distance for corner-cutting (pixels).
+constexpr float MAX_SLIDE_DISTANCE = 16.0f;
+}  // namespace
 
 /* Animation frame duration in seconds (time per frame). */
 const float PlayerCharacter::ANIMATION_SPEED = 0.15f;
@@ -62,22 +62,22 @@ PlayerCharacter::PlayerCharacter()
 
 PlayerCharacter::~PlayerCharacter() = default;
 
-bool PlayerCharacter::LoadSpriteSheet(const std::string &path)
+bool PlayerCharacter::LoadSpriteSheet(const std::string& path)
 {
     return m_SpriteSheet.LoadFromFile(path);
 }
 
-bool PlayerCharacter::LoadRunningSpriteSheet(const std::string &path)
+bool PlayerCharacter::LoadRunningSpriteSheet(const std::string& path)
 {
     return m_RunningSpriteSheet.LoadFromFile(path);
 }
 
-bool PlayerCharacter::LoadBicycleSpriteSheet(const std::string &path)
+bool PlayerCharacter::LoadBicycleSpriteSheet(const std::string& path)
 {
     return m_BicycleSpriteSheet.LoadFromFile(path);
 }
 
-void PlayerCharacter::UploadTextures(IRenderer &renderer)
+void PlayerCharacter::UploadTextures(IRenderer& renderer)
 {
     // Upload all sprite textures to the renderer
     // This is needed when switching renderers to recreate textures in the new context
@@ -86,7 +86,9 @@ void PlayerCharacter::UploadTextures(IRenderer &renderer)
     renderer.UploadTexture(m_BicycleSpriteSheet);
 }
 
-void PlayerCharacter::SetCharacterAsset(CharacterType characterType, const std::string &spriteType, const std::string &path)
+void PlayerCharacter::SetCharacterAsset(CharacterType characterType,
+                                        const std::string& spriteType,
+                                        const std::string& path)
 {
     s_CharacterAssets[std::make_pair(characterType, spriteType)] = path;
 }
@@ -94,12 +96,13 @@ void PlayerCharacter::SetCharacterAsset(CharacterType characterType, const std::
 bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 {
     // Character type names for logging
-    static const char *typeNames[] = {"BW1_MALE", "BW1_FEMALE", "BW2_MALE", "BW2_FEMALE", "CC_FEMALE"};
+    static const char* typeNames[] = {
+        "BW1_MALE", "BW1_FEMALE", "BW2_MALE", "BW2_FEMALE", "CC_FEMALE"};
     int typeIdx = static_cast<int>(characterType);
-    const char *typeName = (typeIdx >= 0 && typeIdx < 5) ? typeNames[typeIdx] : "UNKNOWN";
+    const char* typeName = (typeIdx >= 0 && typeIdx < 5) ? typeNames[typeIdx] : "UNKNOWN";
 
     // Lambda: Resolve asset path from registry
-    auto getAssetPath = [characterType, typeName](const std::string &spriteType) -> std::string
+    auto getAssetPath = [characterType, typeName](const std::string& spriteType) -> std::string
     {
         auto key = std::make_pair(characterType, spriteType);
         auto it = s_CharacterAssets.find(key);
@@ -112,14 +115,14 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
     };
 
     // Lambda: Attempt load with fallback to parent directory
-    auto tryLoad = [](Texture &target, const std::string &path) -> bool
+    auto tryLoad = [](Texture& target, const std::string& path) -> bool
     {
         if (path.empty())
             return false;
 
         if (target.LoadFromFile(path))
             return true;
-        return target.LoadFromFile("../" + path); // Try parent directory
+        return target.LoadFromFile("../" + path);  // Try parent directory
     };
 
     Texture newWalking;
@@ -153,7 +156,7 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
     return true;
 }
 
-bool PlayerCharacter::CopyAppearanceFrom(const std::string &spritePath)
+bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
 {
     // Load the NPC sprite sheet as all player sprites
     // NPC sprites use the same layout as player sprites
@@ -197,15 +200,22 @@ void PlayerCharacter::RestoreOriginalAppearance()
     std::cout << "Restored original appearance" << std::endl;
 }
 
-void PlayerCharacter::SetRunning(bool running) { m_IsRunning = running; }
-void PlayerCharacter::SetBicycling(bool bicycling) { m_IsBicycling = bicycling; }
+void PlayerCharacter::SetRunning(bool running)
+{
+    m_IsRunning = running;
+}
+void PlayerCharacter::SetBicycling(bool bicycling)
+{
+    m_IsBicycling = bicycling;
+}
 
 void PlayerCharacter::Update(float deltaTime)
 {
     m_AnimationTime += deltaTime;
 
     // Running animation is 50% faster than walking
-    float animSpeed = (m_AnimationType == AnimationType::RUN) ? ANIMATION_SPEED * 0.5f : ANIMATION_SPEED;
+    float animSpeed =
+        (m_AnimationType == AnimationType::RUN) ? ANIMATION_SPEED * 0.5f : ANIMATION_SPEED;
 
     if (m_AnimationTime >= animSpeed)
     {
@@ -224,11 +234,12 @@ void PlayerCharacter::Update(float deltaTime)
     UpdateElevation(deltaTime);
 }
 
-void PlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos)
+void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
 {
     // Get UV coordinates for current animation frame
     // Pass renderer's Y-flip requirement for correct sprite sheet row selection
-    glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
+    glm::vec2 spriteCoords =
+        GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
 
     // Screen-space bottom-center position
     glm::vec2 bottomCenter = m_Position - cameraPos;
@@ -236,7 +247,8 @@ void PlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos)
     // Apply elevation BEFORE projection (moves sprite up on stairs)
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -248,8 +260,10 @@ void PlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos)
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             // Position-only perspective: project the bottom-center through 3D transformation
             // This places the player at the correct depth in the scene without scaling the sprite
@@ -276,21 +290,28 @@ void PlayerCharacter::Render(IRenderer &renderer, glm::vec2 cameraPos)
     }*/
 
     // Select sprite sheet based on movement mode
-    const Texture &sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
                            : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
                                                                      : m_SpriteSheet;
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet, renderPos, glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
-                              spriteCoords, glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F), 0.0f, glm::vec3(1.0f), false);
+    renderer.DrawSpriteRegion(sheet,
+                              renderPos,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
+                              spriteCoords,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
     renderer.SuspendPerspective(false);
 }
 
-void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
+void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
 {
     // Get UV coordinates for current animation frame
-    glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
+    glm::vec2 spriteCoords =
+        GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
 
     // Screen-space bottom-center position
     glm::vec2 bottomCenter = m_Position - cameraPos;
@@ -298,7 +319,8 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
     // Apply elevation to bottom-center BEFORE projection
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -310,8 +332,10 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             bottomCenter = renderer.ProjectPoint(bottomCenter);
         }
@@ -335,7 +359,7 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
     }*/
 
     // Select sprite sheet based on movement mode
-    const Texture &sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
                            : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
                                                                      : m_SpriteSheet;
 
@@ -346,15 +370,22 @@ void PlayerCharacter::RenderBottomHalf(IRenderer &renderer, glm::vec2 cameraPos)
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet, bottomRenderPos, glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              bottomSpriteCoords, glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT), 0.0f, glm::vec3(1.0f), false);
+    renderer.DrawSpriteRegion(sheet,
+                              bottomRenderPos,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                              bottomSpriteCoords,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
     renderer.SuspendPerspective(false);
 }
 
-void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
+void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
 {
     // Get UV coordinates for current animation frame
-    glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
+    glm::vec2 spriteCoords =
+        GetSpriteCoords(m_CurrentFrame, m_Direction, m_AnimationType, renderer.RequiresYFlip());
 
     // Screen-space bottom-center position
     glm::vec2 bottomCenter = m_Position - cameraPos;
@@ -362,7 +393,8 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     // Apply elevation to bottom-center BEFORE projection
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around artifacts)
+    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
+    // artifacts)
     auto perspState = renderer.GetPerspectiveState();
     if (perspState.enabled)
     {
@@ -374,8 +406,10 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
         float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
 
-        if (bottomCenter.x >= -widthPadding && bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding && bottomCenter.y <= perspState.viewHeight + heightPadding)
+        if (bottomCenter.x >= -widthPadding &&
+            bottomCenter.x <= perspState.viewWidth + widthPadding &&
+            bottomCenter.y >= -heightPadding &&
+            bottomCenter.y <= perspState.viewHeight + heightPadding)
         {
             bottomCenter = renderer.ProjectPoint(bottomCenter);
         }
@@ -399,7 +433,7 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
     }*/
 
     // Select sprite sheet based on movement mode
-    const Texture &sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
                            : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
                                                                      : m_SpriteSheet;
 
@@ -408,27 +442,34 @@ void PlayerCharacter::RenderTopHalf(IRenderer &renderer, glm::vec2 cameraPos)
 
     // Suspend perspective - we already projected the position, don't double-project
     renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet, renderPos, glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              topSpriteCoords, glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT), 0.0f, glm::vec3(1.0f), false);
+    renderer.DrawSpriteRegion(sheet,
+                              renderPos,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                              topSpriteCoords,
+                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                              0.0f,
+                              glm::vec3(1.0f),
+                              false);
     renderer.SuspendPerspective(false);
 }
 
 float PlayerCharacter::CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon)
 {
     deltaTime = std::max(0.0f, deltaTime);
-    settleTime = std::max(1e-5f, settleTime); // Prevent division by zero
+    settleTime = std::max(1e-5f, settleTime);  // Prevent division by zero
     float alpha = 1.0f - std::pow(epsilon, deltaTime / settleTime);
     return std::clamp(alpha, 0.0f, 1.0f);
 }
 
-bool PlayerCharacter::CollidesWithNPC(const glm::vec2 &bottomCenterPos, const std::vector<glm::vec2> *npcPositions) const
+bool PlayerCharacter::CollidesWithNPC(const glm::vec2& bottomCenterPos,
+                                      const std::vector<glm::vec2>* npcPositions) const
 {
     if (!npcPositions || npcPositions->empty())
         return false;
 
     // Hitbox dimensions
-    constexpr float NPC_HALF_W = 8.0f; // 8 pixels from center (16px wide)
-    constexpr float NPC_BOX_H = 16.0f; // 16 pixels up from bottomCenterPos
+    constexpr float NPC_HALF_W = 8.0f;  // 8 pixels from center (16px wide)
+    constexpr float NPC_BOX_H = 16.0f;  // 16 pixels up from bottomCenterPos
 
     // Epsilon-shrinking: Reduce AABB bounds by a small margin to prevent
     // false positives when entities are exactly touching but not overlapping.
@@ -442,7 +483,7 @@ bool PlayerCharacter::CollidesWithNPC(const glm::vec2 &bottomCenterPos, const st
     float playerMinY = bottomCenterPos.y - HITBOX_HEIGHT + EPS;
 
     // Test against each NPC
-    for (const auto &npcbottomCenterPos : *npcPositions)
+    for (const auto& npcbottomCenterPos : *npcPositions)
     {
         // Calculate NPC AABB (shrunk by epsilon)
         float npcMinX = npcbottomCenterPos.x - NPC_HALF_W + EPS;
@@ -451,14 +492,15 @@ bool PlayerCharacter::CollidesWithNPC(const glm::vec2 &bottomCenterPos, const st
         float npcMinY = npcbottomCenterPos.y - NPC_BOX_H + EPS;
 
         // AABB overlap test
-        if (playerMinX < npcMaxX && playerMaxX > npcMinX &&
-            playerMinY < npcMaxY && playerMaxY > npcMinY)
+        if (playerMinX < npcMaxX && playerMaxX > npcMinX && playerMinY < npcMaxY &&
+            playerMaxY > npcMinY)
             return true;
     }
     return false;
 }
 
-bool PlayerCharacter::CollidesWithTilesCenter(const glm::vec2 &bottomCenterPos, const Tilemap *tilemap) const
+bool PlayerCharacter::CollidesWithTilesCenter(const glm::vec2& bottomCenterPos,
+                                              const Tilemap* tilemap) const
 {
     if (!tilemap)
         return false;
@@ -477,14 +519,18 @@ bool PlayerCharacter::CollidesWithTilesCenter(const glm::vec2 &bottomCenterPos, 
     int tileY = static_cast<int>(std::floor((centerPos.y - EPS) / TILE_H));
 
     // Bounds check, out of map = no collision (allows walking off edge)
-    if (tileX < 0 || tileY < 0 || tileX >= tilemap->GetMapWidth() || tileY >= tilemap->GetMapHeight())
+    if (tileX < 0 || tileY < 0 || tileX >= tilemap->GetMapWidth() ||
+        tileY >= tilemap->GetMapHeight())
         return false;
 
     return tilemap->GetTileCollision(tileX, tileY);
 }
 
-bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, const Tilemap *tilemap,
-                                              int moveDx, int moveDy, bool diagonalInput) const
+bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
+                                              const Tilemap* tilemap,
+                                              int moveDx,
+                                              int moveDy,
+                                              bool diagonalInput) const
 {
     if (!tilemap)
         return false;
@@ -513,17 +559,14 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
     int tileY1 = static_cast<int>(std::floor(maxY / TILE_H));
 
     int playerTileX = static_cast<int>(std::floor(bottomCenterPos.x / TILE_W));
-    int playerTileY = static_cast<int>(std::floor((bottomCenterPos.y - TILE_H * 0.5f - EPS) / TILE_H));
+    int playerTileY =
+        static_cast<int>(std::floor((bottomCenterPos.y - TILE_H * 0.5f - EPS) / TILE_H));
 
     auto inBounds = [&](int x, int y)
-    {
-        return x >= 0 && y >= 0 && x < tilemap->GetMapWidth() && y < tilemap->GetMapHeight();
-    };
+    { return x >= 0 && y >= 0 && x < tilemap->GetMapWidth() && y < tilemap->GetMapHeight(); };
 
     auto tileBlocked = [&](int x, int y)
-    {
-        return !inBounds(x, y) || tilemap->GetTileCollision(x, y);
-    };
+    { return !inBounds(x, y) || tilemap->GetTileCollision(x, y); };
 
     float hitboxArea = (maxX - minX) * (maxY - minY);
 
@@ -542,7 +585,7 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
             float overlapRatio = (overlapW * overlapH) / hitboxArea;
 
             {
-                bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0)); // exactly one axis non-zero
+                bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0));  // exactly one axis non-zero
                 if (cardinalMove && !diagonalInput)
                 {
                     int dxT = tx - playerTileX;
@@ -558,7 +601,8 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                         constexpr float DIAGONAL_CORNER_ACTIVATION_PX = 4.0f;
 
                         if (forwardPenetration < DIAGONAL_CORNER_ACTIVATION_PX)
-                            continue; // too far -> don't let this diagonal corner tile influence us yet
+                            continue;  // too far -> don't let this diagonal corner tile influence
+                                       // us yet
                     }
                 }
             }
@@ -586,17 +630,17 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                     {
                         // Y+ is down in our world
                         if (tileAbove)
-                            movingInto = (moveDy < 0); // moving up into top wall
+                            movingInto = (moveDy < 0);  // moving up into top wall
                         if (tileBelow)
-                            movingInto = (moveDy > 0); // moving down into bottom wall
+                            movingInto = (moveDy > 0);  // moving down into bottom wall
                         // moveDy == 0 is OK (sliding sideways while scraping)
                     }
                     else
                     {
                         if (tileLeft)
-                            movingInto = (moveDx < 0); // moving left into left wall
+                            movingInto = (moveDx < 0);  // moving left into left wall
                         if (tileRight)
-                            movingInto = (moveDx > 0); // moving right into right wall
+                            movingInto = (moveDx > 0);  // moving right into right wall
                         // moveDx == 0 is OK (sliding vertically while scraping)
                     }
 
@@ -605,7 +649,8 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
 
                     // Only allow passive tolerance when we're clearly alongside a wall face.
                     // Near corners, faceOverlap gets small -> do NOT suppress collision there.
-                    if (!movingInto && penetrationPx <= PASSIVE_PENETRATION_PX && faceOverlap >= FACE_CONTACT_MIN_PX)
+                    if (!movingInto && penetrationPx <= PASSIVE_PENETRATION_PX &&
+                        faceOverlap >= FACE_CONTACT_MIN_PX)
                         continue;
                 }
             }
@@ -641,8 +686,8 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
             bool isBottomLeftCorner = emptyBelow && emptyLeft && !blBlocked;
             bool isBottomRightCorner = emptyBelow && emptyRight && !brBlocked;
 
-            bool isTrueCorner = isTopLeftCorner || isTopRightCorner ||
-                                isBottomLeftCorner || isBottomRightCorner;
+            bool isTrueCorner =
+                isTopLeftCorner || isTopRightCorner || isBottomLeftCorner || isBottomRightCorner;
 
             // When moving horizontally, tolerate small overlaps with tiles above/below
             // When moving vertically, tolerate small overlaps with tiles left/right
@@ -652,7 +697,8 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                 float tileCenterX = (tileMinX + tileMaxX) * 0.5f;
                 float tileCenterY = (tileMinY + tileMaxY) * 0.5f;
 
-                bool tileIsAboveOrBelow = std::abs(hitboxCenter.y - tileCenterY) > std::abs(hitboxCenter.x - tileCenterX);
+                bool tileIsAboveOrBelow =
+                    std::abs(hitboxCenter.y - tileCenterY) > std::abs(hitboxCenter.x - tileCenterX);
                 bool tileIsLeftOrRight = !tileIsAboveOrBelow;
 
                 // Moving horizontally and tile is above/below = side wall, tolerate
@@ -679,7 +725,7 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                         return 1;
                     if (v < -eps)
                         return -1;
-                    return 0; // near center
+                    return 0;  // near center
                 };
 
                 float dx = hitboxCenter.x - tileCenterX;
@@ -688,8 +734,9 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                 int sx = sideSign(dx, CORNER_QUAD_EPS);
                 int sy = sideSign(dy, CORNER_QUAD_EPS);
 
-                // Tie-break when we're near the center using movement direction (approach direction).
-                // If we're moving right, we are approaching the blocking tile from the left, etc.
+                // Tie-break when we're near the center using movement direction (approach
+                // direction). If we're moving right, we are approaching the blocking tile from the
+                // left, etc.
                 if (sx == 0)
                 {
                     if (moveDx > 0)
@@ -701,9 +748,9 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                 {
                     // Y+ is down in our world
                     if (moveDy > 0)
-                        sy = -1; // moving down -> approaching from above
+                        sy = -1;  // moving down -> approaching from above
                     else if (moveDy < 0)
-                        sy = 1; // moving up -> approaching from below
+                        sy = 1;  // moving up -> approaching from below
                 }
 
                 bool playerLeftOfTile = (sx < 0);
@@ -711,11 +758,12 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                 bool playerAboveTile = (sy < 0);
                 bool playerBelowTile = (sy > 0);
 
-                // If both movement axes are pushing directly into blocked faces (solid rectangle corner),
-                // do not allow corner cutting - force a collision so we slide instead of clipping through.
-                bool movingIntoClosedCorner = diagonalInput &&
-                                              ((moveDx > 0 && !emptyRight) || (moveDx < 0 && !emptyLeft)) &&
-                                              ((moveDy > 0 && !emptyBelow) || (moveDy < 0 && !emptyAbove));
+                // If both movement axes are pushing directly into blocked faces (solid rectangle
+                // corner), do not allow corner cutting - force a collision so we slide instead of
+                // clipping through.
+                bool movingIntoClosedCorner =
+                    diagonalInput && ((moveDx > 0 && !emptyRight) || (moveDx < 0 && !emptyLeft)) &&
+                    ((moveDy > 0 && !emptyBelow) || (moveDy < 0 && !emptyAbove));
                 if (movingIntoClosedCorner)
                     return true;
 
@@ -727,7 +775,8 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                 auto hasEscapeRoute = [&](int escapeX, int escapeY) -> bool
                 {
                     // Check if moving in the escape direction leads to open space
-                    glm::vec2 escapePos = bottomCenterPos + glm::vec2(escapeX * TILE_W * 0.5f, escapeY * TILE_H * 0.5f);
+                    glm::vec2 escapePos = bottomCenterPos + glm::vec2(escapeX * TILE_W * 0.5f,
+                                                                      escapeY * TILE_H * 0.5f);
 
                     float escMinX = escapePos.x - HALF_W + EPS;
                     float escMaxX = escapePos.x + HALF_W - EPS;
@@ -749,8 +798,10 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
                                 float etMinX = etx * TILE_W, etMaxX = (etx + 1) * TILE_W;
                                 float etMinY = ety * TILE_H, etMaxY = (ety + 1) * TILE_H;
 
-                                float eOverlapW = std::max(0.0f, std::min(escMaxX, etMaxX) - std::max(escMinX, etMinX));
-                                float eOverlapH = std::max(0.0f, std::min(escMaxY, etMaxY) - std::max(escMinY, etMinY));
+                                float eOverlapW = std::max(
+                                    0.0f, std::min(escMaxX, etMaxX) - std::max(escMinX, etMinX));
+                                float eOverlapH = std::max(
+                                    0.0f, std::min(escMaxY, etMaxY) - std::max(escMinY, etMinY));
 
                                 // Significant overlap at escape position = blocked
                                 if (eOverlapW > 2.0f && eOverlapH > 2.0f)
@@ -784,22 +835,26 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
 
                 if (diagonalInput && !canCutThisCorner)
                 {
-                    if (isTopLeftCorner && playerAboveTile && playerLeftOfTile && moveDx > 0 && moveDy > 0)
+                    if (isTopLeftCorner && playerAboveTile && playerLeftOfTile && moveDx > 0 &&
+                        moveDy > 0)
                     {
                         if (hasEscapeRoute(0, -1) || hasEscapeRoute(-1, 0))
                             canCutThisCorner = true;
                     }
-                    if (isTopRightCorner && playerAboveTile && playerRightOfTile && moveDx < 0 && moveDy > 0)
+                    if (isTopRightCorner && playerAboveTile && playerRightOfTile && moveDx < 0 &&
+                        moveDy > 0)
                     {
                         if (hasEscapeRoute(0, -1) || hasEscapeRoute(1, 0))
                             canCutThisCorner = true;
                     }
-                    if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile && moveDx > 0 && moveDy < 0)
+                    if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile && moveDx > 0 &&
+                        moveDy < 0)
                     {
                         if (hasEscapeRoute(0, 1) || hasEscapeRoute(-1, 0))
                             canCutThisCorner = true;
                     }
-                    if (isBottomRightCorner && playerBelowTile && playerRightOfTile && moveDx < 0 && moveDy < 0)
+                    if (isBottomRightCorner && playerBelowTile && playerRightOfTile && moveDx < 0 &&
+                        moveDy < 0)
                     {
                         if (hasEscapeRoute(0, 1) || hasEscapeRoute(1, 0))
                             canCutThisCorner = true;
@@ -808,12 +863,14 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
 
                 if (canCutThisCorner)
                 {
-                    // For cardinal movement, judge "corner scrape" by perpendicular penetration (px),
-                    // not by overlap area (which gets harsh when you're 1px off).
+                    // For cardinal movement, judge "corner scrape" by perpendicular penetration
+                    // (px), not by overlap area (which gets harsh when you're 1px off).
                     bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0)) && !diagonalInput;
                     if (cardinalMove)
                     {
-                        float perpPenPx = (moveDx != 0) ? overlapH : overlapW; // moving horizontal -> perp is Y overlap
+                        float perpPenPx = (moveDx != 0)
+                                              ? overlapH
+                                              : overlapW;  // moving horizontal -> perp is Y overlap
                         constexpr float CORNER_PERP_PX = 4.0f;
                         if (perpPenPx <= CORNER_PERP_PX)
                             continue;
@@ -832,9 +889,13 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2 &bottomCenterPos, 
     return false;
 }
 
-bool PlayerCharacter::CollidesAt(const glm::vec2 &bottomCenterPos, const Tilemap *tilemap,
-                                 const std::vector<glm::vec2> *npcPositions, bool sprintMode,
-                                 int moveDx, int moveDy, bool diagonalInput) const
+bool PlayerCharacter::CollidesAt(const glm::vec2& bottomCenterPos,
+                                 const Tilemap* tilemap,
+                                 const std::vector<glm::vec2>* npcPositions,
+                                 bool sprintMode,
+                                 int moveDx,
+                                 int moveDy,
+                                 bool diagonalInput) const
 {
     bool tileCollision = false;
 
@@ -846,13 +907,15 @@ bool PlayerCharacter::CollidesAt(const glm::vec2 &bottomCenterPos, const Tilemap
     }
     else
     {
-        tileCollision = CollidesWithTilesStrict(bottomCenterPos, tilemap, moveDx, moveDy, diagonalInput);
+        tileCollision =
+            CollidesWithTilesStrict(bottomCenterPos, tilemap, moveDx, moveDy, diagonalInput);
     }
 
     return tileCollision || CollidesWithNPC(bottomCenterPos, npcPositions);
 }
 
-bool PlayerCharacter::IsCornerPenetration(const glm::vec2 &bottomCenterPos, const Tilemap *tilemap) const
+bool PlayerCharacter::IsCornerPenetration(const glm::vec2& bottomCenterPos,
+                                          const Tilemap* tilemap) const
 {
     if (!tilemap)
         return false;
@@ -917,8 +980,8 @@ bool PlayerCharacter::IsCornerPenetration(const glm::vec2 &bottomCenterPos, cons
     return hasRowDiff && hasColDiff;
 }
 
-glm::vec2 PlayerCharacter::ComputeSprintCornerEject(const Tilemap *tilemap,
-                                                    const std::vector<glm::vec2> *npcPositions,
+glm::vec2 PlayerCharacter::ComputeSprintCornerEject(const Tilemap* tilemap,
+                                                    const std::vector<glm::vec2>* npcPositions,
                                                     glm::vec2 normalizedDir) const
 {
     if (!tilemap)
@@ -928,14 +991,14 @@ glm::vec2 PlayerCharacter::ComputeSprintCornerEject(const Tilemap *tilemap,
         return glm::vec2(0.0f);
 
     if (glm::length(normalizedDir) < 0.001f)
-        normalizedDir = glm::vec2(0.0f, -1.0f); // default bias upward to avoid zero
+        normalizedDir = glm::vec2(0.0f, -1.0f);  // default bias upward to avoid zero
 
     // Search for the nearest offset (within a small radius) that is clear in STRICT mode.
-    const int MAX_STEP = 8; // half a tile
+    const int MAX_STEP = 8;  // half a tile
     float bestScore = std::numeric_limits<float>::max();
     glm::vec2 bestOffset(0.0f);
 
-    auto clearStrict = [&](const glm::vec2 &pos)
+    auto clearStrict = [&](const glm::vec2& pos)
     {
         return !CollidesWithTilesStrict(pos, tilemap, 0, 0, false) &&
                !CollidesWithNPC(pos, npcPositions);
@@ -972,11 +1035,10 @@ glm::vec2 PlayerCharacter::ComputeSprintCornerEject(const Tilemap *tilemap,
     return bestOffset;
 }
 
-glm::vec2 PlayerCharacter::GetCornerSlideDirection(
-    const glm::vec2 &testPos,
-    const Tilemap *tilemap,
-    int /*moveDirX*/,
-    int /*moveDirY*/)
+glm::vec2 PlayerCharacter::GetCornerSlideDirection(const glm::vec2& testPos,
+                                                   const Tilemap* tilemap,
+                                                   int /*moveDirX*/,
+                                                   int /*moveDirY*/)
 {
     if (!tilemap)
         return glm::vec2(0.0f);
@@ -984,9 +1046,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     const float TILE_W = static_cast<float>(tilemap->GetTileWidth());
     const float TILE_H = static_cast<float>(tilemap->GetTileHeight());
 
-    auto signi = [](float v) -> int
-    { return (v > 0.001f) ? 1 : (v < -0.001f) ? -1
-                                              : 0; };
+    auto signi = [](float v) -> int { return (v > 0.001f) ? 1 : (v < -0.001f) ? -1 : 0; };
 
     glm::vec2 step = testPos - m_Position;
     bool horizontalPrimary = std::abs(step.x) >= std::abs(step.y);
@@ -994,9 +1054,10 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     // Use a fixed 1-pixel forward probe distance for corner detection.
     // This makes detection frame-rate independent - we're just checking IF a path exists,
     // not how far we can move this frame. The actual movement distance is handled separately.
-    float forwardSign = horizontalPrimary ? (step.x >= 0 ? 1.0f : -1.0f) : (step.y >= 0 ? 1.0f : -1.0f);
-    glm::vec2 forward = horizontalPrimary ? glm::vec2(forwardSign, 0.0f)
-                                          : glm::vec2(0.0f, forwardSign);
+    float forwardSign =
+        horizontalPrimary ? (step.x >= 0 ? 1.0f : -1.0f) : (step.y >= 0 ? 1.0f : -1.0f);
+    glm::vec2 forward =
+        horizontalPrimary ? glm::vec2(forwardSign, 0.0f) : glm::vec2(0.0f, forwardSign);
 
     auto tileBlocked = [&](int tx, int ty) -> bool
     {
@@ -1006,8 +1067,8 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     };
 
     // === Detect corner type based on the CLOSEST ACTUAL CORNER to player's center ===
-    // For multi-tile walls, only the END tiles are corners - middle tiles have no perpendicular opening
-    // We need to find the nearest tile that actually has a corner (perpendicular opening)
+    // For multi-tile walls, only the END tiles are corners - middle tiles have no perpendicular
+    // opening We need to find the nearest tile that actually has a corner (perpendicular opening)
     bool cornerEmptyAbove = false;
     bool cornerEmptyBelow = false;
     bool cornerEmptyLeft = false;
@@ -1025,9 +1086,10 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
         if (horizontalPrimary)
         {
             // Moving horizontally - find the closest CORNER tile in the forward column
-            forwardTileX = (step.x < 0)
-                               ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
-                               : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
+            forwardTileX =
+                (step.x < 0)
+                    ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
+                    : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
 
             int hitboxTopTileY = static_cast<int>(std::floor((testPos.y - HITBOX_HEIGHT) / TILE_H));
             int hitboxBottomTileY = static_cast<int>(std::floor((testPos.y - 0.01f) / TILE_H));
@@ -1042,7 +1104,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
                 bool hasOpenAbove = !tileBlocked(forwardTileX, ty - 1);
                 bool hasOpenBelow = !tileBlocked(forwardTileX, ty + 1);
                 if (!hasOpenAbove && !hasOpenBelow)
-                    continue; // This is a middle wall tile, not a corner
+                    continue;  // This is a middle wall tile, not a corner
 
                 foundAnyCorner = true;
                 float tileCenterY = (ty + 0.5f) * TILE_H;
@@ -1062,8 +1124,10 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
                                ? static_cast<int>(std::floor((testPos.y - HITBOX_HEIGHT) / TILE_H))
                                : static_cast<int>(std::floor(testPos.y / TILE_H));
 
-            int hitboxLeftTileX = static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W));
-            int hitboxRightTileX = static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH - 0.01f) / TILE_W));
+            int hitboxLeftTileX =
+                static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W));
+            int hitboxRightTileX =
+                static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH - 0.01f) / TILE_W));
 
             for (int tx = hitboxLeftTileX; tx <= hitboxRightTileX; ++tx)
             {
@@ -1075,7 +1139,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
                 bool hasOpenLeft = !tileBlocked(tx - 1, forwardTileY);
                 bool hasOpenRight = !tileBlocked(tx + 1, forwardTileY);
                 if (!hasOpenLeft && !hasOpenRight)
-                    continue; // This is a middle wall tile, not a corner
+                    continue;  // This is a middle wall tile, not a corner
 
                 foundAnyCorner = true;
                 float tileCenterX = (tx + 0.5f) * TILE_W;
@@ -1128,10 +1192,8 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
 
     // IMPORTANT: do NOT call CollidesWithTilesStrict with (0,0) here,
     // or your SIDE_WALL_TOLERANCE never runs.
-    auto hardTileBlocked = [&](const glm::vec2 &p, int dx, int dy) -> bool
-    {
-        return CollidesWithTilesStrict(p, tilemap, dx, dy, /*diagonalInput*/ false);
-    };
+    auto hardTileBlocked = [&](const glm::vec2& p, int dx, int dy) -> bool
+    { return CollidesWithTilesStrict(p, tilemap, dx, dy, /*diagonalInput*/ false); };
 
     struct Eval
     {
@@ -1145,7 +1207,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     // Only probe a short distance (about half a tile) to find nearby corners
     constexpr float MAX_PROBE = 10.0f;
 
-    auto evalDir = [&](const glm::vec2 &dir, float maxProbe) -> Eval
+    auto evalDir = [&](const glm::vec2& dir, float maxProbe) -> Eval
     {
         Eval e;
         e.dir = dir;
@@ -1190,24 +1252,24 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     }
 
     // Check if only ONE direction is geometrically valid
-    bool bothDirectionsOpen = horizontalPrimary
-                                  ? (cornerEmptyAbove && cornerEmptyBelow)
-                                  : (cornerEmptyLeft && cornerEmptyRight);
+    bool bothDirectionsOpen = horizontalPrimary ? (cornerEmptyAbove && cornerEmptyBelow)
+                                                : (cornerEmptyLeft && cornerEmptyRight);
 
     // Calculate player's offset from wall center to use as tiebreaker
-    float playerOffset = 0.0f; // Negative = toward dNeg, Positive = toward dPos
+    float playerOffset = 0.0f;  // Negative = toward dNeg, Positive = toward dPos
     {
         float hitboxCenterY = testPos.y - HITBOX_HEIGHT * 0.5f;
         int wallTileX, wallTileY;
 
         if (horizontalPrimary)
         {
-            wallTileX = (step.x < 0)
-                            ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
-                            : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
+            wallTileX =
+                (step.x < 0)
+                    ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
+                    : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
             wallTileY = static_cast<int>(std::floor(hitboxCenterY / TILE_H));
             float wallCenterY = (wallTileY + 0.5f) * TILE_H;
-            playerOffset = hitboxCenterY - wallCenterY; // Negative = above center (toward dNeg/up)
+            playerOffset = hitboxCenterY - wallCenterY;  // Negative = above center (toward dNeg/up)
         }
         else
         {
@@ -1216,7 +1278,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
                             : static_cast<int>(std::floor(testPos.y / TILE_H));
             wallTileX = static_cast<int>(std::floor(testPos.x / TILE_W));
             float wallCenterX = (wallTileX + 0.5f) * TILE_W;
-            playerOffset = testPos.x - wallCenterX; // Negative = left of center (toward dNeg/left)
+            playerOffset = testPos.x - wallCenterX;  // Negative = left of center (toward dNeg/left)
         }
     }
 
@@ -1235,12 +1297,13 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
             if (cornerEmptyBelow && !cornerEmptyAbove)
                 return {dPos, dNeg};
 
-            // Both directions open - use player offset as tiebreaker only if significantly off-center
-            // Threshold of 4.0 pixels ensures minor hitbox misalignment doesn't pull toward corners
+            // Both directions open - use player offset as tiebreaker only if significantly
+            // off-center Threshold of 4.0 pixels ensures minor hitbox misalignment doesn't pull
+            // toward corners
             if (playerOffset < -4.0f)
-                return {dNeg, dPos}; // Player above center -> prefer up
+                return {dNeg, dPos};  // Player above center -> prefer up
             if (playerOffset > 4.0f)
-                return {dPos, dNeg}; // Player below center -> prefer down
+                return {dPos, dNeg};  // Player below center -> prefer down
 
             // Nearly centered - use hysteresis/last input
             if (m_SlideHysteresisDir.y < 0.0f)
@@ -1266,12 +1329,13 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
             if (cornerEmptyRight && !cornerEmptyLeft)
                 return {dPos, dNeg};
 
-            // Both directions open - use player offset as tiebreaker only if significantly off-center
-            // Threshold of 4.0 pixels ensures minor hitbox misalignment doesn't pull toward corners
+            // Both directions open - use player offset as tiebreaker only if significantly
+            // off-center Threshold of 4.0 pixels ensures minor hitbox misalignment doesn't pull
+            // toward corners
             if (playerOffset < -4.0f)
-                return {dNeg, dPos}; // Player left of center -> prefer left
+                return {dNeg, dPos};  // Player left of center -> prefer left
             if (playerOffset > 4.0f)
-                return {dPos, dNeg}; // Player right of center -> prefer right
+                return {dPos, dNeg};  // Player right of center -> prefer right
 
             // Nearly centered - use hysteresis/last input
             if (m_SlideHysteresisDir.x < 0.0f)
@@ -1302,7 +1366,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
         b = evalDir(dirs[1], MAX_PROBE);
     }
 
-    auto pick = [&](const Eval &e1, const Eval &e2) -> glm::vec2
+    auto pick = [&](const Eval& e1, const Eval& e2) -> glm::vec2
     {
         // If only one direction was geometrically valid, only consider e1
         if (!bothDirectionsOpen)
@@ -1311,7 +1375,7 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
                 return e1.dir;
             if (e1.canSlideOnly)
                 return e1.dir;
-            return glm::vec2(0.0f); // Preferred direction failed -> stop
+            return glm::vec2(0.0f);  // Preferred direction failed -> stop
         }
 
         // Both directions geometrically valid
@@ -1347,9 +1411,10 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
         if (horizontalPrimary)
         {
             // Moving horizontally - blocking tile is in the forward column
-            blockTileX = (step.x < 0)
-                             ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
-                             : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
+            blockTileX =
+                (step.x < 0)
+                    ? static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W))
+                    : static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH) / TILE_W));
             // Find the tile we're actually sliding around (closest to hitbox center)
             int hitboxTopTileY = static_cast<int>(std::floor((testPos.y - HITBOX_HEIGHT) / TILE_H));
             int hitboxBottomTileY = static_cast<int>(std::floor((testPos.y - 0.01f) / TILE_H));
@@ -1375,8 +1440,10 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
             blockTileY = (step.y < 0)
                              ? static_cast<int>(std::floor((testPos.y - HITBOX_HEIGHT) / TILE_H))
                              : static_cast<int>(std::floor(testPos.y / TILE_H));
-            int hitboxLeftTileX = static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W));
-            int hitboxRightTileX = static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH - 0.01f) / TILE_W));
+            int hitboxLeftTileX =
+                static_cast<int>(std::floor((testPos.x - HALF_HITBOX_WIDTH) / TILE_W));
+            int hitboxRightTileX =
+                static_cast<int>(std::floor((testPos.x + HALF_HITBOX_WIDTH - 0.01f) / TILE_W));
             blockTileX = hitboxLeftTileX;
             float bestDist = std::numeric_limits<float>::max();
             for (int tx = hitboxLeftTileX; tx <= hitboxRightTileX; ++tx)
@@ -1440,9 +1507,9 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     if (glm::length(chosen) > 0.001f)
     {
         if (glm::length(m_SlideHysteresisDir) < 0.001f ||
-            glm::dot(chosen, m_SlideHysteresisDir) < 0.5f) // Direction changed significantly
+            glm::dot(chosen, m_SlideHysteresisDir) < 0.5f)  // Direction changed significantly
         {
-            m_SlideCommitTimer = 0.12f; // Commit to this direction for 120ms
+            m_SlideCommitTimer = 0.12f;  // Commit to this direction for 120ms
         }
         m_SlideHysteresisDir = chosen;
     }
@@ -1450,8 +1517,8 @@ glm::vec2 PlayerCharacter::GetCornerSlideDirection(
     return chosen;
 }
 
-glm::vec2 PlayerCharacter::FindClosestSafeTileCenter(const Tilemap *tilemap,
-                                                     const std::vector<glm::vec2> *npcPositions) const
+glm::vec2 PlayerCharacter::FindClosestSafeTileCenter(
+    const Tilemap* tilemap, const std::vector<glm::vec2>* npcPositions) const
 {
     if (!tilemap)
         return m_Position;
@@ -1492,8 +1559,10 @@ glm::vec2 PlayerCharacter::FindClosestSafeTileCenter(const Tilemap *tilemap,
     return bestCenter;
 }
 
-void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *tilemap,
-                           const std::vector<glm::vec2> *npcPositions)
+void PlayerCharacter::Move(glm::vec2 direction,
+                           float deltaTime,
+                           const Tilemap* tilemap,
+                           const std::vector<glm::vec2>* npcPositions)
 {
     // === No input: handle idle state ===
     if (glm::length(direction) < 0.1f)
@@ -1519,12 +1588,9 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
     // Deadzone prevents accidental diagonal input from slight analog drift
     auto signWithDeadzone = [](float v, float dz = 0.2f) -> int
     {
-        return (v > dz) ? 1 : (v < -dz) ? -1
-                                        : 0;
+        return (v > dz) ? 1 : (v < -dz) ? -1 : 0;
     };
-    auto signStep = [](float v) -> int
-    { return (v > 1e-4f) ? 1 : (v < -1e-4f) ? -1
-                                            : 0; };
+    auto signStep = [](float v) -> int { return (v > 1e-4f) ? 1 : (v < -1e-4f) ? -1 : 0; };
     int moveDx = signWithDeadzone(direction.x);
     int moveDy = signWithDeadzone(direction.y);
     bool diagonalInput = (moveDx != 0 && moveDy != 0);
@@ -1542,7 +1608,8 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
         m_Direction = (normalizedDir.y > 0) ? Direction::DOWN : Direction::UP;
 
     // Start or update animation
-    AnimationType targetAnim = (m_IsRunning || m_IsBicycling) ? AnimationType::RUN : AnimationType::WALK;
+    AnimationType targetAnim =
+        (m_IsRunning || m_IsBicycling) ? AnimationType::RUN : AnimationType::WALK;
     if (!m_IsMoving)
     {
         m_IsMoving = true;
@@ -1571,14 +1638,15 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
     {
         // Track last safe position
         if (!CollidesWithTilesStrict(m_Position, tilemap, 0, 0, false))
-            m_LastSafeTileCenter = GetCurrentTileCenter(static_cast<float>(tilemap->GetTileWidth()));
+            m_LastSafeTileCenter =
+                GetCurrentTileCenter(static_cast<float>(tilemap->GetTileWidth()));
 
         // Try full movement first
         glm::vec2 testPos = m_Position + desiredMovement;
         bool npcBlocked = CollidesWithNPC(testPos, npcPositions);
-        bool tileBlocked = sprintMode
-                               ? CollidesWithTilesCenter(testPos, tilemap)
-                               : CollidesWithTilesStrict(testPos, tilemap, moveDx, moveDy, diagonalInput);
+        bool tileBlocked =
+            sprintMode ? CollidesWithTilesCenter(testPos, tilemap)
+                       : CollidesWithTilesStrict(testPos, tilemap, moveDx, moveDy, diagonalInput);
         bool initiallyTileBlocked = tileBlocked;
 
         bool didCornerSlide = false;
@@ -1591,26 +1659,36 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
         else if (tileBlocked)
         {
             // 1) Try the real corner/slide solver FIRST (it can do slide+forward at corners)
-            glm::vec2 slideMovement = TrySlideMovement(
-                desiredMovement, normalizedDir, deltaTime, currentSpeed,
-                tilemap, npcPositions, sprintMode, moveDx, moveDy, diagonalInput);
+            glm::vec2 slideMovement = TrySlideMovement(desiredMovement,
+                                                       normalizedDir,
+                                                       deltaTime,
+                                                       currentSpeed,
+                                                       tilemap,
+                                                       npcPositions,
+                                                       sprintMode,
+                                                       moveDx,
+                                                       moveDy,
+                                                       diagonalInput);
 
             if (glm::length(slideMovement) > 0.001f)
             {
                 desiredMovement = slideMovement;
                 didCornerSlide = true;
-                tileBlocked = false; // we produced a non-blocked alternative
+                tileBlocked = false;  // we produced a non-blocked alternative
             }
             else
             {
-                // 2) Only if slide solver found nothing: fall back to axis-separated movement for diagonal input
+                // 2) Only if slide solver found nothing: fall back to axis-separated movement for
+                // diagonal input
                 if (diagonalInput)
                 {
                     glm::vec2 moveX(desiredMovement.x, 0.0f);
                     glm::vec2 moveY(0.0f, desiredMovement.y);
 
-                    bool okX = !CollidesAt(m_Position + moveX, tilemap, npcPositions, sprintMode, moveDx, 0, false);
-                    bool okY = !CollidesAt(m_Position + moveY, tilemap, npcPositions, sprintMode, 0, moveDy, false);
+                    bool okX = !CollidesAt(
+                        m_Position + moveX, tilemap, npcPositions, sprintMode, moveDx, 0, false);
+                    bool okY = !CollidesAt(
+                        m_Position + moveY, tilemap, npcPositions, sprintMode, 0, moveDy, false);
 
                     if (okX && !okY)
                     {
@@ -1640,13 +1718,24 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
         bool effDiagonal = (effDx != 0 && effDy != 0);
         if (!effDiagonal && !didCornerSlide && !initiallyTileBlocked)
         {
-            desiredMovement = ApplyLaneSnapping(
-                desiredMovement, normalizedDir, deltaTime,
-                tilemap, npcPositions, sprintMode, effDx, effDy);
+            desiredMovement = ApplyLaneSnapping(desiredMovement,
+                                                normalizedDir,
+                                                deltaTime,
+                                                tilemap,
+                                                npcPositions,
+                                                sprintMode,
+                                                effDx,
+                                                effDy);
         }
 
         // Final collision check
-        if (CollidesAt(m_Position + desiredMovement, tilemap, npcPositions, sprintMode, effDx, effDy, effDiagonal))
+        if (CollidesAt(m_Position + desiredMovement,
+                       tilemap,
+                       npcPositions,
+                       sprintMode,
+                       effDx,
+                       effDy,
+                       effDiagonal))
         {
             // Try axis-separated movement
             glm::vec2 tryX = m_Position + glm::vec2(desiredMovement.x, 0.0f);
@@ -1676,7 +1765,7 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
                     {
                         preferX = (diff > 0.0f);
                         m_AxisPreference = preferX ? 1 : -1;
-                        m_AxisCommitTimer = 0.15f; // Commit for 150ms
+                        m_AxisCommitTimer = 0.15f;  // Commit for 150ms
                     }
                     else
                     {
@@ -1716,7 +1805,8 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
                 {
                     float mid = (lo + hi) * 0.5f;
                     glm::vec2 tryPos = m_Position + dir * mid;
-                    if (!CollidesAt(tryPos, tilemap, npcPositions, sprintMode, finalDx, finalDy, finalDiag))
+                    if (!CollidesAt(
+                            tryPos, tilemap, npcPositions, sprintMode, finalDx, finalDy, finalDiag))
                         lo = mid;
                     else
                         hi = mid;
@@ -1726,10 +1816,11 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
             }
         }
 
-        // If sprint center-collision left us wedged in a corner pocket, shove out using strict collision.
-        // High FPS fix: Also check when current position OR target position has corner penetration,
-        // not just when movement is zero. At high FPS, small movements pass center collision repeatedly,
-        // letting the player creep into corner pockets where hitbox edges overlap tiles but center doesn't.
+        // If sprint center-collision left us wedged in a corner pocket, shove out using strict
+        // collision. High FPS fix: Also check when current position OR target position has corner
+        // penetration, not just when movement is zero. At high FPS, small movements pass center
+        // collision repeatedly, letting the player creep into corner pockets where hitbox edges
+        // overlap tiles but center doesn't.
         if (sprintMode && diagonalInput)
         {
             glm::vec2 targetPos = m_Position + desiredMovement;
@@ -1739,7 +1830,8 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
 
             if (glm::length(desiredMovement) < 0.001f || currentlyStuck || wouldBeStuck)
             {
-                glm::vec2 cornerEject = ComputeSprintCornerEject(tilemap, npcPositions, normalizedDir);
+                glm::vec2 cornerEject =
+                    ComputeSprintCornerEject(tilemap, npcPositions, normalizedDir);
                 if (glm::length(cornerEject) > 0.001f)
                     desiredMovement = cornerEject;
             }
@@ -1752,25 +1844,33 @@ void PlayerCharacter::Move(glm::vec2 direction, float deltaTime, const Tilemap *
     m_Position += desiredMovement;
 }
 
-glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2 normalizedDir,
-                                            float deltaTime, float currentSpeed,
-                                            const Tilemap *tilemap, const std::vector<glm::vec2> *npcPositions,
-                                            bool sprintMode, int moveDx, int moveDy, bool diagonalInput)
+glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement,
+                                            glm::vec2 normalizedDir,
+                                            float deltaTime,
+                                            float currentSpeed,
+                                            const Tilemap* tilemap,
+                                            const std::vector<glm::vec2>* npcPositions,
+                                            bool sprintMode,
+                                            int moveDx,
+                                            int moveDy,
+                                            bool diagonalInput)
 {
-    // When sprinting and cutting corners diagonally, use strict collision to avoid over-lenient center checks
+    // When sprinting and cutting corners diagonally, use strict collision to avoid over-lenient
+    // center checks
     bool slideSprintMode = (sprintMode && diagonalInput) ? false : sprintMode;
     const float maxSlide = currentSpeed * deltaTime;
 
     // Test if desired movement is already valid
     glm::vec2 testPos = m_Position + desiredMovement;
 
-    if (!CollidesAt(testPos, tilemap, npcPositions, slideSprintMode, moveDx, moveDy, diagonalInput) &&
+    if (!CollidesAt(
+            testPos, tilemap, npcPositions, slideSprintMode, moveDx, moveDy, diagonalInput) &&
         !CollidesWithNPC(testPos, npcPositions))
     {
         // Only reset hysteresis if commit timer expired (prevents jitter at corners)
         if (m_SlideCommitTimer <= 0.0f)
             m_SlideHysteresisDir = glm::vec2(0.0f);
-        return desiredMovement; // No collision - use original movement
+        return desiredMovement;  // No collision - use original movement
     }
 
     // NPC collision: don't slide, just stop
@@ -1789,7 +1889,7 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
         // Only reset hysteresis if commit timer expired
         if (m_SlideCommitTimer <= 0.0f)
             m_SlideHysteresisDir = glm::vec2(0.0f);
-        return glm::vec2(0.0f); // No valid slide direction
+        return glm::vec2(0.0f);  // No valid slide direction
     }
     /*
     // Determine primary movement axis
@@ -1814,8 +1914,8 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
 
         // Test slide + full forward movement
         glm::vec2 testSlideForward = m_Position + slideOffset + forwardMove;
-        if (!CollidesAt(testSlideForward, tilemap, npcPositions, sprintMode, moveDx, moveDy, false) &&
-            !CollidesWithNPC(testSlideForward, npcPositions))
+        if (!CollidesAt(testSlideForward, tilemap, npcPositions, sprintMode, moveDx, moveDy, false)
+    && !CollidesWithNPC(testSlideForward, npcPositions))
         {
             // Found valid slide - clamp to speed limit
             float clampedSlide = std::min(slideAmount, maxSlide);
@@ -1877,33 +1977,42 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
                                      ? glm::vec2(desiredMovement.x >= 0 ? 1.0f : -1.0f, 0.0f)
                                      : glm::vec2(0.0f, desiredMovement.y >= 0 ? 1.0f : -1.0f);
 
-        glm::vec2 forwardMove = horizontalPrimary
-                                    ? glm::vec2(desiredMovement.x, 0.0f)
-                                    : glm::vec2(0.0f, desiredMovement.y);
+        glm::vec2 forwardMove = horizontalPrimary ? glm::vec2(desiredMovement.x, 0.0f)
+                                                  : glm::vec2(0.0f, desiredMovement.y);
 
         for (int slideAmountInt = 1; slideAmountInt <= 16; ++slideAmountInt)
         {
             float slideAmount = static_cast<float>(slideAmountInt);
-            glm::vec2 slideOffset = horizontalPrimary
-                                        ? glm::vec2(0.0f, dir.y * slideAmount)
-                                        : glm::vec2(dir.x * slideAmount, 0.0f);
+            glm::vec2 slideOffset = horizontalPrimary ? glm::vec2(0.0f, dir.y * slideAmount)
+                                                      : glm::vec2(dir.x * slideAmount, 0.0f);
 
             // Use fixed 1-pixel probe for DETECTION of valid corner path
             glm::vec2 testSlideForward = m_Position + slideOffset + forwardProbe;
 
-            if (!CollidesAt(testSlideForward, tilemap, npcPositions, slideSprintMode, moveDx, moveDy, diagonalInput))
+            if (!CollidesAt(testSlideForward,
+                            tilemap,
+                            npcPositions,
+                            slideSprintMode,
+                            moveDx,
+                            moveDy,
+                            diagonalInput))
             {
                 float clampedSlide = std::min(slideAmount, maxSlide);
-                glm::vec2 clampedOffset = horizontalPrimary
-                                              ? glm::vec2(0.0f, dir.y * clampedSlide)
-                                              : glm::vec2(dir.x * clampedSlide, 0.0f);
+                glm::vec2 clampedOffset = horizontalPrimary ? glm::vec2(0.0f, dir.y * clampedSlide)
+                                                            : glm::vec2(dir.x * clampedSlide, 0.0f);
 
                 // must be safe to apply the perpendicular step
-                if (CollidesAt(m_Position + clampedOffset, tilemap, npcPositions, slideSprintMode,
-                               (int)dir.x, (int)dir.y, diagonalInput))
+                if (CollidesAt(m_Position + clampedOffset,
+                               tilemap,
+                               npcPositions,
+                               slideSprintMode,
+                               (int)dir.x,
+                               (int)dir.y,
+                               diagonalInput))
                     continue;
 
-                // Limit perpendicular shove so it doesn't exceed 75% of forward distance (prevents violent kicks)
+                // Limit perpendicular shove so it doesn't exceed 75% of forward distance (prevents
+                // violent kicks)
                 float forwardMag = glm::length(forwardMove);
                 float perpMag = glm::length(clampedOffset);
                 if (forwardMag > 0.001f && perpMag > forwardMag * 0.75f)
@@ -1916,7 +2025,13 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
                 {
                     float mid = (lo + hi) * 0.5f;
                     glm::vec2 tryPos = m_Position + clampedOffset + forwardMove * mid;
-                    if (!CollidesAt(tryPos, tilemap, npcPositions, slideSprintMode, moveDx, moveDy, diagonalInput))
+                    if (!CollidesAt(tryPos,
+                                    tilemap,
+                                    npcPositions,
+                                    slideSprintMode,
+                                    moveDx,
+                                    moveDy,
+                                    diagonalInput))
                         lo = mid;
                     else
                         hi = mid;
@@ -1928,19 +2043,30 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
                 // but only keep it if still collision-free.
                 constexpr float SLIDE_BLEND = 0.35f;
                 glm::vec2 blended = glm::mix(desiredMovement, slideResult, SLIDE_BLEND);
-                if (!CollidesAt(m_Position + blended, tilemap, npcPositions, slideSprintMode, moveDx, moveDy, diagonalInput))
+                if (!CollidesAt(m_Position + blended,
+                                tilemap,
+                                npcPositions,
+                                slideSprintMode,
+                                moveDx,
+                                moveDy,
+                                diagonalInput))
                     return blended;
 
                 return slideResult;
             }
 
             glm::vec2 testSlideOnly = m_Position + slideOffset;
-            if (!CollidesAt(testSlideOnly, tilemap, npcPositions, slideSprintMode, (int)dir.x, (int)dir.y, diagonalInput))
+            if (!CollidesAt(testSlideOnly,
+                            tilemap,
+                            npcPositions,
+                            slideSprintMode,
+                            (int)dir.x,
+                            (int)dir.y,
+                            diagonalInput))
             {
                 float clampedSlide = std::min(slideAmount, maxSlide);
-                return horizontalPrimary
-                           ? glm::vec2(0.0f, dir.y * clampedSlide)
-                           : glm::vec2(dir.x * clampedSlide, 0.0f);
+                return horizontalPrimary ? glm::vec2(0.0f, dir.y * clampedSlide)
+                                         : glm::vec2(dir.x * clampedSlide, 0.0f);
             }
         }
 
@@ -1955,11 +2081,14 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement, glm::vec2
     return attemptDir(-slideDir);
 }
 
-glm::vec2 PlayerCharacter::ApplyLaneSnapping(
-    glm::vec2 desiredMovement, glm::vec2 normalizedDir,
-    float deltaTime, const Tilemap *tilemap,
-    const std::vector<glm::vec2> *npcPositions,
-    bool sprintMode, int moveDx, int moveDy)
+glm::vec2 PlayerCharacter::ApplyLaneSnapping(glm::vec2 desiredMovement,
+                                             glm::vec2 normalizedDir,
+                                             float deltaTime,
+                                             const Tilemap* tilemap,
+                                             const std::vector<glm::vec2>* npcPositions,
+                                             bool sprintMode,
+                                             int moveDx,
+                                             int moveDy)
 {
     if (!tilemap)
         return desiredMovement;
@@ -1973,8 +2102,7 @@ glm::vec2 PlayerCharacter::ApplyLaneSnapping(
     bool movingHorizontal = std::abs(normalizedDir.x) > std::abs(normalizedDir.y);
 
     // Keep correction small per frame so it can ratchet into tight gaps.
-    auto clampCorr = [](float c)
-    { return std::clamp(c, -1.2f, 1.2f); };
+    auto clampCorr = [](float c) { return std::clamp(c, -1.2f, 1.2f); };
 
     if (movingHorizontal)
     {
@@ -2031,8 +2159,9 @@ glm::vec2 PlayerCharacter::ApplyLaneSnapping(
     return desiredMovement;
 }
 
-void PlayerCharacter::HandleIdleSnap(float deltaTime, const Tilemap *tilemap,
-                                     const std::vector<glm::vec2> *npcPositions)
+void PlayerCharacter::HandleIdleSnap(float deltaTime,
+                                     const Tilemap* tilemap,
+                                     const std::vector<glm::vec2>* npcPositions)
 {
     float tileSize = tilemap ? static_cast<float>(tilemap->GetTileWidth()) : 16.0f;
     glm::vec2 targetCenter = GetCurrentTileCenter(tileSize);
@@ -2110,8 +2239,7 @@ void PlayerCharacter::HandleIdleSnap(float deltaTime, const Tilemap *tilemap,
     else
     {
         // Close enough to center - snap exactly to avoid fractional positions
-        if (tilemap &&
-            !CollidesWithTilesStrict(targetCenter, tilemap, 0, 0, false) &&
+        if (tilemap && !CollidesWithTilesStrict(targetCenter, tilemap, 0, 0, false) &&
             !CollidesWithNPC(targetCenter, npcPositions))
         {
             m_Position = targetCenter;
@@ -2124,16 +2252,15 @@ void PlayerCharacter::HandleIdleSnap(float deltaTime, const Tilemap *tilemap,
 
 glm::vec2 PlayerCharacter::GetCurrentTileCenter(float tileSize) const
 {
-    constexpr float EPS = 0.001f; // Small epsilon to handle edge cases
+    constexpr float EPS = 0.001f;  // Small epsilon to handle edge cases
 
     // Calculate tile indices
     int tileX = static_cast<int>(std::floor(m_Position.x / tileSize));
     int tileY = static_cast<int>(std::floor((m_Position.y - tileSize * 0.5f - EPS) / tileSize));
 
     // Return bottom-center position at tile center
-    return glm::vec2(
-        tileX * tileSize + tileSize * 0.5f, // Horizontal center of tile
-        tileY * tileSize + tileSize         // Bottom of tile
+    return glm::vec2(tileX * tileSize + tileSize * 0.5f,  // Horizontal center of tile
+                     tileY * tileSize + tileSize          // Bottom of tile
     );
 }
 
@@ -2149,7 +2276,10 @@ void PlayerCharacter::Stop()
     m_AnimationTime = 0.0f;
 }
 
-glm::vec2 PlayerCharacter::GetSpriteCoords(int frame, Direction dir, AnimationType anim, bool requiresYFlip)
+glm::vec2 PlayerCharacter::GetSpriteCoords(int frame,
+                                           Direction dir,
+                                           AnimationType anim,
+                                           bool requiresYFlip)
 {
     if (anim != AnimationType::WALK && anim != AnimationType::IDLE && anim != AnimationType::RUN)
         return glm::vec2(0, 0);
@@ -2161,18 +2291,18 @@ glm::vec2 PlayerCharacter::GetSpriteCoords(int frame, Direction dir, AnimationTy
     int dirRow = 0;
     switch (dir)
     {
-    case Direction::DOWN:
-        dirRow = 0;
-        break;
-    case Direction::UP:
-        dirRow = 1;
-        break;
-    case Direction::LEFT:
-        dirRow = 2;
-        break;
-    case Direction::RIGHT:
-        dirRow = 3;
-        break;
+        case Direction::DOWN:
+            dirRow = 0;
+            break;
+        case Direction::UP:
+            dirRow = 1;
+            break;
+        case Direction::LEFT:
+            dirRow = 2;
+            break;
+        case Direction::RIGHT:
+            dirRow = 3;
+            break;
     }
 
     if (requiresYFlip)

@@ -140,7 +140,10 @@ public:
      *
      * @return Vector of pointers to visible options
      */
-    [[nodiscard]] const std::vector<const DialogueOption*>& GetVisibleOptions() const { return m_VisibleOptions; }
+    [[nodiscard]] const std::vector<const DialogueOption*>& GetVisibleOptions() const
+    {
+        return m_VisibleOptions;
+    }
 
     /**
      * @brief Get currently selected option index.
@@ -220,7 +223,8 @@ private:
     /// @name Active Dialogue State
     /// @{
 
-    DialogueTree m_ActiveTree;                    ///< Owned copy of active dialogue tree (avoids dangling NPC pointers)
+    DialogueTree
+        m_ActiveTree;  ///< Owned copy of active dialogue tree (avoids dangling NPC pointers)
     bool m_Active = false;
     const DialogueTree* m_CurrentTree = nullptr;
     const DialogueNode* m_CurrentNode = nullptr;
@@ -230,7 +234,8 @@ private:
     /// @name UI State
     /// @{
 
-    std::vector<const DialogueOption*> m_VisibleOptions;  ///< Pointers into m_ActiveTree nodes; rebuilt on node change
+    std::vector<const DialogueOption*>
+        m_VisibleOptions;  ///< Pointers into m_ActiveTree nodes; rebuilt on node change
     int m_SelectedOption = 0;
 
     /// @}
