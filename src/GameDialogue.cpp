@@ -73,6 +73,33 @@ std::vector<std::string> WrapText(const std::string& text,
 
     return lines;
 }
+
+void DrawRightArrow(IRenderer& renderer, float arrowX, float arrowCenterY, float z, glm::vec4 color)
+{
+    renderer.DrawColoredRect(
+        glm::vec2(arrowX, arrowCenterY - 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), color);
+    renderer.DrawColoredRect(
+        glm::vec2(arrowX, arrowCenterY - 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), color);
+    renderer.DrawColoredRect(glm::vec2(arrowX, arrowCenterY), glm::vec2(3.0f * z, 1.0f * z), color);
+    renderer.DrawColoredRect(
+        glm::vec2(arrowX, arrowCenterY + 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), color);
+    renderer.DrawColoredRect(
+        glm::vec2(arrowX, arrowCenterY + 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), color);
+}
+
+void DrawContinuePrompt(
+    IRenderer& renderer, float promptX, float promptY, float textScale, float outlineSize, float z)
+{
+    const float promptScale = textScale * 0.85f;
+    glm::vec3 promptColor(0.55f, 0.52f, 0.48f);
+    renderer.DrawText(
+        "Continue", glm::vec2(promptX, promptY), promptScale, promptColor, outlineSize, 0.7f);
+
+    float promptAscent = renderer.GetTextAscent(promptScale);
+    float arrowCenterY = promptY - promptAscent * 0.5f;
+    float arrowX = promptX - 6.0f * z;
+    DrawRightArrow(renderer, arrowX, arrowCenterY, z, glm::vec4(0.65f, 0.52f, 0.2f, 0.85f));
+}
 }  // namespace
 
 void Game::RenderNPCHeadText()
@@ -415,57 +442,10 @@ void Game::RenderDialogueTreeBox()
     float promptY = boxY + boxHeight - padding;
     float promptX = boxX + boxWidth - padding - 12.0f * z;
 
-    if (!isLastPage)
+    const bool showContinuePrompt = !isLastPage || visibleOptions.empty();
+    if (showContinuePrompt)
     {
-        // Show continue prompt at bottom right
-        glm::vec3 promptColor(0.55f, 0.52f, 0.48f);
-        m_Renderer->DrawText("Continue",
-                             glm::vec2(promptX, promptY),
-                             textScale * 0.85f,
-                             promptColor,
-                             outlineSize,
-                             0.7f);
-
-        float promptAscent = m_Renderer->GetTextAscent(textScale * 0.85f);
-        float arrowCenterY = promptY - promptAscent * 0.5f;
-        float arrowX = promptX - 6.0f * z;
-        glm::vec4 arrowColor(0.65f, 0.52f, 0.2f, 0.85f);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY - 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY - 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY), glm::vec2(3.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY + 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY + 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), arrowColor);
-    }
-    else if (visibleOptions.empty())
-    {
-        // Last page with no options - show continue at bottom right
-        glm::vec3 promptColor(0.55f, 0.52f, 0.48f);
-        m_Renderer->DrawText("Continue",
-                             glm::vec2(promptX, promptY),
-                             textScale * 0.85f,
-                             promptColor,
-                             outlineSize,
-                             0.7f);
-
-        float promptAscent = m_Renderer->GetTextAscent(textScale * 0.85f);
-        float arrowCenterY = promptY - promptAscent * 0.5f;
-        float arrowX = promptX - 6.0f * z;
-        glm::vec4 arrowColor(0.65f, 0.52f, 0.2f, 0.85f);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY - 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY - 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY), glm::vec2(3.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY + 1.0f * z), glm::vec2(2.0f * z, 1.0f * z), arrowColor);
-        m_Renderer->DrawColoredRect(
-            glm::vec2(arrowX, arrowCenterY + 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), arrowColor);
+        DrawContinuePrompt(*m_Renderer, promptX, promptY, textScale, outlineSize, z);
     }
     else
     {
@@ -481,22 +461,8 @@ void Game::RenderDialogueTreeBox()
             {
                 float arrowCenterY = currentY - textAscent * 0.5f;
                 float arrowX = boxX + padding;
-
-                glm::vec4 arrowGold(1.0f, 0.88f, 0.4f, 1.0f);
-                m_Renderer->DrawColoredRect(glm::vec2(arrowX, arrowCenterY - 2.0f * z),
-                                            glm::vec2(1.0f * z, 1.0f * z),
-                                            arrowGold);
-                m_Renderer->DrawColoredRect(glm::vec2(arrowX, arrowCenterY - 1.0f * z),
-                                            glm::vec2(2.0f * z, 1.0f * z),
-                                            arrowGold);
-                m_Renderer->DrawColoredRect(
-                    glm::vec2(arrowX, arrowCenterY), glm::vec2(3.0f * z, 1.0f * z), arrowGold);
-                m_Renderer->DrawColoredRect(glm::vec2(arrowX, arrowCenterY + 1.0f * z),
-                                            glm::vec2(2.0f * z, 1.0f * z),
-                                            arrowGold);
-                m_Renderer->DrawColoredRect(glm::vec2(arrowX, arrowCenterY + 2.0f * z),
-                                            glm::vec2(1.0f * z, 1.0f * z),
-                                            arrowGold);
+                DrawRightArrow(
+                    *m_Renderer, arrowX, arrowCenterY, z, glm::vec4(1.0f, 0.88f, 0.4f, 1.0f));
             }
 
             std::string prefix = "   ";

@@ -1537,6 +1537,11 @@ void VulkanRenderer::SetViewport(int x, int y, int width, int height)
     }
 }
 
+void VulkanRenderer::SetProjection(glm::mat4 projection)
+{
+    m_Projection = projection;
+}
+
 void VulkanRenderer::Clear(float r, float g, float b, float a)
 {
     // Clear is handled in BeginFrame via render pass
