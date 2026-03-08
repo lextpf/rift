@@ -624,8 +624,8 @@ public:
         float widthPadding = (expandedWidth - s.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - s.viewHeight) * 0.5f;
 
-        return p.x >= -widthPadding && p.x <= s.viewWidth + widthPadding &&
-               p.y >= -heightPadding && p.y <= s.viewHeight + heightPadding;
+        return p.x >= -widthPadding && p.x <= s.viewWidth + widthPadding && p.y >= -heightPadding &&
+               p.y <= s.viewHeight + heightPadding;
     }
 
     /**
