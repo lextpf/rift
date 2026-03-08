@@ -130,23 +130,23 @@ public:
 
     void DrawSprite(const Texture& texture,
                     glm::vec2 position,
-                    glm::vec2 size = glm::vec2(32.0f, 32.0f),
-                    float rotation = 0.0f,
-                    glm::vec3 color = glm::vec3(1.0f)) override;
+                    glm::vec2 size,
+                    float rotation,
+                    glm::vec3 color) override;
     void DrawSpriteRegion(const Texture& texture,
                           glm::vec2 position,
                           glm::vec2 size,
                           glm::vec2 texCoord,
                           glm::vec2 texSize,
-                          float rotation = 0.0f,
-                          glm::vec3 color = glm::vec3(1.0f),
-                          bool flipY = true) override;
+                          float rotation,
+                          glm::vec3 color,
+                          bool flipY) override;
     void DrawSpriteAlpha(const Texture& texture,
                          glm::vec2 position,
                          glm::vec2 size,
                          float rotation,
                          glm::vec4 color,
-                         bool additive = false) override;
+                         bool additive) override;
     void DrawSpriteAtlas(const Texture& texture,
                          glm::vec2 position,
                          glm::vec2 size,
@@ -154,17 +154,17 @@ public:
                          glm::vec2 uvMax,
                          float rotation,
                          glm::vec4 color,
-                         bool additive = false) override;
+                         bool additive) override;
     void DrawColoredRect(glm::vec2 position,
                          glm::vec2 size,
                          glm::vec4 color,
-                         bool additive = false) override;
+                         bool additive) override;
     void DrawWarpedQuad(const Texture& texture,
                         const glm::vec2 corners[4],
                         glm::vec2 texCoord,
                         glm::vec2 texSize,
-                        glm::vec3 color = glm::vec3(1.0f),
-                        bool flipY = true) override;
+                        glm::vec3 color,
+                        bool flipY) override;
 
     void SetProjection(glm::mat4 projection) override;
     void SetViewport(int x, int y, int width, int height) override;
@@ -190,12 +190,12 @@ public:
 
     void DrawText(const std::string& text,
                   glm::vec2 position,
-                  float scale = 1.0f,
-                  glm::vec3 color = glm::vec3(1.0f),
-                  float outlineSize = 1.0f,
-                  float alpha = 0.85f) override;
-    float GetTextAscent(float scale = 1.0f) const override;
-    float GetTextWidth(const std::string& text, float scale = 1.0f) const override;
+                  float scale,
+                  glm::vec3 color,
+                  float outlineSize,
+                  float alpha) override;
+    float GetTextAscent(float scale) const override;
+    float GetTextWidth(const std::string& text, float scale) const override;
 
     /// @brief OpenGL uses bottom-left texture origin, requires Y-flip.
     bool RequiresYFlip() const override { return true; }
