@@ -448,7 +448,7 @@ public:
     inline const Texture& GetTilesetTexture() const
     {
         return m_TilesetTexture;
-    }                                                            ///< Tileset texture
+    }  ///< Tileset texture
     inline int GetTilesPerRow() const { return m_TilesPerRow; }  ///< Tiles per row in tileset
     inline int GetTilesetDataWidth() const { return m_TilesetDataWidth; }  ///< Tileset image width
     inline int GetTilesetDataHeight() const
