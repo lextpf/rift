@@ -247,29 +247,7 @@ void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
     // Apply elevation BEFORE projection (moves sprite up on stairs)
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
-    // artifacts)
-    auto perspState = renderer.GetPerspectiveState();
-    if (perspState.enabled)
-    {
-        // Calculate expanded viewport bounds for 3D mode
-        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
-        float expansion = 1.0f / safeHorizonScale;
-        float expandedWidth = perspState.viewWidth * expansion * 1.5f;
-        float expandedHeight = perspState.viewHeight * expansion;
-        float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
-        float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
-
-        if (bottomCenter.x >= -widthPadding &&
-            bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding &&
-            bottomCenter.y <= perspState.viewHeight + heightPadding)
-        {
-            // Position-only perspective: project the bottom-center through 3D transformation
-            // This places the player at the correct depth in the scene without scaling the sprite
-            bottomCenter = renderer.ProjectPoint(bottomCenter);
-        }
-    }
+    bottomCenter = renderer.ProjectPointSafe(bottomCenter);
 
     // Convert from bottom-center to render position (top-left)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
@@ -319,27 +297,7 @@ void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
     // Apply elevation to bottom-center BEFORE projection
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
-    // artifacts)
-    auto perspState = renderer.GetPerspectiveState();
-    if (perspState.enabled)
-    {
-        // Calculate expanded viewport bounds for 3D mode
-        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
-        float expansion = 1.0f / safeHorizonScale;
-        float expandedWidth = perspState.viewWidth * expansion * 1.5f;
-        float expandedHeight = perspState.viewHeight * expansion;
-        float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
-        float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
-
-        if (bottomCenter.x >= -widthPadding &&
-            bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding &&
-            bottomCenter.y <= perspState.viewHeight + heightPadding)
-        {
-            bottomCenter = renderer.ProjectPoint(bottomCenter);
-        }
-    }
+    bottomCenter = renderer.ProjectPointSafe(bottomCenter);
 
     // Convert from bottom-center position to render position (top-left)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
@@ -393,27 +351,7 @@ void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
     // Apply elevation to bottom-center BEFORE projection
     bottomCenter.y -= m_ElevationOffset;
 
-    // Only use ProjectPoint if inside the expanded 3D viewport (prevents globe wrap-around
-    // artifacts)
-    auto perspState = renderer.GetPerspectiveState();
-    if (perspState.enabled)
-    {
-        // Calculate expanded viewport bounds for 3D mode
-        float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
-        float expansion = 1.0f / safeHorizonScale;
-        float expandedWidth = perspState.viewWidth * expansion * 1.5f;
-        float expandedHeight = perspState.viewHeight * expansion;
-        float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
-        float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
-
-        if (bottomCenter.x >= -widthPadding &&
-            bottomCenter.x <= perspState.viewWidth + widthPadding &&
-            bottomCenter.y >= -heightPadding &&
-            bottomCenter.y <= perspState.viewHeight + heightPadding)
-        {
-            bottomCenter = renderer.ProjectPoint(bottomCenter);
-        }
-    }
+    bottomCenter = renderer.ProjectPointSafe(bottomCenter);
 
     // Convert from bottom-center position to render position (top-left)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);

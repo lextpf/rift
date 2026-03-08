@@ -976,19 +976,8 @@ void ParticleSystem::Render(IRenderer& renderer,
                 float anchorScreenX = leftPixelX - cameraPos.x;
                 float anchorScreenY = bottomPixelY - cameraPos.y;
 
-                // Check if anchor is inside expanded 3D viewport - skip projection if outside
-                // to prevent globe wrap-around artifacts
-                float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
-                float expansion = 1.0f / safeHorizonScale;
-                float expandedWidth = perspState.viewWidth * expansion * 1.5f;
-                float expandedHeight = perspState.viewHeight * expansion;
-                float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
-                float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
-
-                bool anchorInViewport = perspState.enabled && anchorScreenX >= -widthPadding &&
-                                        anchorScreenX <= perspState.viewWidth + widthPadding &&
-                                        anchorScreenY >= -heightPadding &&
-                                        anchorScreenY <= perspState.viewHeight + heightPadding;
+                bool anchorInViewport =
+                    renderer.IsPointInExpandedViewport(glm::vec2(anchorScreenX, anchorScreenY));
 
                 float scaleX = 1.0f;
                 glm::vec2 projectedLeft(anchorScreenX, anchorScreenY);
@@ -1030,18 +1019,7 @@ void ParticleSystem::Render(IRenderer& renderer,
         }
         else if (isNoProjection)
         {
-            // Fallback if no tilemap: Simple projection only if inside expanded 3D viewport
-            float safeHorizonScale = std::max(perspState.horizonScale, 0.001f);
-            float expansion = 1.0f / safeHorizonScale;
-            float expandedWidth = perspState.viewWidth * expansion * 1.5f;
-            float expandedHeight = perspState.viewHeight * expansion;
-            float widthPadding = (expandedWidth - perspState.viewWidth) * 0.5f;
-            float heightPadding = (expandedHeight - perspState.viewHeight) * 0.5f;
-
-            bool inViewport = perspState.enabled && data.screenPos.x >= -widthPadding &&
-                              data.screenPos.x <= perspState.viewWidth + widthPadding &&
-                              data.screenPos.y >= -heightPadding &&
-                              data.screenPos.y <= perspState.viewHeight + heightPadding;
+            bool inViewport = renderer.IsPointInExpandedViewport(data.screenPos);
 
             if (inViewport)
             {

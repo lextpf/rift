@@ -602,6 +602,50 @@ public:
     }
 
     /**
+     * @brief Check if a screen-space point is inside the expanded 3D viewport.
+     *
+     * When perspective is enabled, the visible viewport is expanded by the
+     * inverse of the horizon scale to prevent globe wrap-around artifacts.
+     * Use this to guard ProjectPoint calls for points that may be off-screen.
+     *
+     * @param p Screen-space position (world position minus camera).
+     * @return true if perspective is enabled and the point is within bounds.
+     */
+    bool IsPointInExpandedViewport(const glm::vec2& p) const
+    {
+        PerspectiveState s = GetPerspectiveState();
+        if (!s.enabled)
+            return false;
+
+        float safeHorizonScale = std::max(s.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
+        float expandedWidth = s.viewWidth * expansion * 1.5f;
+        float expandedHeight = s.viewHeight * expansion;
+        float widthPadding = (expandedWidth - s.viewWidth) * 0.5f;
+        float heightPadding = (expandedHeight - s.viewHeight) * 0.5f;
+
+        return p.x >= -widthPadding && p.x <= s.viewWidth + widthPadding &&
+               p.y >= -heightPadding && p.y <= s.viewHeight + heightPadding;
+    }
+
+    /**
+     * @brief Project a point only if it is inside the expanded 3D viewport.
+     *
+     * Combines the viewport bounds check with projection. Returns the
+     * original point unchanged if perspective is disabled or the point
+     * is outside the expanded viewport.
+     *
+     * @param p Screen-space position (world position minus camera).
+     * @return Projected position, or the original point if not projectable.
+     */
+    glm::vec2 ProjectPointSafe(const glm::vec2& p) const
+    {
+        if (IsPointInExpandedViewport(p))
+            return ProjectPoint(p);
+        return p;
+    }
+
+    /**
      * @brief Set the rendering viewport.
      *
      * Defines the rectangular region of the window to render into.
