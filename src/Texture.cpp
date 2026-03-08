@@ -37,12 +37,19 @@ bool TryComputeImageByteSize(int width, int height, int channels, size_t& outSiz
 }
 
 bool ExpandToRgba(const unsigned char* src,
+                  size_t srcSize,
                   int width,
                   int height,
                   int srcChannels,
                   std::vector<unsigned char>& outRgba)
 {
     if (!src || width <= 0 || height <= 0 || srcChannels < 1 || srcChannels > 4)
+        return false;
+
+    size_t expectedSrcSize = 0;
+    if (!TryComputeImageByteSize(width, height, srcChannels, expectedSrcSize))
+        return false;
+    if (srcSize < expectedSrcSize)
         return false;
 
     size_t rgbaSize = 0;
@@ -263,7 +270,9 @@ bool Texture::LoadFromFile(const std::string& path)
     // Normalize uncommon formats (1/2 channels) to RGBA so both backends share one safe path.
     if (sourceChannels == 1 || sourceChannels == 2)
     {
-        if (!ExpandToRgba(data, m_Width, m_Height, sourceChannels, normalizedData))
+        const size_t srcSize = static_cast<size_t>(m_Width) * static_cast<size_t>(m_Height) *
+                               static_cast<size_t>(sourceChannels);
+        if (!ExpandToRgba(data, srcSize, m_Width, m_Height, sourceChannels, normalizedData))
         {
             std::cerr << "Failed to expand texture to RGBA: " << path << std::endl;
             stbi_image_free(data);
@@ -325,7 +334,9 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
     const unsigned char* sourceData = data;
     if (channels == 1 || channels == 2)
     {
-        if (!ExpandToRgba(data, width, height, channels, normalizedData))
+        const size_t srcSize = static_cast<size_t>(width) * static_cast<size_t>(height) *
+                               static_cast<size_t>(channels);
+        if (!ExpandToRgba(data, srcSize, width, height, channels, normalizedData))
         {
             std::cerr << "Failed to expand texture data to RGBA" << std::endl;
             return false;
