@@ -2,7 +2,9 @@
 #include "Tilemap.h"
 
 #include <algorithm>
+#include <deque>
 #include <iostream>
+#include <unordered_set>
 
 bool PatrolRoute::Initialize(int startTileX,
                              int startTileY,
@@ -35,8 +37,9 @@ bool PatrolRoute::Initialize(int startTileX,
     // This means if we hit maxRouteLength, we get a compact cluster around the start
     // rather than a long tendril in one random direction.
     std::vector<glm::ivec2> connectedTiles;
-    std::vector<bool> visited(mapWidth * mapHeight, false);
-    std::vector<glm::ivec2> bfsQueue;
+    std::vector<bool> visited(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight),
+                              false);
+    std::deque<glm::ivec2> bfsQueue;
 
     glm::ivec2 start(startTileX, startTileY);
     bfsQueue.push_back(start);
@@ -47,7 +50,7 @@ bool PatrolRoute::Initialize(int startTileX,
         // Pop from front (FIFO) - this is what makes it BFS instead of DFS.
         // If we popped from back, closer tiles would be processed last.
         glm::ivec2 current = bfsQueue.front();
-        bfsQueue.erase(bfsQueue.begin());
+        bfsQueue.pop_front();
         connectedTiles.push_back(current);
 
         auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
@@ -83,15 +86,11 @@ bool PatrolRoute::Initialize(int startTileX,
             auto neighbors = GetValidNeighbors(tile.x, tile.y, tilemap);
             for (const auto& neighbor : neighbors)
             {
-                // Check if this neighbor is part of our collected set.
-                // We do a linear search here because the set is small (maxRouteLength).
-                for (const auto& ct : connectedTiles)
+                // Check if this neighbor is part of our collected set
+                // using the visited array for O(1) lookup instead of linear search.
+                if (visited[neighbor.y * mapWidth + neighbor.x])
                 {
-                    if (ct == neighbor)
-                    {
-                        neighborCount++;
-                        break;
-                    }
+                    neighborCount++;
                 }
             }
 
@@ -110,7 +109,8 @@ bool PatrolRoute::Initialize(int startTileX,
         // For a cycle, we walk around the ring by always picking the unvisited neighbor.
         // Since each tile has exactly 2 neighbors in the set, and we mark tiles visited
         // as we go, there's always exactly one valid choice (until we complete the loop).
-        std::vector<bool> cycleVisited(mapWidth * mapHeight, false);
+        std::vector<bool> cycleVisited(
+            static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), false);
         glm::ivec2 current = start;
         glm::ivec2 prev(-1, -1);
 
@@ -120,21 +120,13 @@ bool PatrolRoute::Initialize(int startTileX,
             cycleVisited[current.y * mapWidth + current.x] = true;
 
             // Find the next tile: must be in our set and not yet visited.
+            // Use the visited array for O(1) set membership instead of linear search.
             auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
             glm::ivec2 next(-1, -1);
             for (const auto& neighbor : neighbors)
             {
-                bool inSet = false;
-                for (const auto& ct : connectedTiles)
-                {
-                    if (ct == neighbor)
-                    {
-                        inSet = true;
-                        break;
-                    }
-                }
-
-                if (inSet && !cycleVisited[neighbor.y * mapWidth + neighbor.x])
+                int nIdx = neighbor.y * mapWidth + neighbor.x;
+                if (visited[nIdx] && !cycleVisited[nIdx])
                 {
                     next = neighbor;
                     break;
@@ -181,23 +173,12 @@ bool PatrolRoute::Initialize(int startTileX,
 
     // Count unique tiles for the log message. Due to backtracking in DFS mode,
     // the waypoint list may contain the same tile multiple times.
-    std::vector<glm::ivec2> uniqueTiles;
-    for (const auto& wp : m_Waypoints)
-    {
-        bool found = false;
-        for (const auto& ut : uniqueTiles)
-        {
-            if (ut == wp)
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
-            uniqueTiles.push_back(wp);
-        }
-    }
+    auto tileHash = [mapWidth](const glm::ivec2& v)
+    { return std::hash<int>()(v.y * mapWidth + v.x); };
+    auto tileEqual = [](const glm::ivec2& a, const glm::ivec2& b)
+    { return a.x == b.x && a.y == b.y; };
+    std::unordered_set<glm::ivec2, decltype(tileHash), decltype(tileEqual)> uniqueTiles(
+        m_Waypoints.begin(), m_Waypoints.end(), 0, tileHash, tileEqual);
 
     std::cout << "Created patrol route: " << m_Waypoints.size() << " waypoints, "
               << uniqueTiles.size() << " unique tiles, mode=" << (m_IsClosed ? "loop" : "ping-pong")

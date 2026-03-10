@@ -40,7 +40,7 @@ echo Formatting source files in src\...
 for %%f in (src\*.cpp src\*.h) do (
     clang-format -i "%%f"
 )
-echo [1/6] clang-format complete!
+echo clang-format complete!
 :skip_clang_format
 echo.
 
@@ -54,7 +54,7 @@ if not exist build mkdir build
 cd build
 
 echo Configuring CMake...
-cmake ..
+cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 if %errorlevel% neq 0 (
     echo ERROR: CMake configuration failed!
     pause

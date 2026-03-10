@@ -3,24 +3,22 @@
 #include "DialogueSystem.h"
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 /**
  * @class GameStateManager
  * @brief Manages persistent game state flags and variables.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * Central storage for all game flags that dialogue conditions can check
- * and consequences can
- * modify. Flags are stored as string key-value pairs.
+ * and consequences can modify. Flags are stored as string key-value pairs.
  *
- * @note Condition checks are
- * presence-based by default:
+ * @note Condition checks are presence-based by default:
  * - `FLAG_SET` means the key exists, regardless of stored value.
- * -
- * `FLAG_NOT_SET` means the key does not exist.
- * Use `FLAG_EQUALS` for value-based checks (e.g.,
- * `key == "true"`).
+ * - `FLAG_NOT_SET` means the key does not exist.
+ * Use `FLAG_EQUALS` for value-based checks (e.g., `key == "true"`).
  *
  * @section flag_types Flag Types
  * |    Type |     Method     | Storage    | Example            |
@@ -107,7 +105,10 @@ public:
      */
     void SetFlag(const std::string& key, bool value = true)
     {
-        m_Flags[key] = value ? "true" : "false";
+        if (value)
+            m_Flags[key] = "true";
+        else
+            ClearFlag(key);
     }
 
     /**
@@ -150,8 +151,7 @@ public:
     /**
      * @brief Check if a flag exists.
      * @param key Flag name.
-     * @return True if
-     * the flag key exists (value may be "false").
+     * @return True if the flag key exists (value may be "false").
      */
     [[nodiscard]] bool HasFlag(const std::string& key) const
     {
@@ -211,14 +211,16 @@ public:
     {
         std::vector<std::string> activeQuests;
 
+        constexpr std::string_view kAcceptedPrefix = "accepted_";
+
         for (const auto& [key, value] : m_Flags)
         {
             // Check if this is a quest flag that's active
-            if (key.find("_quest") != std::string::npos && key.find("accepted_") == 0 &&
+            if (key.find("_quest") != std::string::npos && key.find(kAcceptedPrefix) == 0 &&
                 !value.empty() && value != "false" && value != "0")
             {
-                // Extract quest name
-                std::string questName = key.substr(9);  // Remove prefix
+                // Extract quest name (remove "accepted_" prefix)
+                std::string questName = key.substr(kAcceptedPrefix.size());
 
                 // Check if this quest is not completed
                 std::string completedKey = "completed_" + questName;

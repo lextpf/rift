@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @brief Declares all IRenderer override methods for a concrete renderer class.
+ * @author Alex (https://github.com/lextpf)
+ *
+ * Expands to the full set of overridden virtual method declarations:
+ * Init, Shutdown, BeginFrame, EndFrame, DrawSprite, DrawSpriteRegion,
+ * DrawSpriteAlpha, DrawSpriteAtlas, DrawColoredRect, DrawWarpedQuad,
+ * SetProjection, SetViewport, Clear, UploadTexture, DrawText,
+ * GetTextAscent, and GetTextWidth.
+ *
+ * @see IRenderer for documentation of each method.
+ */
 #define RIFT_DECLARE_COMMON_RENDERER_METHODS                                                 \
     void Init() override;                                                                    \
     void Shutdown() override;                                                                \
@@ -40,7 +52,7 @@
                         glm::vec2 texSize,                                                   \
                         glm::vec3 color,                                                     \
                         bool flipY) override;                                                \
-    void SetProjection(glm::mat4 projection) override;                                       \
+    void SetProjection(const glm::mat4& projection) override;                                \
     void SetViewport(int x, int y, int width, int height) override;                          \
     void Clear(float r, float g, float b, float a) override;                                 \
     void UploadTexture(const Texture& texture) override;                                     \

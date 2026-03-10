@@ -55,6 +55,22 @@ bool ShouldEnableValidationLayers()
 }
 }  // namespace
 
+/// Push constants layout shared by all Vulkan draw calls.
+struct CombinedPushConstants
+{
+    glm::mat4 projection;    // 0-63
+    glm::mat4 model;         // 64-127
+    glm::vec3 spriteColor;   // 128-139
+    float useColorOnly;      // 140-143
+    glm::vec4 colorOnly;     // 144-159
+    float spriteAlpha;       // 160-163
+    float _padding[3];       // 164-175
+    glm::vec3 ambientColor;  // 176-187
+    float _padding2;         // 188-191
+};
+static_assert(sizeof(CombinedPushConstants) == 192,
+              "CombinedPushConstants must be 192 bytes to match SPIR-V shader layout");
+
 VulkanRenderer::VulkanRenderer(GLFWwindow* window)
     : m_Instance(VK_NULL_HANDLE),
       m_PhysicalDevice(VK_NULL_HANDLE),
@@ -214,7 +230,7 @@ void VulkanRenderer::Shutdown()
 
         // Cleanup uploaded textures (Texture objects that hold Vulkan resources)
         // This must happen before destroying the device
-        for (Texture* tex : m_UploadedTextures)
+        for (const Texture* tex : m_UploadedTextures)
         {
             if (tex)
             {
@@ -470,7 +486,18 @@ void VulkanRenderer::CreateInstance()
         debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        debugCreateInfo.pfnUserCallback = nullptr;
+        debugCreateInfo.pfnUserCallback =
+            [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+               VkDebugUtilsMessageTypeFlagsEXT messageType,
+               const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+               void* pUserData) -> VkBool32
+        {
+            if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+            {
+                std::cerr << "Vulkan validation: " << pCallbackData->pMessage << std::endl;
+            }
+            return VK_FALSE;
+        };
         createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
     }
     else
@@ -1537,8 +1564,9 @@ void VulkanRenderer::SetViewport(int x, int y, int width, int height)
     }
 }
 
-void VulkanRenderer::SetProjection(glm::mat4 projection)
+void VulkanRenderer::SetProjection(const glm::mat4& projection)
 {
+    FlushSpriteBatch();
     m_Projection = projection;
 }
 
@@ -1576,18 +1604,7 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
     SpriteVertex* mapped = static_cast<SpriteVertex*>(m_VertexBuffersMapped[m_CurrentFrame]);
     memcpy(&mapped[m_CurrentVertexCount], vertices, sizeof(SpriteVertex) * 6);
 
-    struct CombinedPushConstants
-    {
-        glm::mat4 projection;
-        glm::mat4 model;
-        glm::vec3 spriteColor;
-        float useColorOnly;
-        glm::vec4 colorOnly;
-        float spriteAlpha;
-        float _padding[3];
-        glm::vec3 ambientColor;
-        float _padding2;
-    } pc;
+    CombinedPushConstants pc;
 
     pc.projection = m_Projection;
     pc.model = glm::mat4(1.0f);
@@ -2106,18 +2123,7 @@ void VulkanRenderer::FlushSpriteBatch()
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
     // Push constants - identity model since vertices are pre-transformed
-    struct CombinedPushConstants
-    {
-        glm::mat4 projection;    // 0-63
-        glm::mat4 model;         // 64-127
-        glm::vec3 spriteColor;   // 128-139
-        float useColorOnly;      // 140-143
-        glm::vec4 colorOnly;     // 144-159
-        float spriteAlpha;       // 160-163
-        float _padding[3];       // 164-175 (padding to align ambientColor)
-        glm::vec3 ambientColor;  // 176-187
-        float _padding2;         // 188-191 (padding to 192)
-    } pushConstants;
+    CombinedPushConstants pushConstants;
 
     pushConstants.projection = m_Projection;
     pushConstants.model = glm::mat4(1.0f);        // Identity - vertices already transformed
@@ -2190,18 +2196,17 @@ glm::mat4 VulkanRenderer::CalculateModelMatrix(glm::vec2 position, glm::vec2 siz
 
 void VulkanRenderer::UploadTexture(const Texture& texture)
 {
-    // Call CreateVulkanTexture on the texture to upload it to the GPU
-    // Cast away const since we're modifying Vulkan state, not logical texture state
-    Texture* texPtr = const_cast<Texture*>(&texture);
-    texPtr->CreateVulkanTexture(m_Device, m_PhysicalDevice, m_CommandPool, m_GraphicsQueue);
-    m_TextureCache.erase(texPtr);
+    // Upload the texture to the GPU. CreateVulkanTexture is logically const
+    // (it only initializes GPU-side cached resources, not the texture's pixel data).
+    texture.CreateVulkanTexture(m_Device, m_PhysicalDevice, m_CommandPool, m_GraphicsQueue);
+    m_TextureCache.erase(&texture);
 
     // Track for cleanup during shutdown
     // Check if already tracked to avoid duplicates
-    auto it = std::find(m_UploadedTextures.begin(), m_UploadedTextures.end(), texPtr);
+    auto it = std::find(m_UploadedTextures.begin(), m_UploadedTextures.end(), &texture);
     if (it == m_UploadedTextures.end())
     {
-        m_UploadedTextures.push_back(texPtr);
+        m_UploadedTextures.push_back(&texture);
     }
 }
 
@@ -2237,7 +2242,7 @@ float VulkanRenderer::GetTextWidth(const std::string& text, float scale) const
         auto it = m_Glyphs.find(c);
         if (it != m_Glyphs.end())
         {
-            width += it->second.advance * scale;
+            width += (it->second.advance >> 6) * scale;
         }
     }
     return width;
@@ -2332,18 +2337,7 @@ void VulkanRenderer::DrawText(const std::string& text,
             memcpy(&mappedVertices[m_CurrentVertexCount], vertices, vertexDataSize);
 
             // Push constants (same layout as sprites)
-            struct CombinedPushConstants
-            {
-                glm::mat4 projection;
-                glm::mat4 model;
-                glm::vec3 spriteColor;
-                float useColorOnly;
-                glm::vec4 colorOnly;
-                float spriteAlpha;
-                float _padding[3];
-                glm::vec3 ambientColor;
-                float _padding2;
-            } pushConstants;
+            CombinedPushConstants pushConstants;
 
             pushConstants.projection = m_Projection;
             pushConstants.model =

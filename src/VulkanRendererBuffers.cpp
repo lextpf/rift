@@ -10,6 +10,10 @@ uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
+        // typeFilter is a bitmask from Vulkan where bit i is set if memory
+        // type i is compatible with the resource. The bitwise AND checks
+        // compatibility, then we verify the type also has the requested
+        // property flags (e.g. HOST_VISIBLE, DEVICE_LOCAL).
         if ((typeFilter & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
         {
@@ -80,9 +84,12 @@ void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
 
 void VulkanRenderer::CreateBuffers()
 {
-    // Create per-frame vertex buffers to avoid race conditions between frames in flight
-    // Vertex = 4 floats (pos.xy, tex.xy), 6 vertices per sprite
-    const uint32_t maxSprites = 10000;  // generous limit so we never drop draw calls
+    // Each frame in flight needs its own vertex buffer because the GPU may
+    // still be reading frame N's data while the CPU writes frame N+1.
+    // Buffer size: 4 floats/vertex * 6 vertices/quad * 10000 quads ~= 937 KB.
+    // 10000 quads is generous headroom - typical frames use ~2000 for a full
+    // tilemap + all sprites + UI.
+    const uint32_t maxSprites = 10000;
     m_VertexBufferSize = sizeof(float) * 4 * 6 * maxSprites;
 
     // Create one vertex buffer per frame in flight
@@ -164,7 +171,7 @@ void VulkanRenderer::CreateWhiteTexture()
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
-    imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -190,7 +197,7 @@ void VulkanRenderer::CreateWhiteTexture()
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_WhiteTextureImage;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;

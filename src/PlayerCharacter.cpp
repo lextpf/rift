@@ -174,14 +174,22 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
     }
 
     // Use the same sprite for running and bicycle modes
-    if (!m_RunningSpriteSheet.LoadFromFile(spritePath))
+    bool runLoaded = m_RunningSpriteSheet.LoadFromFile(spritePath);
+    if (!runLoaded)
     {
-        m_RunningSpriteSheet.LoadFromFile("../" + spritePath);
+        runLoaded = m_RunningSpriteSheet.LoadFromFile("../" + spritePath);
     }
 
-    if (!m_BicycleSpriteSheet.LoadFromFile(spritePath))
+    bool bikeLoaded = m_BicycleSpriteSheet.LoadFromFile(spritePath);
+    if (!bikeLoaded)
     {
-        m_BicycleSpriteSheet.LoadFromFile("../" + spritePath);
+        bikeLoaded = m_BicycleSpriteSheet.LoadFromFile("../" + spritePath);
+    }
+
+    if (!runLoaded || !bikeLoaded)
+    {
+        std::cerr << "Failed to load running/bicycle sprites from: " << spritePath << std::endl;
+        return false;
     }
 
     m_IsUsingCopiedAppearance = true;
@@ -219,7 +227,7 @@ void PlayerCharacter::Update(float deltaTime)
 
     if (m_AnimationTime >= animSpeed)
     {
-        m_AnimationTime = 0.0f;
+        m_AnimationTime -= animSpeed;
 
         if (m_AnimationType == AnimationType::IDLE)
         {
@@ -251,21 +259,6 @@ void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
 
     // Convert from bottom-center to render position (top-left)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
-
-    // Apply sprint visual offset (sprite leans into movement direction)
-    // Applied after projection so it's in screen-space
-    /*bool isSprinting = (m_AnimationType == AnimationType::RUN && m_IsRunning);
-    if (isSprinting)
-    {
-        constexpr float offsetAmount = 2.0f;
-        switch (m_Direction)
-        {
-            case Direction::DOWN:  renderPos.y -= offsetAmount; break;
-            case Direction::UP:    renderPos.y += offsetAmount; break;
-            case Direction::RIGHT: renderPos.x -= offsetAmount; break;
-            case Direction::LEFT:  renderPos.x += offsetAmount; break;
-        }
-    }*/
 
     // Select sprite sheet based on movement mode
     const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
@@ -356,20 +349,6 @@ void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
     // Convert from bottom-center position to render position (top-left)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
 
-    // Apply sprint visual offset
-    /*bool isSprinting = (m_AnimationType == AnimationType::RUN && m_IsRunning);
-    if (isSprinting)
-    {
-        constexpr float offsetAmount = 2.0f;
-        switch (m_Direction)
-        {
-            case Direction::DOWN:  renderPos.y -= offsetAmount; break;
-            case Direction::UP:    renderPos.y += offsetAmount; break;
-            case Direction::RIGHT: renderPos.x -= offsetAmount; break;
-            case Direction::LEFT:  renderPos.x += offsetAmount; break;
-        }
-    }*/
-
     // Select sprite sheet based on movement mode
     const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
                            : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
@@ -395,6 +374,11 @@ float PlayerCharacter::CalculateFollowAlpha(float deltaTime, float settleTime, f
 {
     deltaTime = std::max(0.0f, deltaTime);
     settleTime = std::max(1e-5f, settleTime);  // Prevent division by zero
+
+    // Exponential decay formula: after settleTime seconds, the remaining
+    // distance will be `epsilon` fraction of the original. This produces
+    // frame-rate-independent smoothing - the same visual result regardless
+    // of whether Update runs at 30 or 144 fps.
     float alpha = 1.0f - std::pow(epsilon, deltaTime / settleTime);
     return std::clamp(alpha, 0.0f, 1.0f);
 }
@@ -478,9 +462,14 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
     constexpr float HALF_W = HITBOX_WIDTH * 0.5f;
     constexpr float BOX_H = HITBOX_HEIGHT;
     constexpr float EPS = 0.05f;
+    // Maximum hitbox-area overlap with a corner tile before we stop allowing
+    // corner cutting. 20% lets the player clip through exposed convex corners
+    // smoothly but still blocks if they push too far into the tile.
     constexpr float CORNER_OVERLAP_THRESHOLD = 0.20f;
 
-    // Small overlaps with side walls are tolerated when moving along a corridor
+    // Small overlaps with side walls are tolerated when moving along a corridor.
+    // Without this, the player would snag on walls when slightly misaligned
+    // after a corner cut.
     constexpr float SIDE_WALL_TOLERANCE = 0.15f;
 
     // Calculate player AABB bounds
@@ -535,7 +524,9 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
                         // How deep we penetrated into the diagonal tile along the forward axis
                         float forwardPenetration = (moveDy != 0) ? overlapH : overlapW;
 
-                        // Range knob: increase to shrink corner influence range more.
+                        // Ignore diagonal tiles until the player is at least this many pixels
+                        // into them. This prevents a diagonal tile from blocking movement when
+                        // the player is only grazing its far edge during cardinal movement.
                         constexpr float DIAGONAL_CORNER_ACTIVATION_PX = 4.0f;
 
                         if (forwardPenetration < DIAGONAL_CORNER_ACTIVATION_PX)
@@ -561,6 +552,9 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
                     bool penetrationIsY = (overlapH <= overlapW);
                     float penetrationPx = penetrationIsY ? overlapH : overlapW;
 
+                    // Allow up to 5px of overlap when the player is sliding parallel
+                    // to a wall face (not pushing into it). This prevents getting stuck
+                    // when the hitbox is slightly embedded after a corner cut.
                     constexpr float PASSIVE_PENETRATION_PX = 5.0f;
 
                     bool movingInto = false;
@@ -582,6 +576,9 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
                         // moveDx == 0 is OK (sliding vertically while scraping)
                     }
 
+                    // Require at least 4px of contact along the wall face before
+                    // suppressing collision. Near corners, faceOverlap shrinks - we
+                    // must NOT suppress there or the player could clip through.
                     constexpr float FACE_CONTACT_MIN_PX = 4.0f;
                     float faceOverlap = penetrationIsY ? overlapW : overlapH;
 
@@ -653,8 +650,10 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
                 float tileCenterX = (tileMinX + tileMaxX) * 0.5f;
                 float tileCenterY = (tileMinY + tileMaxY) * 0.5f;
 
-                // Deadzone around the tile center so 1px wobble doesn't flip the quadrant.
-                // IMPORTANT: never allow both "left" and "right" to be true at the same time.
+                // Deadzone around the tile center prevents sub-pixel jitter from
+                // flipping the player between quadrants each frame, which would cause
+                // flickering collision results. Must be wide enough to absorb floating-
+                // point noise but narrow enough to still distinguish genuine sides.
                 constexpr float CORNER_QUAD_EPS = 4.0f;
 
                 auto sideSign = [](float v, float eps) -> int
@@ -801,8 +800,10 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
 
                 if (canCutThisCorner)
                 {
-                    // For cardinal movement, judge "corner scrape" by perpendicular penetration
-                    // (px), not by overlap area (which gets harsh when you're 1px off).
+                    // For cardinal movement, use perpendicular penetration in pixels
+                    // rather than overlap-area ratio. Area-based thresholds are too strict
+                    // when the player is aligned along one axis (tall, thin overlap sliver).
+                    // Pixel-based check lets us allow up to 4px of corner grazing.
                     bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0)) && !diagonalInput;
                     if (cardinalMove)
                     {
@@ -1829,81 +1830,6 @@ glm::vec2 PlayerCharacter::TrySlideMovement(glm::vec2 desiredMovement,
             m_SlideHysteresisDir = glm::vec2(0.0f);
         return glm::vec2(0.0f);  // No valid slide direction
     }
-    /*
-    // Determine primary movement axis
-    bool horizontalPrimary = std::abs(desiredMovement.x) > std::abs(desiredMovement.y);
-
-    // Try increasing slide amounts until we find a valid position
-    for (float slideAmount = 1.0f; slideAmount <= 16.0f; slideAmount += 1.0f)
-    {
-        glm::vec2 slideOffset;
-        glm::vec2 forwardMove;
-
-        if (horizontalPrimary)
-        {
-            slideOffset = glm::vec2(0.0f, slideDir.y * slideAmount);
-            forwardMove = glm::vec2(desiredMovement.x, 0.0f);
-        }
-        else
-        {
-            slideOffset = glm::vec2(slideDir.x * slideAmount, 0.0f);
-            forwardMove = glm::vec2(0.0f, desiredMovement.y);
-        }
-
-        // Test slide + full forward movement
-        glm::vec2 testSlideForward = m_Position + slideOffset + forwardMove;
-        if (!CollidesAt(testSlideForward, tilemap, npcPositions, sprintMode, moveDx, moveDy, false)
-    && !CollidesWithNPC(testSlideForward, npcPositions))
-        {
-            // Found valid slide - clamp to speed limit
-            float clampedSlide = std::min(slideAmount, maxSlide);
-            glm::vec2 clampedOffset;
-            if (horizontalPrimary)
-                clampedOffset = glm::vec2(0.0f, slideDir.y * clampedSlide);
-            else
-                clampedOffset = glm::vec2(slideDir.x * clampedSlide, 0.0f);
-
-            // After computing clampedOffset
-            if (CollidesAt(m_Position + clampedOffset, tilemap, npcPositions, sprintMode,
-                (int)slideDir.x, (int)slideDir.y, false))
-            {
-            continue; // clamped step isn't safe; try a different slideAmount
-            }
-
-            // Binary search for maximum forward progress
-            float lo = 0.0f, hi = 1.0f;
-            for (int i = 0; i < 8; ++i)
-            {
-                float mid = (lo + hi) * 0.5f;
-                glm::vec2 tryPos = m_Position + clampedOffset + forwardMove * mid;
-                if (!CollidesAt(tryPos, tilemap, npcPositions, sprintMode, moveDx, moveDy, false))
-                    lo = mid;
-                else
-                    hi = mid;
-            }
-
-            return clampedOffset + forwardMove * lo;
-        }
-
-        // Test slide only (no forward progress this frame)
-        glm::vec2 testSlideOnly = m_Position + slideOffset;
-        if (!CollidesAt(testSlideOnly, tilemap, npcPositions, sprintMode,
-                        (int)slideDir.x, (int)slideDir.y, false))
-        {
-            float clampedSlide = std::min(slideAmount, maxSlide);
-            if (horizontalPrimary)
-                return glm::vec2(0.0f, slideDir.y * clampedSlide);
-            else
-                return glm::vec2(slideDir.x * clampedSlide, 0.0f);
-        }
-    }
-
-    m_SlideHysteresisDir = glm::vec2(0.0f);
-    return glm::vec2(0.0f);  // No valid slide found
-    */
-    slideDir = GetCornerSlideDirection(testPos, tilemap, moveDx, moveDy);
-    if (glm::length(slideDir) < 0.001f)
-        return glm::vec2(0.0f);
 
     auto attemptDir = [&](glm::vec2 dir) -> glm::vec2
     {

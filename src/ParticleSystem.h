@@ -129,19 +129,13 @@ struct ParticleZone
  * | Type     | Spawn Rate | Lifetime | Size    | Special Behavior           |
  * |----------|------------|----------|---------|----------------------------|
  * | Firefly  | 3/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
- * | Rain     | 50/s
- * | 2s       | 10-14px | Fast fall, angled sprite   |
- * | Snow     | 12/s       | 15s | 1.5-3px |
- * Slow fall, rotation        |
- * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift,
- * low alpha |
+ * | Rain     | 50/s       | 2s       | 10-14px | Fast fall, angled sprite   |
+ * | Snow     | 12/s       | 15s      | 1.5-3px | Slow fall, rotation        |
+ * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
  * | Sparkles | 18/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * |
- * Wisp     | 4/s        | 4-7s     | 2-4px   | Spiral movement, colors    |
- * | Lantern  | 0.5/s
- * | 10-15s   | 4x zone | Night-only glow            |
- * | Sunshine | 0.8/s      | 5-9s     |
- * 40-64px | Angled rays, day/night     |
+ * | Wisp     | 4/s        | 4-7s     | 2-4px   | Spiral movement, colors    |
+ * | Lantern  | 0.5/s      | 10-15s   | 4x zone | Night-only glow            |
+ * | Sunshine | 0.8/s      | 5-9s     | 40-64px | Angled rays, day/night     |
  *
  * @section particle_lifecycle Particle Lifecycle
  * @htmlonly
@@ -194,6 +188,9 @@ class ParticleSystem
 {
 public:
     ParticleSystem();
+
+    ParticleSystem(const ParticleSystem&) = delete;
+    ParticleSystem& operator=(const ParticleSystem&) = delete;
 
     /**
      * @brief Load all particle textures from disk.

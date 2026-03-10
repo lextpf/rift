@@ -391,7 +391,7 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
     return true;
 }
 
-void Texture::CreateOpenGLTexture(unsigned char* data, bool flipY)
+void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
 {
     (void)flipY;
 
@@ -467,7 +467,7 @@ void Texture::Unbind() const
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void Texture::RecreateOpenGLTexture()
+void Texture::RecreateOpenGLTexture() const
 {
     // This is called after an OpenGL context switch (e.g., switching renderers)
     // The old texture ID is invalid in the new context, so we recreate it
@@ -522,7 +522,7 @@ std::uint64_t Texture::GetCurrentOpenGLContextGeneration()
 void Texture::CreateVulkanTexture(VkDevice device,
                                   VkPhysicalDevice physicalDevice,
                                   VkCommandPool commandPool,
-                                  VkQueue queue)
+                                  VkQueue queue) const
 {
     // Vulkan texture creation is more complex than OpenGL because we must:
     // 1. Create the image object (describes the texture properties)
@@ -615,6 +615,8 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (memoryTypeIndex == UINT32_MAX)
     {
+        vkDestroyImage(device, m_VulkanImage, nullptr);
+        m_VulkanImage = VK_NULL_HANDLE;
         throw std::runtime_error("Failed to find suitable memory type!");
     }
 
@@ -625,6 +627,8 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &m_VulkanImageMemory) != VK_SUCCESS)
     {
+        vkDestroyImage(device, m_VulkanImage, nullptr);
+        m_VulkanImage = VK_NULL_HANDLE;
         throw std::runtime_error("Failed to allocate Vulkan image memory!");
     }
 
@@ -646,6 +650,10 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (vkCreateImageView(device, &viewInfo, nullptr, &m_VulkanImageView) != VK_SUCCESS)
     {
+        vkDestroyImage(device, m_VulkanImage, nullptr);
+        m_VulkanImage = VK_NULL_HANDLE;
+        vkFreeMemory(device, m_VulkanImageMemory, nullptr);
+        m_VulkanImageMemory = VK_NULL_HANDLE;
         throw std::runtime_error("Failed to create Vulkan image view!");
     }
 
@@ -669,6 +677,12 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (vkCreateSampler(device, &samplerInfo, nullptr, &m_VulkanSampler) != VK_SUCCESS)
     {
+        vkDestroyImageView(device, m_VulkanImageView, nullptr);
+        m_VulkanImageView = VK_NULL_HANDLE;
+        vkDestroyImage(device, m_VulkanImage, nullptr);
+        m_VulkanImage = VK_NULL_HANDLE;
+        vkFreeMemory(device, m_VulkanImageMemory, nullptr);
+        m_VulkanImageMemory = VK_NULL_HANDLE;
         throw std::runtime_error("Failed to create Vulkan sampler!");
     }
 
@@ -697,7 +711,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
                 return i;
             }
         }
-        throw std::runtime_error("Failed to find suitable memory type!");
+        return UINT32_MAX;
     };
 
     // Create staging buffer - host visible so CPU can write to it
@@ -709,6 +723,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (vkCreateBuffer(device, &stagingBufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS)
     {
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to create staging buffer!");
     }
 
@@ -724,9 +739,17 @@ void Texture::CreateVulkanTexture(VkDevice device,
         FindMemoryType(stagingMemRequirements.memoryTypeBits,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
+    if (stagingAllocInfo.memoryTypeIndex == UINT32_MAX)
+    {
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
+        throw std::runtime_error("Failed to find suitable memory type for staging buffer!");
+    }
+
     if (vkAllocateMemory(device, &stagingAllocInfo, nullptr, &stagingBufferMemory) != VK_SUCCESS)
     {
         vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to allocate staging buffer memory!");
     }
 
@@ -757,6 +780,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
     {
         vkFreeMemory(device, stagingBufferMemory, nullptr);
         vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to allocate command buffer!");
     }
 
@@ -770,6 +794,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
         vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to begin command buffer!");
     }
 
@@ -844,6 +869,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
         vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to end command buffer!");
     }
 
@@ -858,6 +884,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
         vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
         throw std::runtime_error("Failed to submit command buffer!");
     }
 
@@ -871,7 +898,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
     vkDestroyBuffer(device, stagingBuffer, nullptr);
 }
 
-void Texture::DestroyVulkanTexture(VkDevice device)
+void Texture::DestroyVulkanTexture(VkDevice device) const
 {
     VkDevice destroyDevice = (device != VK_NULL_HANDLE) ? device : m_VulkanDevice;
     if (destroyDevice == VK_NULL_HANDLE)

@@ -18,6 +18,7 @@ static constexpr glm::vec4 kLayerColors[] = {
 };
 
 Editor::Editor()
+    // -- Mode flags: all sub-modes start inactive --
     : m_EditorMode(false),
       m_ShowTilePicker(false),
       m_EditNavigationMode(false),
@@ -29,24 +30,38 @@ Editor::Editor()
       m_ParticleZoneEditMode(false),
       m_StructureEditMode(false),
       m_AnimationEditMode(false),
-      m_CurrentParticleType(ParticleType::Firefly),
+
+      // -- Particle zone editing --
+      m_CurrentParticleType(ParticleType::Firefly),  // default particle visual
       m_ParticleNoProjection(false),
-      m_PlacingParticleZone(false),
+      m_PlacingParticleZone(false),  // true while dragging to define a zone
       m_ParticleZoneStart(0.0f, 0.0f),
+
+      // -- Structure editing: -1 means no structure selected / no anchor placed --
       m_CurrentStructureId(-1),
-      m_PlacingAnchor(0),
+      m_PlacingAnchor(0),  // 0 = not placing, 1 = left anchor, 2 = right anchor
       m_TempLeftAnchor(-1.0f, -1.0f),
       m_TempRightAnchor(-1.0f, -1.0f),
       m_AssigningTilesToStructure(false),
-      m_AnimationFrameDuration(0.2f),
-      m_SelectedAnimationId(-1),
+
+      // -- Animation editing --
+      m_AnimationFrameDuration(0.2f),  // seconds per frame
+      m_SelectedAnimationId(-1),       // -1 = none selected
+
+      // -- Debug flags --
       m_DebugMode(false),
       m_ShowDebugInfo(false),
       m_ShowNoProjectionAnchors(false),
+
+      // -- Tile selection: layer 0, elevation 4 is the default ground level --
       m_SelectedTileID(0),
       m_CurrentLayer(0),
       m_CurrentElevation(4),
+
+      // -- NPC placement --
       m_SelectedNPCTypeIndex(0),
+
+      // -- Mouse / drag tracking: -1 sentinels mean "no previous tile" --
       m_LastMouseX(0.0),
       m_LastMouseY(0.0),
       m_MousePressed(false),
@@ -55,26 +70,30 @@ Editor::Editor()
       m_LastPlacedTileY(-1),
       m_LastNavigationTileX(-1),
       m_LastNavigationTileY(-1),
-      m_NavigationDragState(false),
+      m_NavigationDragState(false),  // value painted while dragging navigation
       m_LastCollisionTileX(-1),
       m_LastCollisionTileY(-1),
-      m_CollisionDragState(false),
+      m_CollisionDragState(false),  // value painted while dragging collision
       m_LastNPCPlacementTileX(-1),
       m_LastNPCPlacementTileY(-1),
+
+      // -- Tile picker camera: starts at 2x zoom, centered --
       m_TilePickerZoom(2.0f),
       m_TilePickerOffsetX(0.0f),
       m_TilePickerOffsetY(0.0f),
-      m_TilePickerTargetOffsetX(0.0f),
+      m_TilePickerTargetOffsetX(0.0f),  // smoothed scroll target
       m_TilePickerTargetOffsetY(0.0f),
+
+      // -- Multi-tile selection: defaults to a single 1x1 tile --
       m_MultiTileSelectionMode(false),
       m_SelectedTileStartID(0),
       m_SelectedTileWidth(1),
       m_SelectedTileHeight(1),
-      m_IsSelectingTiles(false),
-      m_SelectionStartTileID(-1),
-      m_PlacementCameraZoom(1.0f),
+      m_IsSelectingTiles(false),    // true while drag-selecting in picker
+      m_SelectionStartTileID(-1),   // -1 = no selection started
+      m_PlacementCameraZoom(1.0f),  // snapshot of camera zoom at placement time
       m_IsPlacingMultiTile(false),
-      m_MultiTileRotation(0)
+      m_MultiTileRotation(0)  // 0/90/180/270 degrees
 {
 }
 

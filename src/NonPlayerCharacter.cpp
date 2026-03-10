@@ -59,7 +59,7 @@ NonPlayerCharacter::NonPlayerCharacter()
 bool NonPlayerCharacter::Load(const std::string& relativePath)
 {
     // Extract NPC type from filename
-    size_t lastSlash = relativePath.find_last_of('/');
+    size_t lastSlash = relativePath.find_last_of("/\\");
     std::string filename =
         (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
 
@@ -210,6 +210,8 @@ void NonPlayerCharacter::Update(float deltaTime,
         return;
 
     m_TileX = static_cast<int>(std::floor(m_Position.x / static_cast<float>(tileWidth)));
+    // Subtract 0.1px so an NPC standing exactly on a tile boundary registers
+    // as belonging to the tile above, not the one below (matches player logic).
     m_TileY = static_cast<int>(std::floor((m_Position.y - 0.1f) / static_cast<float>(tileHeight)));
 
     if (m_WaitTimer > 0.0f)
@@ -219,15 +221,15 @@ void NonPlayerCharacter::Update(float deltaTime,
             m_WaitTimer = 0.0f;
     }
 
+    if (m_WaitTimer > 0.0f)
+        return;
+
     m_AnimationTime += deltaTime;
     if (m_AnimationTime >= NPC_ANIM_SPEED)
     {
         m_AnimationTime -= NPC_ANIM_SPEED;
         AdvanceWalkAnimation();
     }
-
-    if (m_WaitTimer > 0.0f)
-        return;
 
     if (m_PatrolRoute.IsValid() && m_RandomStandStillCheckTimer > 0.0f)
     {
@@ -258,17 +260,25 @@ void NonPlayerCharacter::Update(float deltaTime,
             {
                 m_StandingStill = false;
                 m_RandomStandStillTimer = 0.0f;
-                m_RandomStandStillCheckTimer = 5.0f + (GetNpcRng()() % 500) / 100.0f;
+                // Wait 5-9.99 seconds before the next random-pause roll.
+                // The range prevents NPCs from all pausing in sync.
+                m_RandomStandStillCheckTimer =
+                    5.0f + std::uniform_int_distribution<int>(0, 499)(GetNpcRng()) / 100.0f;
             }
         }
 
-        // Random pause check (30% chance when timer expires at waypoint)
+        // 30% chance to pause at each waypoint when the cooldown expires.
+        // This breaks up the mechanical look of constant patrol walking.
         if (m_PatrolRoute.IsValid() && m_RandomStandStillCheckTimer <= 0.0f)
         {
-            m_RandomStandStillCheckTimer = 5.0f + (GetNpcRng()() % 500) / 100.0f;
-            if ((GetNpcRng()() % 100) < 30)
+            m_RandomStandStillCheckTimer =
+                5.0f + std::uniform_int_distribution<int>(0, 499)(GetNpcRng()) / 100.0f;
+            if (std::uniform_int_distribution<int>(0, 99)(GetNpcRng()) < 30)
             {
-                float duration = 2.0f + (GetNpcRng()() % 300) / 100.0f;
+                // Pause for 2-4.99 seconds - long enough to look natural,
+                // short enough not to stall gameplay.
+                float duration =
+                    2.0f + std::uniform_int_distribution<int>(0, 299)(GetNpcRng()) / 100.0f;
                 EnterStandingStillMode(true, duration);
                 return;
             }
@@ -316,7 +326,7 @@ void NonPlayerCharacter::UpdateLookAround(float deltaTime)
     {
         static const NPCDirection directions[] = {
             NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
-        m_Direction = directions[GetNpcRng()() % 4];
+        m_Direction = directions[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
         m_LookAroundTimer = 2.0f;
     }
 }
@@ -324,17 +334,23 @@ void NonPlayerCharacter::UpdateLookAround(float deltaTime)
 void NonPlayerCharacter::EnterStandingStillMode(bool isRandom, float duration)
 {
     m_StandingStill = true;
+    // When not random (e.g. no patrol route found), timer stays at 0 so the
+    // NPC stays in standing-still/look-around mode indefinitely until a route
+    // is assigned.
     m_RandomStandStillTimer = isRandom ? duration : 0.0f;
     m_LookAroundTimer = 2.0f;
     ResetAnimation();
 
     static const NPCDirection directions[] = {
         NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
-    m_Direction = directions[GetNpcRng()() % 4];
+    m_Direction = directions[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
 }
 
 void NonPlayerCharacter::UpdateDirectionFromMovement(int dx, int dy)
 {
+    // Prefer horizontal facing when both axes have equal magnitude.
+    // This matches player character behavior and looks more natural for
+    // diagonal movement on a 2D top-down map.
     if (std::abs(dx) > std::abs(dy))
     {
         m_Direction = (dx > 0) ? NPCDirection::RIGHT : NPCDirection::LEFT;
@@ -377,7 +393,8 @@ bool NonPlayerCharacter::ReinitializePatrolRoute(const Tilemap* tilemap)
     {
         m_StandingStill = false;
         m_RandomStandStillTimer = 0.0f;
-        m_RandomStandStillCheckTimer = 5.0f + (GetNpcRng()() % 500) / 100.0f;
+        m_RandomStandStillCheckTimer =
+            5.0f + std::uniform_int_distribution<int>(0, 499)(GetNpcRng()) / 100.0f;
     }
     else
     {
@@ -401,6 +418,7 @@ void NonPlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos) const
 
     // Convert world position to screen space
     glm::vec2 bottomCenter = m_Position - cameraPos;
+    bottomCenter.y -= m_ElevationOffset;
 
     bottomCenter = renderer.ProjectPointSafe(bottomCenter);
 

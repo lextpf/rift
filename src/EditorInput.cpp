@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "EditorDialogue.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,8 @@ int FloodFill(
 {
     int mapWidth = tilemap.GetMapWidth();
     int mapHeight = tilemap.GetMapHeight();
-    std::vector<bool> visited(static_cast<size_t>(mapWidth * mapHeight), false);
+    std::vector<bool> visited(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight),
+                              false);
     std::vector<std::pair<int, int>> stack;
     stack.push_back({startX, startY});
     int count = 0;
@@ -49,6 +51,11 @@ struct ScreenToTile
 
 ScreenToTile ScreenToTileCoords(const EditorContext& ctx, double mouseX, double mouseY)
 {
+    // Convert screen pixels to world coordinates:
+    // 1. Compute the world-space viewport size (base tile area divided by zoom)
+    // 2. Map mouse pixel position [0, screenSize] -> [0, worldSize] via ratio
+    // 3. Add camera offset to get absolute world position
+    // 4. Floor-divide by tile size to get the tile index
     float worldW =
         static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth()) / ctx.cameraZoom;
     float worldH =
@@ -61,180 +68,6 @@ ScreenToTile ScreenToTileCoords(const EditorContext& ctx, double mouseX, double 
             worldY,
             static_cast<int>(std::floor(worldX / ctx.tilemap.GetTileWidth())),
             static_cast<int>(std::floor(worldY / ctx.tilemap.GetTileHeight()))};
-}
-
-struct MysteryDialogueData
-{
-    const char* treeId;
-    const char* npcName;
-    const char* flagName;
-    const char* detailsNodeId;
-    const char* startText;
-    const char* askMoreText;
-    const char* dismissText;
-    const char* updatePromptText;
-    const char* detailsText;
-    const char* questOfferText;
-    const char* questJournalText;
-    const char* declineText;
-    const char* acceptText;
-    const char* acceptOptionText;
-    const char* updateText;
-    const char* updateOptionText;
-};
-
-const MysteryDialogueData kMysteryDialogues[] = {
-    {"ufo_sighting",
-     "Anna",
-     "accepted_ufo_quest",
-     "lights",
-     "Please, you have to help me! My brother went to investigate strange lights in the northern "
-     "field three nights ago. He hasn't come back.",
-     "Strange lights?",
-     "I'm sorry, I can't help.",
-     "Any news about your brother?",
-     "Green lights, hovering in the sky. People say it's a UFO. Others have gone missing too. Will "
-     "you look for him?",
-     "I'll find your brother.",
-     "Find Anna's missing brother in the northern field!",
-     "That sounds too dangerous.",
-     "Thank you! The field is north of town. Please be careful, and bring him home safe.",
-     "I'll do my best.",
-     "Have you found him? Please, the northern field... that's where he went. I can't lose him.",
-     "I'm still looking."},
-    {"bigfoot_sighting",
-     "Mona",
-     "accepted_bigfoot_quest",
-     "details",
-     "I know what I saw. Eight feet tall, covered in fur, walking upright through the forest. "
-     "Everyone thinks I'm crazy.",
-     "Tell me more about what you saw.",
-     "Probably just a bear.",
-     "Found any more evidence?",
-     "It left tracks, huge ones, near the old mill. I found tufts of hair too. Something's out "
-     "there. Will you help me prove it?",
-     "I'll investigate the old mill.",
-     "Investigate the strange tracks near the old mill.",
-     "I'd rather not get involved.",
-     "Finally, someone who believes me! The mill is east of here. Look for broken branches and "
-     "disturbed earth. And be careful.",
-     "I'll see what I can find.",
-     "Any luck at the mill? I've been hearing strange howls at night. Something's definitely out "
-     "there.",
-     "Still investigating."},
-    {"haunted_manor",
-     "Eleanor",
-     "accepted_ghost_quest",
-     "details",
-     "The Blackwood Manor has been abandoned for decades. But lately... I've seen lights in the "
-     "windows. And heard music. Piano music.",
-     "That does sound strange.",
-     "Probably just squatters.",
-     "I went to the manor...",
-     "The Blackwoods all died in a fire fifty years ago. The piano burned with them. Yet I hear it "
-     "playing every midnight. Will you find out what's happening?",
-     "I'll investigate the manor.",
-     "Investigate the strange occurrences at Blackwood Manor.",
-     "I don't believe in ghosts.",
-     "Bless you. The manor is on the hill west of town. Go at midnight if you want to hear the "
-     "music. But don't say I didn't warn you.",
-     "I'll be careful.",
-     "Did you hear it? The piano? Some say it's Lady Blackwood, still playing for her children. "
-     "They never found her body in the fire...",
-     "I need to look deeper."},
-    {"sea_vanishings",
-     "Claire",
-     "accepted_sea_quest",
-     "details",
-     "Three ships. Three ships vanished in the same waters this month. No storms. No wreckage. "
-     "Just... gone. The sea took them.",
-     "Where did they disappear?",
-     "Ships sink all the time.",
-     "Any word on the missing ships?",
-     "All near the Devil's Reef. Sailors tell of strange lights beneath the waves. Compasses "
-     "spinning wildly. My own brother was on the last ship. Find out what happened.",
-     "I'll look into it.",
-     "Investigate the mysterious disappearances near Devil's Reef.",
-     "The sea keeps its secrets.",
-     "Thank you. Talk to the lighthouse keeper. He watches those waters every night. If anyone's "
-     "seen something, it's him.",
-     "I'll find the lighthouse.",
-     "Another ship reported strange fog near the reef last night. They barely made it through. "
-     "Something's out there, I tell you.",
-     "I'm getting closer to the truth."},
-    {"crop_circles",
-     "Fiona",
-     "accepted_circles_quest",
-     "details",
-     "Every morning, new patterns in the wheat fields up north. Perfect circles and spirals. No "
-     "footprints leading in or out. Something's making them at night.",
-     "What kind of patterns?",
-     "Probably just pranksters.",
-     "Any new formations?",
-     "Mathematical precision. My dog won't go near them, howls all night long. Last week I found a "
-     "metal disc in the center of one. Will you watch the fields tonight?",
-     "I'll keep watch tonight.",
-     "Watch Farmer Giles' fields at night to discover what's making the crop circles.",
-     "I have better things to do.",
-     "Good. Hide by the old scarecrow around midnight. That's when the humming starts. And "
-     "whatever you do, don't let them see you.",
-     "I'll be there.",
-     "Three new circles appeared last night. Bigger than before. The wheat in the center was warm "
-     "to the touch at dawn. Unnatural warm.",
-     "I'll catch them in the act."}};
-
-void BuildMysteryDialogueTree(DialogueTree& tree,
-                              std::string& outNpcName,
-                              const MysteryDialogueData& d)
-{
-    tree.id = d.treeId;
-    tree.startNodeId = "start";
-    outNpcName = d.npcName;
-
-    DialogueNode startNode;
-    startNode.id = "start";
-    startNode.speaker = outNpcName;
-    startNode.text = d.startText;
-    DialogueOption askMoreOpt(d.askMoreText, d.detailsNodeId);
-    askMoreOpt.conditions.push_back(
-        DialogueCondition(DialogueCondition::Type::FLAG_NOT_SET, d.flagName));
-    startNode.options.push_back(askMoreOpt);
-    DialogueOption dismissOpt(d.dismissText, "");
-    dismissOpt.conditions.push_back(
-        DialogueCondition(DialogueCondition::Type::FLAG_NOT_SET, d.flagName));
-    startNode.options.push_back(dismissOpt);
-    DialogueOption updateOpt(d.updatePromptText, "update");
-    updateOpt.conditions.push_back(
-        DialogueCondition(DialogueCondition::Type::FLAG_SET, d.flagName));
-    startNode.options.push_back(updateOpt);
-    tree.AddNode(startNode);
-
-    DialogueNode detailsNode;
-    detailsNode.id = d.detailsNodeId;
-    detailsNode.speaker = outNpcName;
-    detailsNode.text = d.detailsText;
-    DialogueOption questOpt(d.questOfferText, "accept");
-    questOpt.conditions.push_back(
-        DialogueCondition(DialogueCondition::Type::FLAG_NOT_SET, d.flagName));
-    questOpt.consequences.push_back(DialogueConsequence(
-        DialogueConsequence::Type::SET_FLAG_VALUE, d.flagName, d.questJournalText));
-    detailsNode.options.push_back(questOpt);
-    detailsNode.options.push_back(DialogueOption(d.declineText, ""));
-    tree.AddNode(detailsNode);
-
-    DialogueNode acceptNode;
-    acceptNode.id = "accept";
-    acceptNode.speaker = outNpcName;
-    acceptNode.text = d.acceptText;
-    acceptNode.options.push_back(DialogueOption(d.acceptOptionText, ""));
-    tree.AddNode(acceptNode);
-
-    DialogueNode updateNode;
-    updateNode.id = "update";
-    updateNode.speaker = outNpcName;
-    updateNode.text = d.updateText;
-    updateNode.options.push_back(DialogueOption(d.updateOptionText, ""));
-    tree.AddNode(updateNode);
 }
 
 }  // anonymous namespace
@@ -1343,8 +1176,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     if (worldX >= zone.position.x && worldX < zone.position.x + zone.size.x &&
                         worldY >= zone.position.y && worldY < zone.position.y + zone.size.y)
                     {
-                        const char* typeNames[] = {
-                            "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern"};
+                        const char* typeNames[] = {"Firefly",
+                                                   "Rain",
+                                                   "Snow",
+                                                   "Fog",
+                                                   "Sparkles",
+                                                   "Wisp",
+                                                   "Lantern",
+                                                   "Sunshine"};
                         std::cout << "Removed " << typeNames[static_cast<int>(zone.type)]
                                   << " zone at (" << zone.position.x << ", " << zone.position.y
                                   << ")" << std::endl;
@@ -1635,14 +1474,26 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         {
                             npc.SetTilePosition(tileX, tileY, tileSize);
 
-                            // Randomly assign one of several mystery-themed dialogue trees
+                            // Randomly assign a dialogue tree from the pool
                             // TODO: Load from save.json only and create dialogues via editor
                             DialogueTree tree;
                             std::string npcName;
                             static std::mt19937 rng(std::random_device{}());
-                            std::uniform_int_distribution<int> dist(0, 4);
-                            int mysteryType = dist(rng);
-                            BuildMysteryDialogueTree(tree, npcName, kMysteryDialogues[mysteryType]);
+                            std::uniform_int_distribution<int> dist(0, 6);
+                            int dialogueType = dist(rng);
+                            if (dialogueType < 5)
+                            {
+                                BuildMysteryDialogueTree(
+                                    tree, npcName, kMysteryDialogues[dialogueType]);
+                            }
+                            else if (dialogueType == 5)
+                            {
+                                BuildEditorAwareDialogueTree(tree, npcName);
+                            }
+                            else
+                            {
+                                BuildAnnoyedNPCDialogueTree(tree, npcName);
+                            }
 
                             npc.SetDialogueTree(tree);
                             npc.SetName(npcName);

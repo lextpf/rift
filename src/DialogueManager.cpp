@@ -8,17 +8,12 @@
 // Invariants: when active, m_CurrentTree points at m_ActiveTree and
 // m_VisibleOptions stores pointers into that owned copy.
 DialogueManager::DialogueManager()
-    : m_Game(nullptr)  // Set by Initialize() - provides NPC access
-      ,
-      m_StateManager(nullptr)  // Set by Initialize() - evaluates conditions and stores flags
-      ,
-      m_Active(false)  // No conversation in progress until StartDialogue()
-      ,
-      m_CurrentTree(nullptr)  // Points to m_ActiveTree when dialogue is active
-      ,
-      m_CurrentNode(nullptr)  // Current position in the dialogue tree
-      ,
-      m_SelectedOption(0)  // UI cursor position in the options list
+    : m_Game(nullptr),          // Set by Initialize() - provides NPC access
+      m_StateManager(nullptr),  // Set by Initialize() - evaluates conditions and stores flags
+      m_Active(false),          // No conversation in progress until StartDialogue()
+      m_CurrentTree(nullptr),   // Points to m_ActiveTree when dialogue is active
+      m_CurrentNode(nullptr),   // Current position in the dialogue tree
+      m_SelectedOption(0)       // UI cursor position in the options list
 {
 }
 
@@ -202,6 +197,11 @@ void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>
                 m_StateManager->SetFlagValue(cons.key, cons.value);
                 std::cout << "DialogueManager: Set flag '" << cons.key << "' = '" << cons.value
                           << "'" << std::endl;
+                break;
+
+            default:
+                std::cerr << "DialogueManager: Unhandled consequence type "
+                          << static_cast<int>(cons.type) << std::endl;
                 break;
         }
         // TODO: extend consequences to support scripted actions or item grants; log unhandled types

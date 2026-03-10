@@ -64,35 +64,57 @@ public:
 
     /// @name Position & Direction
     /// @{
+
+    /// @brief Get the character's world position (bottom-center of sprite).
     virtual glm::vec2 GetPosition() const = 0;
+    /// @brief Set the character's world position.
     virtual void SetPosition(glm::vec2 pos) = 0;
+    /// @brief Get the direction the character is facing.
     virtual CharacterDirection GetDirection() const = 0;
+    /// @brief Set the direction the character faces.
     virtual void SetDirection(CharacterDirection dir) = 0;
     /// @}
 
     /// @name Elevation
     /// @{
+
+    /// @brief Get the current visual elevation offset in pixels.
     virtual float GetElevationOffset() const = 0;
+    /// @brief Get the target elevation the character is transitioning to.
     virtual float GetTargetElevation() const = 0;
+    /// @brief Set the visual elevation offset directly.
     virtual void SetElevationOffset(float offset) = 0;
+    /// @brief Smoothly interpolate elevation toward target over time.
     virtual void UpdateElevation(float deltaTime) = 0;
     /// @}
 
     /// @name Movement
     /// @{
+
+    /// @brief Get the character's movement speed in pixels per second.
     virtual float GetSpeed() const = 0;
+    /// @brief Set the character's movement speed in pixels per second.
     virtual void SetSpeed(float speed) = 0;
     /// @}
 
     /// @name Animation
     /// @{
+
+    /// @brief Get the current animation frame index.
     virtual int GetCurrentFrame() const = 0;
+    /// @brief Set the current animation frame index.
     virtual void SetCurrentFrame(int frame) = 0;
+    /// @brief Get the animation timer value in seconds.
     virtual float GetAnimationTime() const = 0;
+    /// @brief Set the animation timer value in seconds.
     virtual void SetAnimationTime(float time) = 0;
+    /// @brief Get the current position in the walk sequence [1,0,2,0].
     virtual int GetWalkSequenceIndex() const = 0;
+    /// @brief Set the current position in the walk sequence.
     virtual void SetWalkSequenceIndex(int index) = 0;
+    /// @brief Advance to the next frame in the walk cycle.
     virtual void AdvanceWalkAnimation() = 0;
+    /// @brief Reset animation to the idle frame.
     virtual void ResetAnimation() = 0;
     /// @}
 };

@@ -9,25 +9,16 @@
 #include <iostream>
 
 ParticleSystem::ParticleSystem()
-    : m_Zones(nullptr)  // Particle zones from tilemap
-      ,
-      m_Tilemap(nullptr)  // Reference to tilemap for structure queries
-      // TODO: Retrieve tile size from tilemap
-      ,
-      m_TileWidth(32)  // Tile dimensions for coordinate conversion
-      ,
+    : m_Zones(nullptr),    // Particle zones from tilemap
+      m_Tilemap(nullptr),  // Reference to tilemap for structure queries
+      m_TileWidth(32),     // Tile dimensions for coordinate conversion
       m_TileHeight(32),
-      m_MaxParticlesPerZone(25)  // Particle density cap per zone
-      ,
-      m_Time(0.0f)  // Accumulated time for animation cycles
-      ,
-      m_NightFactor(0.0f)  // Day & night blend (0 = day, 1 = night)
-      ,
-      m_Rng(std::random_device{}())  // Seeded Mersenne Twister RNG
-      ,
-      m_Dist01(0.0f, 1.0f)  // Uniform distribution for random values
-      ,
-      m_TexturesLoaded(false)  // Lazy-load flag for particle sprites
+      m_MaxParticlesPerZone(25),      // Particle density cap per zone
+      m_Time(0.0f),                   // Accumulated time for animation cycles
+      m_NightFactor(0.0f),            // Day & night blend (0 = day, 1 = night)
+      m_Rng(std::random_device{}()),  // Seeded Mersenne Twister RNG
+      m_Dist01(0.0f, 1.0f),           // Uniform distribution for random values
+      m_TexturesLoaded(false)         // Lazy-load flag for particle sprites
 {
     m_Particles.reserve(500);  // Pre-allocate to reduce reallocations
 }

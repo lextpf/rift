@@ -159,140 +159,191 @@ public:
     void ResetTilePickerState();
 
 private:
+    /// @name Render Methods
+    /// @brief Private overlay and UI rendering routines.
+    /// @{
+
+    /// @brief Render editor UI elements (cursor, tile info, status text).
     void RenderEditorUI(const EditorContext& ctx);
+    /// @brief Render collision flag overlay.
     void RenderCollisionOverlays(const EditorContext& ctx);
+    /// @brief Render navigation walkability overlay.
     void RenderNavigationOverlays(const EditorContext& ctx);
+    /// @brief Render elevation value overlay.
     void RenderElevationOverlays(const EditorContext& ctx);
+    /// @brief Render no-projection flag overlay.
     void RenderNoProjectionOverlays(const EditorContext& ctx);
+    /// @brief Render no-projection anchor markers (implementation).
     void RenderNoProjectionAnchorsImpl(const EditorContext& ctx);
+    /// @brief Render structure assignment overlay.
     void RenderStructureOverlays(const EditorContext& ctx);
+    /// @brief Render generic layer flag overlay using a getter method pointer.
     void RenderLayerFlagOverlays(const EditorContext& ctx,
                                  bool editMode,
                                  bool (Tilemap::*getter)(int, int, size_t) const,
                                  const glm::vec3& color);
+    /// @brief Render Y-sort-plus flag overlay.
     void RenderYSortPlusOverlays(const EditorContext& ctx);
+    /// @brief Render Y-sort-minus flag overlay.
     void RenderYSortMinusOverlays(const EditorContext& ctx);
+    /// @brief Render particle zone boundary overlay.
     void RenderParticleZoneOverlays(const EditorContext& ctx);
+    /// @brief Render NPC debug info (patrol routes, waypoints).
     void RenderNPCDebugInfo(const EditorContext& ctx);
+    /// @brief Render corner-cutting debug overlay.
     void RenderCornerCuttingOverlays(const EditorContext& ctx);
+    /// @brief Render color-coded layer indicator overlay.
     void RenderLayerOverlay(const EditorContext& ctx, int layerIndex, const glm::vec4& color);
+    /// @brief Render tile placement preview at cursor position.
     void RenderPlacementPreview(const EditorContext& ctx);
 
+    /// @}
+
+    /// @brief Recalculate all NPC patrol routes after navigation changes.
     void RecalculateNPCPatrolRoutes(const EditorContext& ctx);
 
+    /// @brief Map rotated tile offset to source tile coordinates.
+    /// @param dx Rotated offset X.
+    /// @param dy Rotated offset Y.
+    /// @param sourceDx Output source offset X.
+    /// @param sourceDy Output source offset Y.
     void CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const;
+
+    /// @brief Get tile rotation compensated for current editor rotation.
     float GetCompensatedTileRotation() const;
+
+    /// @brief Toggle a per-tile layer flag using the provided setter.
+    /// @param ctx Editor context.
+    /// @param tileX Tile column.
+    /// @param tileY Tile row.
+    /// @param setter Tilemap method pointer for setting the flag.
+    /// @param flagName Name of the flag (for debug display).
     void SetLayerFlagAtTile(const EditorContext& ctx,
                             int tileX,
                             int tileY,
                             void (Tilemap::*setter)(int, int, size_t, bool),
                             const std::string& flagName);
 
+    /**
+     * @struct TileZoneRect
+     * @brief Axis-aligned rectangle in tile coordinates for zone editing.
+     */
     struct TileZoneRect
     {
-        float x, y, w, h;
+        float x, y, w, h;  ///< Position and size in world pixels.
     };
+
+    /// @brief Calculate particle zone rectangle from world position.
     TileZoneRect CalculateParticleZoneRect(float worldX,
                                            float worldY,
                                            int tileWidth,
                                            int tileHeight) const;
 
     /// @name Mode Flags
+    /// Only one sub-mode is active at a time; toggled via hotkeys (see class docs).
     /// @{
-    bool m_EditorMode;
-    bool m_ShowTilePicker;
-    bool m_EditNavigationMode;
-    bool m_ElevationEditMode;
-    bool m_NPCPlacementMode;
-    bool m_NoProjectionEditMode;
-    bool m_YSortPlusEditMode;
-    bool m_YSortMinusEditMode;
-    bool m_ParticleZoneEditMode;
-    bool m_StructureEditMode;
-    bool m_AnimationEditMode;
+    bool m_EditorMode;            ///< Master toggle for the level editor (E key).
+    bool m_ShowTilePicker;        ///< Whether the tile picker panel is visible.
+    bool m_EditNavigationMode;    ///< Painting walkability flags (M key).
+    bool m_ElevationEditMode;     ///< Painting elevation values (H key).
+    bool m_NPCPlacementMode;      ///< Placing / removing NPCs (N key).
+    bool m_NoProjectionEditMode;  ///< Editing no-projection flags (B key).
+    bool m_YSortPlusEditMode;     ///< Editing Y-sort-plus flags (Y key).
+    bool m_YSortMinusEditMode;    ///< Editing Y-sort-minus flags (O key).
+    bool m_ParticleZoneEditMode;  ///< Defining particle emitter zones (J key).
+    bool m_StructureEditMode;     ///< Assigning tiles to structures (G key).
+    bool m_AnimationEditMode;     ///< Applying animations to tiles (K key).
     /// @}
 
     /// @name Particle Zone Editing
+    /// State for drag-to-create particle emitter zones.
     /// @{
-    ParticleType m_CurrentParticleType;
-    bool m_ParticleNoProjection;
-    bool m_PlacingParticleZone;
-    glm::vec2 m_ParticleZoneStart;
+    ParticleType m_CurrentParticleType;  ///< Visual type for new zones (e.g. Firefly).
+    bool m_ParticleNoProjection;         ///< If true, new zones skip perspective projection.
+    bool m_PlacingParticleZone;          ///< True while the user is dragging to define a zone.
+    glm::vec2 m_ParticleZoneStart;       ///< World position where the current drag began.
     /// @}
 
     /// @name Structure Editing
+    /// State for the two-anchor structure workflow: place left anchor, right anchor,
+    /// then flood-assign tiles between them to a structure ID.
     /// @{
-    int m_CurrentStructureId;
-    int m_PlacingAnchor;
-    glm::vec2 m_TempLeftAnchor;
-    glm::vec2 m_TempRightAnchor;
-    bool m_AssigningTilesToStructure;
+    int m_CurrentStructureId;          ///< Active structure ID, or -1 if none selected.
+    int m_PlacingAnchor;               ///< Anchor step: 0 = idle, 1 = left, 2 = right.
+    glm::vec2 m_TempLeftAnchor;        ///< World position of left anchor (-1 = unset).
+    glm::vec2 m_TempRightAnchor;       ///< World position of right anchor (-1 = unset).
+    bool m_AssigningTilesToStructure;  ///< True during tile flood-assign phase.
     /// @}
 
     /// @name Animation Editing
     /// @{
-    std::vector<int> m_AnimationFrames;
-    float m_AnimationFrameDuration;
-    int m_SelectedAnimationId;
+    std::vector<int> m_AnimationFrames;  ///< Tile IDs composing the current animation sequence.
+    float m_AnimationFrameDuration;      ///< Seconds each frame is shown (default 0.2s).
+    int m_SelectedAnimationId;           ///< Index of the animation being edited, or -1.
     /// @}
 
     /// @name Debug Flags
     /// @{
-    bool m_DebugMode;
-    bool m_ShowDebugInfo;
-    bool m_ShowNoProjectionAnchors;
+    bool m_DebugMode;                ///< Enables all debug overlays (F3).
+    bool m_ShowDebugInfo;            ///< Shows text debug info (FPS, tile coords, etc.).
+    bool m_ShowNoProjectionAnchors;  ///< Renders no-projection anchor markers on top of UI.
     /// @}
 
     /// @name Tile Selection
+    /// Currently selected tile, layer, and elevation for placement.
     /// @{
-    int m_SelectedTileID;
-    int m_CurrentLayer;
-    int m_CurrentElevation;
+    int m_SelectedTileID;    ///< Tile atlas index chosen in the tile picker.
+    int m_CurrentLayer;      ///< Active tilemap layer (0-9) for placement.
+    int m_CurrentElevation;  ///< Active elevation level (default 4 = ground).
     /// @}
 
     /// @name NPC Types
     /// @{
-    std::vector<std::string> m_AvailableNPCTypes;
-    size_t m_SelectedNPCTypeIndex;
+    std::vector<std::string> m_AvailableNPCTypes;  ///< Sprite paths loaded at init.
+    size_t m_SelectedNPCTypeIndex;                 ///< Index into m_AvailableNPCTypes.
     /// @}
 
     /// @name Mouse/Drag State
+    /// Tracks mouse position and per-mode drag state.  "Last" tile coords use -1
+    /// as a sentinel meaning "no tile touched yet this drag".
     /// @{
-    double m_LastMouseX;
-    double m_LastMouseY;
-    bool m_MousePressed;
-    bool m_RightMousePressed;
-    int m_LastPlacedTileX;
-    int m_LastPlacedTileY;
-    int m_LastNavigationTileX;
-    int m_LastNavigationTileY;
-    bool m_NavigationDragState;
-    int m_LastCollisionTileX;
-    int m_LastCollisionTileY;
-    bool m_CollisionDragState;
-    int m_LastNPCPlacementTileX;
-    int m_LastNPCPlacementTileY;
+    double m_LastMouseX;          ///< Previous frame cursor X (screen pixels).
+    double m_LastMouseY;          ///< Previous frame cursor Y (screen pixels).
+    bool m_MousePressed;          ///< Left mouse button held.
+    bool m_RightMousePressed;     ///< Right mouse button held.
+    int m_LastPlacedTileX;        ///< Last tile column written during tile drag.
+    int m_LastPlacedTileY;        ///< Last tile row written during tile drag.
+    int m_LastNavigationTileX;    ///< Last tile column toggled in navigation drag.
+    int m_LastNavigationTileY;    ///< Last tile row toggled in navigation drag.
+    bool m_NavigationDragState;   ///< Walkability value being painted this drag.
+    int m_LastCollisionTileX;     ///< Last tile column toggled in collision drag.
+    int m_LastCollisionTileY;     ///< Last tile row toggled in collision drag.
+    bool m_CollisionDragState;    ///< Collision value being painted this drag.
+    int m_LastNPCPlacementTileX;  ///< Last tile column used for NPC placement.
+    int m_LastNPCPlacementTileY;  ///< Last tile row used for NPC placement.
     /// @}
 
     /// @name Tile Picker State
+    /// Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
     /// @{
-    float m_TilePickerZoom;
-    float m_TilePickerOffsetX;
-    float m_TilePickerOffsetY;
-    float m_TilePickerTargetOffsetX;
-    float m_TilePickerTargetOffsetY;
+    float m_TilePickerZoom;           ///< Current zoom level (default 2x).
+    float m_TilePickerOffsetX;        ///< Current scroll X (interpolates toward target).
+    float m_TilePickerOffsetY;        ///< Current scroll Y (interpolates toward target).
+    float m_TilePickerTargetOffsetX;  ///< Desired scroll X (set by scroll input).
+    float m_TilePickerTargetOffsetY;  ///< Desired scroll Y (set by scroll input).
     /// @}
 
     /// @name Multi-Tile Selection
+    /// Allows selecting and placing rectangular regions of tiles from the picker.
     /// @{
-    bool m_MultiTileSelectionMode;
-    int m_SelectedTileStartID;
-    int m_SelectedTileWidth;
-    int m_SelectedTileHeight;
-    bool m_IsSelectingTiles;
-    int m_SelectionStartTileID;
-    float m_PlacementCameraZoom;
-    bool m_IsPlacingMultiTile;
-    int m_MultiTileRotation;
+    bool m_MultiTileSelectionMode;  ///< True when a multi-tile region is selected.
+    int m_SelectedTileStartID;      ///< Top-left tile ID of the selected region.
+    int m_SelectedTileWidth;        ///< Width of selection in tiles (default 1).
+    int m_SelectedTileHeight;       ///< Height of selection in tiles (default 1).
+    bool m_IsSelectingTiles;        ///< True while drag-selecting in the picker.
+    int m_SelectionStartTileID;     ///< Tile ID where the selection drag began (-1 = none).
+    float m_PlacementCameraZoom;    ///< Snapshot of camera zoom when placement began.
+    bool m_IsPlacingMultiTile;      ///< True while previewing multi-tile placement.
+    int m_MultiTileRotation;        ///< Rotation in degrees (0, 90, 180, or 270).
     /// @}
 };

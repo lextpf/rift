@@ -19,8 +19,11 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     VisibleTileRange r;
     r.tileWidth = ctx.tilemap.GetTileWidth();
     r.tileHeight = ctx.tilemap.GetTileHeight();
-    float worldWidth = static_cast<float>(ctx.tilesVisibleWidth * r.tileWidth) / ctx.cameraZoom;
-    float worldHeight = static_cast<float>(ctx.tilesVisibleHeight * r.tileHeight) / ctx.cameraZoom;
+    if (r.tileWidth <= 0 || r.tileHeight <= 0)
+        return r;
+    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float worldWidth = static_cast<float>(ctx.tilesVisibleWidth * r.tileWidth) / zoom;
+    float worldHeight = static_cast<float>(ctx.tilesVisibleHeight * r.tileHeight) / zoom;
     r.screenSize = glm::vec2(worldWidth, worldHeight);
     r.startX = std::max(0, static_cast<int>(ctx.cameraPosition.x / r.tileWidth) - 1);
     r.endX = std::min(ctx.tilemap.GetMapWidth(),
@@ -42,7 +45,7 @@ StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap,
                                       int mapWidth,
                                       int mapHeight,
                                       size_t layerCount,
-                                      std::vector<bool>& processed)
+                                      std::vector<char>& processed)
 {
     StructureBounds bounds{startX, startX, startY, startY};
     std::vector<std::pair<int, int>> stack;
@@ -72,7 +75,7 @@ StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap,
         if (!isNoProj)
             continue;
 
-        processed[cIdx] = true;
+        processed[cIdx] = 1;
         bounds.minX = std::min(bounds.minX, cx);
         bounds.maxX = std::max(bounds.maxX, cx);
         bounds.minY = std::min(bounds.minY, cy);
@@ -218,7 +221,7 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
     // Track processed tiles for anchor finding
     // TODO: cache structure bounds/anchors once per frame (shared with RenderNoProjectionAnchors)
     // to avoid repeated flood-fills.
-    std::vector<bool> processed(mapWidth * mapHeight, false);
+    std::vector<char> processed(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), 0);
     size_t layerCount = ctx.tilemap.GetLayerCount();
 
     for (int y = vr.startY; y < vr.endY; ++y)
@@ -338,7 +341,7 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 
     // Track processed tiles to avoid drawing anchors multiple times
     // TODO: reuse cached structure bounds instead of scanning the full map every frame.
-    std::vector<bool> processed(static_cast<size_t>(mapWidth * mapHeight), false);
+    std::vector<char> processed(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), 0);
 
     // Scan entire map for no-projection structures
     for (int y = 0; y < mapHeight; ++y)
@@ -1185,8 +1188,9 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
     float baseWorldWidth = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
     float baseWorldHeight =
         static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight());
-    float worldWidth = baseWorldWidth / ctx.cameraZoom;
-    float worldHeight = baseWorldHeight / ctx.cameraZoom;
+    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float worldWidth = baseWorldWidth / zoom;
+    float worldHeight = baseWorldHeight / zoom;
 
     // Convert mouse position to world coordinates
     float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldWidth +

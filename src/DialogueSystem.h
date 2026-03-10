@@ -226,9 +226,7 @@ struct DialogueNode
  *       "greeting": {
  *         "text": "Hello, traveler!",
  *         "choices": [
- *           { "text": "Who are you?", "goto": "introduce" },
- *           { "text": "Need work.", "goto": "work", "when": "!talked" },
- *           { "text": "Goodbye." }
+ *           { "text": "Who are you?", "goto": "introduce" }
  *         ]
  *       },
  *       "introduce": { ... }
@@ -264,7 +262,7 @@ struct DialogueNode
  * | `"flag"`            | Set flag to true                    |
  * | `"-flag"`           | Clear/remove flag                   |
  * | `"flag=value"`      | Set flag to specific value          |
- * | `"accepted_x:desc"` | Set flag to true                    |
+ * | `"accepted_x:desc"` | Set flag to value after colon       |
  *
  * @see DialogueManager for runtime dialogue control
  * @see GameStateManager for flag storage and evaluation

@@ -369,27 +369,42 @@ public:
      *
      * @param projection 4x4 projection matrix.
      */
-    virtual void SetProjection(glm::mat4 projection) = 0;
+    virtual void SetProjection(const glm::mat4& projection) = 0;
 
+    /**
+     * @enum ProjectionMode
+     * @brief Available pseudo-3D projection modes for world rendering.
+     * @author Alex (https://github.com/lextpf)
+     * @ingroup Rendering
+     */
     enum class ProjectionMode
     {
-        VanishingPoint,  // Perspective scaling toward horizon only
-        Globe,           // Spherical curvature only
-        Fisheye          // Globe curvature & vanishing point combined
+        VanishingPoint,  ///< Perspective scaling toward horizon only
+        Globe,           ///< Spherical curvature only
+        Fisheye          ///< Globe curvature and vanishing point combined
     };
 
+    /**
+     * @struct PerspectiveState
+     * @brief Runtime state for the active pseudo-3D projection.
+     * @author Alex (https://github.com/lextpf)
+     *
+     * Stores all parameters needed to apply perspective transforms.
+     * Updated by SetVanishingPointPerspective(), SetGlobePerspective(),
+     * and SetFisheyePerspective().
+     */
     struct PerspectiveState
     {
-        bool enabled = false;                                  // Perspective configured
-        ProjectionMode mode = ProjectionMode::VanishingPoint;  // Which projection to use
-        float horizonY = 0.0f;                                 // Screen-space Y of horizon line
-        float horizonScale = 1.0f;                             // Scale at horizon (0..1 typically)
-        float viewWidth = 0.0f;                                // Current world-view width
-        float viewHeight = 0.0f;                               // Current world-view height
-        float sphereRadius = 2000.0f;                          // Radius for globe projection
+        bool enabled = false;  ///< Whether perspective is configured
+        ProjectionMode mode = ProjectionMode::VanishingPoint;  ///< Which projection to use
+        float horizonY = 0.0f;                                 ///< Screen-space Y of horizon line
+        float horizonScale = 1.0f;     ///< Scale at horizon (0..1 typically)
+        float viewWidth = 0.0f;        ///< Current world-view width in pixels
+        float viewHeight = 0.0f;       ///< Current world-view height in pixels
+        float sphereRadius = 2000.0f;  ///< Radius for globe projection in pixels
     };
 
-    PerspectiveState GetPerspectiveState() const { return m_Persp; }
+    const PerspectiveState& GetPerspectiveState() const { return m_Persp; }
 
     /**
      * @brief Project a 2D point using the currently configured perspective.
@@ -843,6 +858,13 @@ protected:
     PerspectiveState m_Persp;
     /// @}
 
+    /// @brief Rotate four quad corners around the sprite center.
+    /// @param corners Array of 4 corner positions [TL, TR, BR, BL] (modified in-place).
+    /// @param size Sprite dimensions for center calculation.
+    /// @param rotation Rotation angle in degrees.
     static void RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotation);
+
+    /// @brief Apply the current perspective transform to four quad corners.
+    /// @param corners Array of 4 screen-space positions (modified in-place).
     void ApplyPerspective(glm::vec2 corners[4]) const;
 };

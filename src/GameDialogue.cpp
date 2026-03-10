@@ -104,13 +104,14 @@ void DrawContinuePrompt(
 
 void Game::RenderNPCHeadText()
 {
-    if (!m_InDialogue || m_DialogueText.empty() || !m_DialogueNPC)
+    if (!m_InDialogue || m_DialogueText.empty() || m_DialogueNPCIndex < 0 ||
+        m_DialogueNPCIndex >= static_cast<int>(m_NPCs.size()))
     {
         return;
     }
 
     // Get NPC position in screen space
-    glm::vec2 npcWorldPos = m_DialogueNPC->GetPosition();
+    glm::vec2 npcWorldPos = m_NPCs[m_DialogueNPCIndex].GetPosition();
     glm::vec2 npcScreenPos = npcWorldPos - m_CameraPosition;
 
     // Position text above the NPC's head
@@ -188,7 +189,10 @@ void Game::RenderDialogueTreeBox()
     float boxX = (worldWidth - boxWidth) * 0.5f;
     float boxY = worldHeight - boxHeight - (10.0f * z);
 
-    // Main background - dark, semi-transparent, with rounded corners via staircase strips
+    // Rounded corners are drawn as a "staircase" of progressively wider
+    // horizontal strips. Row 0 is the narrowest (inset by full radius),
+    // each subsequent row is 1px wider, until the body is reached at full
+    // width. This avoids needing a shader or anti-aliased geometry.
     glm::vec4 bgColor(0.22f, 0.21f, 0.20f, 0.92f);
     float r = 3.0f * z;  // Corner radius
     float s = 1.0f * z;  // Step size (1 pixel per step)
@@ -366,28 +370,33 @@ void Game::RenderDialogueTreeBox()
     const auto& visibleOptions = m_DialogueManager.GetVisibleOptions();
     int numOptions = static_cast<int>(visibleOptions.size());
 
-    // Calculate how many lines fit in the available space
+    // Text pagination: the dialogue box has a fixed pixel height. We need to
+    // fit the speaker name, NPC text, and response options all inside it.
+    // Options are anchored to the bottom, so text gets whatever space remains.
+    // If the text doesn't fit, we split it into pages the player can advance.
     float heightAfterSpeaker = availableHeight - speakerHeight;
     int totalLines = static_cast<int>(allLines.size());
 
-    // Options are positioned at the bottom with minimal padding, giving more room for text
-    float optionsBottomPadding = 7.0f * z;  // Padding for options at bottom
+    // Subtract the space reserved for response options at the bottom.
+    // The (padding - optionsBottomPadding) term reclaims unused padding between
+    // the last text line and the first option.
+    float optionsBottomPadding = 7.0f * z;
     float effectiveOptionsSpace =
         static_cast<float>(numOptions) * lineHeight - (padding - optionsBottomPadding);
     if (effectiveOptionsSpace < 0)
         effectiveOptionsSpace = 0;
     float spaceForText = heightAfterSpeaker - effectiveOptionsSpace;
+    // +1 because int truncation loses a partial line that still fits
     int maxTextLines = static_cast<int>(spaceForText / lineHeight) + 1;
     if (maxTextLines < 1)
         maxTextLines = 1;
 
-    // Check if text fits in the space above options
     bool everythingFits = (totalLines <= maxTextLines);
     int totalPages = 1;
 
     if (!everythingFits)
     {
-        // Each page can show maxTextLines worth of text (except last page)
+        // Ceiling division: how many pages of maxTextLines to show all text
         int remainingLines = totalLines - maxTextLines;
         totalPages = 1 + (remainingLines + maxTextLines - 1) / maxTextLines;
     }
@@ -469,13 +478,16 @@ void Game::RenderDialogueTreeBox()
             glm::vec3 optionColor =
                 isSelected ? glm::vec3(0.85f, 0.75f, 0.40f) : glm::vec3(0.58f, 0.55f, 0.50f);
 
-            // Check if this option gives a quest
+            // Detect quest-giving options by convention: any consequence that
+            // sets a flag matching "accepted_*_quest" is treated as a quest offer.
+            // This lets designers mark quest options purely through flag naming.
             bool givesQuest = false;
             for (const auto& cons : opt->consequences)
             {
                 if ((cons.type == DialogueConsequence::Type::SET_FLAG ||
                      cons.type == DialogueConsequence::Type::SET_FLAG_VALUE) &&
-                    cons.key.find("accepted_") == 0 && cons.key.find("_quest") != std::string::npos)
+                    cons.key.find("accepted_") == 0 && cons.key.size() >= 6 &&
+                    cons.key.compare(cons.key.size() - 6, 6, "_quest") == 0)
                 {
                     givesQuest = true;
                     break;

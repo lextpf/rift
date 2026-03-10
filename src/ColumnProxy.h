@@ -64,15 +64,13 @@ private:
 
 /**
  * @class ConstColumnProxy
- * @brief Read-only proxy for `map[x][y]` syntax on const
- * containers.
+ * @brief Read-only proxy for `map[x][y]` syntax on const containers.
+ * @author Alex (https://github.com/lextpf)
  *
  * Provides bounds-checked reads only. Out-of-bounds reads return DefaultValue.
-
- * *
+ *
  * @tparam C Container type satisfying RandomAccessContainerOf<T>
  * @tparam T Element type
- *
  * @tparam DefaultValue Value returned for out-of-bounds reads
  */
 template <typename C, typename T, T DefaultValue = T{}>

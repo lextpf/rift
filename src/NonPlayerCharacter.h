@@ -21,6 +21,35 @@
  * with the player through collision and dialogue. Patrol routes are
  * initialized lazily during Update() (or explicitly via ReinitializePatrolRoute()).
  *
+ * @par AI State Machine
+ * NPC behavior follows a simple state machine:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     classDef move fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *     classDef idle fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *
+ *     state "Walking" as Walk:::move
+ *     state "Waiting" as Wait:::idle
+ *     state "Looking Around" as Look:::idle
+ *     state "Standing Still" as Stand:::idle
+ *
+ *     [*] --> Walk: Patrol route assigned
+ *     Walk --> Wait: Reached waypoint
+ *     Wait --> Walk: Wait timer expired
+ *     Wait --> Look: Random chance
+ *     Look --> Walk: Look timer expired
+ *     Walk --> Stand: Random chance
+ *     Stand --> Walk: Stand timer expired
+ * </pre>
+ * @endhtmlonly
+ *
+ * @par Movement
+ * NPCs move at 60 px/s (configurable via SetSpeed) along their patrol route.
+ * Movement is tile-aligned - NPCs walk in cardinal directions to the center
+ * of each target tile before advancing to the next waypoint.
+ *
  * @see PatrolRoute, NavigationMap, PlayerCharacter
  */
 class NonPlayerCharacter : public GameCharacter
@@ -87,29 +116,49 @@ public:
      */
     void RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos) const;
 
-    // --- Tile accessors ---
+    /// @name Tile Accessors
+    /// @{
 
+    /// @brief Get NPC's current tile column.
     int GetTileX() const { return m_TileX; }
+    /// @brief Get NPC's current tile row.
     int GetTileY() const { return m_TileY; }
 
-    // --- Type/name/dialogue ---
+    /// @}
 
+    /// @name Type, Name, and Dialogue
+    /// @{
+
+    /// @brief Get NPC type identifier (used for sprite path lookup).
     const std::string& GetType() const { return m_Type; }
+    /// @brief Get path to NPC's sprite sheet asset.
     std::string GetSpritePath() const { return "assets/non-player/" + m_Type + ".png"; }
 
+    /// @brief Check if NPC movement is halted.
     bool IsStopped() const { return m_IsStopped; }
+    /// @brief Halt or resume NPC patrol movement.
     void SetStopped(bool stopped) { m_IsStopped = stopped; }
 
+    /// @brief Get NPC display name.
     const std::string& GetName() const { return m_Name; }
+    /// @brief Set NPC display name.
     void SetName(const std::string& name) { m_Name = name; }
 
+    /// @brief Get simple dialogue text (non-tree fallback).
     const std::string& GetDialogue() const { return m_Dialogue; }
+    /// @brief Set simple dialogue text.
     void SetDialogue(const std::string& dialogue) { m_Dialogue = dialogue; }
 
+    /// @brief Get branching dialogue tree (const).
     const DialogueTree& GetDialogueTree() const { return m_DialogueTree; }
+    /// @brief Get branching dialogue tree (mutable).
     DialogueTree& GetDialogueTree() { return m_DialogueTree; }
+    /// @brief Assign a branching dialogue tree.
     void SetDialogueTree(const DialogueTree& tree) { m_DialogueTree = tree; }
+    /// @brief Check if NPC has a branching dialogue tree.
     bool HasDialogueTree() const { return !m_DialogueTree.nodes.empty(); }
+
+    /// @}
 
     /**
      * @brief Reinitialize patrol route from current position.
@@ -135,32 +184,46 @@ public:
     /// @name Public State (for editor/debug access)
     /// @{
 
-    Texture m_SpriteSheet;
-    std::string m_Type;
-    std::string m_Name;
-    std::string m_Dialogue;
-    DialogueTree m_DialogueTree;
+    Texture m_SpriteSheet;        ///< Loaded sprite sheet texture
+    std::string m_Type;           ///< NPC type identifier (e.g., "elder", "guard")
+    std::string m_Name;           ///< Display name shown during dialogue
+    std::string m_Dialogue;       ///< Simple dialogue text (fallback when no tree)
+    DialogueTree m_DialogueTree;  ///< Branching dialogue tree (may be empty)
 
-    int m_TileX{0};
-    int m_TileY{0};
+    int m_TileX{0};  ///< Current tile column
+    int m_TileY{0};  ///< Current tile row
 
-    int m_TargetTileX{0};
-    int m_TargetTileY{0};
+    int m_TargetTileX{0};  ///< Next waypoint tile column
+    int m_TargetTileY{0};  ///< Next waypoint tile row
 
-    float m_WaitTimer{0.0f};
-    bool m_IsStopped{false};
-    bool m_StandingStill{false};
-    float m_LookAroundTimer{0.0f};
-    float m_RandomStandStillCheckTimer{0.0f};
-    float m_RandomStandStillTimer{0.0f};
+    float m_WaitTimer{0.0f};        ///< Countdown before resuming patrol after reaching waypoint
+    bool m_IsStopped{false};        ///< Movement halted (e.g., during dialogue)
+    bool m_StandingStill{false};    ///< In random standing-still idle state
+    float m_LookAroundTimer{0.0f};  ///< Countdown for look-around animation
+    float m_RandomStandStillCheckTimer{0.0f};  ///< Interval timer for random stand-still checks
+    float m_RandomStandStillTimer{0.0f};       ///< Remaining time in random standing-still state
 
-    PatrolRoute m_PatrolRoute;
+    PatrolRoute m_PatrolRoute;  ///< Generated patrol waypoints through navigation map
 
     /// @}
 
 private:
+    /// @brief Cycle through random facing directions during idle.
+    /// @param deltaTime Frame time in seconds.
     void UpdateLookAround(float deltaTime);
+
+    /// @brief Transition to standing-still idle state.
+    /// @param isRandom True if triggered randomly, false if scripted.
+    /// @param duration Override duration in seconds (0 = use random default).
     void EnterStandingStillMode(bool isRandom, float duration = 0.0f);
+
+    /// @brief Set facing direction from tile movement delta.
+    /// @param dx Tile movement X (-1, 0, +1).
+    /// @param dy Tile movement Y (-1, 0, +1).
     void UpdateDirectionFromMovement(int dx, int dy);
+
+    /// @brief Check if moving to a position would collide with the player.
+    /// @param newPosition Proposed NPC feet position.
+    /// @param playerPos Player feet position (nullable).
     bool CheckPlayerCollision(const glm::vec2& newPosition, const glm::vec2* playerPos) const;
 };

@@ -20,34 +20,45 @@
 extern void SetDebugDrawSleep(GLFWwindow* window, bool enabled);
 
 Game::Game()
+    // -- Window --
     : m_Window(nullptr),
-      m_ScreenWidth(1360),
-      m_ScreenHeight(960),
-      m_TilesVisibleWidth(17),
-      m_TilesVisibleHeight(12),
-      m_ResizeSnapTimer(0.0f),
+      m_ScreenWidth(1360),       // default window width in pixels
+      m_ScreenHeight(960),       // default window height in pixels
+      m_TilesVisibleWidth(17),   // how many tiles fit horizontally at 1x zoom
+      m_TilesVisibleHeight(12),  // how many tiles fit vertically at 1x zoom
+      m_ResizeSnapTimer(0.0f),   // countdown before snapping window to tile-aligned size
       m_PendingWindowSnap(false),
+
+      // -- Camera --
       m_CameraPosition(0.0f),
-      m_CameraFollowTarget(0.0f),
+      m_CameraFollowTarget(0.0f),  // world position the camera smoothly tracks
       m_HasCameraFollowTarget(false),
       m_CameraZoom(1.0f),
-      m_CameraTilt(0.2f),
+      m_CameraTilt(0.2f),  // perspective tilt intensity for 3D effect
       m_Enable3DEffect(false),
-      m_GlobeSphereRadius(200.0f),
-      m_FreeCameraMode(false),
+      m_GlobeSphereRadius(200.0f),  // radius for globe/sphere projection distortion
+      m_FreeCameraMode(false),      // when true, camera is decoupled from the player
+
+      // -- Timing --
       m_LastFrameTime(0.0f),
-      m_PlayerPreviousPosition(0.0f),
+      m_PlayerPreviousPosition(0.0f),  // used for movement delta / animation direction
+
+      // -- Dialogue state --
       m_InDialogue(false),
-      m_DialogueNPC(nullptr),
+      m_DialogueNPCIndex(-1),  // -1 = no NPC in conversation
       m_DialogueText(""),
+
+      // -- Renderer --
       m_Renderer(nullptr),
-      m_FpsUpdateTimer(0.0f),
-      m_FpsConsoleTimer(0.0f),
+
+      // -- FPS / performance tracking --
+      m_FpsUpdateTimer(0.0f),   // accumulator for HUD FPS refresh interval
+      m_FpsConsoleTimer(0.0f),  // accumulator for console FPS log interval
       m_FrameCount(0),
       m_CurrentFps(0.0f),
       m_TargetFps(0.0f),
-      m_DrawCallAccumulator(0),
-      m_CurrentDrawCalls(0),
+      m_DrawCallAccumulator(0),  // summed draw calls between FPS samples
+      m_CurrentDrawCalls(0),     // draw calls displayed on HUD
       m_RendererAPI(RendererAPI::OpenGL)
 {
 }
@@ -132,6 +143,11 @@ bool Game::Initialize()
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
             std::cerr << "Failed to initialize GLAD" << std::endl;
+            m_Renderer->Shutdown();
+            m_Renderer.reset();
+            glfwDestroyWindow(m_Window);
+            m_Window = nullptr;
+            glfwTerminate();
             return false;
         }
         Texture::AdvanceOpenGLContextGeneration();
@@ -562,7 +578,7 @@ void Game::Update(float deltaTime)
 
     if (m_DialogueSnapActive)
     {
-        if (!m_DialogueNPC)
+        if (m_DialogueNPCIndex < 0 || m_DialogueNPCIndex >= static_cast<int>(m_NPCs.size()))
         {
             m_DialogueSnapActive = false;
         }
@@ -580,9 +596,9 @@ void Game::Update(float deltaTime)
                                    (m_DialogueSnapNPCTarget - m_DialogueSnapNPCStart) * smoothT;
 
             m_Player.SetPositionRaw(blendedPlayer);
-            m_DialogueNPC->SetPosition(blendedNPC);
-            m_DialogueNPC->SetStopped(true);
-            m_DialogueNPC->ResetAnimationToIdle();
+            m_NPCs[m_DialogueNPCIndex].SetPosition(blendedNPC);
+            m_NPCs[m_DialogueNPCIndex].SetStopped(true);
+            m_NPCs[m_DialogueNPCIndex].ResetAnimationToIdle();
             playerPos = blendedPlayer;
 
             if (t >= 1.0f)
@@ -595,19 +611,19 @@ void Game::Update(float deltaTime)
                 {
                     m_Player.SetPositionRaw(m_DialogueSnapPlayerTarget);
                 }
-                m_DialogueNPC->SetTilePosition(
+                m_NPCs[m_DialogueNPCIndex].SetTilePosition(
                     m_DialogueSnapNPCTileX, m_DialogueSnapNPCTileY, 16, true);
 
                 m_Player.Stop();
                 m_Player.SetDirection(m_DialogueSnapPlayerFacing);
-                m_DialogueNPC->SetDirection(m_DialogueSnapNPCFacing);
-                m_DialogueNPC->SetStopped(true);
-                m_DialogueNPC->ResetAnimationToIdle();
+                m_NPCs[m_DialogueNPCIndex].SetDirection(m_DialogueSnapNPCFacing);
+                m_NPCs[m_DialogueNPCIndex].SetStopped(true);
+                m_NPCs[m_DialogueNPCIndex].ResetAnimationToIdle();
 
                 bool startedTree = false;
                 if (m_DialogueSnapPrefersTree)
                 {
-                    startedTree = m_DialogueManager.StartDialogue(m_DialogueNPC);
+                    startedTree = m_DialogueManager.StartDialogue(&m_NPCs[m_DialogueNPCIndex]);
                     if (startedTree)
                     {
                         m_DialoguePage = 0;
@@ -635,7 +651,9 @@ void Game::Update(float deltaTime)
     for (auto& npc : m_NPCs)
     {
         // Skip updating the NPC in dialogue
-        if (inAnyDialogue && m_DialogueNPC == &npc)
+        if (inAnyDialogue && m_DialogueNPCIndex >= 0 &&
+            m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
+            &m_NPCs[m_DialogueNPCIndex] == &npc)
         {
             continue;
         }
@@ -891,20 +909,27 @@ void Game::ConfigureRendererPerspective(float width, float height)
     // the world and creates a vanishing point effect at the horizon.
     if (m_Enable3DEffect)
     {
-        // horizonY: vertical position of the vanishing point (negative = above center)
-        // The 0.20 factor controls how much tilt affects horizon placement.
+        // horizonY: vertical position of the vanishing point (negative = above center).
+        // The 0.20 coefficient dampens the tilt so small tilt values don't push
+        // the horizon off-screen. At max tilt (1.0) the horizon sits at -20% of
+        // viewport height; at zero tilt it sits at screen center.
         float horizonY = -height * m_CameraTilt * 0.20f;
 
-        // horizonScale: how much objects shrink at the horizon (0.75 = 75% size minimum)
-        // Less tilt means less shrinking (closer to 0.85 at tilt=0).
+        // horizonScale: minimum scale factor for objects at the horizon line.
+        // Range [0.75, 0.85] - at full tilt objects shrink to 75% (strong depth),
+        // at zero tilt only to 85% (subtle effect). The linear interpolation keeps
+        // the visual transition smooth as the player adjusts tilt.
         float horizonScale = 0.75f + (1.0f - m_CameraTilt) * 0.10f;
 
         // Scale sphere radius with zoom and viewport, but allow globe to be visible
         float viewportDiagonal = std::sqrt(width * width + height * height);
         float baseRadius = m_GlobeSphereRadius / m_CameraZoom;
-        // Minimum radius to prevent extreme distortion, but set lower to allow globe visibility
-        float minRadius =
-            viewportDiagonal / static_cast<float>(rift::Pi * 2.0);  // Quarter of full coverage
+        // Minimum radius = viewport diagonal / (2*Pi), which maps to roughly a
+        // quarter of the sphere's circumference covering the screen. Going smaller
+        // would make the fisheye distortion too extreme; going larger makes the
+        // globe effect invisible. This strikes a balance where the curvature is
+        // noticeable but the world remains readable.
+        float minRadius = viewportDiagonal / static_cast<float>(rift::Pi * 2.0);
         float effectiveSphereRadius = std::max(baseRadius, minRadius);
 
         m_Renderer->SetFisheyePerspective(
@@ -932,6 +957,18 @@ void Game::Toggle3DEffect()
 
 void Game::Render()
 {
+    // Guard against reentrant calls (WindowRefreshCallback can re-enter during resize)
+    // RAII guard ensures the flag is reset even if an exception is thrown.
+    static bool s_Rendering = false;
+    if (s_Rendering)
+        return;
+    struct RenderGuard
+    {
+        bool& flag;
+        RenderGuard(bool& f) : flag(f) { flag = true; }
+        ~RenderGuard() { flag = false; }
+    } renderGuard(s_Rendering);
+
     // Render order (back to front):
     // 1. Sky color (clear)
     // 2. Background tilemap layers (ground, ground detail, objects)
@@ -1140,9 +1177,22 @@ void Game::Render()
     }
 
     // Sort by Y coordinate ascending (lower Y = further from camera = render first).
-    // - Normal tiles (Y-sort+1): use epsilon tiebreaker (tile behind, player in front at same Y)
-    // - Y-sort-1 tiles: use Y offset so tile renders in front at same Y, no tiebreaker
-    // Use stable_sort to maintain consistent ordering for equal elements
+    // Three code paths handle different item pairings:
+    //
+    // 1. Y-sort-minus tile vs entity: These tiles (e.g. tall trees) have their
+    //    anchor at their top, so without adjustment they'd sort behind characters
+    //    standing at their base. The 8px offset shifts the tile's sort position
+    //    down by half a tile, making the character render behind the tile until
+    //    the character walks far enough past. The tight 0.1px epsilon prevents
+    //    flicker at the exact transition boundary.
+    //
+    // 2. Normal items: The 1px epsilon band prevents z-fighting flicker when
+    //    items are within a pixel of each other vertically.
+    //
+    // 3. Tiebreaker (within epsilon): Higher enum value renders first (behind).
+    //    TILE(4) > PLAYER(0), so tiles go behind characters at the same Y.
+    //    This is intentionally reversed from the enum ordering so that at equal
+    //    depth, entities appear in front of terrain.
     std::stable_sort(renderList.begin(),
                      renderList.end(),
                      [](const RenderItem& a, const RenderItem& b)
@@ -1150,33 +1200,22 @@ void Game::Render()
                          bool aIsYSortMinusTile = (a.type == RenderItem::TILE && a.tile.ySortMinus);
                          bool bIsYSortMinusTile = (b.type == RenderItem::TILE && b.tile.ySortMinus);
 
-                         // If comparing a Y-sort-1 tile with an entity, use offset-based comparison
-                         // The offset makes the tile sort as if slightly lower, so it renders in
-                         // front when at the same actual Y, but behind when player has walked past
                          bool aIsEntity = (a.type <= RenderItem::NPC_BOTTOM);
                          bool bIsEntity = (b.type <= RenderItem::NPC_BOTTOM);
 
                          if ((aIsYSortMinusTile && bIsEntity) || (bIsYSortMinusTile && aIsEntity))
                          {
-                             // Half-tile offset: player must be at least 8px in front to render in
-                             // front
                              float aSortY = a.sortY + (aIsYSortMinusTile ? 8.0f : 0.0f);
                              float bSortY = b.sortY + (bIsYSortMinusTile ? 8.0f : 0.0f);
-                             // Use epsilon for float comparison to avoid flickering
                              if (std::abs(aSortY - bSortY) > 0.1f)
                                  return aSortY < bSortY;
-                             // Within epsilon: entity first (behind), tile second (in front)
                              return a.type < b.type;
                          }
 
-                         // Normal comparison with epsilon tiebreaker
                          const float epsilon = 1.0f;
                          if (std::abs(a.sortY - b.sortY) > epsilon)
                              return a.sortY < b.sortY;
 
-                         // Tiebreaker: higher type comes first (renders behind)
-                         // TILE(4) before PLAYER(0/1) = TILE renders first = TILE behind, PLAYER in
-                         // front
                          return a.type > b.type;
                      });
 
@@ -1495,6 +1534,7 @@ void Game::Render()
         glfwSwapBuffers(m_Window);
     }
     // Vulkan handles its own presentation in EndFrame()
+    // s_Rendering is reset by RenderGuard destructor
 }
 
 void Game::Shutdown()
@@ -1539,6 +1579,8 @@ bool Game::SwitchRenderer(RendererAPI api)
               << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << " to "
               << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << "..." << std::endl;
 
+    RendererAPI oldAPI = m_RendererAPI;
+
     // Shutdown current renderer
     if (m_Renderer)
     {
@@ -1557,100 +1599,135 @@ bool Game::SwitchRenderer(RendererAPI api)
         m_Window = nullptr;
     }
 
-    // Update renderer API
-    m_RendererAPI = api;
-
-    // Reset and set window hints for new API
-    glfwDefaultWindowHints();
-    if (m_RendererAPI == RendererAPI::OpenGL)
+    // Helper lambda: create window, renderer, initialize OpenGL/GLAD, and finalize.
+    // Returns true on success, false on failure. On failure, m_Window and m_Renderer
+    // may be partially initialized and should be cleaned up by the caller.
+    auto setupRendererForAPI = [&](RendererAPI targetAPI) -> bool
     {
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    }
-    else if (m_RendererAPI == RendererAPI::Vulkan)
-    {
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    }
+        m_RendererAPI = targetAPI;
 
-    // Create new window at same position
-    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
-    if (!m_Window)
-    {
-        std::cerr << "Failed to create GLFW window during renderer switch" << std::endl;
-        return false;
-    }
-    glfwSetWindowPos(m_Window, windowX, windowY);
-
-    // Restore window callbacks
-    glfwSetWindowUserPointer(m_Window, this);
-    glfwSetScrollCallback(m_Window, ScrollCallback);
-    glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
-    glfwSetWindowRefreshCallback(m_Window, WindowRefreshCallback);
-
-    // Create new renderer
-    m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
-    if (!m_Renderer)
-    {
-        std::cerr << "Failed to create renderer during switch" << std::endl;
-        return false;
-    }
-
-    // Initialize OpenGL-specific stuff
-    if (m_RendererAPI == RendererAPI::OpenGL)
-    {
-        // Bind this window's OpenGL context to the current thread.
-        glfwMakeContextCurrent(m_Window);
-        // Load OpenGL function pointers via GLAD.
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+        // Reset and set window hints for target API
+        glfwDefaultWindowHints();
+        if (m_RendererAPI == RendererAPI::OpenGL)
         {
-            std::cerr << "Failed to initialize GLAD during renderer switch" << std::endl;
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        }
+        else if (m_RendererAPI == RendererAPI::Vulkan)
+        {
+            glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        }
+
+        // Create new window at same position
+        m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
+        if (!m_Window)
+        {
+            std::cerr << "Failed to create GLFW window for "
+                      << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
             return false;
         }
-        Texture::AdvanceOpenGLContextGeneration();
-        // This maps normalized device coordinates to the full framebuffer size.
-        glViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
-        // Standard alpha blending
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        // Uncapped FPS, potentially tearing
-        glfwSwapInterval(0);
-    }
+        glfwSetWindowPos(m_Window, windowX, windowY);
 
-    // Initialize renderer
-    m_Renderer->Init();
+        // Restore window callbacks
+        glfwSetWindowUserPointer(m_Window, this);
+        glfwSetScrollCallback(m_Window, ScrollCallback);
+        glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
+        glfwSetWindowRefreshCallback(m_Window, WindowRefreshCallback);
 
-    // Re-apply no-vsync after renderer initialization.
-    if (m_RendererAPI == RendererAPI::OpenGL)
+        // Create new renderer
+        m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
+        if (!m_Renderer)
+        {
+            std::cerr << "Failed to create renderer for "
+                      << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+            glfwDestroyWindow(m_Window);
+            m_Window = nullptr;
+            return false;
+        }
+
+        // Initialize OpenGL-specific stuff
+        if (m_RendererAPI == RendererAPI::OpenGL)
+        {
+            // Bind this window's OpenGL context to the current thread.
+            glfwMakeContextCurrent(m_Window);
+            // Load OpenGL function pointers via GLAD.
+            if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+            {
+                std::cerr << "Failed to initialize GLAD for "
+                          << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+                m_Renderer->Shutdown();
+                m_Renderer.reset();
+                glfwDestroyWindow(m_Window);
+                m_Window = nullptr;
+                return false;
+            }
+            Texture::AdvanceOpenGLContextGeneration();
+            // This maps normalized device coordinates to the full framebuffer size.
+            glViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
+            // Standard alpha blending
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            // Uncapped FPS, potentially tearing
+            glfwSwapInterval(0);
+        }
+
+        // Initialize renderer
+        m_Renderer->Init();
+
+        // Re-apply no-vsync after renderer initialization.
+        if (m_RendererAPI == RendererAPI::OpenGL)
+        {
+            glfwSwapInterval(0);
+        }
+
+        // Set viewport and projection
+        m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
+        float worldWidth =
+            static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_CameraZoom;
+        float worldHeight =
+            static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_CameraZoom;
+        ConfigureRendererPerspective(worldWidth, worldHeight);
+        glm::mat4 projection = GetOrthoProjection(worldWidth, worldHeight);
+        m_Renderer->SetProjection(projection);
+
+        // Re-upload textures to new renderer
+        m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
+        m_Player.UploadTextures(*m_Renderer);
+        for (auto& npc : m_NPCs)
+        {
+            npc.UploadTextures(*m_Renderer);
+        }
+        m_Particles.UploadTextures(*m_Renderer);
+        m_SkyRenderer.UploadTextures(*m_Renderer);
+
+        return true;
+    };
+
+    // Try to set up the new renderer
+    if (setupRendererForAPI(api))
     {
-        glfwSwapInterval(0);
+        std::cout << "Renderer switch complete! Now using "
+                  << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        return true;
     }
 
-    // Set viewport and projection
-    m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
-    float worldWidth =
-        static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_CameraZoom;
-    float worldHeight =
-        static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_CameraZoom;
-    ConfigureRendererPerspective(worldWidth, worldHeight);
-    glm::mat4 projection = GetOrthoProjection(worldWidth, worldHeight);
-    m_Renderer->SetProjection(projection);
+    // New renderer failed - attempt rollback to the old renderer
+    std::cerr << "New renderer failed, attempting rollback to "
+              << (oldAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << "..." << std::endl;
 
-    // Re-upload textures to new renderer
-    m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
-    m_Player.UploadTextures(*m_Renderer);
-    for (auto& npc : m_NPCs)
+    if (setupRendererForAPI(oldAPI))
     {
-        npc.UploadTextures(*m_Renderer);
+        std::cerr << "Rollback successful, still using "
+                  << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        return false;
     }
-    m_Particles.UploadTextures(*m_Renderer);
-    m_SkyRenderer.UploadTextures(*m_Renderer);
 
-    std::cout << "Renderer switch complete! Now using "
-              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
-
-    return true;
+    // Both renderers failed - fatal, shut down to avoid crash on next frame
+    std::cerr << "Rollback also failed, shutting down" << std::endl;
+    Shutdown();
+    return false;
 }
 
 void Game::OnFramebufferResized(int width, int height)

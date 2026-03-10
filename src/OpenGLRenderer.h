@@ -37,10 +37,10 @@
  * many sprites into a single draw call dramatically improves performance.
  *
  * @par Why Batching Matters
- * | Scenario              | Draw Calls | Performance |
- * |-----------------------|------------|-------------|
- * | 1000 sprites, no batch| 1000       | ~15 FPS     |
- * | 1000 sprites, batched | 1-10       | ~500+ FPS   |
+ * | Scenario               | Draw Calls | Performance |
+ * |------------------------|------------|-------------|
+ * | 1000 sprites, no batch | 1000       | ~15 FPS     |
+ * | 1000 sprites, batched  | 1-10       | ~500+ FPS   |
  *
  * @par Batch Flow
  * @htmlonly
@@ -84,12 +84,12 @@
  * - **State changes**: SetProjection(), blend mode changes, etc.
  *
  * @par Batch Types
- * | Batch Type  | Buffer              | Trigger            |
- * |-------------|---------------------|--------------------|
- * | Sprites     | m_BatchVertices     | Texture change     |
- * | Rects       | m_RectBatchVertices | Blend mode change  |
- * | Particles   | m_ParticleBatchVertices | Texture/blend  |
- * | Text        | m_TextBatchVertices | Per DrawText call  |
+ * | Batch Type  | Buffer                  | Trigger            |
+ * |-------------|-------------------------|--------------------|
+ * | Sprites     | m_BatchVertices         | Texture change     |
+ * | Rects       | m_RectBatchVertices     | Blend mode change  |
+ * | Particles   | m_ParticleBatchVertices | Texture/blend      |
+ * | Text        | m_TextBatchVertices     | Per DrawText call  |
  *
  * @section gl_shaders Shader Architecture
  * Uses a single unified shader program for all 2D rendering:
@@ -209,14 +209,13 @@ private:
     /// @name Shader Uniform Locations
     /// @{
 
-    GLint m_ModelLoc;          ///< Per-sprite model matrix.
-    GLint m_ProjectionLoc;     ///< Orthographic projection matrix.
-    GLint m_ColorLoc;          ///< RGB color tint.
-    GLint m_AlphaLoc;          ///< Transparency multiplier.
-    GLint m_AmbientColorLoc;   ///< Day/night ambient light color.
+    GLint m_ModelLoc;         ///< Per-sprite model matrix.
+    GLint m_ProjectionLoc;    ///< Orthographic projection matrix.
+    GLint m_ColorLoc;         ///< RGB color tint.
+    GLint m_AlphaLoc;         ///< Transparency multiplier.
+    GLint m_AmbientColorLoc;  ///< Day/night ambient light color.
+    GLint m_UseColorOnlyLoc;  ///< Color mode selector (0=texture, 1=uniform, 2=vertex, 3=tex*vert).
     glm::vec3 m_AmbientColor;  ///< Current ambient light value.
-
-    /// @}
 
     /// @}
 
@@ -279,11 +278,16 @@ private:
 
     /// @}
 
+    /// @name Colored Rectangle Helpers
+    /// @{
+
     /// @brief Submit accumulated rects to GPU and reset batch.
     void FlushRectBatch();
 
     /// @brief Create VAO/VBO for colored rectangle batching.
     void SetupRectBatchBuffers();
+
+    /// @}
 
     /// @name Particle Batching
     /// @{

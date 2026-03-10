@@ -3,7 +3,7 @@
 /// Major version number.
 #define RIFT_VERSION_MAJOR 0
 /// Minor version number.
-#define RIFT_VERSION_MINOR 1
+#define RIFT_VERSION_MINOR 2
 /// Patch version number.
 #define RIFT_VERSION_PATCH 0
 /// Release version number.

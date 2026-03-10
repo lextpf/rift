@@ -58,14 +58,16 @@ std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
             catch (const std::exception& e)
             {
                 std::cerr << "Exception creating Vulkan renderer: " << e.what() << std::endl;
+                std::cerr << "Falling back to OpenGL..." << std::endl;
                 std::cerr.flush();
-                return nullptr;
+                return std::make_unique<OpenGLRenderer>();
             }
             catch (...)
             {
                 std::cerr << "Unknown exception creating Vulkan renderer" << std::endl;
+                std::cerr << "Falling back to OpenGL..." << std::endl;
                 std::cerr.flush();
-                return nullptr;
+                return std::make_unique<OpenGLRenderer>();
             }
 
         default:

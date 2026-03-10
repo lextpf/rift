@@ -232,10 +232,14 @@ public:
      * switching renderers), all texture IDs become invalid. This method
      * recreates the GPU texture from the stored CPU buffer.
      *
+     * This is a logically const operation: it lazily initializes or
+     * refreshes the GPU-side cache without changing the texture's
+     * pixel data or dimensions.
+     *
      * @pre m_ImageData must contain valid pixel data.
      * @post m_OpenGLID contains a new valid texture ID.
      */
-    void RecreateOpenGLTexture();
+    void RecreateOpenGLTexture() const;
 
     /**
      * @brief Advance global OpenGL context generation after creating a new GL context.
@@ -277,6 +281,10 @@ public:
      * 5. Uploads pixel data via staging buffer
      * 6. Transitions image layout to SHADER_READ_ONLY_OPTIMAL
      *
+     * This is a logically const operation: it lazily initializes the
+     * GPU-side resources without changing the texture's pixel data
+     * or dimensions.
+     *
      * @param device         Vulkan logical device.
      * @param physicalDevice Vulkan physical device (for memory type queries).
      * @param commandPool    Command pool for transfer commands.
@@ -289,7 +297,7 @@ public:
     void CreateVulkanTexture(VkDevice device,
                              VkPhysicalDevice physicalDevice,
                              VkCommandPool commandPool,
-                             VkQueue queue);
+                             VkQueue queue) const;
 
     /**
      * @brief Destroy Vulkan texture resources.
@@ -297,9 +305,12 @@ public:
      * Frees sampler, image view, image, and device memory in reverse
      * creation order. Safe to call multiple times.
      *
+     * This is a logically const operation: it tears down the GPU-side
+     * cache without changing the texture's pixel data or dimensions.
+     *
      * @param device Vulkan logical device.
      */
-    void DestroyVulkanTexture(VkDevice device);
+    void DestroyVulkanTexture(VkDevice device) const;
 
     /// @}
 
@@ -351,26 +362,26 @@ private:
      * @param data  Pixel data to upload.
      * @param flipY Unused (flip is handled before this call).
      */
-    void CreateOpenGLTexture(unsigned char* data, bool flipY);
+    void CreateOpenGLTexture(const unsigned char* data, bool flipY) const;
 
-    static std::uint64_t s_CurrentOpenGLContextGeneration;
+    static std::uint64_t s_CurrentOpenGLContextGeneration;  ///< Global context generation counter
 
     /// @}
 
-    /// @name OpenGL Resources
+    /// @name OpenGL Resources (mutable: GPU upload is a lazy-init/caching operation)
     /// @{
-    unsigned int m_OpenGLID{0};
-    void* m_OpenGLContextTag{nullptr};
-    std::uint64_t m_OpenGLContextGeneration{0};
+    mutable unsigned int m_OpenGLID{0};
+    mutable void* m_OpenGLContextTag{nullptr};
+    mutable std::uint64_t m_OpenGLContextGeneration{0};
     /// @}
 
-    /// @name Vulkan Resources
+    /// @name Vulkan Resources (mutable: GPU upload is a lazy-init/caching operation)
     /// @{
-    VkImage m_VulkanImage{VK_NULL_HANDLE};
-    VkDeviceMemory m_VulkanImageMemory{VK_NULL_HANDLE};
-    VkImageView m_VulkanImageView{VK_NULL_HANDLE};
-    VkSampler m_VulkanSampler{VK_NULL_HANDLE};
-    VkDevice m_VulkanDevice{VK_NULL_HANDLE};
+    mutable VkImage m_VulkanImage{VK_NULL_HANDLE};
+    mutable VkDeviceMemory m_VulkanImageMemory{VK_NULL_HANDLE};
+    mutable VkImageView m_VulkanImageView{VK_NULL_HANDLE};
+    mutable VkSampler m_VulkanSampler{VK_NULL_HANDLE};
+    mutable VkDevice m_VulkanDevice{VK_NULL_HANDLE};
     /// @}
 
     /// @name Image Data

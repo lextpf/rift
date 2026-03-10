@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <random>
 #include <vector>
 
 #include "IRenderer.h"
@@ -111,10 +112,8 @@ struct ShootingStar
  * @brief Represents a glinting dew drop catching early morning sunlight.
  * @author Alex (https://github.com/lextpf)
  *
- * Dew sparkles appear during dawn/morning hours in
- * the lower portion of the
- * screen, simulating sunlight catching morning dew on grass and
- * foliage.
+ * Dew sparkles appear during dawn/morning hours in the lower portion of the
+ * screen, simulating sunlight catching morning dew on grass and foliage.
  *
  * @par Sparkle Animation
  * Each sparkle twinkles independently with a sharper, more "glint-like"
@@ -142,19 +141,13 @@ struct DewSparkle
  * |-------------------|-----------------|--------------------------------------|
  * | Stars             | Night/Dusk/Dawn | Twinkling stars with color variation |
  * | Background Stars  | Night           | Dimmer distant star field            |
- * | Shooting
- * Stars    | Night           | Random meteor streaks                |
- * | Sun Rays          | Day
- * | God rays from sun position           |
- * | Moon Rays         | Night           | Softer rays
- * from moon                |
- * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky
- * wash        |
+ * | Shooting Stars    | Night           | Random meteor streaks                |
+ * | Sun Rays          | Day             | God rays from sun position           |
+ * | Moon Rays         | Night           | Softer rays from moon                |
+ * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky wash        |
  * | Dawn Gradient     | Dawn            | Purple-to-orange sky gradient        |
-
- * * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
- * | Dew
- * Sparkles      | Morning         | Glinting ground-level sparkles       |
+ * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
+ * | Dew Sparkles      | Morning         | Glinting ground-level sparkles       |
  *
  * @par Time Integration
  * Effects are driven by the TimeManager which provides:
@@ -165,18 +158,14 @@ struct DewSparkle
  *
  * @par Render Order
  * Effects are rendered in this order (back to front):
- * 1. Dawn gradient (full-screen color
- * overlay)
+ * 1. Dawn gradient (full-screen color overlay)
  * 2. Dawn horizon glow (bottom of screen)
- * 3. Night atmospheric glow (horizon +
- * subtle upper-sky shimmer)
+ * 3. Night atmospheric glow (horizon + subtle upper-sky shimmer)
  * 4. Background stars (dim, distant)
- * 5. Foreground stars (bright,
- * twinkling)
+ * 5. Foreground stars (bright, twinkling)
  * 6. Shooting stars (with trails)
  * 7. Dew sparkles (morning only)
- * 8. Sun/Moon
- * rays (god rays effect)
+ * 8. Sun/Moon rays (god rays effect)
  *
  * @par Procedural Textures
  * All textures are generated procedurally at initialization:
@@ -205,11 +194,10 @@ public:
      * Does not allocate GPU resources; call Initialize() separately.
      */
     SkyRenderer();
-
-    /**
-     * @brief Destructor releases GPU textures.
-     */
     ~SkyRenderer();
+
+    SkyRenderer(const SkyRenderer&) = delete;
+    SkyRenderer& operator=(const SkyRenderer&) = delete;
 
     /**
      * @brief Initialize all sky rendering resources.
@@ -330,8 +318,7 @@ private:
     /**
      * @brief Generate dew sparkle positions.
      *
-     * Creates sparkle points biased
-     * toward the lower portion of the screen.
+     * Creates sparkle points biased toward the lower portion of the screen.
      */
     void GenerateDewSparkles();
 
@@ -402,17 +389,13 @@ private:
     /**
      * @brief Render subtle nighttime atmospheric glow.
      *
-     * Draws a faint horizon
-     * wash and occasional top-edge shimmer while
+     * Draws a faint horizon wash and occasional top-edge shimmer while
      * star visibility is high.
      *
-     *
      * @param renderer     Renderer interface.
-     * @param time         TimeManager for night
-     * visibility.
+     * @param time         TimeManager for night visibility.
      * @param screenWidth  Screen width.
-     * @param screenHeight Screen
-     * height.
+     * @param screenHeight Screen height.
      */
     void RenderAtmosphericGlow(IRenderer& renderer,
                                const TimeManager& time,
@@ -579,4 +562,5 @@ private:
     /// @}
 
     bool m_Initialized;  ///< True after Initialize() completes successfully
+    std::mt19937 m_Rng;  ///< Shared RNG for all procedural generation
 };

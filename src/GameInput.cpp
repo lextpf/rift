@@ -567,8 +567,9 @@ void Game::ProcessInput(float deltaTime)
         const float NPC_BOX_H = 16.0f;
         const float COLLISION_EPS = 0.05f;  // Small margin for floating-point
 
-        for (auto& npc : m_NPCs)
+        for (size_t npcIdx = 0; npcIdx < m_NPCs.size(); ++npcIdx)
         {
+            auto& npc = m_NPCs[npcIdx];
             glm::vec2 npcPos = npc.GetPosition();
             float distance = glm::length(npcPos - playerPos);
 
@@ -663,7 +664,7 @@ void Game::ProcessInput(float deltaTime)
                     (isVeryClose && isRoughlyInFront))
                 {
                     // Delay dialogue activation until the alignment snap completes.
-                    m_DialogueNPC = &npc;
+                    m_DialogueNPCIndex = static_cast<int>(npcIdx);
                     m_DialoguePage = 0;
                     m_DialogueSnapPrefersTree = npc.HasDialogueTree();
                     m_DialogueSnapFallbackText = npc.GetDialogue();
@@ -1001,10 +1002,11 @@ void Game::ProcessInput(float deltaTime)
                 m_DialoguePage = 0;  // Reset for next node
                 m_DialogueManager.ConfirmSelection();
                 // If dialogue ended, release NPC
-                if (!m_DialogueManager.IsActive() && m_DialogueNPC)
+                if (!m_DialogueManager.IsActive() && m_DialogueNPCIndex >= 0 &&
+                    m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
                 {
-                    m_DialogueNPC->SetStopped(false);
-                    m_DialogueNPC = nullptr;
+                    m_NPCs[m_DialogueNPCIndex].SetStopped(false);
+                    m_DialogueNPCIndex = -1;
                 }
             }
             enterKeyTree = true;
@@ -1025,10 +1027,11 @@ void Game::ProcessInput(float deltaTime)
             {
                 m_DialoguePage = 0;  // Reset for next node
                 m_DialogueManager.ConfirmSelection();
-                if (!m_DialogueManager.IsActive() && m_DialogueNPC)
+                if (!m_DialogueManager.IsActive() && m_DialogueNPCIndex >= 0 &&
+                    m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
                 {
-                    m_DialogueNPC->SetStopped(false);
-                    m_DialogueNPC = nullptr;
+                    m_NPCs[m_DialogueNPCIndex].SetStopped(false);
+                    m_DialogueNPCIndex = -1;
                 }
             }
             spaceKeyTree = true;
@@ -1043,11 +1046,11 @@ void Game::ProcessInput(float deltaTime)
         {
             m_DialogueManager.EndDialogue();
             m_DialoguePage = 0;  // Reset pagination
-            if (m_DialogueNPC)
+            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
             {
-                m_DialogueNPC->SetStopped(false);
-                m_DialogueNPC = nullptr;
+                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
             }
+            m_DialogueNPCIndex = -1;
             escapeKeyTree = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -1066,11 +1069,11 @@ void Game::ProcessInput(float deltaTime)
         if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterKeyPressed)
         {
             m_InDialogue = false;
-            if (m_DialogueNPC)
+            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
             {
-                m_DialogueNPC->SetStopped(false);
+                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
             }
-            m_DialogueNPC = nullptr;
+            m_DialogueNPCIndex = -1;
             m_DialogueText = "";
             enterKeyPressed = true;
         }
@@ -1082,11 +1085,11 @@ void Game::ProcessInput(float deltaTime)
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyPressed)
         {
             m_InDialogue = false;
-            if (m_DialogueNPC)
+            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
             {
-                m_DialogueNPC->SetStopped(false);
+                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
             }
-            m_DialogueNPC = nullptr;
+            m_DialogueNPCIndex = -1;
             m_DialogueText = "";
             spaceKeyPressed = true;
         }
@@ -1098,11 +1101,11 @@ void Game::ProcessInput(float deltaTime)
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyPressed)
         {
             m_InDialogue = false;
-            if (m_DialogueNPC)
+            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
             {
-                m_DialogueNPC->SetStopped(false);
+                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
             }
-            m_DialogueNPC = nullptr;
+            m_DialogueNPCIndex = -1;
             m_DialogueText = "";
             escapeKeyPressed = true;
         }
@@ -1162,11 +1165,11 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
     }
 
     // Check for Ctrl modifier
-    int ctrlState =
-        glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) | glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL);
+    bool ctrlPressed = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                       glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
     // Camera zoom with Ctrl+scroll
-    if (ctrlState == GLFW_PRESS)
+    if (ctrlPressed)
     {
         // Zoom centered on player position
         float baseWorldWidth =

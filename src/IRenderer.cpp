@@ -5,7 +5,7 @@
 
 void IRenderer::RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotation)
 {
-    if (rotation != 0.0f)
+    if (std::abs(rotation) > 1e-6f)
     {
         float rad = glm::radians(rotation);
         float cosR = std::cos(rad);

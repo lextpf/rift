@@ -224,10 +224,10 @@ private:
     /// @{
 
     DialogueTree
-        m_ActiveTree;  ///< Owned copy of active dialogue tree (avoids dangling NPC pointers)
-    bool m_Active = false;
-    const DialogueTree* m_CurrentTree = nullptr;
-    const DialogueNode* m_CurrentNode = nullptr;
+        m_ActiveTree;       ///< Owned copy of active dialogue tree (avoids dangling NPC pointers)
+    bool m_Active = false;  ///< True while a conversation is in progress
+    const DialogueTree* m_CurrentTree = nullptr;  ///< Points into m_ActiveTree
+    const DialogueNode* m_CurrentNode = nullptr;  ///< Current node being displayed
 
     /// @}
 
@@ -235,8 +235,8 @@ private:
     /// @{
 
     std::vector<const DialogueOption*>
-        m_VisibleOptions;  ///< Pointers into m_ActiveTree nodes; rebuilt on node change
-    int m_SelectedOption = 0;
+        m_VisibleOptions;      ///< Pointers into m_ActiveTree nodes; rebuilt on node change
+    int m_SelectedOption = 0;  ///< Index of highlighted option in m_VisibleOptions
 
     /// @}
 };

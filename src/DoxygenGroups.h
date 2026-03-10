@@ -389,19 +389,14 @@
  * @par Dialogue Flow
  * @code
  * Player presses F near NPC
- *         |
  *         v
  * DialogueManager::StartDialogue()
- *         |
  *         v
  * Display current DialogueNode text
- *         |
  *         v
  * Show DialogueOptions (if any)
- *         |
  *         v
  * Player selects option -> Jump to next node
- *         |
  *         v
  * Repeat until end node or player exits
  * @endcode

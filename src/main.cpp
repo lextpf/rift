@@ -59,9 +59,6 @@ void CrashHandler(int sig)
 
 int main()
 {
-    // ------------------------------------------------------------------------
-    // Windows: Install Crash Handlers
-    // ------------------------------------------------------------------------
 #ifdef _WIN32
     signal(SIGABRT, CrashHandler);
     signal(SIGTERM, CrashHandler);
@@ -81,15 +78,9 @@ int main()
         });
 #endif
 
-    // ------------------------------------------------------------------------
-    // Initialize Logging
-    // ------------------------------------------------------------------------
     std::ofstream logFile("rift.txt", std::ios::app);
     logFile << "=== Program Starting ===" << std::endl;
 
-    // ------------------------------------------------------------------------
-    // Windows: Allocate Debug Console
-    // ------------------------------------------------------------------------
 #ifdef _WIN32
     if (AllocConsole())
     {
@@ -108,12 +99,7 @@ int main()
 #endif
 
     std::cout << "=== Game Starting ===" << std::endl;
-
-    // ------------------------------------------------------------------------
-    // Game Initialization and Execution
-    // ------------------------------------------------------------------------
     Game game;
-
     try
     {
         // Initialize game subsystems (window, renderer, assets)
@@ -175,9 +161,6 @@ int main()
         return -1;
     }
 
-    // ------------------------------------------------------------------------
-    // Clean Exit
-    // ------------------------------------------------------------------------
     logFile << "=== Program Exiting Normally ===" << std::endl;
     logFile.close();
 

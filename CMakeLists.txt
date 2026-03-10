@@ -30,6 +30,7 @@ configure_file("${CMAKE_SOURCE_DIR}/Doxyfile.in" "${CMAKE_BINARY_DIR}/Doxyfile" 
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # MSVC: Enable asynchronous exception handling for SEH translation support
 if(MSVC)
@@ -282,18 +283,6 @@ if(SAVE_FILES)
     )
 endif()
 
-# ============================================================================
-# clang-format
-# ============================================================================
-find_program(CLANG_FORMAT_EXE NAMES clang-format)
-if(CLANG_FORMAT_EXE)
-    file(GLOB_RECURSE ALL_SOURCE_FILES src/*.cpp src/*.h)
-    add_custom_target(clang-format
-        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_SOURCE_FILES}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Running clang-format on src/"
-    )
-endif()
 
 # ============================================================================
 # Testing Support

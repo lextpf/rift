@@ -44,7 +44,7 @@ unsigned int OpenGLRenderer::EnsureTextureReady(const Texture& texture)
     const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
     if (texture.GetOpenGLContextGeneration() != currentGen || texID == 0)
     {
-        const_cast<Texture&>(texture).RecreateOpenGLTexture();
+        texture.RecreateOpenGLTexture();
         texID = texture.GetID();
     }
     return texID;
@@ -52,63 +52,39 @@ unsigned int OpenGLRenderer::EnsureTextureReady(const Texture& texture)
 
 OpenGLRenderer::OpenGLRenderer()
     // Core geometry buffers
-    : m_VAO(0)  // Vertex array object for unit quad
-      ,
-      m_VBO(0)  // Vertex buffer for quad vertices
-      ,
-      m_EBO(0)  // Element buffer for quad indices
-      ,
-      m_TextVAO(0)  // VAO for text rendering
-      ,
-      m_TextVBO(0)  // VBO for text quads
-      ,
-      m_ShaderProgram(0)  // Unified sprite/text shader
-      ,
-      m_WhiteTexture(0)  // 1x1 white texture for colored rects
+    : m_VAO(0),            // Vertex array object for unit quad
+      m_VBO(0),            // Vertex buffer for quad vertices
+      m_EBO(0),            // Element buffer for quad indices
+      m_TextVAO(0),        // VAO for text rendering
+      m_TextVBO(0),        // VBO for text quads
+      m_ShaderProgram(0),  // Unified sprite/text shader
+      m_WhiteTexture(0),   // 1x1 white texture for colored rects
       // Shader uniform locations
-      ,
-      m_ModelLoc(-1)  // Per-sprite transform matrix
-      ,
-      m_ProjectionLoc(-1)  // Orthographic projection matrix
-      ,
-      m_ColorLoc(-1)  // RGB color tint
-      ,
-      m_AlphaLoc(-1)  // Transparency multiplier
-      ,
-      m_AmbientColorLoc(-1)  // Day/night ambient light
-      ,
-      m_AmbientColor(1.0f, 1.0f, 1.0f)  // Current ambient (white = full bright)
+      m_ModelLoc(-1),                    // Per-sprite transform matrix
+      m_ProjectionLoc(-1),               // Orthographic projection matrix
+      m_ColorLoc(-1),                    // RGB color tint
+      m_AlphaLoc(-1),                    // Transparency multiplier
+      m_AmbientColorLoc(-1),             // Day/night ambient light
+      m_AmbientColor(1.0f, 1.0f, 1.0f),  // Current ambient (white = full bright)
       // Sprite batching
-      ,
-      m_BatchVAO(0)  // VAO for batched sprites
-      ,
-      m_BatchVBO(0)  // VBO for batched sprite vertices
-      ,
-      m_CurrentBatchTexture(0)  // Active texture for current batch
+      m_BatchVAO(0),             // VAO for batched sprites
+      m_BatchVBO(0),             // VBO for batched sprite vertices
+      m_CurrentBatchTexture(0),  // Active texture for current batch
       // Colored rectangle batching
-      ,
-      m_RectBatchVAO(0)  // VAO for colored rectangles
-      ,
-      m_RectBatchVBO(0)  // VBO for rectangle vertices
-      ,
-      m_RectBatchAdditive(false)  // Current blend mode for rects
+      m_RectBatchVAO(0),           // VAO for colored rectangles
+      m_RectBatchVBO(0),           // VBO for rectangle vertices
+      m_RectBatchAdditive(false),  // Current blend mode for rects
       // Particle batching
-      ,
-      m_CurrentParticleTexture(0)  // Active particle texture
-      ,
-      m_ParticleBatchAdditive(false)  // Current blend mode for particles
+      m_CurrentParticleTexture(0),     // Active particle texture
+      m_ParticleBatchAdditive(false),  // Current blend mode for particles
       // Font rendering
-      ,
-      m_FontAtlasTexture(0)  // Packed glyph texture atlas
-      ,
-      m_FontAtlasWidth(0)  // Atlas width in pixels
-      ,
-      m_FontAtlasHeight(0)  // Atlas height in pixels
+      m_FontAtlasTexture(0),  // Packed glyph texture atlas
+      m_FontAtlasWidth(0),    // Atlas width in pixels
+      m_FontAtlasHeight(0)    // Atlas height in pixels
 #ifdef USE_FREETYPE
       ,
-      m_FreeType(nullptr)  // FreeType library handle
-      ,
-      m_Face(nullptr)  // Loaded font face
+      m_FreeType(nullptr),  // FreeType library handle
+      m_Face(nullptr)       // Loaded font face
 #endif
 {
     m_BatchVertices.reserve(MAX_BATCH_SPRITES * VERTICES_PER_SPRITE);
@@ -291,6 +267,8 @@ void OpenGLRenderer::Init()
     {
         glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
         std::cerr << "Vertex shader compilation failed: " << infoLog << std::endl;
+        glDeleteShader(vertexShader);
+        return;
     }
 
     // Compile fragment shader
@@ -304,6 +282,9 @@ void OpenGLRenderer::Init()
     {
         glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
         std::cerr << "Fragment shader compilation failed: " << infoLog << std::endl;
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        return;
     }
 
     // Link shader program
@@ -317,6 +298,11 @@ void OpenGLRenderer::Init()
     {
         glGetProgramInfoLog(m_ShaderProgram, 512, nullptr, infoLog);
         std::cerr << "Shader program linking failed: " << infoLog << std::endl;
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        glDeleteProgram(m_ShaderProgram);
+        m_ShaderProgram = 0;
+        return;
     }
 
     glDeleteShader(vertexShader);
@@ -328,6 +314,7 @@ void OpenGLRenderer::Init()
     m_ColorLoc = glGetUniformLocation(m_ShaderProgram, "spriteColor");
     m_AlphaLoc = glGetUniformLocation(m_ShaderProgram, "spriteAlpha");
     m_AmbientColorLoc = glGetUniformLocation(m_ShaderProgram, "ambientColor");
+    m_UseColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
 }
 
 void OpenGLRenderer::SetAmbientColor(const glm::vec3& color)
@@ -354,7 +341,7 @@ void OpenGLRenderer::EndFrame()
     FlushParticleBatch();
 }
 
-void OpenGLRenderer::SetProjection(glm::mat4 projection)
+void OpenGLRenderer::SetProjection(const glm::mat4& projection)
 {
     // Flush any pending batches before changing projection
     // This prevents world-space sprites from being drawn with UI projection (or vice versa)
@@ -423,7 +410,7 @@ void OpenGLRenderer::UploadTexture(const Texture& texture)
     const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
     if (texture.GetID() == 0 || texture.GetOpenGLContextGeneration() != currentGen)
     {
-        const_cast<Texture&>(texture).RecreateOpenGLTexture();
+        texture.RecreateOpenGLTexture();
     }
 }
 
@@ -587,6 +574,10 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
     }
 
     m_CurrentBatchTexture = texID;
+
+    // Guard against zero-size textures to prevent division by zero
+    if (texture.GetWidth() == 0 || texture.GetHeight() == 0)
+        return;
 
     // Convert pixel coordinates to normalized UV coordinates (0-1 range)
     float texX = texCoord.x / texture.GetWidth();
@@ -774,6 +765,14 @@ void OpenGLRenderer::FlushBatch()
         memcpy(ptr, m_BatchVertices.data(), dataSize);
         glUnmapBuffer(GL_ARRAY_BUFFER);
     }
+    else
+    {
+        std::cerr << "ERROR: glMapBufferRange returned null in FlushBatch ("
+                  << m_BatchVertices.size() << " vertices, " << dataSize << " bytes)" << std::endl;
+        m_BatchVertices.clear();
+        m_CurrentBatchTexture = 0;
+        return;
+    }
 
     // Bind the shared texture for this batch
     glActiveTexture(GL_TEXTURE0);
@@ -959,9 +958,8 @@ void OpenGLRenderer::FlushRectBatch()
 
     // Tell shader to use per-vertex color instead of texture sampling
     // useColorOnly modes: 0=texture, 1=uniform color, 2=vertex color, 3=texture*vertex color
-    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    if (useColorOnlyLoc >= 0)
-        glUniform1i(useColorOnlyLoc, 2);
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 2);
 
     // Upload with buffer orphaning to avoid GPU sync stall
     size_t dataSize = m_RectBatchVertices.size() * sizeof(ColoredVertex);
@@ -972,6 +970,14 @@ void OpenGLRenderer::FlushRectBatch()
     {
         memcpy(ptr, m_RectBatchVertices.data(), dataSize);
         glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
+    else
+    {
+        std::cerr << "ERROR: glMapBufferRange returned null in FlushRectBatch ("
+                  << m_RectBatchVertices.size() << " vertices, " << dataSize << " bytes)"
+                  << std::endl;
+        m_RectBatchVertices.clear();
+        return;
     }
 
     // White texture acts as placeholder, shader ignores it in vertex color mode
@@ -985,8 +991,8 @@ void OpenGLRenderer::FlushRectBatch()
     ++m_DrawCallCount;
 
     // Restore shader and blend state for next batch
-    if (useColorOnlyLoc >= 0)
-        glUniform1i(useColorOnlyLoc, 0);
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 0);
     if (m_RectBatchAdditive)
     {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1023,9 +1029,8 @@ void OpenGLRenderer::FlushParticleBatch()
 
     // Mode 3: multiply texture color by per-vertex color
     // This allows particles to be tinted and faded individually while using a shared texture
-    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    if (useColorOnlyLoc >= 0)
-        glUniform1i(useColorOnlyLoc, 3);
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 3);
 
     // Upload particle vertices, reuses rect batch VBO since same vertex layout
     size_t dataSize = m_ParticleBatchVertices.size() * sizeof(ColoredVertex);
@@ -1036,6 +1041,15 @@ void OpenGLRenderer::FlushParticleBatch()
     {
         memcpy(ptr, m_ParticleBatchVertices.data(), dataSize);
         glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
+    else
+    {
+        std::cerr << "ERROR: glMapBufferRange returned null in FlushParticleBatch ("
+                  << m_ParticleBatchVertices.size() << " vertices, " << dataSize << " bytes)"
+                  << std::endl;
+        m_ParticleBatchVertices.clear();
+        m_CurrentParticleTexture = 0;
+        return;
     }
 
     // All particles in this batch share the same texture (e.g., soft circle for glow)
@@ -1050,8 +1064,8 @@ void OpenGLRenderer::FlushParticleBatch()
     ++m_DrawCallCount;
 
     // Restore state
-    if (useColorOnlyLoc >= 0)
-        glUniform1i(useColorOnlyLoc, 0);
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 0);
     if (m_ParticleBatchAdditive)
     {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1345,10 +1359,18 @@ void OpenGLRenderer::DrawText(const std::string& text,
 
     float outlineOffset = 2.0f * scale * outlineSize;
 
+    // Maximum vertices that fit in the pre-allocated text VBO
+    const size_t maxTextVertices = MAX_TEXT_QUADS * 6;
+
     // Helper add a quad for one character to the vertex batch
     auto addCharQuad =
-        [this](float xpos, float ypos, float w, float h, float u0, float v0, float u1, float v1)
+        [this, maxTextVertices](
+            float xpos, float ypos, float w, float h, float u0, float v0, float u1, float v1)
     {
+        // Guard against overflowing the pre-allocated text VBO
+        if (m_TextBatchVertices.size() + 6 > maxTextVertices)
+            return;
+
         // Two triangles per character (6 vertices)
         m_TextBatchVertices.push_back({xpos, ypos, u0, v0});          // TL
         m_TextBatchVertices.push_back({xpos, ypos + h, u0, v1});      // BL
@@ -1421,9 +1443,8 @@ void OpenGLRenderer::DrawText(const std::string& text,
     glUniformMatrix4fv(m_ProjectionLoc, 1, GL_FALSE, glm::value_ptr(m_Projection));
 
     // Use texture mode (mode 0) color uniform tints the white glyphs
-    GLint useColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
-    if (useColorOnlyLoc >= 0)
-        glUniform1i(useColorOnlyLoc, 0);
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 0);
     glUniform1f(m_AlphaLoc, alpha);
     glUniform3f(m_AmbientColorLoc, m_AmbientColor.r, m_AmbientColor.g, m_AmbientColor.b);
 

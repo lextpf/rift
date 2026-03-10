@@ -65,14 +65,14 @@
  *
  * @par Render Order
  * The game renders in this order for correct depth:
- * 1. Background layers (Ground, Ground Detail, Objects, Objects2, Objects3) - skips
- * Y-sorted/no-projection tiles
+ * 1. Background layers (Ground, Ground Detail, Objects, Objects2, Objects3) -
+ *    skips Y-sorted/no-projection tiles
  * 2. Background no-projection tiles (buildings rendered upright, perspective suspended)
- * 3. Y-sorted pass: Y-sorted tiles from ALL layers + NPCs + Player (sorted by Y coordinate)
+ * 3. Y-sorted pass: Y-sorted tiles from ALL layers + NPCs + Player (sorted by Y)
  * 4. Foreground no-projection tiles (rendered upright)
  * 5. No-projection particles (perspective suspended)
- * 6. Foreground layers (Foreground, Foreground2, Overlay, Overlay2, Overlay3) - skips
- * Y-sorted/no-projection tiles
+ * 6. Foreground layers (Foreground, Foreground2, Overlay, Overlay2, Overlay3) -
+ *    skips Y-sorted/no-projection tiles
  * 7. Regular particles
  * 8. Sky/ambient overlay (stars, rays, atmospheric effects)
  * 9. Editor UI (if active)
@@ -401,7 +401,10 @@ private:
     bool m_FreeCameraMode;    ///< Free camera mode (Space toggle) - camera doesn't follow player
     /** @} */
 
+    /// @name Frame Timing
+    /// @{
     float m_LastFrameTime;  ///< Timestamp of last frame (for delta calculation)
+    /// @}
 
     /**
      * @name FPS Counter
@@ -436,29 +439,32 @@ private:
      * @{
      */
     bool m_InDialogue;                     ///< Dialogue mode active (simple dialogue)
-    NonPlayerCharacter* m_DialogueNPC;     ///< NPC being talked to
+    int m_DialogueNPCIndex;                ///< Index into m_NPCs of NPC being talked to (-1 = none)
     std::string m_DialogueText;            ///< Current dialogue text (simple dialogue)
     DialogueManager m_DialogueManager;     ///< Branching dialogue tree manager
     GameStateManager m_GameState;          ///< Game flags and state for consequences
     int m_DialoguePage = 0;                ///< Current page of dialogue text (for pagination)
     mutable int m_DialogueTotalPages = 1;  ///< Total pages (cached during rendering)
 
-    // Smooth pre-dialogue alignment state (player + NPC slide into final talk positions).
-    bool m_DialogueSnapActive = false;
-    float m_DialogueSnapTimer = 0.0f;
-    float m_DialogueSnapDuration = 0.4f;
-    glm::vec2 m_DialogueSnapPlayerStart{0.0f};
-    glm::vec2 m_DialogueSnapPlayerTarget{0.0f};
-    glm::vec2 m_DialogueSnapNPCStart{0.0f};
-    glm::vec2 m_DialogueSnapNPCTarget{0.0f};
-    bool m_DialogueSnapHasPlayerTile = true;
-    int m_DialogueSnapPlayerTileX = 0;
-    int m_DialogueSnapPlayerTileY = 0;
-    int m_DialogueSnapNPCTileX = 0;
-    int m_DialogueSnapNPCTileY = 0;
-    Direction m_DialogueSnapPlayerFacing = Direction::DOWN;
-    NPCDirection m_DialogueSnapNPCFacing = NPCDirection::DOWN;
-    bool m_DialogueSnapPrefersTree = false;
-    std::string m_DialogueSnapFallbackText;
+    /// @name Dialogue Snap Alignment
+    /// @brief Smooth pre-dialogue alignment state (player + NPC slide into final talk positions).
+    /// @{
+    bool m_DialogueSnapActive = false;           ///< Whether snap animation is in progress
+    float m_DialogueSnapTimer = 0.0f;            ///< Elapsed time during snap animation
+    float m_DialogueSnapDuration = 0.4f;         ///< Total snap animation duration in seconds
+    glm::vec2 m_DialogueSnapPlayerStart{0.0f};   ///< Player position at snap start
+    glm::vec2 m_DialogueSnapPlayerTarget{0.0f};  ///< Player target position (facing NPC)
+    glm::vec2 m_DialogueSnapNPCStart{0.0f};      ///< NPC position at snap start
+    glm::vec2 m_DialogueSnapNPCTarget{0.0f};     ///< NPC target position (facing player)
+    bool m_DialogueSnapHasPlayerTile = true;     ///< Whether player has a valid target tile
+    int m_DialogueSnapPlayerTileX = 0;           ///< Player target tile column
+    int m_DialogueSnapPlayerTileY = 0;           ///< Player target tile row
+    int m_DialogueSnapNPCTileX = 0;              ///< NPC target tile column
+    int m_DialogueSnapNPCTileY = 0;              ///< NPC target tile row
+    Direction m_DialogueSnapPlayerFacing = Direction::DOWN;     ///< Player facing after snap
+    NPCDirection m_DialogueSnapNPCFacing = NPCDirection::DOWN;  ///< NPC facing after snap
+    bool m_DialogueSnapPrefersTree = false;  ///< Use branching tree dialogue after snap
+    std::string m_DialogueSnapFallbackText;  ///< Simple text if no tree available
+    /// @}
     /** @} */
 };

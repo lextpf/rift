@@ -107,9 +107,14 @@ public:
      */
     void Resize(int width, int height)
     {
+        if (width < 0)
+            width = 0;
+        if (height < 0)
+            height = 0;
         m_Width = width;
         m_Height = height;
-        m_Navigation.resize(static_cast<std::size_t>(width * height), false);
+        m_Navigation.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
+                            false);
     }
 
     /**
@@ -182,8 +187,7 @@ public:
     /**
      * @brief Replace all map data in one call.
      *
-     * @param data   New data (must
-     * have size == w * h).
+     * @param data   New data (must have size == w * h).
      * @param width  New width.
      * @param height New height.
      *
