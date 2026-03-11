@@ -5,16 +5,16 @@
 #include <iostream>
 
 static constexpr glm::vec4 kLayerColors[] = {
-    {0.0f, 0.0f, 0.0f, 0.0f},  // layer 0 (ground, unused)
-    {0.2f, 0.5f, 1.0f, 0.4f},  // layer 1 -- blue (Ground Detail)
-    {0.2f, 1.0f, 0.2f, 0.4f},  // layer 2 -- green (Objects)
-    {1.0f, 0.2f, 0.8f, 0.4f},  // layer 3 -- magenta (Objects2)
-    {1.0f, 0.5f, 0.0f, 0.4f},  // layer 4 -- orange (Objects3)
-    {1.0f, 1.0f, 0.2f, 0.4f},  // layer 5 -- yellow (Foreground)
-    {0.2f, 1.0f, 1.0f, 0.4f},  // layer 6 -- cyan (Foreground2)
-    {1.0f, 0.3f, 0.3f, 0.4f},  // layer 7 -- red (Overlay)
-    {1.0f, 0.3f, 1.0f, 0.4f},  // layer 8 -- magenta (Overlay2)
-    {1.0f, 1.0f, 1.0f, 0.4f},  // layer 9 -- white (Overlay3)
+    {0.0f, 0.0f, 0.0f, 0.0f},  // layer 0 - transparent (Ground, unused)
+    {0.2f, 0.5f, 1.0f, 0.4f},  // layer 1 - blue (Ground Detail)
+    {0.2f, 1.0f, 0.2f, 0.4f},  // layer 2 - green (Objects)
+    {1.0f, 0.2f, 0.8f, 0.4f},  // layer 3 - magenta (Objects2)
+    {1.0f, 0.5f, 0.0f, 0.4f},  // layer 4 - orange (Objects3)
+    {1.0f, 1.0f, 0.2f, 0.4f},  // layer 5 - yellow (Foreground)
+    {0.2f, 1.0f, 1.0f, 0.4f},  // layer 6 - cyan (Foreground2)
+    {1.0f, 0.3f, 0.3f, 0.4f},  // layer 7 - red (Overlay)
+    {1.0f, 0.3f, 1.0f, 0.4f},  // layer 8 - magenta (Overlay2)
+    {1.0f, 1.0f, 1.0f, 0.4f},  // layer 9 - white (Overlay3)
 };
 
 Editor::Editor()

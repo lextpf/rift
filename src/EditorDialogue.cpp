@@ -232,9 +232,9 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
 {
     tree.id = "grumpy_npc";
     tree.startNodeId = "start";
-    outNpcName = "Herbert";
+    outNpcName = "Salma";
 
-    const std::string kFlag = "talked_to_herbert";
+    const std::string kFlag = "talked_to_salma";
 
     // Router node - player greeting changes based on visit count
     DialogueNode startNode("start", outNpcName, "*glances up*");
