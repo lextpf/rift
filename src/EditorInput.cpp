@@ -1,5 +1,5 @@
+#include "Dialogues.h"
 #include "Editor.h"
-#include "EditorDialogue.h"
 
 #include <algorithm>
 #include <cmath>
@@ -74,11 +74,10 @@ ScreenToTile ScreenToTileCoords(const EditorContext& ctx, double mouseX, double 
 
 void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 {
-    static bool tKeyPressed = false;
-    if (glfwGetKey(ctx.window, GLFW_KEY_T) == GLFW_PRESS && !tKeyPressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_T) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_T] && m_Active)
     {
         m_ShowTilePicker = !m_ShowTilePicker;
-        tKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_T] = true;
         std::cout << "Tile picker: " << (m_ShowTilePicker ? "SHOWN" : "HIDDEN") << std::endl;
 
         if (m_ShowTilePicker)
@@ -93,27 +92,26 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_T) == GLFW_RELEASE)
     {
-        tKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_T] = false;
     }
 
     // Rotates the selected tile(s) by 90 increments (0 -> 90 -> 180 -> 270).
     // Works for both single tiles and multi-tile selections when tile picker is closed.
-    static bool tileRotateKeyPressed = false;
-    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !tileRotateKeyPressed && m_EditorMode &&
+    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
         m_MultiTileRotation = (m_MultiTileRotation + 90) % 360;
-        tileRotateKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_R] = true;
         std::cout << "Tile rotation: " << m_MultiTileRotation << " degrees" << std::endl;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_RELEASE)
     {
-        tileRotateKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_R] = false;
     }
 
     // Pans the tile picker view using arrow keys. Shift increases speed 2.5x.
     // Uses smooth scrolling with target-based interpolation.
-    if (m_EditorMode && m_ShowTilePicker)
+    if (m_Active && m_ShowTilePicker)
     {
         float scrollSpeed = 1000.0f * deltaTime;
 
@@ -174,47 +172,33 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Cyan overlay shows navigable tiles in debug view
     //
     // Navigation tiles determine where NPCs can walk for pathfinding.
-    static bool mKeyPressed = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_PRESS && !mKeyPressed)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_M])
     {
         m_EditNavigationMode = !m_EditNavigationMode;
         if (m_EditNavigationMode)
         {
-            m_NPCPlacementMode = false;  // Mutually exclusive modes
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_EditNavigationMode = true;
         }
         std::cout << "Navigation edit mode: " << (m_EditNavigationMode ? "ON" : "OFF") << std::endl;
-        mKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_M] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_RELEASE)
     {
-        mKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_M] = false;
     }
 
     // Toggles NPC placement mode. When active:
     //   - Left-click places/removes NPCs on navigation tiles
     //   - Navigation edit mode is disabled (mutually exclusive)
     //   - Use , and . keys to cycle through available NPC types
-    static bool nKeyPressed = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !nKeyPressed)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_N])
     {
         m_NPCPlacementMode = !m_NPCPlacementMode;
         if (m_NPCPlacementMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_NPCPlacementMode = true;
             if (!m_AvailableNPCTypes.empty())
             {
                 std::cout << "NPC placement mode: ON - Selected NPC: "
@@ -227,31 +211,24 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "NPC placement mode: OFF" << std::endl;
         }
-        nKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_N] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_RELEASE)
     {
-        nKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_N] = false;
     }
 
     // Toggles elevation editing mode. When active:
     //   - Left-click paints elevation values (for stairs)
     //   - Right-click removes elevation (sets to 0)
     //   - Use scroll to adjust elevation value
-    static bool hKeyPressed = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_H) == GLFW_PRESS && !hKeyPressed)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_H) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_H])
     {
         m_ElevationEditMode = !m_ElevationEditMode;
         if (m_ElevationEditMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_NPCPlacementMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_ElevationEditMode = true;
             std::cout << "Elevation edit mode: ON - Current elevation: " << m_CurrentElevation
                       << " pixels" << std::endl;
             std::cout << "Use scroll wheel to adjust elevation value" << std::endl;
@@ -260,31 +237,24 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "Elevation edit mode: OFF" << std::endl;
         }
-        hKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_H] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_H) == GLFW_RELEASE)
     {
-        hKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_H] = false;
     }
 
     // Toggles no-projection editing mode. When active:
     //   - Left-click sets no-projection flag (tile renders without 3D effect)
     //   - Right-click clears no-projection flag
     //   - Used for buildings that should appear to have height in 3D mode
-    static bool bKeyPressedNoProj = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_PRESS && !bKeyPressedNoProj)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_B])
     {
         m_NoProjectionEditMode = !m_NoProjectionEditMode;
         if (m_NoProjectionEditMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_NoProjectionEditMode = true;
             std::cout << "No-projection edit mode: ON (Layer " << m_CurrentLayer
                       << ") - Click to mark tiles that bypass 3D projection" << std::endl;
             std::cout << "Use 1-6 keys to change layer" << std::endl;
@@ -293,31 +263,24 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "No-projection edit mode: OFF" << std::endl;
         }
-        bKeyPressedNoProj = true;
+        m_KeyPressed[GLFW_KEY_B] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_RELEASE)
     {
-        bKeyPressedNoProj = false;
+        m_KeyPressed[GLFW_KEY_B] = false;
     }
 
     // Toggles Y-sort-plus editing mode. When active:
     //   - Left-click sets Y-sort-plus flag (tile sorts with entities by Y position)
     //   - Right-click clears Y-sort-plus flag
     //   - Used for tiles that should appear in front/behind player based on Y
-    static bool yKeyPressedYSort = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS && !yKeyPressedYSort)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_Y])
     {
         m_YSortPlusEditMode = !m_YSortPlusEditMode;
         if (m_YSortPlusEditMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_YSortPlusEditMode = true;
             std::cout << "Y-sort+1 edit mode: ON (Layer " << m_CurrentLayer
                       << ") - Click to mark tiles for Y-sorting with entities" << std::endl;
             std::cout << "Use 1-6 keys to change layer" << std::endl;
@@ -326,31 +289,24 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "Y-sort-plus edit mode: OFF" << std::endl;
         }
-        yKeyPressedYSort = true;
+        m_KeyPressed[GLFW_KEY_Y] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_RELEASE)
     {
-        yKeyPressedYSort = false;
+        m_KeyPressed[GLFW_KEY_Y] = false;
     }
 
     // Toggles Y-sort-minus editing mode. When active:
     //   - Left-click sets Y-sort-minus flag (tile renders in front of player at same Y)
     //   - Right-click clears Y-sort-minus flag
     //   - Only affects tiles that are already Y-sort-plus
-    static bool oKeyPressedYSortMinus = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_O) == GLFW_PRESS && !oKeyPressedYSortMinus)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_O) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_O])
     {
         m_YSortMinusEditMode = !m_YSortMinusEditMode;
         if (m_YSortMinusEditMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_YSortMinusEditMode = true;
             std::cout << "========================================" << std::endl;
             std::cout << "Y-SORT-1 EDIT MODE: ON (Layer " << m_CurrentLayer << ")" << std::endl;
             std::cout << "Click the BOTTOM tile of a structure to mark it" << std::endl;
@@ -361,93 +317,76 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "Y-sort-minus edit mode: OFF" << std::endl;
         }
-        oKeyPressedYSortMinus = true;
+        m_KeyPressed[GLFW_KEY_O] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_O) == GLFW_RELEASE)
     {
-        oKeyPressedYSortMinus = false;
+        m_KeyPressed[GLFW_KEY_O] = false;
     }
 
     // Toggles particle zone editing mode. When active:
     //   - Left-click and drag to create a particle zone
     //   - Right-click to remove zone under cursor
     //   - Use , and . keys to cycle particle type
-    static bool jKeyPressedParticle = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_J) == GLFW_PRESS && !jKeyPressedParticle)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_J) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_J])
     {
         m_ParticleZoneEditMode = !m_ParticleZoneEditMode;
         if (m_ParticleZoneEditMode)
         {
-            m_EditNavigationMode = false;  // Mutually exclusive modes
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_StructureEditMode = false;
-            m_AnimationEditMode = false;
-            const char* typeNames[] = {
-                "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
+            ClearAllEditModes();
+            m_ParticleZoneEditMode = true;
             std::cout << "Particle zone edit mode: ON - Type: "
-                      << typeNames[static_cast<int>(m_CurrentParticleType)] << std::endl;
+                      << PARTICLE_TYPE_NAMES[static_cast<int>(m_CurrentParticleType)] << std::endl;
             std::cout << "Click and drag to place zones, use , and . to change type" << std::endl;
         }
         else
         {
             std::cout << "Particle zone edit mode: OFF" << std::endl;
         }
-        jKeyPressedParticle = true;
+        m_KeyPressed[GLFW_KEY_J] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_J) == GLFW_RELEASE)
     {
-        jKeyPressedParticle = false;
+        m_KeyPressed[GLFW_KEY_J] = false;
     }
 
     // Particle type cycling
-    if (m_EditorMode && m_ParticleZoneEditMode)
+    if (m_Active && m_ParticleZoneEditMode)
     {
-        static bool commaParticle = false;
-        static bool periodParticle = false;
-
-        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !commaParticle)
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
             int type = static_cast<int>(m_CurrentParticleType);
             type = (type + 7) % 8;  // Decrement with wrap-around
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            const char* typeNames[] = {
-                "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
-            std::cout << "Particle type: " << typeNames[type] << std::endl;
-            commaParticle = true;
+            std::cout << "Particle type: " << PARTICLE_TYPE_NAMES[type] << std::endl;
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
-            commaParticle = false;
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
 
-        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !periodParticle)
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
             int type = static_cast<int>(m_CurrentParticleType);
             type = (type + 1) % 8;  // Next with wrap-around
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            const char* typeNames[] = {
-                "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
-            std::cout << "Particle type: " << typeNames[type] << std::endl;
-            periodParticle = true;
+            std::cout << "Particle type: " << PARTICLE_TYPE_NAMES[type] << std::endl;
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
-            periodParticle = false;
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
 
         // Toggles manual noProjection override for new particle zones
         // Auto-detection from tiles is always active, this is for forcing noProjection on/off
-        static bool nKeyParticle = false;
-        if (glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !nKeyParticle)
+        if (glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_N])
         {
             m_ParticleNoProjection = !m_ParticleNoProjection;
             std::cout << "Particle noProjection override: "
                       << (m_ParticleNoProjection ? "ON (forced)" : "OFF (auto-detect)")
                       << std::endl;
-            nKeyParticle = true;
+            m_KeyPressed[GLFW_KEY_N] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_RELEASE)
-            nKeyParticle = false;
+            m_KeyPressed[GLFW_KEY_N] = false;
     }
 
     // Toggles structure definition mode. When active:
@@ -457,20 +396,13 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Shift+click to assign tiles to current structure
     //   - Right-click to clear structure assignment from tiles
     //   - Delete to remove current structure
-    static bool gKeyPressedStruct = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_G) == GLFW_PRESS && !gKeyPressedStruct)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_G) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_G])
     {
         m_StructureEditMode = !m_StructureEditMode;
         if (m_StructureEditMode)
         {
-            m_EditNavigationMode = false;
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_AnimationEditMode = false;
+            ClearAllEditModes();
+            m_StructureEditMode = true;
             m_PlacingAnchor = 0;
             m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
             m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
@@ -490,21 +422,18 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             m_PlacingAnchor = 0;
             std::cout << "Structure edit mode: OFF" << std::endl;
         }
-        gKeyPressedStruct = true;
+        m_KeyPressed[GLFW_KEY_G] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_G) == GLFW_RELEASE)
     {
-        gKeyPressedStruct = false;
+        m_KeyPressed[GLFW_KEY_G] = false;
     }
 
     // Structure mode controls
-    if (m_EditorMode && m_StructureEditMode)
+    if (m_Active && m_StructureEditMode)
     {
         // Cycle through structures with , and .
-        static bool commaPressed = false;
-        static bool periodPressed = false;
-
-        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !commaPressed)
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
             size_t count = ctx.tilemap.GetNoProjectionStructureCount();
             if (count > 0)
@@ -525,12 +454,12 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                               << std::endl;
                 }
             }
-            commaPressed = true;
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
-            commaPressed = false;
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
 
-        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !periodPressed)
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
             size_t count = ctx.tilemap.GetNoProjectionStructureCount();
             if (count > 0)
@@ -547,28 +476,26 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                               << std::endl;
                 }
             }
-            periodPressed = true;
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
-            periodPressed = false;
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
 
         // Escape to cancel anchor placement
-        static bool escapePressedAnchor = false;
-        if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapePressedAnchor &&
-            m_PlacingAnchor != 0)
+        if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_PRESS &&
+            !m_KeyPressed[GLFW_KEY_ESCAPE] && m_PlacingAnchor != 0)
         {
             m_PlacingAnchor = 0;
             m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
             m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
             std::cout << "Anchor placement cancelled" << std::endl;
-            escapePressedAnchor = true;
+            m_KeyPressed[GLFW_KEY_ESCAPE] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
-            escapePressedAnchor = false;
+            m_KeyPressed[GLFW_KEY_ESCAPE] = false;
 
         // Delete to remove current structure
-        static bool deletePressedStruct = false;
-        if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && !deletePressedStruct)
+        if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_DELETE])
         {
             if (m_CurrentStructureId >= 0)
             {
@@ -576,10 +503,10 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                 ctx.tilemap.RemoveNoProjectionStructure(m_CurrentStructureId);
                 m_CurrentStructureId = -1;
             }
-            deletePressedStruct = true;
+            m_KeyPressed[GLFW_KEY_DELETE] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_RELEASE)
-            deletePressedStruct = false;
+            m_KeyPressed[GLFW_KEY_DELETE] = false;
     }
 
     // Toggles animated tile creation mode. When active:
@@ -587,20 +514,13 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Press Enter to create the animation and apply to selected map tile
     //   - Press Escape to cancel/clear frames
     //   - Use , and . to adjust frame duration
-    static bool kKeyPressedAnim = false;
-    if (m_EditorMode && glfwGetKey(ctx.window, GLFW_KEY_K) == GLFW_PRESS && !kKeyPressedAnim)
+    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_K) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_K])
     {
         m_AnimationEditMode = !m_AnimationEditMode;
         if (m_AnimationEditMode)
         {
-            m_EditNavigationMode = false;
-            m_NPCPlacementMode = false;
-            m_ElevationEditMode = false;
-            m_NoProjectionEditMode = false;
-            m_YSortPlusEditMode = false;
-            m_YSortMinusEditMode = false;
-            m_ParticleZoneEditMode = false;
-            m_StructureEditMode = false;
+            ClearAllEditModes();
+            m_AnimationEditMode = true;
             m_AnimationFrames.clear();
             std::cout << "Animation edit mode: ON" << std::endl;
             std::cout << "Click tiles in picker to add frames, Enter to create, Esc to cancel"
@@ -616,54 +536,49 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             m_SelectedAnimationId = -1;
             std::cout << "Animation edit mode: OFF" << std::endl;
         }
-        kKeyPressedAnim = true;
+        m_KeyPressed[GLFW_KEY_K] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_K) == GLFW_RELEASE)
     {
-        kKeyPressedAnim = false;
+        m_KeyPressed[GLFW_KEY_K] = false;
     }
 
     // Animation frame duration adjustment and controls
-    if (m_EditorMode && m_AnimationEditMode)
+    if (m_Active && m_AnimationEditMode)
     {
-        static bool commaAnim = false;
-        static bool periodAnim = false;
-
-        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !commaAnim)
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
             m_AnimationFrameDuration = std::max(0.05f, m_AnimationFrameDuration - 0.05f);
             std::cout << "Animation frame duration: " << m_AnimationFrameDuration << "s"
                       << std::endl;
-            commaAnim = true;
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
-            commaAnim = false;
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
 
-        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !periodAnim)
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
             m_AnimationFrameDuration = std::min(2.0f, m_AnimationFrameDuration + 0.05f);
             std::cout << "Animation frame duration: " << m_AnimationFrameDuration << "s"
                       << std::endl;
-            periodAnim = true;
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
-            periodAnim = false;
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
 
         // Escape to clear frames and deselect animation
-        static bool escAnim = false;
-        if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escAnim)
+        if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_ESCAPE])
         {
             m_AnimationFrames.clear();
             m_SelectedAnimationId = -1;
             std::cout << "Animation frames/selection cleared" << std::endl;
-            escAnim = true;
+            m_KeyPressed[GLFW_KEY_ESCAPE] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
-            escAnim = false;
+            m_KeyPressed[GLFW_KEY_ESCAPE] = false;
 
         // Enter to create animation
-        static bool enterAnim = false;
-        if (glfwGetKey(ctx.window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterAnim)
+        if (glfwGetKey(ctx.window, GLFW_KEY_ENTER) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_ENTER])
         {
             if (m_AnimationFrames.size() >= 2)
             {
@@ -682,22 +597,19 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             {
                 std::cout << "Need at least 2 frames to create animation" << std::endl;
             }
-            enterAnim = true;
+            m_KeyPressed[GLFW_KEY_ENTER] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_ENTER) == GLFW_RELEASE)
-            enterAnim = false;
+            m_KeyPressed[GLFW_KEY_ENTER] = false;
     }
 
     // Cycles through available NPC types when in NPC placement mode.
     // Comma (,) previous type, Period (.) next type
     // Wraps around at list boundaries.
-    if (m_EditorMode && m_NPCPlacementMode && !m_AvailableNPCTypes.empty())
+    if (m_Active && m_NPCPlacementMode && !m_AvailableNPCTypes.empty())
     {
-        static bool commaPressed = false;
-        static bool periodPressed = false;
-
         // Comma key cycles to previous NPC type
-        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !commaPressed)
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
             if (m_SelectedNPCTypeIndex > 0)
             {
@@ -710,26 +622,26 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             std::cout << "Selected NPC type: " << m_AvailableNPCTypes[m_SelectedNPCTypeIndex]
                       << " (" << (m_SelectedNPCTypeIndex + 1) << "/" << m_AvailableNPCTypes.size()
                       << ")" << std::endl;
-            commaPressed = true;
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
         {
-            commaPressed = false;
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
         }
 
         // Period key cycles to next NPC type
-        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !periodPressed)
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
             m_SelectedNPCTypeIndex =
                 (m_SelectedNPCTypeIndex + 1) % m_AvailableNPCTypes.size();  // Wrap to start
             std::cout << "Selected NPC type: " << m_AvailableNPCTypes[m_SelectedNPCTypeIndex]
                       << " (" << (m_SelectedNPCTypeIndex + 1) << "/" << m_AvailableNPCTypes.size()
                       << ")" << std::endl;
-            periodPressed = true;
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
         {
-            periodPressed = false;
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
         }
     }
 
@@ -739,8 +651,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Navigation map
     //   - NPC positions, dialogues and types
     //   - Player spawn position and character type
-    static bool sKeyPressed = false;
-    if (glfwGetKey(ctx.window, GLFW_KEY_S) == GLFW_PRESS && !sKeyPressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_S) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_S] && m_Active)
     {
         // Calculate player's current tile for spawn point
         glm::vec2 playerPos = ctx.player.GetPosition();
@@ -755,17 +666,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             std::cout << "Save successful! Player at tile (" << playerTileX << ", " << playerTileY
                       << "), character type: " << characterType << std::endl;
         }
-        sKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_S] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_S) == GLFW_RELEASE)
     {
-        sKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_S] = false;
     }
 
     // Reloads the game state from save.json, replacing all current state.
     // Also restores player position, character type, and recenters camera.
-    static bool lKeyPressed = false;
-    if (glfwGetKey(ctx.window, GLFW_KEY_L) == GLFW_PRESS && !lKeyPressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_L) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_L] && m_Active)
     {
         int loadedPlayerTileX = -1;
         int loadedPlayerTileY = -1;
@@ -810,20 +720,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "Failed to reload map!" << std::endl;
         }
-        lKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_L] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_L) == GLFW_RELEASE)
     {
-        lKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_L] = false;
     }
 
     // Removes tiles under the mouse cursor on the currently selected layer.
     // Hold DEL and drag to delete multiple tiles continuously.
-    static bool deleteKeyHeld = false;
-    static int lastDeletedTileX = -1;
-    static int lastDeletedTileY = -1;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && m_EditorMode && !m_ShowTilePicker)
+    if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && m_Active && !m_ShowTilePicker)
     {
         double mouseX, mouseY;
         glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
@@ -832,7 +738,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         int tileY = st.tileY;
 
         // Only delete if cursor moved to a new tile
-        bool isNewTile = (tileX != lastDeletedTileX || tileY != lastDeletedTileY);
+        bool isNewTile = (tileX != m_LastDeletedTileX || tileY != m_LastDeletedTileY);
 
         // Bounds check before deletion
         if (isNewTile && tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
@@ -841,23 +747,22 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             // Delete tile on selected layer (set to -1 = empty) and clear animation
             ctx.tilemap.SetLayerTile(tileX, tileY, m_CurrentLayer, -1);
             ctx.tilemap.SetTileAnimation(tileX, tileY, static_cast<int>(m_CurrentLayer), -1);
-            lastDeletedTileX = tileX;
-            lastDeletedTileY = tileY;
+            m_LastDeletedTileX = tileX;
+            m_LastDeletedTileY = tileY;
         }
-        deleteKeyHeld = true;
+        m_KeyPressed[GLFW_KEY_DELETE] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_RELEASE)
     {
-        deleteKeyHeld = false;
-        lastDeletedTileX = -1;
-        lastDeletedTileY = -1;
+        m_KeyPressed[GLFW_KEY_DELETE] = false;
+        m_LastDeletedTileX = -1;
+        m_LastDeletedTileY = -1;
     }
 
     // Rotates the tile under the mouse cursor by 90 on the current layer.
     // Note: This is different from multi-tile rotation which uses R when
     //       m_MultiTileSelectionMode is true.
-    static bool rKeyPressed = false;
-    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !rKeyPressed && m_EditorMode &&
+    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
         double mouseX, mouseY;
@@ -876,115 +781,104 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             std::cout << "Rotated Layer " << (m_CurrentLayer + 1) << " tile at (" << tileX << ", "
                       << tileY << ") to " << newRotation << " degrees" << std::endl;
         }
-        rKeyPressed = true;
+        m_KeyPressed[GLFW_KEY_R] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_RELEASE)
     {
-        rKeyPressed = false;
+        m_KeyPressed[GLFW_KEY_R] = false;
     }
 
     // Selects which tile layer to edit.
-    static bool key1Pressed = false;
-    static bool key2Pressed = false;
-    static bool key3Pressed = false;
-    static bool key4Pressed = false;
-    static bool key5Pressed = false;
-    static bool key6Pressed = false;
-    static bool key7Pressed = false;
-    static bool key8Pressed = false;
-    static bool key9Pressed = false;
-    static bool key0Pressed = false;
-
     // Layer switching: Keys 1-9,0 map to dynamic layers 0-9
-    if (glfwGetKey(ctx.window, GLFW_KEY_1) == GLFW_PRESS && !key1Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_1) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_1] && m_Active)
     {
         m_CurrentLayer = 0;
         std::cout << "Switched to Layer 1: Ground (background)" << std::endl;
-        key1Pressed = true;
+        m_KeyPressed[GLFW_KEY_1] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_1) == GLFW_RELEASE)
-        key1Pressed = false;
+        m_KeyPressed[GLFW_KEY_1] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_2) == GLFW_PRESS && !key2Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_2) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_2] && m_Active)
     {
         m_CurrentLayer = 1;
         std::cout << "Switched to Layer 2: Ground Detail (background)" << std::endl;
-        key2Pressed = true;
+        m_KeyPressed[GLFW_KEY_2] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_2) == GLFW_RELEASE)
-        key2Pressed = false;
+        m_KeyPressed[GLFW_KEY_2] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_3) == GLFW_PRESS && !key3Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_3) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_3] && m_Active)
     {
         m_CurrentLayer = 2;
         std::cout << "Switched to Layer 3: Objects (background)" << std::endl;
-        key3Pressed = true;
+        m_KeyPressed[GLFW_KEY_3] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_3) == GLFW_RELEASE)
-        key3Pressed = false;
+        m_KeyPressed[GLFW_KEY_3] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_4) == GLFW_PRESS && !key4Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_4) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_4] && m_Active)
     {
         m_CurrentLayer = 3;
         std::cout << "Switched to Layer 4: Objects2 (background)" << std::endl;
-        key4Pressed = true;
+        m_KeyPressed[GLFW_KEY_4] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_4) == GLFW_RELEASE)
-        key4Pressed = false;
+        m_KeyPressed[GLFW_KEY_4] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_5) == GLFW_PRESS && !key5Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_5) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_5] && m_Active)
     {
         m_CurrentLayer = 4;
         std::cout << "Switched to Layer 5: Objects3 (background)" << std::endl;
-        key5Pressed = true;
+        m_KeyPressed[GLFW_KEY_5] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_5) == GLFW_RELEASE)
-        key5Pressed = false;
+        m_KeyPressed[GLFW_KEY_5] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_6) == GLFW_PRESS && !key6Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_6) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_6] && m_Active)
     {
         m_CurrentLayer = 5;
         std::cout << "Switched to Layer 6: Foreground (foreground)" << std::endl;
-        key6Pressed = true;
+        m_KeyPressed[GLFW_KEY_6] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_6) == GLFW_RELEASE)
-        key6Pressed = false;
+        m_KeyPressed[GLFW_KEY_6] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_7) == GLFW_PRESS && !key7Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_7) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_7] && m_Active)
     {
         m_CurrentLayer = 6;
         std::cout << "Switched to Layer 7: Foreground2 (foreground)" << std::endl;
-        key7Pressed = true;
+        m_KeyPressed[GLFW_KEY_7] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_7) == GLFW_RELEASE)
-        key7Pressed = false;
+        m_KeyPressed[GLFW_KEY_7] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_8) == GLFW_PRESS && !key8Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_8) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_8] && m_Active)
     {
         m_CurrentLayer = 7;
         std::cout << "Switched to Layer 8: Overlay (foreground)" << std::endl;
-        key8Pressed = true;
+        m_KeyPressed[GLFW_KEY_8] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_8) == GLFW_RELEASE)
-        key8Pressed = false;
+        m_KeyPressed[GLFW_KEY_8] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_9) == GLFW_PRESS && !key9Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_9) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_9] && m_Active)
     {
         m_CurrentLayer = 8;
         std::cout << "Switched to Layer 9: Overlay2 (foreground)" << std::endl;
-        key9Pressed = true;
+        m_KeyPressed[GLFW_KEY_9] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_9) == GLFW_RELEASE)
-        key9Pressed = false;
+        m_KeyPressed[GLFW_KEY_9] = false;
 
-    if (glfwGetKey(ctx.window, GLFW_KEY_0) == GLFW_PRESS && !key0Pressed && m_EditorMode)
+    if (glfwGetKey(ctx.window, GLFW_KEY_0) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_0] && m_Active)
     {
         m_CurrentLayer = 9;
         std::cout << "Switched to Layer 10: Overlay3 (foreground)" << std::endl;
-        key0Pressed = true;
+        m_KeyPressed[GLFW_KEY_0] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_0) == GLFW_RELEASE)
-        key0Pressed = false;
+        m_KeyPressed[GLFW_KEY_0] = false;
 }
 
 void Editor::ProcessMouseInput(const EditorContext& ctx)
@@ -1176,15 +1070,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     if (worldX >= zone.position.x && worldX < zone.position.x + zone.size.x &&
                         worldY >= zone.position.y && worldY < zone.position.y + zone.size.y)
                     {
-                        const char* typeNames[] = {"Firefly",
-                                                   "Rain",
-                                                   "Snow",
-                                                   "Fog",
-                                                   "Sparkles",
-                                                   "Wisp",
-                                                   "Lantern",
-                                                   "Sunshine"};
-                        std::cout << "Removed " << typeNames[static_cast<int>(zone.type)]
+                        std::cout << "Removed " << PARTICLE_TYPE_NAMES[static_cast<int>(zone.type)]
                                   << " zone at (" << zone.position.x << ", " << zone.position.y
                                   << ")" << std::endl;
                         ctx.particles.OnZoneRemoved(static_cast<int>(i));
@@ -1434,7 +1320,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         int tileY = st.tileY;
 
         // NPC placement mode, toggle NPC on this tile instead of placing tiles
-        if (m_EditorMode && m_NPCPlacementMode)
+        if (m_Active && m_NPCPlacementMode)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1479,14 +1365,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             DialogueTree tree;
                             std::string npcName;
                             static std::mt19937 rng(std::random_device{}());
-                            std::uniform_int_distribution<int> dist(0, 6);
+                            std::uniform_int_distribution<int> dist(0, kMysteryDialogueCount + 1);
                             int dialogueType = dist(rng);
-                            if (dialogueType < 5)
+                            if (dialogueType < kMysteryDialogueCount)
                             {
                                 BuildMysteryDialogueTree(
                                     tree, npcName, kMysteryDialogues[dialogueType]);
                             }
-                            else if (dialogueType == 5)
+                            else if (dialogueType == kMysteryDialogueCount)
                             {
                                 BuildEditorAwareDialogueTree(tree, npcName);
                             }
@@ -1518,7 +1404,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Particle zone editing mode, click and drag to create zones
-        if (m_EditorMode && m_ParticleZoneEditMode)
+        if (m_Active && m_ParticleZoneEditMode)
         {
             if (!m_PlacingParticleZone)
             {
@@ -1533,7 +1419,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Animation edit mode, apply selected animation to clicked tile
-        if (m_EditorMode && m_AnimationEditMode && m_SelectedAnimationId >= 0)
+        if (m_Active && m_AnimationEditMode && m_SelectedAnimationId >= 0)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1546,7 +1432,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Elevation editing mode, paint elevation values
-        if (m_EditorMode && m_ElevationEditMode)
+        if (m_Active && m_ElevationEditMode)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1560,7 +1446,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Structure editing mode - works like no-projection mode with anchor placement
         // Click = toggle no-projection, Shift+click = flood-fill, Ctrl+click = place anchors
-        if (m_EditorMode && m_StructureEditMode)
+        if (m_Active && m_StructureEditMode)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1665,7 +1551,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // No-projection editing mode, set no-projection flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_EditorMode && m_NoProjectionEditMode)
+        if (m_Active && m_NoProjectionEditMode)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1703,7 +1589,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Y-sort-plus editing mode, set Y-sort-plus flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_EditorMode && m_YSortPlusEditMode)
+        if (m_Active && m_YSortPlusEditMode)
         {
             SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortPlus, "Y-sort-plus");
             return;
@@ -1711,7 +1597,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Y-sort-minus editing mode, set Y-sort-minus flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_EditorMode && m_YSortMinusEditMode)
+        if (m_Active && m_YSortMinusEditMode)
         {
             SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortMinus, "Y-sort-minus");
             // Warn if Y-sort-plus isn't set on this tile (only relevant for single-tile placement)
@@ -1844,9 +1730,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             zone.noProjection = hasNoProjection;
             ctx.tilemap.AddParticleZone(zone);
 
-            const char* typeNames[] = {
-                "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
-            std::cout << "Created " << typeNames[static_cast<int>(m_CurrentParticleType)]
+            std::cout << "Created " << PARTICLE_TYPE_NAMES[static_cast<int>(m_CurrentParticleType)]
                       << " zone at (" << zr.x << ", " << zr.y << ") size " << zr.w << "x" << zr.h;
             if (hasNoProjection)
                 std::cout << " [noProjection]";

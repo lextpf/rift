@@ -40,7 +40,9 @@ class RefProxy
 {
 public:
     constexpr RefProxy(C* data, std::size_t index, bool valid) noexcept
-        : m_Data(data), m_Index(index), m_Valid(valid)
+        : m_Data(data),
+          m_Index(index),
+          m_Valid(valid)
     {
     }
 
@@ -82,7 +84,10 @@ public:
     using value_type = T;
 
     constexpr ConstColumnProxy(const C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(data), m_Width(width), m_Height(height), m_X(x)
+        : m_Data(data),
+          m_Width(width),
+          m_Height(height),
+          m_X(x)
     {
     }
 
@@ -152,7 +157,10 @@ public:
      * @param x      Column index for this proxy.
      */
     constexpr ColumnProxy(C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(data), m_Width(width), m_Height(height), m_X(x)
+        : m_Data(data),
+          m_Width(width),
+          m_Height(height),
+          m_X(x)
     {
     }
 

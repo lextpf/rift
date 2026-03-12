@@ -4,7 +4,7 @@
 #include <cmath>
 #include <iostream>
 
-static constexpr glm::vec4 kLayerColors[] = {
+static constexpr glm::vec4 LAYER_COLORS[] = {
     {0.0f, 0.0f, 0.0f, 0.0f},  // layer 0 - transparent (Ground, unused)
     {0.2f, 0.5f, 1.0f, 0.4f},  // layer 1 - blue (Ground Detail)
     {0.2f, 1.0f, 0.2f, 0.4f},  // layer 2 - green (Objects)
@@ -19,7 +19,7 @@ static constexpr glm::vec4 kLayerColors[] = {
 
 Editor::Editor()
     // -- Mode flags: all sub-modes start inactive --
-    : m_EditorMode(false),
+    : m_Active(false),
       m_ShowTilePicker(false),
       m_EditNavigationMode(false),
       m_ElevationEditMode(false),
@@ -93,7 +93,11 @@ Editor::Editor()
       m_SelectionStartTileID(-1),   // -1 = no selection started
       m_PlacementCameraZoom(1.0f),  // snapshot of camera zoom at placement time
       m_IsPlacingMultiTile(false),
-      m_MultiTileRotation(0)  // 0/90/180/270 degrees
+      m_MultiTileRotation(0),  // 0/90/180/270 degrees
+
+      // -- Key debounce: m_KeyPressed[] is value-initialized to false via = {} --
+      m_LastDeletedTileX(-1),
+      m_LastDeletedTileY(-1)
 {
 }
 
@@ -119,7 +123,7 @@ void Editor::Initialize(const std::vector<std::string>& npcTypes)
 
 void Editor::SetActive(bool active)
 {
-    m_EditorMode = active;
+    m_Active = active;
     if (active)
     {
         m_ShowTilePicker = true;
@@ -158,7 +162,7 @@ void Editor::ResetTilePickerState()
 void Editor::Update(float deltaTime, const EditorContext& ctx)
 {
     // Smooth tile picker camera movement
-    if (m_EditorMode && m_ShowTilePicker)
+    if (m_Active && m_ShowTilePicker)
     {
         // Exponential decay smoothing for tile picker pan
         auto expApproachAlpha = [](float dt, float st, float e = 0.01f) -> float
@@ -190,18 +194,32 @@ void Editor::Update(float deltaTime, const EditorContext& ctx)
     }
 }
 
+void Editor::ClearAllEditModes()
+{
+    m_EditNavigationMode = false;
+    m_NPCPlacementMode = false;
+    m_ElevationEditMode = false;
+    m_NoProjectionEditMode = false;
+    m_YSortPlusEditMode = false;
+    m_YSortMinusEditMode = false;
+    m_ParticleZoneEditMode = false;
+    m_StructureEditMode = false;
+    m_AnimationEditMode = false;
+}
+
 void Editor::Render(const EditorContext& ctx)
 {
+    m_NoProjBoundsCached = false;
     // Render editor tile picker UI
-    if (m_EditorMode && m_ShowTilePicker)
+    if (m_Active && m_ShowTilePicker)
     {
         ctx.renderer.SuspendPerspective(true);
         RenderEditorUI(ctx);
         ctx.renderer.SuspendPerspective(false);
     }
 
-    // Render overlays when editor mode is on and tile picker is hidden
-    if (m_EditorMode && !m_ShowTilePicker)
+    // Shared overlays: rendered once when either editor or debug mode is active
+    if ((m_Active || m_DebugMode) && !m_ShowTilePicker)
     {
         RenderCollisionOverlays(ctx);
         RenderNavigationOverlays(ctx);
@@ -211,31 +229,29 @@ void Editor::Render(const EditorContext& ctx)
         RenderYSortMinusOverlays(ctx);
     }
 
-    // Layer overlays when respective layer is selected
-    if (m_EditorMode && !m_ShowTilePicker)
+    // Editor-only overlays: layer highlight and placement preview
+    if (m_Active && !m_ShowTilePicker)
     {
-        if (m_CurrentLayer >= 1 && m_CurrentLayer <= 9)
-            RenderLayerOverlay(ctx, m_CurrentLayer, kLayerColors[m_CurrentLayer]);
+        if (!m_DebugMode && m_CurrentLayer >= 1 && m_CurrentLayer <= 9)
+        {
+            RenderLayerOverlay(ctx, m_CurrentLayer, LAYER_COLORS[m_CurrentLayer]);
+        }
 
         RenderPlacementPreview(ctx);
     }
 
-    // Debug mode overlays (F3) - show all overlays regardless of editor mode
+    // Debug-only overlays: extra visualizations not shown in normal editor mode
     if (m_DebugMode && !m_ShowTilePicker)
     {
-        RenderCollisionOverlays(ctx);
-        RenderNavigationOverlays(ctx);
         RenderCornerCuttingOverlays(ctx);
         RenderElevationOverlays(ctx);
-        RenderNoProjectionOverlays(ctx);
-        RenderStructureOverlays(ctx);
-        RenderYSortPlusOverlays(ctx);
-        RenderYSortMinusOverlays(ctx);
         RenderParticleZoneOverlays(ctx);
         RenderNPCDebugInfo(ctx);
 
         for (int i = 1; i <= 9; ++i)
-            RenderLayerOverlay(ctx, i, kLayerColors[i]);
+        {
+            RenderLayerOverlay(ctx, i, LAYER_COLORS[i]);
+        }
     }
 }
 

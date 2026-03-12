@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DialogueSystem.h"
+#include "DialogueTypes.h"
 #include "GameCharacter.h"
 #include "IRenderer.h"
 #include "PatrolRoute.h"
@@ -14,7 +14,7 @@
  * @class NonPlayerCharacter
  * @brief Character with patrol behavior and player interaction.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entity
+ * @ingroup Entities
  *
  * NonPlayerCharacter represents an autonomous entity in the game world.
  * NPCs follow patrol routes through the navigation map and can interact
@@ -46,7 +46,7 @@
  * @endhtmlonly
  *
  * @par Movement
- * NPCs move at 60 px/s (configurable via SetSpeed) along their patrol route.
+ * NPCs move at 25 px/s (configurable via SetSpeed) along their patrol route.
  * Movement is tile-aligned - NPCs walk in cardinal directions to the center
  * of each target tile before advancing to the next waypoint.
  *
@@ -88,7 +88,8 @@ public:
      * @brief Update NPC AI and animation.
      * @param deltaTime Frame time in seconds.
      * @param tilemap Tilemap for navigation queries.
-     * @param playerPosition Optional player position for collision.
+     * @param playerPosition Player feet position for collision checking,
+     *        or `nullptr` to skip collision with the player.
      *
      * If no patrol route is currently valid, this method attempts to build one
      * from the current tile with a maximum route length of 100 waypoints.

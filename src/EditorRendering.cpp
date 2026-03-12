@@ -16,7 +16,7 @@ struct VisibleTileRange
 
 VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
 {
-    VisibleTileRange r;
+    VisibleTileRange r{};
     r.tileWidth = ctx.tilemap.GetTileWidth();
     r.tileHeight = ctx.tilemap.GetTileHeight();
     if (r.tileWidth <= 0 || r.tileHeight <= 0)
@@ -90,7 +90,80 @@ StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap,
     return bounds;
 }
 
+void DrawCrossMarker(IRenderer& renderer, const glm::vec2& pos, float size, const glm::vec4& color)
+{
+    renderer.DrawColoredRect(
+        glm::vec2(pos.x - size, pos.y - 1.0f), glm::vec2(size * 2.0f, 2.0f), color);
+    renderer.DrawColoredRect(
+        glm::vec2(pos.x - 1.0f, pos.y - size), glm::vec2(2.0f, size * 2.0f), color);
+}
+
+glm::vec4 GetParticleTypeColor(ParticleType type, float alpha)
+{
+    switch (type)
+    {
+        case ParticleType::Firefly:
+            return glm::vec4(1.0f, 0.9f, 0.2f, alpha);
+        case ParticleType::Rain:
+            return glm::vec4(0.3f, 0.5f, 1.0f, alpha);
+        case ParticleType::Snow:
+            return glm::vec4(0.9f, 0.9f, 1.0f, alpha);
+        case ParticleType::Fog:
+            return glm::vec4(0.7f, 0.7f, 0.8f, alpha);
+        case ParticleType::Sparkles:
+            return glm::vec4(1.0f, 1.0f, 0.5f, alpha);
+        case ParticleType::Wisp:
+            return glm::vec4(0.5f, 0.8f, 1.0f, alpha);
+        case ParticleType::Lantern:
+            return glm::vec4(1.0f, 0.6f, 0.3f, alpha);
+        case ParticleType::Sunshine:
+            return glm::vec4(1.0f, 0.95f, 0.6f, alpha);
+    }
+    return glm::vec4(1.0f, 1.0f, 1.0f, alpha);
+}
+
 }  // anonymous namespace
+
+void Editor::EnsureNoProjBoundsCache(const EditorContext& ctx)
+{
+    if (m_NoProjBoundsCached)
+        return;
+    m_NoProjBoundsCached = true;
+    m_CachedNoProjBounds.clear();
+
+    int mapWidth = ctx.tilemap.GetMapWidth();
+    int mapHeight = ctx.tilemap.GetMapHeight();
+    size_t layerCount = ctx.tilemap.GetLayerCount();
+
+    std::vector<char> processed(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), 0);
+
+    for (int y = 0; y < mapHeight; ++y)
+    {
+        for (int x = 0; x < mapWidth; ++x)
+        {
+            int idx = y * mapWidth + x;
+            if (processed[idx])
+                continue;
+
+            bool isNoProj = false;
+            for (size_t li = 0; li < layerCount; ++li)
+            {
+                if (ctx.tilemap.GetLayerNoProjection(x, y, li))
+                {
+                    isNoProj = true;
+                    break;
+                }
+            }
+            if (!isNoProj)
+                continue;
+
+            auto [minX, maxX, minY, maxY] = FloodFillNoProjBounds(
+                ctx.tilemap, x, y, mapWidth, mapHeight, layerCount, processed);
+
+            m_CachedNoProjBounds.push_back({minX, maxX, minY, maxY});
+        }
+    }
+}
 
 void Editor::RenderCollisionOverlays(const EditorContext& ctx)
 {
@@ -215,13 +288,6 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
-    int mapWidth = ctx.tilemap.GetMapWidth();
-    int mapHeight = ctx.tilemap.GetMapHeight();
-
-    // Track processed tiles for anchor finding
-    // TODO: cache structure bounds/anchors once per frame (shared with RenderNoProjectionAnchors)
-    // to avoid repeated flood-fills.
-    std::vector<char> processed(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), 0);
     size_t layerCount = ctx.tilemap.GetLayerCount();
 
     for (int y = vr.startY; y < vr.endY; ++y)
@@ -268,58 +334,32 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
                     tilePos,
                     glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
                     glm::vec4(1.0f, 0.6f, 0.0f, alpha));
-
-                // Find and draw anchor for this structure (if not already processed)
-                int idx = y * mapWidth + x;
-                if (!processed[idx])
-                {
-                    auto [minX, maxX, minY, maxY] = FloodFillNoProjBounds(
-                        ctx.tilemap, x, y, mapWidth, mapHeight, layerCount, processed);
-
-                    // Calculate anchor positions in world pixels
-                    int leftPixelX = minX * vr.tileWidth;
-                    int rightPixelX = (maxX + 1) * vr.tileWidth;
-                    int bottomPixelY = (maxY + 1) * vr.tileHeight;
-
-                    // Check if 3D perspective is enabled
-                    auto perspState = ctx.renderer.GetPerspectiveState();
-                    bool is3DMode = perspState.enabled;
-
-                    // Skip drawing in 3D mode - RenderNoProjectionAnchors handles that
-                    if (is3DMode)
-                        continue;
-
-                    // 2D mode: simple screen-space coordinates
-                    glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
-                                         static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
-                    glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
-                                          static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
-
-                    // Draw anchor markers (green crosses)
-                    float markerSize = 6.0f;
-                    glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
-
-                    // Bottom-left anchor
-                    ctx.renderer.DrawColoredRect(
-                        glm::vec2(anchorLeft.x - markerSize, anchorLeft.y - 1.0f),
-                        glm::vec2(markerSize * 2.0f, 2.0f),
-                        anchorColor);
-                    ctx.renderer.DrawColoredRect(
-                        glm::vec2(anchorLeft.x - 1.0f, anchorLeft.y - markerSize),
-                        glm::vec2(2.0f, markerSize * 2.0f),
-                        anchorColor);
-
-                    // Bottom-right anchor
-                    ctx.renderer.DrawColoredRect(
-                        glm::vec2(anchorRight.x - markerSize, anchorRight.y - 1.0f),
-                        glm::vec2(markerSize * 2.0f, 2.0f),
-                        anchorColor);
-                    ctx.renderer.DrawColoredRect(
-                        glm::vec2(anchorRight.x - 1.0f, anchorRight.y - markerSize),
-                        glm::vec2(2.0f, markerSize * 2.0f),
-                        anchorColor);
-                }
             }
+        }
+    }
+
+    // Draw anchor markers for detected no-projection structures (2D mode only)
+    auto perspState = ctx.renderer.GetPerspectiveState();
+    if (!perspState.enabled)
+    {
+        EnsureNoProjBoundsCache(ctx);
+
+        float markerSize = 6.0f;
+        glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
+
+        for (const auto& bounds : m_CachedNoProjBounds)
+        {
+            int leftPixelX = bounds.minX * vr.tileWidth;
+            int rightPixelX = (bounds.maxX + 1) * vr.tileWidth;
+            int bottomPixelY = (bounds.maxY + 1) * vr.tileHeight;
+
+            glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
+                                 static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+            glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
+                                  static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+
+            DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
+            DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
         }
     }
 }
@@ -335,89 +375,41 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 
     int tileWidth = ctx.tilemap.GetTileWidth();
     int tileHeight = ctx.tilemap.GetTileHeight();
-    int mapWidth = ctx.tilemap.GetMapWidth();
-    int mapHeight = ctx.tilemap.GetMapHeight();
-    size_t layerCount = ctx.tilemap.GetLayerCount();
 
-    // Track processed tiles to avoid drawing anchors multiple times
-    // TODO: reuse cached structure bounds instead of scanning the full map every frame.
-    std::vector<char> processed(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), 0);
+    EnsureNoProjBoundsCache(ctx);
 
-    // Scan entire map for no-projection structures
-    for (int y = 0; y < mapHeight; ++y)
+    float markerSize = 6.0f;
+    glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
+
+    for (const auto& bounds : m_CachedNoProjBounds)
     {
-        for (int x = 0; x < mapWidth; ++x)
-        {
-            int idx = y * mapWidth + x;
-            if (processed[idx])
-                continue;
+        // Calculate anchor positions in world pixels
+        int leftPixelX = bounds.minX * tileWidth;
+        int rightPixelX = (bounds.maxX + 1) * tileWidth;
+        int bottomPixelY = (bounds.maxY + 1) * tileHeight;
 
-            // Check if this tile is no-projection in any layer
-            bool isNoProj = false;
-            for (size_t li = 0; li < layerCount; ++li)
-            {
-                if (ctx.tilemap.GetLayerNoProjection(x, y, li))
-                {
-                    isNoProj = true;
-                    break;
-                }
-            }
-            if (!isNoProj)
-                continue;
+        // Screen-space positions
+        glm::vec2 screenLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
+                             static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+        glm::vec2 screenRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
+                              static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
 
-            auto [minX, maxX, minY, maxY] = FloodFillNoProjBounds(
-                ctx.tilemap, x, y, mapWidth, mapHeight, layerCount, processed);
+        // Skip anchors behind the sphere in globe mode
+        if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
+            ctx.renderer.IsPointBehindSphere(screenRight))
+            continue;
 
-            // Calculate anchor positions in world pixels
-            int leftPixelX = minX * tileWidth;
-            int rightPixelX = (maxX + 1) * tileWidth;
-            int bottomPixelY = (maxY + 1) * tileHeight;
+        // In 3D mode, project through perspective
+        glm::vec2 anchorLeft = is3DMode ? ctx.renderer.ProjectPoint(screenLeft) : screenLeft;
+        glm::vec2 anchorRight = is3DMode ? ctx.renderer.ProjectPoint(screenRight) : screenRight;
 
-            // Screen-space positions
-            glm::vec2 screenLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
-                                 static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
-            glm::vec2 screenRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
-                                  static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+        // Bottom-left anchor (only if visible)
+        if (!ctx.renderer.IsPointBehindSphere(screenLeft))
+            DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
 
-            // Skip anchors behind the sphere in globe mode
-            if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
-                ctx.renderer.IsPointBehindSphere(screenRight))
-                continue;
-
-            // In 3D mode, project through perspective
-            glm::vec2 anchorLeft = is3DMode ? ctx.renderer.ProjectPoint(screenLeft) : screenLeft;
-            glm::vec2 anchorRight = is3DMode ? ctx.renderer.ProjectPoint(screenRight) : screenRight;
-
-            // Draw anchor markers (green crosses)
-            float markerSize = 6.0f;
-            glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
-
-            // Bottom-left anchor (only if visible)
-            if (!ctx.renderer.IsPointBehindSphere(screenLeft))
-            {
-                ctx.renderer.DrawColoredRect(
-                    glm::vec2(anchorLeft.x - markerSize, anchorLeft.y - 1.0f),
-                    glm::vec2(markerSize * 2.0f, 2.0f),
-                    anchorColor);
-                ctx.renderer.DrawColoredRect(
-                    glm::vec2(anchorLeft.x - 1.0f, anchorLeft.y - markerSize),
-                    glm::vec2(2.0f, markerSize * 2.0f),
-                    anchorColor);
-            }
-
-            // Bottom-right anchor (only if visible)
-            if (!ctx.renderer.IsPointBehindSphere(screenRight))
-            {
-                ctx.renderer.DrawColoredRect(
-                    glm::vec2(anchorRight.x - markerSize, anchorRight.y - 1.0f),
-                    glm::vec2(markerSize * 2.0f, 2.0f),
-                    anchorColor);
-                ctx.renderer.DrawColoredRect(
-                    glm::vec2(anchorRight.x - 1.0f, anchorRight.y - markerSize),
-                    glm::vec2(2.0f, markerSize * 2.0f),
-                    anchorColor);
-            }
-        }
+        // Bottom-right anchor (only if visible)
+        if (!ctx.renderer.IsPointBehindSphere(screenRight))
+            DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
     }
 
     // Draw manually defined structure anchors (cyan to distinguish from auto-detected green)
@@ -443,38 +435,116 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 
         // Left anchor cross (only if visible)
         if (!ctx.renderer.IsPointBehindSphere(screenLeft))
-        {
-            ctx.renderer.DrawColoredRect(
-                glm::vec2(anchorLeft.x - defMarkerSize, anchorLeft.y - 1.0f),
-                glm::vec2(defMarkerSize * 2.0f, 2.0f),
-                definedAnchorColor);
-            ctx.renderer.DrawColoredRect(
-                glm::vec2(anchorLeft.x - 1.0f, anchorLeft.y - defMarkerSize),
-                glm::vec2(2.0f, defMarkerSize * 2.0f),
-                definedAnchorColor);
-        }
+            DrawCrossMarker(ctx.renderer, anchorLeft, defMarkerSize, definedAnchorColor);
 
         // Right anchor cross (only if visible)
         if (!ctx.renderer.IsPointBehindSphere(screenRight))
-        {
-            ctx.renderer.DrawColoredRect(
-                glm::vec2(anchorRight.x - defMarkerSize, anchorRight.y - 1.0f),
-                glm::vec2(defMarkerSize * 2.0f, 2.0f),
-                definedAnchorColor);
-            ctx.renderer.DrawColoredRect(
-                glm::vec2(anchorRight.x - 1.0f, anchorRight.y - defMarkerSize),
-                glm::vec2(2.0f, defMarkerSize * 2.0f),
-                definedAnchorColor);
-        }
+            DrawCrossMarker(ctx.renderer, anchorRight, defMarkerSize, definedAnchorColor);
 
-        // Connecting line between anchors (only if both visible)
+        // Stepped base line between anchors showing per-column effective base
         if (!ctx.renderer.IsPointBehindSphere(screenLeft) &&
             !ctx.renderer.IsPointBehindSphere(screenRight))
         {
-            float lineY = (anchorLeft.y + anchorRight.y) * 0.5f;
-            ctx.renderer.DrawColoredRect(glm::vec2(anchorLeft.x, lineY - 1.0f),
-                                         glm::vec2(anchorRight.x - anchorLeft.x, 2.0f),
-                                         glm::vec4(0.0f, 1.0f, 1.0f, 0.5f));
+            // Compute structure bounds across all layers
+            int mapW = ctx.tilemap.GetMapWidth();
+            int mapH = ctx.tilemap.GetMapHeight();
+            size_t layerCount = ctx.tilemap.GetLayerCount();
+            int sMinX = mapW, sMaxX = 0, sMinY = mapH, sMaxY = 0;
+            for (int sy = 0; sy < mapH; ++sy)
+            {
+                for (int sx = 0; sx < mapW; ++sx)
+                {
+                    for (size_t li = 0; li < layerCount; ++li)
+                    {
+                        if (!ctx.tilemap.GetLayerNoProjection(sx, sy, li))
+                            continue;
+                        if (ctx.tilemap.GetTileStructureId(sx, sy, static_cast<int>(li) + 1) !=
+                            s.id)
+                            continue;
+                        sMinX = std::min(sMinX, sx);
+                        sMaxX = std::max(sMaxX, sx);
+                        sMinY = std::min(sMinY, sy);
+                        sMaxY = std::max(sMaxY, sy);
+                        break;
+                    }
+                }
+            }
+
+            if (sMinX <= sMaxX)
+            {
+                int cols = sMaxX - sMinX + 1;
+                float tw = static_cast<float>(tileWidth);
+                float th = static_cast<float>(tileHeight);
+                float anchorBaseY =
+                    static_cast<float>((sMaxY + 1) * tileHeight) - ctx.cameraPosition.y;
+                glm::vec4 lineColor(0.0f, 1.0f, 1.0f, 0.5f);
+
+                // Compute per-column effective maxY (lowest non-transparent tile)
+                std::vector<int> colEffMaxY(cols, sMinY - 1);
+                for (int col = 0; col < cols; ++col)
+                {
+                    int tileX = sMinX + col;
+                    for (int tileY = sMaxY; tileY >= sMinY; --tileY)
+                    {
+                        for (size_t li = 0; li < layerCount; ++li)
+                        {
+                            if (!ctx.tilemap.GetLayerNoProjection(tileX, tileY, li))
+                                continue;
+                            if (ctx.tilemap.GetTileStructureId(
+                                    tileX, tileY, static_cast<int>(li) + 1) != s.id)
+                                continue;
+                            int tid = ctx.tilemap.GetLayerTile(tileX, tileY, li);
+                            if (tid >= 0 && !ctx.tilemap.IsTileTransparent(tid))
+                            {
+                                colEffMaxY[col] = std::max(colEffMaxY[col], tileY);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Draw stepped base line
+                float prevBaseY = -1.0f;
+                for (int col = 0; col < cols; ++col)
+                {
+                    int effMaxY = colEffMaxY[col];
+                    if (effMaxY < sMinY)
+                        continue;
+                    float colBaseY = anchorBaseY - static_cast<float>(sMaxY - effMaxY) * th;
+                    float colX = static_cast<float>(sMinX + col) * tw - ctx.cameraPosition.x;
+
+                    glm::vec2 hScreen(colX, colBaseY - 1.0f);
+                    glm::vec2 hSize(tw, 2.0f);
+                    if (is3DMode)
+                    {
+                        glm::vec2 p0 = ctx.renderer.ProjectPoint(hScreen);
+                        glm::vec2 p1 =
+                            ctx.renderer.ProjectPoint(glm::vec2(colX + tw, colBaseY - 1.0f));
+                        hScreen = p0;
+                        hSize = glm::vec2(p1.x - p0.x, 2.0f);
+                    }
+                    ctx.renderer.DrawColoredRect(hScreen, hSize, lineColor);
+
+                    // Vertical connector between adjacent columns with different base
+                    if (prevBaseY >= 0.0f && prevBaseY != colBaseY)
+                    {
+                        float vx = colX;
+                        float vy = std::min(prevBaseY, colBaseY) - 1.0f;
+                        float vh = std::abs(prevBaseY - colBaseY);
+                        glm::vec2 vScreen(vx, vy);
+                        glm::vec2 vSize(2.0f, vh);
+                        if (is3DMode)
+                        {
+                            glm::vec2 pv = ctx.renderer.ProjectPoint(vScreen);
+                            glm::vec2 pv2 = ctx.renderer.ProjectPoint(glm::vec2(vx, vy + vh));
+                            vScreen = pv;
+                            vSize = glm::vec2(2.0f, pv2.y - pv.y);
+                        }
+                        ctx.renderer.DrawColoredRect(vScreen, vSize, lineColor);
+                    }
+                    prevBaseY = colBaseY;
+                }
+            }
         }
     }
 }
@@ -522,26 +592,95 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
                                                                : glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
 
         // Left anchor cross
-        ctx.renderer.DrawColoredRect(glm::vec2(leftPos.x - markerSize, leftPos.y - 1.0f),
-                                     glm::vec2(markerSize * 2.0f, 2.0f),
-                                     anchorColor);
-        ctx.renderer.DrawColoredRect(glm::vec2(leftPos.x - 1.0f, leftPos.y - markerSize),
-                                     glm::vec2(2.0f, markerSize * 2.0f),
-                                     anchorColor);
+        DrawCrossMarker(ctx.renderer, leftPos, markerSize, anchorColor);
 
         // Right anchor cross
-        ctx.renderer.DrawColoredRect(glm::vec2(rightPos.x - markerSize, rightPos.y - 1.0f),
-                                     glm::vec2(markerSize * 2.0f, 2.0f),
-                                     anchorColor);
-        ctx.renderer.DrawColoredRect(glm::vec2(rightPos.x - 1.0f, rightPos.y - markerSize),
-                                     glm::vec2(2.0f, markerSize * 2.0f),
-                                     anchorColor);
+        DrawCrossMarker(ctx.renderer, rightPos, markerSize, anchorColor);
 
-        // Draw connecting line between anchors
-        float lineY = (leftPos.y + rightPos.y) * 0.5f;
-        ctx.renderer.DrawColoredRect(glm::vec2(leftPos.x, lineY - 1.0f),
-                                     glm::vec2(rightPos.x - leftPos.x, 2.0f),
-                                     glm::vec4(anchorColor.r, anchorColor.g, anchorColor.b, 0.5f));
+        // Draw stepped base line showing per-column effective base
+        {
+            int mapW = ctx.tilemap.GetMapWidth();
+            int mapH = ctx.tilemap.GetMapHeight();
+            size_t layerCount = ctx.tilemap.GetLayerCount();
+            int sMinX = mapW, sMaxX = 0, sMinY = mapH, sMaxY = 0;
+            for (int sy = 0; sy < mapH; ++sy)
+            {
+                for (int sx = 0; sx < mapW; ++sx)
+                {
+                    for (size_t li = 0; li < layerCount; ++li)
+                    {
+                        if (!ctx.tilemap.GetLayerNoProjection(sx, sy, li))
+                            continue;
+                        if (ctx.tilemap.GetTileStructureId(sx, sy, static_cast<int>(li) + 1) !=
+                            s.id)
+                            continue;
+                        sMinX = std::min(sMinX, sx);
+                        sMaxX = std::max(sMaxX, sx);
+                        sMinY = std::min(sMinY, sy);
+                        sMaxY = std::max(sMaxY, sy);
+                        break;
+                    }
+                }
+            }
+
+            if (sMinX <= sMaxX)
+            {
+                int cols = sMaxX - sMinX + 1;
+                float tw = static_cast<float>(vr.tileWidth);
+                float th = static_cast<float>(vr.tileHeight);
+                float anchorBaseY =
+                    static_cast<float>((sMaxY + 1) * vr.tileHeight) - ctx.cameraPosition.y;
+                glm::vec4 lineColor(anchorColor.r, anchorColor.g, anchorColor.b, 0.5f);
+
+                // Compute per-column effective maxY (lowest non-transparent tile)
+                std::vector<int> colEffMaxY(cols, sMinY - 1);
+                for (int col = 0; col < cols; ++col)
+                {
+                    int tileX = sMinX + col;
+                    for (int tileY = sMaxY; tileY >= sMinY; --tileY)
+                    {
+                        for (size_t li = 0; li < layerCount; ++li)
+                        {
+                            if (!ctx.tilemap.GetLayerNoProjection(tileX, tileY, li))
+                                continue;
+                            if (ctx.tilemap.GetTileStructureId(
+                                    tileX, tileY, static_cast<int>(li) + 1) != s.id)
+                                continue;
+                            int tid = ctx.tilemap.GetLayerTile(tileX, tileY, li);
+                            if (tid >= 0 && !ctx.tilemap.IsTileTransparent(tid))
+                            {
+                                colEffMaxY[col] = std::max(colEffMaxY[col], tileY);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Draw stepped base line
+                float prevBaseY = -1.0f;
+                for (int col = 0; col < cols; ++col)
+                {
+                    int effMaxY = colEffMaxY[col];
+                    if (effMaxY < sMinY)
+                        continue;
+                    float colBaseY = anchorBaseY - static_cast<float>(sMaxY - effMaxY) * th;
+                    float colX = static_cast<float>(sMinX + col) * tw - ctx.cameraPosition.x;
+
+                    ctx.renderer.DrawColoredRect(
+                        glm::vec2(colX, colBaseY - 1.0f), glm::vec2(tw, 2.0f), lineColor);
+
+                    // Vertical connector between adjacent columns with different base
+                    if (prevBaseY >= 0.0f && prevBaseY != colBaseY)
+                    {
+                        float vy = std::min(prevBaseY, colBaseY) - 1.0f;
+                        float vh = std::abs(prevBaseY - colBaseY);
+                        ctx.renderer.DrawColoredRect(
+                            glm::vec2(colX, vy), glm::vec2(2.0f, vh), lineColor);
+                    }
+                    prevBaseY = colBaseY;
+                }
+            }
+        }
     }
 
     // Draw temporary anchors being placed (yellow, same style)
@@ -550,11 +689,7 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
         glm::vec2 pos(m_TempLeftAnchor.x - ctx.cameraPosition.x,
                       m_TempLeftAnchor.y - ctx.cameraPosition.y);
         glm::vec4 color(1.0f, 1.0f, 0.0f, 1.0f);  // Yellow
-
-        ctx.renderer.DrawColoredRect(
-            glm::vec2(pos.x - markerSize, pos.y - 1.0f), glm::vec2(markerSize * 2.0f, 2.0f), color);
-        ctx.renderer.DrawColoredRect(
-            glm::vec2(pos.x - 1.0f, pos.y - markerSize), glm::vec2(2.0f, markerSize * 2.0f), color);
+        DrawCrossMarker(ctx.renderer, pos, markerSize, color);
     }
 
     if (m_TempRightAnchor.x >= 0)
@@ -562,11 +697,7 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
         glm::vec2 pos(m_TempRightAnchor.x - ctx.cameraPosition.x,
                       m_TempRightAnchor.y - ctx.cameraPosition.y);
         glm::vec4 color(1.0f, 0.8f, 0.0f, 1.0f);  // Orange-yellow
-
-        ctx.renderer.DrawColoredRect(
-            glm::vec2(pos.x - markerSize, pos.y - 1.0f), glm::vec2(markerSize * 2.0f, 2.0f), color);
-        ctx.renderer.DrawColoredRect(
-            glm::vec2(pos.x - 1.0f, pos.y - markerSize), glm::vec2(2.0f, markerSize * 2.0f), color);
+        DrawCrossMarker(ctx.renderer, pos, markerSize, color);
     }
 }
 
@@ -655,31 +786,7 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
             continue;
 
         // Color based on particle type
-        glm::vec4 color;
-        switch (zone.type)
-        {
-            case ParticleType::Firefly:
-                color = glm::vec4(1.0f, 0.9f, 0.2f, 0.3f);  // Yellow
-                break;
-            case ParticleType::Rain:
-                color = glm::vec4(0.3f, 0.5f, 1.0f, 0.3f);  // Blue
-                break;
-            case ParticleType::Snow:
-                color = glm::vec4(0.9f, 0.9f, 1.0f, 0.3f);  // White
-                break;
-            case ParticleType::Fog:
-                color = glm::vec4(0.7f, 0.7f, 0.8f, 0.3f);  // Grey
-                break;
-            case ParticleType::Sparkles:
-                color = glm::vec4(1.0f, 1.0f, 0.5f, 0.3f);  // Light yellow
-                break;
-            case ParticleType::Wisp:
-                color = glm::vec4(0.5f, 0.8f, 1.0f, 0.3f);  // Cyan/ethereal blue
-                break;
-            default:
-                color = glm::vec4(1.0f, 1.0f, 1.0f, 0.3f);  // White fallback
-                break;
-        }
+        glm::vec4 color = GetParticleTypeColor(zone.type, 0.3f);
 
         if (!zone.enabled)
             color.a *= 0.3f;  // Dimmer if disabled
@@ -725,32 +832,7 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
             worldX, worldY, ctx.tilemap.GetTileWidth(), ctx.tilemap.GetTileHeight());
 
         // Preview color based on type
-        // TODO: Lantern should have its own color
-        glm::vec4 previewColor;
-        switch (m_CurrentParticleType)
-        {
-            case ParticleType::Firefly:
-                previewColor = glm::vec4(1.0f, 0.9f, 0.2f, 0.5f);
-                break;
-            case ParticleType::Rain:
-                previewColor = glm::vec4(0.3f, 0.5f, 1.0f, 0.5f);
-                break;
-            case ParticleType::Snow:
-                previewColor = glm::vec4(0.9f, 0.9f, 1.0f, 0.5f);
-                break;
-            case ParticleType::Fog:
-                previewColor = glm::vec4(0.7f, 0.7f, 0.8f, 0.5f);
-                break;
-            case ParticleType::Sparkles:
-                previewColor = glm::vec4(1.0f, 1.0f, 0.5f, 0.5f);
-                break;
-            case ParticleType::Wisp:
-                previewColor = glm::vec4(0.5f, 0.8f, 1.0f, 0.5f);
-                break;
-            default:
-                previewColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.5f);
-                break;
-        }
+        glm::vec4 previewColor = GetParticleTypeColor(m_CurrentParticleType, 0.5f);
 
         glm::vec2 previewPos(zr.x - ctx.cameraPosition.x, zr.y - ctx.cameraPosition.y);
         ctx.renderer.DrawColoredRect(previewPos, glm::vec2(zr.w, zr.h), previewColor);
@@ -1253,16 +1335,20 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
                     flipY);
 
                 // Render outline
+                ctx.renderer.DrawColoredRect(tilePos,
+                                             glm::vec2(static_cast<float>(tileWidth), 1.0f),
+                                             glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Top
                 ctx.renderer.DrawColoredRect(
-                    tilePos, glm::vec2(16.0f, 1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Top
-                ctx.renderer.DrawColoredRect(glm::vec2(tilePos.x, tilePos.y + 15.0f),
-                                             glm::vec2(16.0f, 1.0f),
-                                             glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Bottom
+                    glm::vec2(tilePos.x, tilePos.y + static_cast<float>(tileHeight) - 1.0f),
+                    glm::vec2(static_cast<float>(tileWidth), 1.0f),
+                    glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Bottom
+                ctx.renderer.DrawColoredRect(tilePos,
+                                             glm::vec2(1.0f, static_cast<float>(tileHeight)),
+                                             glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Left
                 ctx.renderer.DrawColoredRect(
-                    tilePos, glm::vec2(1.0f, 16.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Left
-                ctx.renderer.DrawColoredRect(glm::vec2(tilePos.x + 15.0f, tilePos.y),
-                                             glm::vec2(1.0f, 16.0f),
-                                             glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Right
+                    glm::vec2(tilePos.x + static_cast<float>(tileWidth) - 1.0f, tilePos.y),
+                    glm::vec2(1.0f, static_cast<float>(tileHeight)),
+                    glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Right
             }
         }
     }
@@ -1279,35 +1365,38 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
             int tilesetY = (m_SelectedTileStartID / dataTilesPerRow) * tileHeight;
 
             glm::vec2 texCoord(static_cast<float>(tilesetX), static_cast<float>(tilesetY));
-            glm::vec2 texSize(16.0f, 16.0f);
+            glm::vec2 texSize(ctx.tilemap.GetTileWidth(), ctx.tilemap.GetTileHeight());
 
             // Query renderer at runtime for Y-flip (OpenGL=true, Vulkan=false)
             bool flipY = ctx.renderer.RequiresYFlip();
 
             float tileRotation = GetCompensatedTileRotation();
 
-            ctx.renderer.DrawSpriteRegion(ctx.tilemap.GetTilesetTexture(),
-                                          tilePos,
-                                          glm::vec2(16.0f, 16.0f),
-                                          texCoord,
-                                          texSize,
-                                          tileRotation,
-                                          glm::vec3(1.0f, 1.0f, 0.5f),
-                                          flipY);
+            ctx.renderer.DrawSpriteRegion(
+                ctx.tilemap.GetTilesetTexture(),
+                tilePos,
+                glm::vec2(static_cast<float>(tileWidth), static_cast<float>(tileHeight)),
+                texCoord,
+                texSize,
+                tileRotation,
+                glm::vec3(1.0f, 1.0f, 0.5f),
+                flipY);
 
             // Render outline
-            // TODO: use tileWidth/tileHeight instead of hardcoded 16s to support variable tile
-            // sizes.
+            ctx.renderer.DrawColoredRect(tilePos,
+                                         glm::vec2(static_cast<float>(tileWidth), 1.0f),
+                                         glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Top
             ctx.renderer.DrawColoredRect(
-                tilePos, glm::vec2(16.0f, 1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Top
-            ctx.renderer.DrawColoredRect(glm::vec2(tilePos.x, tilePos.y + 15.0f),
-                                         glm::vec2(16.0f, 1.0f),
-                                         glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Bottom
+                glm::vec2(tilePos.x, tilePos.y + static_cast<float>(tileHeight) - 1.0f),
+                glm::vec2(static_cast<float>(tileWidth), 1.0f),
+                glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Bottom
+            ctx.renderer.DrawColoredRect(tilePos,
+                                         glm::vec2(1.0f, static_cast<float>(tileHeight)),
+                                         glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Left
             ctx.renderer.DrawColoredRect(
-                tilePos, glm::vec2(1.0f, 16.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Left
-            ctx.renderer.DrawColoredRect(glm::vec2(tilePos.x + 15.0f, tilePos.y),
-                                         glm::vec2(1.0f, 16.0f),
-                                         glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Right
+                glm::vec2(tilePos.x + static_cast<float>(tileWidth) - 1.0f, tilePos.y),
+                glm::vec2(1.0f, static_cast<float>(tileHeight)),
+                glm::vec4(1.0f, 1.0f, 0.0f, 0.8f));  // Right
         }
     }
 }

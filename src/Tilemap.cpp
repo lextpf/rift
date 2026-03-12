@@ -94,7 +94,7 @@ Tilemap::Tilemap()
     // Resize all layers to map size
     for (auto& layer : m_Layers)
     {
-        layer.resize(mapSize);
+        layer.Resize(mapSize);
     }
 
     // Initialize animation map (all tiles start with no animation)
@@ -407,7 +407,7 @@ void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
     // Resize all layer data arrays
     for (auto& layer : m_Layers)
     {
-        layer.resize(mapSize);
+        layer.Resize(mapSize);
     }
 
     m_CollisionMap.Resize(m_MapWidth, m_MapHeight);
@@ -1562,6 +1562,51 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                 if (structureTiles.empty())
                     continue;
 
+                // Pre-compute per-column effective base Y for each layer.
+                // For columns where the bottom tiles are transparent, the base
+                // bends upward so the column doesn't appear floating.
+                std::vector<std::vector<int>> colEffMaxY(m_Layers.size());
+                for (size_t layerIdx : layers)
+                {
+                    const auto& b = layerBounds[layerIdx];
+                    if (!b.valid)
+                        continue;
+                    int cols = b.maxX - b.minX + 1;
+                    colEffMaxY[layerIdx].resize(cols, b.minY - 1);
+
+                    for (int col = 0; col < cols; ++col)
+                    {
+                        int tileX = b.minX + col;
+                        for (int tileY = b.maxY; tileY >= b.minY; --tileY)
+                        {
+                            size_t cIdx = static_cast<size_t>(tileY * m_MapWidth + tileX);
+                            const TileLayer& cl = m_Layers[layerIdx];
+                            if (!cl.noProjection[cIdx] || cl.ySortPlus[cIdx])
+                                continue;
+                            int sid = (cIdx < cl.structureId.size()) ? cl.structureId[cIdx] : -1;
+                            if (sid != foundStructId)
+                                continue;
+                            int ctid = cl.tiles[cIdx];
+                            if (ctid < 0)
+                                continue;
+                            if (cIdx < cl.animationMap.size())
+                            {
+                                int animId = cl.animationMap[cIdx];
+                                if (animId >= 0 &&
+                                    animId < static_cast<int>(m_AnimatedTiles.size()))
+                                {
+                                    ctid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
+                                }
+                            }
+                            if (!IsTileTransparent(ctid))
+                            {
+                                colEffMaxY[layerIdx][col] = tileY;
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
                 float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
                 float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
@@ -1602,34 +1647,39 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                             continue;
 
                         int structureWidthTiles = b.maxX - b.minX + 1;
-                        int structureHeightTiles = b.maxY - b.minY + 1;
-                        if (structureWidthTiles < 1 || structureHeightTiles < 1)
+                        if (structureWidthTiles < 1)
                             continue;
 
                         int tileCol = tx - b.minX;
-                        int tileRow = b.maxY - ty;
+                        int effMaxY = colEffMaxY[layerIdx][tileCol];
+                        if (effMaxY < b.minY)
+                            continue;  // empty column
 
-                        float buildingHeightWorld =
-                            static_cast<float>(structureHeightTiles * m_TileHeight);
+                        int colHeightTiles = effMaxY - b.minY + 1;
+                        int tileRow = effMaxY - ty;
+
+                        float baseRaise = static_cast<float>((b.maxY - effMaxY) * m_TileHeight);
+                        glm::vec2 adjBaseLeft(baseLeft.x, baseLeft.y - baseRaise);
+                        glm::vec2 adjBaseRight(baseRight.x, baseRight.y - baseRaise);
+                        float colBuildingHeight = static_cast<float>(colHeightTiles * m_TileHeight);
 
                         float u0 =
                             static_cast<float>(tileCol) / static_cast<float>(structureWidthTiles);
                         float u1 = static_cast<float>(tileCol + 1) /
                                    static_cast<float>(structureWidthTiles);
-                        float v0 =
-                            static_cast<float>(tileRow) / static_cast<float>(structureHeightTiles);
-                        float v1 = static_cast<float>(tileRow + 1) /
-                                   static_cast<float>(structureHeightTiles);
+                        float v0 = static_cast<float>(tileRow) / static_cast<float>(colHeightTiles);
+                        float v1 =
+                            static_cast<float>(tileRow + 1) / static_cast<float>(colHeightTiles);
 
                         glm::vec2 corners[4];
                         if (ComputeBuildingCornersClipped(renderer,
-                                                          baseLeft,
-                                                          baseRight,
+                                                          adjBaseLeft,
+                                                          adjBaseRight,
                                                           u0,
                                                           u1,
                                                           v0,
                                                           v1,
-                                                          buildingHeightWorld,
+                                                          colBuildingHeight,
                                                           corners))
                             continue;
 
@@ -2349,7 +2399,7 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
             layer.name = layerJson.value("name", "");
             layer.renderOrder = layerJson.value("renderOrder", 0);
             layer.isBackground = layerJson.value("isBackground", true);
-            layer.resize(mapSize);
+            layer.Resize(mapSize);
 
             // Load tiles (sparse object)
             if (layerJson.contains("tiles") && layerJson["tiles"].is_object())

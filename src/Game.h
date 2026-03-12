@@ -320,6 +320,32 @@ private:
      */
     bool IsDialogueOnLastPage() const;
 
+    /**
+     * @brief Release the NPC currently held in dialogue and reset dialogue NPC index.
+     */
+    void ReleaseDialogueNPC();
+
+    /**
+     * @brief Close simple (non-tree) dialogue and release the NPC.
+     */
+    void CloseSimpleDialogue();
+
+    /**
+     * @brief Advance tree dialogue page, or confirm selection on last page.
+     */
+    void ConfirmOrAdvanceTreeDialogue();
+
+    /**
+     * @brief Force-close tree dialogue via Escape.
+     */
+    void ForceCloseTreeDialogue();
+
+    /**
+     * @brief Set up the snap alignment animation before starting dialogue.
+     * @param npcIndex Index into m_NPCs of the NPC to talk to.
+     */
+    void BeginDialogueSnap(size_t npcIndex);
+
     /// @name Window Management
     /// @{
     GLFWwindow* m_Window;  ///< GLFW window handle
@@ -430,7 +456,8 @@ private:
      * @brief For movement rollback.
      * @{
      */
-    glm::vec2 m_PlayerPreviousPosition;  ///< Position before movement (for rollback)
+    glm::vec2 m_PlayerPreviousPosition;     ///< Position before movement (for rollback)
+    std::vector<glm::vec2> m_NpcPositions;  ///< Pre-allocated for per-frame NPC collision checks
     /** @} */
 
     /**

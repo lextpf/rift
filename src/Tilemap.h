@@ -9,7 +9,6 @@
 
 #include <cstdint>
 #include <glm/glm.hpp>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -46,9 +45,17 @@ struct NoProjectionStructure
     glm::vec2 leftAnchor;   ///< Left anchor world position (click corner of tile)
     glm::vec2 rightAnchor;  ///< Right anchor world position (click corner of tile)
 
-    NoProjectionStructure() : id(-1), leftAnchor(-1.0f, -1.0f), rightAnchor(-1.0f, -1.0f) {}
+    NoProjectionStructure()
+        : id(-1),
+          leftAnchor(-1.0f, -1.0f),
+          rightAnchor(-1.0f, -1.0f)
+    {
+    }
     NoProjectionStructure(int structId, glm::vec2 left, glm::vec2 right, const std::string& n = "")
-        : id(structId), name(n), leftAnchor(left), rightAnchor(right)
+        : id(structId),
+          name(n),
+          leftAnchor(left),
+          rightAnchor(right)
     {
     }
 };
@@ -77,13 +84,21 @@ struct TileLayer
     int renderOrder;    ///< Lower = rendered first (background), higher = later (foreground)
     bool isBackground;  ///< true = before player/NPCs, false = after
 
-    TileLayer() : renderOrder(0), isBackground(true) {}
+    TileLayer()
+        : renderOrder(0),
+          isBackground(true)
+    {
+    }
     TileLayer(const std::string& n, int order, bool bg)
-        : name(n), renderOrder(order), isBackground(bg)
+        : name(n),
+          renderOrder(order),
+          isBackground(bg)
     {
     }
 
-    void resize(size_t size)
+    /// @brief Resize all per-tile vectors to the given number of tiles.
+    /// @param size Total number of tiles (mapWidth * mapHeight).
+    void Resize(size_t size)
     {
         tiles.resize(size, -1);
         rotation.resize(size, 0.0f);
@@ -94,7 +109,8 @@ struct TileLayer
         animationMap.resize(size, -1);
     }
 
-    void clear()
+    /// @brief Reset all per-tile data to default values without changing size.
+    void Clear()
     {
         std::fill(tiles.begin(), tiles.end(), -1);
         std::fill(rotation.begin(), rotation.end(), 0.0f);
@@ -116,13 +132,21 @@ struct AnimatedTile
     std::vector<int> frames;  ///< Tile IDs for each frame
     float frameDuration;      ///< Seconds per frame
 
-    AnimatedTile() : frameDuration(0.2f) {}
+    AnimatedTile()
+        : frameDuration(0.2f)
+    {
+    }
     AnimatedTile(const std::vector<int>& f, float duration = 0.2f)
-        : frames(f), frameDuration(duration)
+        : frames(f),
+          frameDuration(duration)
     {
     }
 
-    /// Get the tile ID for the current time
+    /**
+     * @brief Get the tile ID for a given elapsed time.
+     * @param time Elapsed animation time in seconds.
+     * @return Tile ID for the current frame, or -1 if no frames exist.
+     */
     int GetFrameAtTime(float time) const
     {
         if (frames.empty())
@@ -490,28 +514,56 @@ public:
     bool GetLayerYSortMinus(int x, int y, size_t layer) const;
     void SetLayerYSortMinus(int x, int y, size_t layer, bool ySortMinus);
 
-    /// Render all background layers (isBackground == true) in render order
+    /**
+     * @brief Render all background layers (isBackground == true) in render order.
+     * @param renderer Active renderer.
+     * @param renderCam Camera position used for rendering offset.
+     * @param renderSize Visible area size for rendering.
+     * @param cullCam Camera position used for tile culling.
+     * @param cullSize Visible area size for tile culling.
+     */
     void RenderBackgroundLayers(IRenderer& renderer,
                                 glm::vec2 renderCam,
                                 glm::vec2 renderSize,
                                 glm::vec2 cullCam,
                                 glm::vec2 cullSize);
 
-    /// Render all foreground layers (isBackground == false) in render order
+    /**
+     * @brief Render all foreground layers (isBackground == false) in render order.
+     * @param renderer Active renderer.
+     * @param renderCam Camera position used for rendering offset.
+     * @param renderSize Visible area size for rendering.
+     * @param cullCam Camera position used for tile culling.
+     * @param cullSize Visible area size for tile culling.
+     */
     void RenderForegroundLayers(IRenderer& renderer,
                                 glm::vec2 renderCam,
                                 glm::vec2 renderSize,
                                 glm::vec2 cullCam,
                                 glm::vec2 cullSize);
 
-    /// Render no-projection tiles from all background layers
+    /**
+     * @brief Render no-projection tiles from all background layers.
+     * @param renderer Active renderer.
+     * @param renderCam Camera position used for rendering offset.
+     * @param renderSize Visible area size for rendering.
+     * @param cullCam Camera position used for tile culling.
+     * @param cullSize Visible area size for tile culling.
+     */
     void RenderBackgroundLayersNoProjection(IRenderer& renderer,
                                             glm::vec2 renderCam,
                                             glm::vec2 renderSize,
                                             glm::vec2 cullCam,
                                             glm::vec2 cullSize);
 
-    /// Render no-projection tiles from all foreground layers
+    /**
+     * @brief Render no-projection tiles from all foreground layers.
+     * @param renderer Active renderer.
+     * @param renderCam Camera position used for rendering offset.
+     * @param renderSize Visible area size for rendering.
+     * @param cullCam Camera position used for tile culling.
+     * @param cullSize Visible area size for tile culling.
+     */
     void RenderForegroundLayersNoProjection(IRenderer& renderer,
                                             glm::vec2 renderCam,
                                             glm::vec2 renderSize,
@@ -528,7 +580,10 @@ private:
                                   bool isBackground);
 
 public:
-    /// Get sorted indices for rendering (by renderOrder)
+    /**
+     * @brief Get layer indices sorted by renderOrder for draw ordering.
+     * @return Vector of layer indices sorted ascending by renderOrder.
+     */
     std::vector<size_t> GetLayerRenderOrder() const;
     /** @} */
 
@@ -544,6 +599,10 @@ public:
 
     /**
      * @brief Get no-projection flag at tile coordinates for a specific layer.
+     *
+     * @warning This method uses **1-based** layer indexing (unlike the Dynamic
+     * Layer System methods which are 0-based). Layer 1 maps to internal layer 0.
+     *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
      * @param layer Layer index (1-based; internally converted to 0-based).
@@ -850,14 +909,7 @@ public:
     int AddAnimatedTile(const AnimatedTile& anim)
     {
         m_AnimatedTiles.push_back(anim);
-        int id = static_cast<int>(m_AnimatedTiles.size() - 1);
-        std::cout << "[DEBUG] Added animation #" << id << " with " << anim.frames.size()
-                  << " frames, duration=" << anim.frameDuration << "s" << std::endl;
-        for (size_t i = 0; i < anim.frames.size(); ++i)
-        {
-            std::cout << "  Frame " << i << ": tileID " << anim.frames[i] << std::endl;
-        }
-        return id;
+        return static_cast<int>(m_AnimatedTiles.size() - 1);
     }
 
     /**
@@ -886,27 +938,17 @@ public:
         if (layer < 0 || layer >= static_cast<int>(m_Layers.size()))
             return;
         size_t idx = static_cast<size_t>(y * m_MapWidth + x);
-        if (idx < m_Layers[layer].animationMap.size())
-        {
-            m_Layers[layer].animationMap[idx] = animId;
-            std::cout << "[DEBUG] SetTileAnimation at (" << x << "," << y << ") layer " << layer
-                      << " idx=" << idx << " animId=" << animId << std::endl;
+        if (idx >= m_Layers[layer].animationMap.size())
+            return;
 
-            // Also set the first frame of the animation on the specified layer
-            // so there's a tile to render (the animation check happens after tile existence check)
-            if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()) &&
-                !m_AnimatedTiles[animId].frames.empty())
-            {
-                int firstFrame = m_AnimatedTiles[animId].frames[0];
-                m_Layers[layer].tiles[idx] = firstFrame;
-                std::cout << "[DEBUG]   Placed first frame " << firstFrame << " on layer " << layer
-                          << std::endl;
-            }
-        }
-        else
+        m_Layers[layer].animationMap[idx] = animId;
+
+        // Place the first frame on the layer so there's a tile to render
+        // (the animation check happens after tile existence check)
+        if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()) &&
+            !m_AnimatedTiles[animId].frames.empty())
         {
-            std::cout << "[DEBUG] SetTileAnimation FAILED: idx " << idx
-                      << " >= layer animationMap size" << std::endl;
+            m_Layers[layer].tiles[idx] = m_AnimatedTiles[animId].frames[0];
         }
     }
 
@@ -933,38 +975,23 @@ public:
      * @brief Update animation timer.
      * @param deltaTime Time since last update.
      */
-    void UpdateAnimations(float deltaTime)
-    {
-        m_AnimationTime += deltaTime;
-        // Debug: print animation time every ~2 seconds
-        static float debugTimer = 0.0f;
-        debugTimer += deltaTime;
-        if (debugTimer > 2.0f)
-        {
-            debugTimer = 0.0f;
-            if (!m_AnimatedTiles.empty())
-            {
-                int count = 0;
-                for (const auto& layer : m_Layers)
-                {
-                    for (int a : layer.animationMap)
-                        if (a >= 0)
-                            count++;
-                }
-
-                // Show detailed info for first animation
-                const auto& anim = m_AnimatedTiles[0];
-                int currentFrame = anim.GetFrameAtTime(m_AnimationTime);
-                /*std::cout << "[DEBUG] AnimTime=" << m_AnimationTime
-                          << " Anim0: " << anim.frames.size() << " frames, "
-                          << anim.frameDuration << "s/frame, currentTileID=" << currentFrame
-                          << " MapEntries=" << count << std::endl;*/
-            }
-        }
-    }
+    void UpdateAnimations(float deltaTime) { m_AnimationTime += deltaTime; }
 
     /** @} */
 
+    /**
+     * @brief Compute the visible tile range from a camera rectangle, clamped to map bounds.
+     * @param mapW Map width in tiles.
+     * @param mapH Map height in tiles.
+     * @param tileW Tile width in pixels.
+     * @param tileH Tile height in pixels.
+     * @param cullCam Top-left corner of the visible area in world pixels.
+     * @param cullSize Size of the visible area in world pixels.
+     * @param[out] x0 First visible tile column (inclusive).
+     * @param[out] y0 First visible tile row (inclusive).
+     * @param[out] x1 Last visible tile column (inclusive).
+     * @param[out] y1 Last visible tile row (inclusive).
+     */
     static inline void ComputeTileRange(int mapW,
                                         int mapH,
                                         int tileW,

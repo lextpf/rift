@@ -39,6 +39,16 @@ enum class ParticleType
     Sunshine = 7   ///< Sun rays (day=yellow) / moon beams (night=blue)
 };
 
+/// Number of entries in ParticleType.
+static constexpr int PARTICLE_TYPE_COUNT = 8;
+
+/// Human-readable names indexed by ParticleType.
+static constexpr const char* PARTICLE_TYPE_NAMES[PARTICLE_TYPE_COUNT] = {
+    "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
+
+static_assert(static_cast<int>(ParticleType::Sunshine) == PARTICLE_TYPE_COUNT - 1,
+              "Update PARTICLE_TYPE_NAMES when adding new ParticleType values");
+
 /**
  * @struct Particle
  * @brief Runtime state for a single active particle.
@@ -94,7 +104,11 @@ struct ParticleZone
     {
     }
     ParticleZone(glm::vec2 pos, glm::vec2 sz, ParticleType t)
-        : position(pos), size(sz), type(t), enabled(true), noProjection(false)
+        : position(pos),
+          size(sz),
+          type(t),
+          enabled(true),
+          noProjection(false)
     {
     }
 };
@@ -191,6 +205,8 @@ public:
 
     ParticleSystem(const ParticleSystem&) = delete;
     ParticleSystem& operator=(const ParticleSystem&) = delete;
+    ParticleSystem(ParticleSystem&&) noexcept = default;
+    ParticleSystem& operator=(ParticleSystem&&) noexcept = default;
 
     /**
      * @brief Load all particle textures from disk.
@@ -326,12 +342,13 @@ private:
     /// @name Configuration
     /// @{
 
-    int m_TileWidth;                       ///< Tile width for projection math.
-    int m_TileHeight;                      ///< Tile height for projection math.
-    size_t m_MaxParticlesPerZone;          ///< Per-zone particle cap.
-    float m_Time;                          ///< Elapsed time for oscillation effects.
-    float m_NightFactor;                   ///< Day/night factor (0-1) for lanterns.
-    std::vector<float> m_ZoneSpawnTimers;  ///< Per-zone spawn accumulators.
+    int m_TileWidth;                           ///< Tile width for projection math.
+    int m_TileHeight;                          ///< Tile height for projection math.
+    size_t m_MaxParticlesPerZone;              ///< Per-zone particle cap.
+    float m_Time;                              ///< Elapsed time for oscillation effects.
+    float m_NightFactor;                       ///< Day/night factor (0-1) for lanterns.
+    std::vector<float> m_ZoneSpawnTimers;      ///< Per-zone spawn accumulators.
+    std::vector<size_t> m_ZoneParticleCounts;  ///< Per-zone active particle counts.
 
     /// @}
 
@@ -368,6 +385,33 @@ private:
      * and calculates UV regions for each particle type.
      */
     void BuildAtlas();
+
+    /// @}
+
+    /// @name Render Batch Data
+    /// @{
+
+    /**
+     * @brief Pre-computed render state for a single particle.
+     *
+     * Populated during the projection pass in Render() and consumed
+     * by the draw pass. Stored as member vectors to avoid per-frame
+     * heap allocation.
+     */
+    struct ParticleRenderData
+    {
+        glm::vec2 screenPos;
+        glm::vec2 size;
+        glm::vec4 color;
+        float rotation;
+        float phase;
+        bool additive;
+        ParticleType type;
+    };
+
+    std::vector<ParticleRenderData>
+        m_NoProjectionBatch;                         ///< Particles rendered without perspective.
+    std::vector<ParticleRenderData> m_RegularBatch;  ///< Particles rendered with perspective.
 
     /**
      * @brief Generate the lantern glow texture procedurally.

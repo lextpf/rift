@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -231,14 +232,23 @@ private:
                       size_t maxLength);
 
     /**
+     * @brief Result of a neighbor query: up to 4 cardinal neighbors.
+     */
+    struct NeighborResult
+    {
+        std::array<glm::ivec2, 4> tiles;
+        int count = 0;
+    };
+
+    /**
      * @brief Get 4-directional walkable neighbors.
      *
      * @param tileX Tile column.
      * @param tileY Tile row.
      * @param tilemap Tilemap for navigation queries.
-     * @return Vector of valid neighbor coordinates.
+     * @return Array of valid neighbor coordinates with count.
      */
-    std::vector<glm::ivec2> GetValidNeighbors(int tileX, int tileY, const Tilemap* tilemap) const;
+    NeighborResult GetValidNeighbors(int tileX, int tileY, const Tilemap* tilemap) const;
 
     /**
      * @brief Check if a tile is walkable.

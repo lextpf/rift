@@ -1,11 +1,10 @@
 #include "Game.h"
 
+#include <glad/glad.h>
+
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <vector>
-
-#include <glad/glad.h>
 
 void Game::ProcessInput(float deltaTime)
 {
@@ -83,13 +82,13 @@ void Game::ProcessInput(float deltaTime)
         if (!m_Editor.IsActive())
         {
             // Calculate viewport dimensions at 1.0x zoom
-            float worldWidth = static_cast<float>(m_TilesVisibleWidth * 16);
-            float worldHeight = static_cast<float>(m_TilesVisibleHeight * 16);
+            float worldWidth = static_cast<float>(m_TilesVisibleWidth * TILE_PIXEL_SIZE);
+            float worldHeight = static_cast<float>(m_TilesVisibleHeight * TILE_PIXEL_SIZE);
 
             // Calculate player's visual center
             glm::vec2 playerAnchorTileCenter = m_Player.GetCurrentTileCenter();
             glm::vec2 playerVisualCenter =
-                glm::vec2(playerAnchorTileCenter.x, playerAnchorTileCenter.y - 16.0f);
+                glm::vec2(playerAnchorTileCenter.x, playerAnchorTileCenter.y - TILE_PIXEL_SIZE);
 
             // Position camera so player is centered
             m_CameraPosition =
@@ -533,8 +532,8 @@ void Game::ProcessInput(float deltaTime)
 
         // Calculate player's tile position
         const float EPS = 0.1f;
-        int playerTileX = static_cast<int>(std::floor(playerPos.x / 16.0f));
-        int playerTileY = static_cast<int>(std::floor((playerPos.y - EPS) / 16.0f));
+        int playerTileX = static_cast<int>(std::floor(playerPos.x / TILE_PIXEL_SIZE));
+        int playerTileY = static_cast<int>(std::floor((playerPos.y - EPS) / TILE_PIXEL_SIZE));
 
         // Calculate tile position in front of player
         int frontTileX = playerTileX;
@@ -560,11 +559,11 @@ void Game::ProcessInput(float deltaTime)
         const float INTERACTION_RANGE = 32.0f;   // 2 tiles for easier interaction
         const float COLLISION_DISTANCE = 20.0f;  // Very close = colliding
 
-        // Hitbox dimensions for AABB collision
-        const float PLAYER_HALF_W = 16.0f * 0.5f;  // Player: 16x16 px hitbox
-        const float PLAYER_BOX_H = 16.0f;
-        const float NPC_HALF_W = 16.0f * 0.5f;  // NPC: 16x16 px hitbox
-        const float NPC_BOX_H = 16.0f;
+        // Hitbox dimensions for AABB collision (tile-sized)
+        const float PLAYER_HALF_W = TILE_PIXEL_SIZE * 0.5f;
+        const float PLAYER_BOX_H = static_cast<float>(TILE_PIXEL_SIZE);
+        const float NPC_HALF_W = TILE_PIXEL_SIZE * 0.5f;
+        const float NPC_BOX_H = static_cast<float>(TILE_PIXEL_SIZE);
         const float COLLISION_EPS = 0.05f;  // Small margin for floating-point
 
         for (size_t npcIdx = 0; npcIdx < m_NPCs.size(); ++npcIdx)
@@ -577,8 +576,8 @@ void Game::ProcessInput(float deltaTime)
             if (distance <= INTERACTION_RANGE)
             {
                 // Calculate NPC's tile position
-                int npcTileX = static_cast<int>(std::floor(npcPos.x / 16.0f));
-                int npcTileY = static_cast<int>(std::floor((npcPos.y - EPS) / 16.0f));
+                int npcTileX = static_cast<int>(std::floor(npcPos.x / TILE_PIXEL_SIZE));
+                int npcTileY = static_cast<int>(std::floor((npcPos.y - EPS) / TILE_PIXEL_SIZE));
 
                 // Check for AABB collision between player and NPC
                 float playerMinX = playerPos.x - PLAYER_HALF_W + COLLISION_EPS;
@@ -674,18 +673,24 @@ void Game::ProcessInput(float deltaTime)
                     npcPos = npc.GetPosition();
 
                     // Snap NPC to center of current tile
-                    // X anchor is horizontally centered, so floor(x/16) already gives correct tile
-                    // Y anchor is at bottom, so subtract 16 to find the tile the NPC stands on
-                    int snapTileY = static_cast<int>(std::round((npcPos.y - 16.0f) / 16.0f));
+                    // X anchor is horizontally centered, so floor(x/TILE) already gives correct
+                    // tile Y anchor is at bottom, so subtract TILE to find the tile the NPC stands
+                    // on
+                    int snapTileY = static_cast<int>(
+                        std::round((npcPos.y - TILE_PIXEL_SIZE) / TILE_PIXEL_SIZE));
 
                     m_DialogueSnapNPCTileX = npcTileX;
                     m_DialogueSnapNPCTileY = snapTileY;
-                    glm::vec2 npcTargetPos(static_cast<float>(m_DialogueSnapNPCTileX * 16 + 8),
-                                           static_cast<float>(m_DialogueSnapNPCTileY * 16 + 16));
+                    glm::vec2 npcTargetPos(
+                        static_cast<float>(m_DialogueSnapNPCTileX * TILE_PIXEL_SIZE +
+                                           TILE_PIXEL_SIZE / 2),
+                        static_cast<float>(m_DialogueSnapNPCTileY * TILE_PIXEL_SIZE +
+                                           TILE_PIXEL_SIZE));
 
                     // Recalculate player tile position after getting fresh position
-                    playerTileX = static_cast<int>(std::floor(playerPos.x / 16.0f));
-                    playerTileY = static_cast<int>(std::floor((playerPos.y - EPS) / 16.0f));
+                    playerTileX = static_cast<int>(std::floor(playerPos.x / TILE_PIXEL_SIZE));
+                    playerTileY =
+                        static_cast<int>(std::floor((playerPos.y - EPS) / TILE_PIXEL_SIZE));
 
                     // Use the new NPC tile coordinates for direction calculation
                     // This ensures we look for a spot relative to where the NPC ended up
@@ -735,10 +740,10 @@ void Game::ProcessInput(float deltaTime)
 
                     // Find nearest tile (round instead of floor so player doesn't snap when
                     // slightly off-center)
-                    int currentPlayerTileX =
-                        static_cast<int>(std::round((playerPos.x - 8.0f) / 16.0f));
-                    int currentPlayerTileY =
-                        static_cast<int>(std::round((playerPos.y - 16.0f) / 16.0f));
+                    int currentPlayerTileX = static_cast<int>(
+                        std::round((playerPos.x - TILE_PIXEL_SIZE / 2) / TILE_PIXEL_SIZE));
+                    int currentPlayerTileY = static_cast<int>(
+                        std::round((playerPos.y - TILE_PIXEL_SIZE) / TILE_PIXEL_SIZE));
 
                     // Check if player is already on a valid cardinal-adjacent tile
                     bool playerAlreadyValid = false;
@@ -881,8 +886,11 @@ void Game::ProcessInput(float deltaTime)
                     bool hasPlayerTileTarget = (playerTileXFinal >= 0 && playerTileYFinal >= 0);
                     if (hasPlayerTileTarget)
                     {
-                        playerTargetPos = glm::vec2(static_cast<float>(playerTileXFinal * 16 + 8),
-                                                    static_cast<float>(playerTileYFinal * 16 + 16));
+                        playerTargetPos =
+                            glm::vec2(static_cast<float>(playerTileXFinal * TILE_PIXEL_SIZE +
+                                                         TILE_PIXEL_SIZE / 2),
+                                      static_cast<float>(playerTileYFinal * TILE_PIXEL_SIZE +
+                                                         TILE_PIXEL_SIZE));
                     }
 
                     // Make NPC face the player
@@ -928,11 +936,13 @@ void Game::ProcessInput(float deltaTime)
                     m_DialogueSnapPlayerTileX =
                         hasPlayerTileTarget
                             ? playerTileXFinal
-                            : static_cast<int>(std::round((playerTargetPos.x - 8.0f) / 16.0f));
+                            : static_cast<int>(std::round(
+                                  (playerTargetPos.x - TILE_PIXEL_SIZE / 2) / TILE_PIXEL_SIZE));
                     m_DialogueSnapPlayerTileY =
                         hasPlayerTileTarget
                             ? playerTileYFinal
-                            : static_cast<int>(std::round((playerTargetPos.y - 16.0f) / 16.0f));
+                            : static_cast<int>(std::round((playerTargetPos.y - TILE_PIXEL_SIZE) /
+                                                          TILE_PIXEL_SIZE));
                     m_DialogueSnapHasPlayerTile = hasPlayerTileTarget;
                     m_DialogueSnapPlayerFacing = playerFacing;
                     m_DialogueSnapNPCFacing = npcFacing;
@@ -992,23 +1002,7 @@ void Game::ProcessInput(float deltaTime)
         // Confirm selection with Enter or Space
         if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterKeyTree)
         {
-            // Check if we need to advance pages first
-            if (!IsDialogueOnLastPage())
-            {
-                m_DialoguePage++;
-            }
-            else
-            {
-                m_DialoguePage = 0;  // Reset for next node
-                m_DialogueManager.ConfirmSelection();
-                // If dialogue ended, release NPC
-                if (!m_DialogueManager.IsActive() && m_DialogueNPCIndex >= 0 &&
-                    m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-                {
-                    m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-                    m_DialogueNPCIndex = -1;
-                }
-            }
+            ConfirmOrAdvanceTreeDialogue();
             enterKeyTree = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_RELEASE)
@@ -1018,22 +1012,7 @@ void Game::ProcessInput(float deltaTime)
 
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyTree)
         {
-            // Check if we need to advance pages first
-            if (!IsDialogueOnLastPage())
-            {
-                m_DialoguePage++;
-            }
-            else
-            {
-                m_DialoguePage = 0;  // Reset for next node
-                m_DialogueManager.ConfirmSelection();
-                if (!m_DialogueManager.IsActive() && m_DialogueNPCIndex >= 0 &&
-                    m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-                {
-                    m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-                    m_DialogueNPCIndex = -1;
-                }
-            }
+            ConfirmOrAdvanceTreeDialogue();
             spaceKeyTree = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_RELEASE)
@@ -1044,13 +1023,7 @@ void Game::ProcessInput(float deltaTime)
         // Escape to force-close dialogue
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyTree)
         {
-            m_DialogueManager.EndDialogue();
-            m_DialoguePage = 0;  // Reset pagination
-            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-            {
-                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-            }
-            m_DialogueNPCIndex = -1;
+            ForceCloseTreeDialogue();
             escapeKeyTree = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -1068,13 +1041,7 @@ void Game::ProcessInput(float deltaTime)
 
         if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterKeyPressed)
         {
-            m_InDialogue = false;
-            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-            {
-                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-            }
-            m_DialogueNPCIndex = -1;
-            m_DialogueText = "";
+            CloseSimpleDialogue();
             enterKeyPressed = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_RELEASE)
@@ -1084,13 +1051,7 @@ void Game::ProcessInput(float deltaTime)
 
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyPressed)
         {
-            m_InDialogue = false;
-            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-            {
-                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-            }
-            m_DialogueNPCIndex = -1;
-            m_DialogueText = "";
+            CloseSimpleDialogue();
             spaceKeyPressed = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_RELEASE)
@@ -1100,13 +1061,7 @@ void Game::ProcessInput(float deltaTime)
 
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyPressed)
         {
-            m_InDialogue = false;
-            if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
-            {
-                m_NPCs[m_DialogueNPCIndex].SetStopped(false);
-            }
-            m_DialogueNPCIndex = -1;
-            m_DialogueText = "";
+            CloseSimpleDialogue();
             escapeKeyPressed = true;
         }
         if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -1122,14 +1077,15 @@ void Game::ProcessInput(float deltaTime)
         // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
 
-        // Collect NPC positions for collision checking
-        std::vector<glm::vec2> npcPositions;
+        // Collect NPC positions for collision checking (pre-allocated member avoids per-frame
+        // alloc)
+        m_NpcPositions.clear();
         for (const auto& npc : m_NPCs)
         {
-            npcPositions.push_back(npc.GetPosition());
+            m_NpcPositions.push_back(npc.GetPosition());
         }
 
-        m_Player.Move(moveDirection, deltaTime, &m_Tilemap, &npcPositions);
+        m_Player.Move(moveDirection, deltaTime, &m_Tilemap, &m_NpcPositions);
     }
     else if (m_InDialogue || m_DialogueSnapActive)
     {
@@ -1158,7 +1114,7 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
     {
         game->m_Editor.HandleScroll(yoffset, game->MakeEditorContext());
         // If tile picker is open, editor handles all scroll
-        if (game->m_Editor.ShowTilePicker())
+        if (game->m_Editor.IsShowTilePicker())
         {
             return;
         }
@@ -1222,4 +1178,44 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
 
         std::cout << "Camera zoom: " << game->m_CameraZoom << "x" << std::endl;
     }
+}
+
+void Game::ReleaseDialogueNPC()
+{
+    if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
+    {
+        m_NPCs[m_DialogueNPCIndex].SetStopped(false);
+    }
+    m_DialogueNPCIndex = -1;
+}
+
+void Game::CloseSimpleDialogue()
+{
+    m_InDialogue = false;
+    ReleaseDialogueNPC();
+    m_DialogueText.clear();
+}
+
+void Game::ConfirmOrAdvanceTreeDialogue()
+{
+    if (!IsDialogueOnLastPage())
+    {
+        m_DialoguePage++;
+    }
+    else
+    {
+        m_DialoguePage = 0;
+        m_DialogueManager.ConfirmSelection();
+        if (!m_DialogueManager.IsActive())
+        {
+            ReleaseDialogueNPC();
+        }
+    }
+}
+
+void Game::ForceCloseTreeDialogue()
+{
+    m_DialogueManager.EndDialogue();
+    m_DialoguePage = 0;
+    ReleaseDialogueNPC();
 }

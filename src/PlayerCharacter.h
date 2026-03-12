@@ -91,6 +91,8 @@ public:
 
     PlayerCharacter(const PlayerCharacter&) = delete;
     PlayerCharacter& operator=(const PlayerCharacter&) = delete;
+    PlayerCharacter(PlayerCharacter&&) noexcept = default;
+    PlayerCharacter& operator=(PlayerCharacter&&) noexcept = default;
 
     /**
      * @brief Load the walking/idle sprite sheet.
@@ -262,10 +264,10 @@ public:
      */
     inline void SetPosition(glm::vec2 pos) override
     {
-        int tileX = static_cast<int>(std::floor(pos.x / 16.0f));
-        int tileY = static_cast<int>(std::floor(pos.y / 16.0f));
-        m_Position.x = tileX * 16.0f + 8.0f;   // horizontal center of tile
-        m_Position.y = tileY * 16.0f + 16.0f;  // bottom of tile (feet position)
+        int tileX = static_cast<int>(std::floor(pos.x / TILE_SIZE));
+        int tileY = static_cast<int>(std::floor(pos.y / TILE_SIZE));
+        m_Position.x = tileX * TILE_SIZE + TILE_SIZE / 2.0f;  // horizontal center of tile
+        m_Position.y = tileY * TILE_SIZE + TILE_SIZE;         // bottom of tile (feet position)
     }
 
     /**
@@ -285,8 +287,8 @@ public:
      */
     inline void SetTilePosition(int tileX, int tileY)
     {
-        m_Position.x = tileX * 16.0f + 8.0f;   // horizontal center of tile
-        m_Position.y = tileY * 16.0f + 16.0f;  // bottom of tile (feet position)
+        m_Position.x = tileX * TILE_SIZE + TILE_SIZE / 2.0f;  // horizontal center of tile
+        m_Position.y = tileY * TILE_SIZE + TILE_SIZE;         // bottom of tile (feet position)
     }
 
     /**
@@ -310,20 +312,27 @@ public:
      * @name Render Constants
      * @{
      */
-    static const int RENDER_WIDTH = 16;   ///< Sprite width in pixels (1 tile wide)
-    static const int RENDER_HEIGHT = 32;  ///< Sprite height in pixels (2 tiles tall)
+    static constexpr int RENDER_WIDTH = 16;   ///< Sprite width in pixels (1 tile wide)
+    static constexpr int RENDER_HEIGHT = 32;  ///< Sprite height in pixels (2 tiles tall)
+    /** @} */
+
+    /**
+     * @name Tile Constants
+     * @{
+     */
+    static constexpr float TILE_SIZE = 16.0f;  ///< Tile size in pixels
     /** @} */
 
     /**
      * @name Collision Constants
      * @{
      */
-    inline static const float HITBOX_WIDTH = 16.0f;   ///< Collision box width (1 tile)
-    inline static const float HITBOX_HEIGHT = 16.0f;  ///< Collision box height (1 tile)
+    static constexpr float HITBOX_WIDTH = 16.0f;   ///< Collision box width (1 tile)
+    static constexpr float HITBOX_HEIGHT = 16.0f;  ///< Collision box height (1 tile)
 
-    inline static const float HALF_HITBOX_WIDTH =
+    static constexpr float HALF_HITBOX_WIDTH =
         HITBOX_WIDTH / 2;  ///< Half of the collision box width
-    inline static const float HALF_HITBOX_HEIGHT =
+    static constexpr float HALF_HITBOX_HEIGHT =
         HITBOX_HEIGHT / 2;  ///< Half of the collision box height
     /** @} */
 

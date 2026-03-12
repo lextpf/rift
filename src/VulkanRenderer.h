@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IRenderer.h"
-#include "RendererCommonMethods.h"
+#include "RendererMacros.h"
 
 #include <vulkan/vulkan.h>
 #include <map>

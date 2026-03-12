@@ -383,7 +383,7 @@
  * @par Architecture
  * The dialogue system consists of three main components:
  * - **DialogueManager**: Orchestrates dialogue flow and rendering
- * - **DialogueSystem**: Manages dialogue data and conversation state
+ * - **DialogueTypes**: Manages dialogue data and conversation state
  * - **DialogueNode/DialogueOption**: Data structures for dialogue trees
  *
  * @par Dialogue Flow
@@ -415,7 +415,7 @@
  * - **Enter/Space**: Confirm selection or advance
  * - **Escape**: Exit dialogue early
  *
- * @see DialogueManager, DialogueSystem, DialogueNode, DialogueOption
+ * @see DialogueManager, DialogueNode, DialogueOption
  */
 
 /**

@@ -1,39 +1,48 @@
 #include "OpenGLRenderer.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/gtc/type_ptr.hpp>
+
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <thread>
 #include <vector>
 
-// Debug: Sleep after each draw call to visualize render order
-bool g_DebugDrawSleep = false;
-GLFWwindow* g_DebugWindow = nullptr;
-static int g_DebugDrawCallIndex = 0;
+namespace
+{
+// Debug state for per-draw-call visualization
+bool s_DebugDrawSleep = false;
+GLFWwindow* s_DebugWindow = nullptr;
+int s_DebugDrawCallIndex = 0;
+}  // namespace
 
 void SetDebugDrawSleep(GLFWwindow* window, bool enabled)
 {
-    g_DebugWindow = window;
-    g_DebugDrawSleep = enabled;
+    s_DebugWindow = window;
+    s_DebugDrawSleep = enabled;
 }
 
 void ResetDebugDrawCallIndex()
 {
-    g_DebugDrawCallIndex = 0;
+    s_DebugDrawCallIndex = 0;
+}
+
+bool IsDebugDrawSleepEnabled()
+{
+    return s_DebugDrawSleep;
 }
 
 static void DebugAfterDraw(const char* label, int count)
 {
-    if (g_DebugDrawSleep && g_DebugWindow)
+    if (s_DebugDrawSleep && s_DebugWindow)
     {
-        std::cout << "[DRAW " << g_DebugDrawCallIndex++ << "] " << label << " (" << count
+        std::cout << "[DRAW " << s_DebugDrawCallIndex++ << "] " << label << " (" << count
                   << " vertices)" << std::endl;
         glFinish();
-        glfwSwapBuffers(g_DebugWindow);
+        glfwSwapBuffers(s_DebugWindow);
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 }
@@ -315,6 +324,8 @@ void OpenGLRenderer::Init()
     m_AlphaLoc = glGetUniformLocation(m_ShaderProgram, "spriteAlpha");
     m_AmbientColorLoc = glGetUniformLocation(m_ShaderProgram, "ambientColor");
     m_UseColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
+
+    m_Initialized = true;
 }
 
 void OpenGLRenderer::SetAmbientColor(const glm::vec3& color)
@@ -732,11 +743,13 @@ void OpenGLRenderer::DrawSpriteAtlas(const Texture& texture,
 void OpenGLRenderer::FlushBatch()
 {
     if (m_BatchVertices.empty())
+    {
         return;
+    }
 
     // Texture ID 0 is invalid for sprite sampling in core profile.
     // Drop this batch instead of accidentally sampling a previously bound texture.
-    if (m_CurrentBatchTexture == 0)
+    if (m_CurrentBatchTexture == 0 || !m_Initialized)
     {
         m_BatchVertices.clear();
         m_CurrentBatchTexture = 0;
@@ -938,8 +951,11 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
 
 void OpenGLRenderer::FlushRectBatch()
 {
-    if (m_RectBatchVertices.empty())
+    if (m_RectBatchVertices.empty() || !m_Initialized)
+    {
+        m_RectBatchVertices.clear();
         return;
+    }
 
     glUseProgram(m_ShaderProgram);
 
@@ -1006,9 +1022,11 @@ void OpenGLRenderer::FlushParticleBatch()
     // Particles are batched separately from sprites because they use per-vertex
     // color/alpha for effects like fading, color variation, and glow intensity
     if (m_ParticleBatchVertices.empty())
+    {
         return;
+    }
 
-    if (m_CurrentParticleTexture == 0)
+    if (m_CurrentParticleTexture == 0 || !m_Initialized)
     {
         m_ParticleBatchVertices.clear();
         m_CurrentParticleTexture = 0;
@@ -1113,7 +1131,7 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     // Cache glyph bitmaps and metrics from first pass (FreeType reuses internal buffer)
     struct GlyphData
     {
-        unsigned char* bitmap;
+        std::vector<unsigned char> bitmap;
         int width, height;
         int bearingX, bearingY;
         unsigned int advance;
@@ -1145,12 +1163,7 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
         // Copy bitmap since FreeType reuses buffer for next character
         if (w > 0 && h > 0)
         {
-            gd.bitmap = new unsigned char[w * h];
-            memcpy(gd.bitmap, m_Face->glyph->bitmap.buffer, w * h);
-        }
-        else
-        {
-            gd.bitmap = nullptr;  // Some characters (like space) have no pixels
+            gd.bitmap.assign(m_Face->glyph->bitmap.buffer, m_Face->glyph->bitmap.buffer + w * h);
         }
         glyphData[c] = gd;
 
@@ -1216,7 +1229,7 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
 
         // Copy glyph pixels into atlas, converting grayscale to RGBA
         // White color with alpha = glyph intensity enables color tinting via uniform
-        if (gd.bitmap && w > 0 && h > 0)
+        if (!gd.bitmap.empty() && w > 0 && h > 0)
         {
             for (int y = 0; y < h; y++)
             {
@@ -1245,9 +1258,9 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
 
         currentX += w + PADDING;
         if (h > rowHeight)
+        {
             rowHeight = h;
-
-        delete[] gd.bitmap;
+        }
     }
 
     // Upload atlas to GPU

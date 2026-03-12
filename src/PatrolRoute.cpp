@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <deque>
 #include <iostream>
-#include <unordered_set>
 
 bool PatrolRoute::Initialize(int startTileX,
                              int startTileY,
@@ -54,8 +53,9 @@ bool PatrolRoute::Initialize(int startTileX,
         connectedTiles.push_back(current);
 
         auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
-        for (const auto& neighbor : neighbors)
+        for (int ni = 0; ni < neighbors.count; ++ni)
         {
+            const auto& neighbor = neighbors.tiles[ni];
             int idx = neighbor.y * mapWidth + neighbor.x;
             if (!visited[idx])
             {
@@ -84,8 +84,9 @@ bool PatrolRoute::Initialize(int startTileX,
         {
             int neighborCount = 0;
             auto neighbors = GetValidNeighbors(tile.x, tile.y, tilemap);
-            for (const auto& neighbor : neighbors)
+            for (int ni = 0; ni < neighbors.count; ++ni)
             {
+                const auto& neighbor = neighbors.tiles[ni];
                 // Check if this neighbor is part of our collected set
                 // using the visited array for O(1) lookup instead of linear search.
                 if (visited[neighbor.y * mapWidth + neighbor.x])
@@ -123,8 +124,9 @@ bool PatrolRoute::Initialize(int startTileX,
             // Use the visited array for O(1) set membership instead of linear search.
             auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
             glm::ivec2 next(-1, -1);
-            for (const auto& neighbor : neighbors)
+            for (int ni = 0; ni < neighbors.count; ++ni)
             {
+                const auto& neighbor = neighbors.tiles[ni];
                 int nIdx = neighbor.y * mapWidth + neighbor.x;
                 if (visited[nIdx] && !cycleVisited[nIdx])
                 {
@@ -171,18 +173,9 @@ bool PatrolRoute::Initialize(int startTileX,
         return false;
     }
 
-    // Count unique tiles for the log message. Due to backtracking in DFS mode,
-    // the waypoint list may contain the same tile multiple times.
-    auto tileHash = [mapWidth](const glm::ivec2& v)
-    { return std::hash<int>()(v.y * mapWidth + v.x); };
-    auto tileEqual = [](const glm::ivec2& a, const glm::ivec2& b)
-    { return a.x == b.x && a.y == b.y; };
-    std::unordered_set<glm::ivec2, decltype(tileHash), decltype(tileEqual)> uniqueTiles(
-        m_Waypoints.begin(), m_Waypoints.end(), 0, tileHash, tileEqual);
-
-    std::cout << "Created patrol route: " << m_Waypoints.size() << " waypoints, "
-              << uniqueTiles.size() << " unique tiles, mode=" << (m_IsClosed ? "loop" : "ping-pong")
-              << ", start=(" << startTileX << ", " << startTileY << ")" << std::endl;
+    std::cout << "Created patrol route: " << m_Waypoints.size()
+              << " waypoints, mode=" << (m_IsClosed ? "loop" : "ping-pong") << ", start=("
+              << startTileX << ", " << startTileY << ")" << std::endl;
 
     return true;
 }
@@ -206,8 +199,9 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
 
     auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
 
-    for (const auto& neighbor : neighbors)
+    for (int ni = 0; ni < neighbors.count; ++ni)
     {
+        const auto& neighbor = neighbors.tiles[ni];
         int neighborIndex = neighbor.y * mapWidth + neighbor.x;
         if (!visited[neighborIndex] && path.size() < maxLength)
         {
@@ -292,15 +286,15 @@ bool PatrolRoute::GetNextWaypoint(int& tileX, int& tileY)
     return true;
 }
 
-std::vector<glm::ivec2> PatrolRoute::GetValidNeighbors(int tileX,
-                                                       int tileY,
-                                                       const Tilemap* tilemap) const
+PatrolRoute::NeighborResult PatrolRoute::GetValidNeighbors(int tileX,
+                                                           int tileY,
+                                                           const Tilemap* tilemap) const
 {
-    std::vector<glm::ivec2> neighbors;
+    NeighborResult result;
 
     if (!tilemap)
     {
-        return neighbors;
+        return result;
     }
 
     // Check the 4 cardinal directions. The order matters for determinism:
@@ -316,11 +310,11 @@ std::vector<glm::ivec2> PatrolRoute::GetValidNeighbors(int tileX,
 
         if (IsValidTile(nx, ny, tilemap))
         {
-            neighbors.push_back(glm::ivec2(nx, ny));
+            result.tiles[result.count++] = glm::ivec2(nx, ny);
         }
     }
 
-    return neighbors;
+    return result;
 }
 
 bool PatrolRoute::IsValidTile(int tileX, int tileY, const Tilemap* tilemap) const

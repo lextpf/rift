@@ -1,9 +1,13 @@
 #include "Game.h"
 #include "NonPlayerCharacter.h"
+#include "OpenGLRenderer.h"
 #include "PlayerCharacter.h"
 #include "RendererFactory.h"
 
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -13,11 +17,16 @@
 #include <thread>
 #include <vector>
 
-#include <glad/glad.h>
-#include <glm/gtc/matrix_transform.hpp>
+#ifdef _WIN32
+#define NOMINMAX
+#include <Windows.h>
+#undef DrawText
+#undef near
+#undef far
+#pragma comment(lib, "winmm.lib")
+#endif
 
-// Defined in main.cpp - enables 2-second sleep after each draw call for debugging render order
-extern void SetDebugDrawSleep(GLFWwindow* window, bool enabled);
+// SetDebugDrawSleep, ResetDebugDrawCallIndex, IsDebugDrawSleepEnabled declared in OpenGLRenderer.h
 
 Game::Game()
     // -- Window --
@@ -404,13 +413,19 @@ bool Game::Initialize()
     m_SkyRenderer.Initialize();
 
     // Initialize dialogue system
-    m_DialogueManager.Initialize(this, &m_GameState);
+    m_DialogueManager.Initialize(&m_GameState);
 
     return true;
 }
 
 void Game::Run()
 {
+#ifdef _WIN32
+    // Raise Windows timer resolution from ~15.6ms to 1ms so that sleep_for()
+    // in the FPS limiter sleeps accurately instead of overshooting by ~15ms.
+    timeBeginPeriod(1);
+#endif
+
     // Main game loop. Processes input, updates game state, and renders each frame.
     // Delta time is computed from wall-clock time for frame-rate independent movement.
     try
@@ -681,7 +696,7 @@ void Game::Update(float deltaTime)
     bool arrowRight = glfwGetKey(m_Window, GLFW_KEY_RIGHT) == GLFW_PRESS;
 
     // When the tile picker is open, arrow keys are repurposed for tilepicker panning
-    if (m_Editor.IsActive() && m_Editor.ShowTilePicker())
+    if (m_Editor.IsActive() && m_Editor.IsShowTilePicker())
     {
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
@@ -965,7 +980,11 @@ void Game::Render()
     struct RenderGuard
     {
         bool& flag;
-        RenderGuard(bool& f) : flag(f) { flag = true; }
+        RenderGuard(bool& f)
+            : flag(f)
+        {
+            flag = true;
+        }
         ~RenderGuard() { flag = false; }
     } renderGuard(s_Rendering);
 
@@ -982,9 +1001,7 @@ void Game::Render()
     // 10. UI overlays (editor, debug info, dialogue)
 
     // Debug draw sleep: pauses after each draw call for visual debugging
-    extern bool g_DebugDrawSleep;
-    extern void ResetDebugDrawCallIndex();
-    if (g_DebugDrawSleep)
+    if (IsDebugDrawSleepEnabled())
     {
         ResetDebugDrawCallIndex();
         std::cout << "===== FRAME START =====" << std::endl;
@@ -1526,8 +1543,7 @@ void Game::Render()
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
         // DEBUG: Print frame end marker
-        extern bool g_DebugDrawSleep;
-        if (g_DebugDrawSleep)
+        if (IsDebugDrawSleepEnabled())
         {
             std::cout << "===== FRAME END =====" << std::endl;
         }
@@ -1539,6 +1555,10 @@ void Game::Render()
 
 void Game::Shutdown()
 {
+#ifdef _WIN32
+    timeEndPeriod(1);
+#endif
+
     if (m_Renderer)
     {
         m_Renderer->Shutdown();

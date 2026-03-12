@@ -1,15 +1,47 @@
 #include "DialogueManager.h"
-#include "Game.h"
 #include "GameStateManager.h"
 #include "NonPlayerCharacter.h"
 
 #include <iostream>
 
+namespace
+{
+bool EvaluateCondition(const GameStateManager& state, const DialogueCondition& condition)
+{
+    switch (condition.type)
+    {
+        case DialogueCondition::Type::FLAG_SET:
+            return state.HasFlag(condition.key);
+
+        case DialogueCondition::Type::FLAG_NOT_SET:
+            return !state.HasFlag(condition.key);
+
+        case DialogueCondition::Type::FLAG_EQUALS:
+            return state.GetFlagValue(condition.key) == condition.value;
+
+        default:
+            return false;
+    }
+}
+
+bool EvaluateConditions(const GameStateManager& state,
+                        const std::vector<DialogueCondition>& conditions)
+{
+    for (const auto& condition : conditions)
+    {
+        if (!EvaluateCondition(state, condition))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+}  // namespace
+
 // Invariants: when active, m_CurrentTree points at m_ActiveTree and
 // m_VisibleOptions stores pointers into that owned copy.
 DialogueManager::DialogueManager()
-    : m_Game(nullptr),          // Set by Initialize() - provides NPC access
-      m_StateManager(nullptr),  // Set by Initialize() - evaluates conditions and stores flags
+    : m_StateManager(nullptr),  // Set by Initialize() - evaluates conditions and stores flags
       m_Active(false),          // No conversation in progress until StartDialogue()
       m_CurrentTree(nullptr),   // Points to m_ActiveTree when dialogue is active
       m_CurrentNode(nullptr),   // Current position in the dialogue tree
@@ -17,9 +49,8 @@ DialogueManager::DialogueManager()
 {
 }
 
-void DialogueManager::Initialize(Game* game, GameStateManager* stateManager)
+void DialogueManager::Initialize(GameStateManager* stateManager)
 {
-    m_Game = game;
     m_StateManager = stateManager;
 }
 
@@ -35,7 +66,9 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
 
     // Validate required pointers
     if (!npc || !m_StateManager)
+    {
         return false;
+    }
 
     // Check if NPC has dialogue content
     if (!npc->HasDialogueTree())
@@ -93,9 +126,13 @@ void DialogueManager::SelectOption(int optionIndex)
 {
     // Validate state and bounds
     if (!m_Active || !m_CurrentNode)
+    {
         return;
+    }
     if (optionIndex < 0 || optionIndex >= static_cast<int>(m_VisibleOptions.size()))
+    {
         return;
+    }
 
     const DialogueOption* option = m_VisibleOptions[optionIndex];
 
@@ -133,7 +170,9 @@ void DialogueManager::TransitionToNode(const std::string& nodeId)
 void DialogueManager::SelectPrevious()
 {
     if (m_VisibleOptions.empty())
+    {
         return;
+    }
 
     m_SelectedOption--;
     if (m_SelectedOption < 0)
@@ -146,7 +185,9 @@ void DialogueManager::SelectPrevious()
 void DialogueManager::SelectNext()
 {
     if (m_VisibleOptions.empty())
+    {
         return;
+    }
 
     m_SelectedOption++;
     if (m_SelectedOption >= static_cast<int>(m_VisibleOptions.size()))
@@ -174,7 +215,9 @@ void DialogueManager::ConfirmSelection()
 void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>& consequences)
 {
     if (!m_StateManager)
+    {
         return;
+    }
 
     for (const auto& cons : consequences)
     {
@@ -214,13 +257,15 @@ void DialogueManager::RefreshVisibleOptions()
     m_VisibleOptions.clear();
 
     if (!m_CurrentNode || !m_StateManager)
+    {
         return;
+    }
 
     // Filter options based on their conditions
     for (const auto& option : m_CurrentNode->options)
     {
         // Only show options where all conditions are satisfied
-        if (m_StateManager->EvaluateConditions(option.conditions))
+        if (EvaluateConditions(*m_StateManager, option.conditions))
         {
             m_VisibleOptions.push_back(&option);
         }

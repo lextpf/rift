@@ -45,7 +45,9 @@ struct DialogueCondition
      * @param v Expected value (for FLAG_EQUALS)
      */
     DialogueCondition(Type t, const std::string& k, const std::string& v = "")
-        : type(t), key(k), value(v)
+        : type(t),
+          key(k),
+          value(v)
     {
     }
 };
@@ -92,7 +94,9 @@ struct DialogueConsequence
      * @param v New value
      */
     DialogueConsequence(Type t, const std::string& k, const std::string& v = "")
-        : type(t), key(k), value(v)
+        : type(t),
+          key(k),
+          value(v)
     {
     }
 };
@@ -128,7 +132,9 @@ struct DialogueOption
      * @param t Display text
      * @param next Next node ID (empty to end dialogue)
      */
-    DialogueOption(const std::string& t, const std::string& next = "") : text(t), nextNodeId(next)
+    DialogueOption(const std::string& t, const std::string& next = "")
+        : text(t),
+          nextNodeId(next)
     {
     }
 };
@@ -166,7 +172,9 @@ struct DialogueNode
      * @param txt Dialogue text
      */
     DialogueNode(const std::string& nodeId, const std::string& spk, const std::string& txt)
-        : id(nodeId), speaker(spk), text(txt)
+        : id(nodeId),
+          speaker(spk),
+          text(txt)
     {
     }
 
@@ -281,7 +289,8 @@ struct DialogueTree
      * @param startNode ID of the starting node
      */
     DialogueTree(const std::string& treeId, const std::string& startNode)
-        : id(treeId), startNodeId(startNode)
+        : id(treeId),
+          startNodeId(startNode)
     {
     }
 

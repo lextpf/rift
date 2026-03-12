@@ -263,23 +263,20 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         m_ZoneSpawnTimers.resize(m_Zones->size(), 0.0f);
     }
 
-    // Update existing particles
-    for (auto it = m_Particles.begin(); it != m_Particles.end();)
+    // Update existing particles (mark dead ones, remove in bulk afterward)
+    for (auto& p : m_Particles)
     {
-        Particle& p = *it;
-
         // Decrease lifetime
         p.lifetime -= deltaTime;
         if (p.lifetime <= 0.0f)
         {
-            it = m_Particles.erase(it);
             continue;
         }
 
-        // Remove particle if its zone no longer exists
+        // Mark particle for removal if its zone no longer exists
         if (!hasZones || p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size()))
         {
-            it = m_Particles.erase(it);
+            p.lifetime = 0.0f;
             continue;
         }
 
@@ -460,19 +457,34 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
                 break;
             }
         }
-
-        ++it;
     }
 
+    // Remove dead and orphaned particles in one pass
+    std::erase_if(m_Particles, [](const Particle& p) { return p.lifetime <= 0.0f; });
+
     if (!hasZones)
+    {
         return;
+    }
+
+    // Build per-zone particle counts in a single O(n) pass
+    m_ZoneParticleCounts.assign(m_Zones->size(), 0);
+    for (const auto& p : m_Particles)
+    {
+        if (p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_ZoneParticleCounts.size()))
+        {
+            m_ZoneParticleCounts[p.zoneIndex]++;
+        }
+    }
 
     // Spawn new particles for each zone
     for (size_t i = 0; i < m_Zones->size(); ++i)
     {
         const ParticleZone& zone = (*m_Zones)[i];
         if (!zone.enabled)
+        {
             continue;
+        }
 
         // Check if zone is visible in current view
         float margin = 80.0f;  // 5 tiles of margin to spawn offscreen
@@ -482,19 +494,17 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
                          zone.position.y > cameraPos.y + viewSize.y + margin);
 
         if (!visible)
+        {
             continue;
+        }
 
         // Skip spawning lantern glows during daytime to avoid flicker
         if (zone.type == ParticleType::Lantern && m_NightFactor < 0.05f)
-            continue;
-
-        // Count particles for this zone
-        size_t zoneParticleCount = 0;
-        for (const auto& p : m_Particles)
         {
-            if (p.zoneIndex == static_cast<int>(i))
-                zoneParticleCount++;
+            continue;
         }
+
+        size_t zoneParticleCount = m_ZoneParticleCounts[i];
 
         // Spawn rate depends on zone type
         float spawnRate;
@@ -900,19 +910,8 @@ void ParticleSystem::Render(IRenderer& renderer,
     // 3. Draw at calculated positions
     // 4. Resume perspective
 
-    struct ParticleRenderData
-    {
-        glm::vec2 screenPos;
-        glm::vec2 size;
-        glm::vec4 color;
-        float rotation;
-        float phase;
-        bool additive;
-        ParticleType type;
-    };
-
-    std::vector<ParticleRenderData> noProjectionBatch;
-    std::vector<ParticleRenderData> regularBatch;
+    m_NoProjectionBatch.clear();
+    m_RegularBatch.clear();
 
     // First pass: Calculate all positions (ProjectPoint works while perspective enabled)
     for (const Particle& p : m_Particles)
@@ -1006,7 +1005,7 @@ void ParticleSystem::Render(IRenderer& renderer,
                 data.screenPos.x = projectedLeft.x + (tileRelativeX + offsetInTileX) * scaleX;
                 data.screenPos.y = projectedLeft.y + tileRelativeY + offsetInTileY;
             }
-            noProjectionBatch.push_back(data);
+            m_NoProjectionBatch.push_back(data);
         }
         else if (isNoProjection)
         {
@@ -1017,7 +1016,7 @@ void ParticleSystem::Render(IRenderer& renderer,
                 glm::vec2 projected = renderer.ProjectPoint(data.screenPos);
                 data.screenPos = projected;
             }
-            noProjectionBatch.push_back(data);
+            m_NoProjectionBatch.push_back(data);
         }
         else
         {
@@ -1036,7 +1035,7 @@ void ParticleSystem::Render(IRenderer& renderer,
             if (renderer.IsPointBehindSphere(data.screenPos))
                 continue;
 
-            regularBatch.push_back(data);
+            m_RegularBatch.push_back(data);
         }
     }
 
@@ -1091,14 +1090,14 @@ void ParticleSystem::Render(IRenderer& renderer,
     auto sortByBlendMode = [](const ParticleRenderData& a, const ParticleRenderData& b)
     { return a.additive < b.additive; };
 
-    std::sort(noProjectionBatch.begin(), noProjectionBatch.end(), sortByBlendMode);
-    std::sort(regularBatch.begin(), regularBatch.end(), sortByBlendMode);
+    std::sort(m_NoProjectionBatch.begin(), m_NoProjectionBatch.end(), sortByBlendMode);
+    std::sort(m_RegularBatch.begin(), m_RegularBatch.end(), sortByBlendMode);
 
     // Draw noProjection particles with perspective suspended
-    if (!noProjectionBatch.empty())
+    if (!m_NoProjectionBatch.empty())
     {
         renderer.SuspendPerspective(true);
-        for (const auto& data : noProjectionBatch)
+        for (const auto& data : m_NoProjectionBatch)
         {
             drawParticle(data);
         }
@@ -1106,7 +1105,7 @@ void ParticleSystem::Render(IRenderer& renderer,
     }
 
     // Draw regular particles normally
-    for (const auto& data : regularBatch)
+    for (const auto& data : m_RegularBatch)
     {
         drawParticle(data);
     }
@@ -1115,24 +1114,19 @@ void ParticleSystem::Render(IRenderer& renderer,
 void ParticleSystem::OnZoneRemoved(int zoneIndex)
 {
     if (zoneIndex < 0)
-        return;
-
-    // Remove particles from the deleted zone and adjust indices for remaining particles
-    for (auto it = m_Particles.begin(); it != m_Particles.end();)
     {
-        if (it->zoneIndex == zoneIndex)
+        return;
+    }
+
+    // Remove particles from the deleted zone in one pass
+    std::erase_if(m_Particles, [zoneIndex](const Particle& p) { return p.zoneIndex == zoneIndex; });
+
+    // Adjust indices for particles from higher-indexed zones
+    for (auto& p : m_Particles)
+    {
+        if (p.zoneIndex > zoneIndex)
         {
-            // Remove particles from the deleted zone
-            it = m_Particles.erase(it);
-        }
-        else
-        {
-            // Adjust indices for particles from higher-indexed zones
-            if (it->zoneIndex > zoneIndex)
-            {
-                it->zoneIndex--;
-            }
-            ++it;
+            p.zoneIndex--;
         }
     }
 

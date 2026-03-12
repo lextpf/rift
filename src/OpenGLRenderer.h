@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IRenderer.h"
-#include "RendererCommonMethods.h"
+#include "RendererMacros.h"
 
 #include <glad/glad.h>
 #include <map>
@@ -117,6 +117,22 @@
  * @see IRenderer Base interface with method documentation
  * @see VulkanRenderer Alternative Vulkan implementation
  */
+struct GLFWwindow;
+
+/// @name Debug Draw Visualization
+/// @{
+
+/// @brief Enable or disable per-draw-call sleep for debugging render order.
+void SetDebugDrawSleep(GLFWwindow* window, bool enabled);
+
+/// @brief Reset the debug draw call counter to zero.
+void ResetDebugDrawCallIndex();
+
+/// @brief Check whether debug draw sleep mode is active.
+bool IsDebugDrawSleepEnabled();
+
+/// @}
+
 class OpenGLRenderer : public IRenderer
 {
 public:
@@ -304,7 +320,8 @@ private:
     /// @name Performance Metrics
     /// @{
 
-    int m_DrawCallCount = 0;  ///< Number of draw calls this frame (for debug display).
+    int m_DrawCallCount = 0;     ///< Number of draw calls this frame (for debug display).
+    bool m_Initialized = false;  ///< True after Init() completes successfully.
 
     /// @}
 

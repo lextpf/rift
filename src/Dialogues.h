@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DialogueSystem.h"
+#include "DialogueTypes.h"
 
 #include <string>
 
@@ -56,9 +56,9 @@ void BuildMysteryDialogueTree(DialogueTree& tree,
 void BuildEditorAwareDialogueTree(DialogueTree& tree, std::string& outNpcName);
 
 /**
- * @brief Build a progressively annoyed dialogue tree for NPC "Herbert".
+ * @brief Build a progressively annoyed dialogue tree for NPC "Salma".
  *
- * Uses a visit counter (flag "talked_to_herbert") to escalate irritation
+ * Uses a visit counter (flag "talked_to_salma") to escalate irritation
  * across five visits, from polite dismissal to existential breakdown.
  */
 void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName);

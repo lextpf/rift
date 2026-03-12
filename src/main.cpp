@@ -38,14 +38,10 @@
 #include <signal.h>
 #include <windows.h>
 
-/**
- * @brief Signal-based crash handler for fatal errors.
- *
- * Logs the signal number to rift.txt before terminating.
- * Handles SIGABRT, SIGTERM, and SIGINT signals.
- *
- * @param sig The signal number that triggered the crash.
- */
+// Signal-based crash handler for fatal errors.
+// Logs the signal number to rift.txt before terminating.
+// Handles SIGABRT, SIGTERM, and SIGINT signals.
+// @param sig  The signal number that triggered the crash.
 void CrashHandler(int sig)
 {
     std::ofstream logFile("rift.txt", std::ios::app);
@@ -64,7 +60,9 @@ int main()
     signal(SIGTERM, CrashHandler);
     signal(SIGINT, CrashHandler);
 
-    // Translate structured exceptions (SEH) to C++ exceptions
+    // Translate Win32 structured exceptions (access violations, stack
+    // overflows, division by zero, etc.) into C++ exceptions so they are
+    // caught by the try/catch blocks below instead of crashing silently.
     _set_se_translator(
         [](unsigned int code, struct _EXCEPTION_POINTERS* ep)
         {
@@ -120,7 +118,8 @@ int main()
         // Run the main game loop
         try
         {
-            game.SetTargetFps(500.0f);
+            // Cap to monitor refresh rate (244 Hz)
+            game.SetTargetFps(244.0f);
             game.Run();
         }
         catch (const std::exception& e)

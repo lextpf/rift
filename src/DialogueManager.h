@@ -1,12 +1,11 @@
 #pragma once
 
-#include "DialogueSystem.h"
+#include "DialogueTypes.h"
 
 #include <string>
 #include <vector>
 
 // Forward declarations
-class Game;
 class GameStateManager;
 class NonPlayerCharacter;
 
@@ -30,7 +29,7 @@ class NonPlayerCharacter;
  * @par Usage Example
  * @code{.cpp}
  * DialogueManager d;
- * d.Initialize(&game, &stateManager);
+ * d.Initialize(&stateManager);
  *
  * // Start conversation with an NPC
  * if (d.StartDialogue(npc)) {
@@ -78,10 +77,9 @@ public:
      * The manager stores non-owning pointers to these systems for
      * condition evaluation and consequence execution.
      *
-     * @param game Reference to main game instance (for NPC access)
      * @param stateManager Reference to game state manager (for flag evaluation)
      */
-    void Initialize(Game* game, GameStateManager* stateManager);
+    void Initialize(GameStateManager* stateManager);
 
     /// @name Dialogue Flow Control
     /// @brief Methods for starting, advancing, and ending conversations.
@@ -215,7 +213,6 @@ private:
     /// @name Game System References
     /// @{
 
-    Game* m_Game = nullptr;
     GameStateManager* m_StateManager = nullptr;
 
     /// @}

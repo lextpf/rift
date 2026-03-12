@@ -37,6 +37,27 @@ constexpr float WAYPOINT_REACH_THRESHOLD = 0.5f;
 
 // Minimum movement distance to avoid division by zero.
 constexpr float MIN_MOVEMENT_DIST = 0.001f;
+
+// All four cardinal directions for random look-around selection.
+constexpr NPCDirection ALL_DIRECTIONS[] = {
+    NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
+
+// AABB overlap test between two entities using feet-based hitboxes.
+bool TestHitboxOverlap(
+    const glm::vec2& posA, const glm::vec2& posB, float halfWidth, float hitboxHeight, float eps)
+{
+    float aMinX = posA.x - halfWidth + eps;
+    float aMaxX = posA.x + halfWidth - eps;
+    float aMaxY = posA.y - eps;
+    float aMinY = posA.y - hitboxHeight + eps;
+
+    float bMinX = posB.x - halfWidth + eps;
+    float bMaxX = posB.x + halfWidth - eps;
+    float bMaxY = posB.y - eps;
+    float bMinY = posB.y - hitboxHeight + eps;
+
+    return aMinX < bMaxX && aMaxX > bMinX && aMinY < bMaxY && aMaxY > bMinY;
+}
 }  // namespace
 
 NonPlayerCharacter::NonPlayerCharacter()
@@ -149,21 +170,8 @@ void NonPlayerCharacter::Update(float deltaTime,
     bool isCollidingWithPlayer = false;
     if (playerPosition)
     {
-        // Build NPC hitbox (16x16, centered on feet)
-        float npcMinX = m_Position.x - NPC_HALF_WIDTH + COLLISION_EPS;
-        float npcMaxX = m_Position.x + NPC_HALF_WIDTH - COLLISION_EPS;
-        float npcMaxY = m_Position.y - COLLISION_EPS;
-        float npcMinY = m_Position.y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
-
-        // Build player hitbox (16x16, centered on feet)
-        float playerMinX = playerPosition->x - NPC_HALF_WIDTH + COLLISION_EPS;
-        float playerMaxX = playerPosition->x + NPC_HALF_WIDTH - COLLISION_EPS;
-        float playerMaxY = playerPosition->y - COLLISION_EPS;
-        float playerMinY = playerPosition->y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
-
-        // AABB intersection test
-        if (npcMinX < playerMaxX && npcMaxX > playerMinX && npcMinY < playerMaxY &&
-            npcMaxY > playerMinY)
+        if (TestHitboxOverlap(
+                m_Position, *playerPosition, NPC_HALF_WIDTH, NPC_HITBOX_HEIGHT, COLLISION_EPS))
         {
             isCollidingWithPlayer = true;
             m_WaitTimer = 0.5f;
@@ -324,9 +332,7 @@ void NonPlayerCharacter::UpdateLookAround(float deltaTime)
     m_LookAroundTimer -= deltaTime;
     if (m_LookAroundTimer <= 0.0f)
     {
-        static const NPCDirection directions[] = {
-            NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
-        m_Direction = directions[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
+        m_Direction = ALL_DIRECTIONS[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
         m_LookAroundTimer = 2.0f;
     }
 }
@@ -341,9 +347,7 @@ void NonPlayerCharacter::EnterStandingStillMode(bool isRandom, float duration)
     m_LookAroundTimer = 2.0f;
     ResetAnimation();
 
-    static const NPCDirection directions[] = {
-        NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
-    m_Direction = directions[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
+    m_Direction = ALL_DIRECTIONS[std::uniform_int_distribution<int>(0, 3)(GetNpcRng())];
 }
 
 void NonPlayerCharacter::UpdateDirectionFromMovement(int dx, int dy)
@@ -365,20 +369,12 @@ bool NonPlayerCharacter::CheckPlayerCollision(const glm::vec2& newPosition,
                                               const glm::vec2* playerPos) const
 {
     if (!playerPos)
+    {
         return false;
+    }
 
-    float npcMinX = newPosition.x - NPC_HALF_WIDTH + COLLISION_EPS;
-    float npcMaxX = newPosition.x + NPC_HALF_WIDTH - COLLISION_EPS;
-    float npcMaxY = newPosition.y - COLLISION_EPS;
-    float npcMinY = newPosition.y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
-
-    float playerMinX = playerPos->x - NPC_HALF_WIDTH + COLLISION_EPS;
-    float playerMaxX = playerPos->x + NPC_HALF_WIDTH - COLLISION_EPS;
-    float playerMaxY = playerPos->y - COLLISION_EPS;
-    float playerMinY = playerPos->y - NPC_HITBOX_HEIGHT + COLLISION_EPS;
-
-    return npcMinX < playerMaxX && npcMaxX > playerMinX && npcMinY < playerMaxY &&
-           npcMaxY > playerMinY;
+    return TestHitboxOverlap(
+        newPosition, *playerPos, NPC_HALF_WIDTH, NPC_HITBOX_HEIGHT, COLLISION_EPS);
 }
 
 bool NonPlayerCharacter::ReinitializePatrolRoute(const Tilemap* tilemap)

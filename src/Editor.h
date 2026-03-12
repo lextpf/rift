@@ -36,27 +36,31 @@
  * circular dependencies and makes the editor testable in isolation.
  *
  * @see Editor, Game::MakeEditorContext()
+ *
+ * @warning **Do not store.** This struct is designed for single-frame,
+ * pass-by-reference use only. Reference members will dangle if the
+ * context outlives the frame in which it was created.
  */
 struct EditorContext
 {
-    GLFWwindow* window;
-    int screenWidth;
-    int screenHeight;
-    int tilesVisibleWidth;
-    int tilesVisibleHeight;
-    glm::vec2& cameraPosition;
-    glm::vec2& cameraFollowTarget;
-    bool& hasCameraFollowTarget;
-    float& cameraZoom;
-    bool& freeCameraMode;
-    bool& enable3DEffect;
-    float& cameraTilt;
-    float& globeSphereRadius;
-    Tilemap& tilemap;
-    PlayerCharacter& player;
-    std::vector<NonPlayerCharacter>& npcs;
-    IRenderer& renderer;
-    ParticleSystem& particles;
+    GLFWwindow* window;                     ///< GLFW window handle for input queries.
+    int screenWidth;                        ///< Window width in pixels.
+    int screenHeight;                       ///< Window height in pixels.
+    int tilesVisibleWidth;                  ///< Tiles visible horizontally at current zoom.
+    int tilesVisibleHeight;                 ///< Tiles visible vertically at current zoom.
+    glm::vec2& cameraPosition;              ///< Current camera world position (mutable).
+    glm::vec2& cameraFollowTarget;          ///< Camera follow target position (mutable).
+    bool& hasCameraFollowTarget;            ///< Whether camera has a follow target (mutable).
+    float& cameraZoom;                      ///< Camera zoom level (mutable).
+    bool& freeCameraMode;                   ///< Free camera toggle (mutable).
+    bool& enable3DEffect;                   ///< 3D perspective toggle (mutable).
+    float& cameraTilt;                      ///< Camera tilt angle (mutable).
+    float& globeSphereRadius;               ///< Globe effect radius (mutable).
+    Tilemap& tilemap;                       ///< Active tilemap for tile queries and edits.
+    PlayerCharacter& player;                ///< Player character for position/rendering.
+    std::vector<NonPlayerCharacter>& npcs;  ///< NPC list for placement and debug display.
+    IRenderer& renderer;                    ///< Active renderer for drawing overlays.
+    ParticleSystem& particles;              ///< Particle system for zone editing.
 };
 
 /**
@@ -111,7 +115,13 @@ struct EditorContext
 class Editor
 {
 public:
+    /// @brief Construct editor with all modes disabled.
     Editor();
+
+    Editor(const Editor&) = delete;
+    Editor& operator=(const Editor&) = delete;
+    Editor(Editor&&) = default;
+    Editor& operator=(Editor&&) = default;
 
     /**
      * @brief Initialize editor with available NPC types.
@@ -119,12 +129,39 @@ public:
      */
     void Initialize(const std::vector<std::string>& npcTypes);
 
-    bool IsActive() const { return m_EditorMode; }
+    /// @brief Check if the level editor is active.
+    /// @return `true` when the editor is active (toggled with E key).
+    [[nodiscard]] bool IsActive() const { return m_Active; }
+
+    /// @brief Activate or deactivate the level editor.
+    /// @param active `true` to enable, `false` to disable.
     void SetActive(bool active);
 
+    /**
+     * @brief Process keyboard input for editor hotkeys and mode switching.
+     * @param deltaTime Frame time in seconds (for camera pan speed).
+     * @param ctx Editor context providing window and game state.
+     */
     void ProcessInput(float deltaTime, const EditorContext& ctx);
+
+    /**
+     * @brief Process mouse input for tile placement and drag operations.
+     * @param ctx Editor context providing cursor position and game state.
+     */
     void ProcessMouseInput(const EditorContext& ctx);
+
+    /**
+     * @brief Handle scroll wheel input for elevation and tile picker zoom.
+     * @param yoffset Scroll delta (positive = scroll up).
+     * @param ctx Editor context providing current mode state.
+     */
     void HandleScroll(double yoffset, const EditorContext& ctx);
+
+    /**
+     * @brief Update editor state (tile picker smooth scrolling).
+     * @param deltaTime Frame time in seconds.
+     * @param ctx Editor context providing game state.
+     */
     void Update(float deltaTime, const EditorContext& ctx);
 
     /**
@@ -143,12 +180,26 @@ public:
      */
     void RenderNoProjectionAnchors(const EditorContext& ctx);
 
-    bool IsDebugMode() const { return m_DebugMode; }
-    bool IsShowDebugInfo() const { return m_ShowDebugInfo; }
-    bool IsShowNoProjectionAnchors() const { return m_ShowNoProjectionAnchors; }
-    bool ShowTilePicker() const { return m_ShowTilePicker; }
+    /// @brief Check if debug overlays are enabled.
+    /// @return `true` when debug overlays are visible (F3 toggle).
+    [[nodiscard]] bool IsDebugMode() const { return m_DebugMode; }
 
+    /// @brief Check if text debug info (FPS, coords) is shown.
+    /// @return `true` when debug text is visible.
+    [[nodiscard]] bool IsShowDebugInfo() const { return m_ShowDebugInfo; }
+
+    /// @brief Check if no-projection anchor markers are shown.
+    /// @return `true` when anchor markers are visible.
+    [[nodiscard]] bool IsShowNoProjectionAnchors() const { return m_ShowNoProjectionAnchors; }
+
+    /// @brief Check if the tile picker panel is visible.
+    /// @return `true` when the tile picker is open.
+    [[nodiscard]] bool IsShowTilePicker() const { return m_ShowTilePicker; }
+
+    /// @brief Toggle debug overlay rendering on/off.
     void ToggleDebugMode();
+
+    /// @brief Toggle text debug info display on/off.
     void ToggleShowDebugInfo();
 
     /**
@@ -199,8 +250,14 @@ private:
 
     /// @}
 
+    /// @brief Clear all mutually exclusive edit sub-modes.
+    void ClearAllEditModes();
+
     /// @brief Recalculate all NPC patrol routes after navigation changes.
     void RecalculateNPCPatrolRoutes(const EditorContext& ctx);
+
+    /// @brief Lazily compute and cache no-projection structure bounds for the current frame.
+    void EnsureNoProjBoundsCache(const EditorContext& ctx);
 
     /// @brief Map rotated tile offset to source tile coordinates.
     /// @param dx Rotated offset X.
@@ -242,7 +299,7 @@ private:
     /// @name Mode Flags
     /// Only one sub-mode is active at a time; toggled via hotkeys (see class docs).
     /// @{
-    bool m_EditorMode;            ///< Master toggle for the level editor (E key).
+    bool m_Active;                ///< Master toggle for the level editor (E key).
     bool m_ShowTilePicker;        ///< Whether the tile picker panel is visible.
     bool m_EditNavigationMode;    ///< Painting walkability flags (M key).
     bool m_ElevationEditMode;     ///< Painting elevation values (H key).
@@ -345,5 +402,24 @@ private:
     float m_PlacementCameraZoom;    ///< Snapshot of camera zoom when placement began.
     bool m_IsPlacingMultiTile;      ///< True while previewing multi-tile placement.
     int m_MultiTileRotation;        ///< Rotation in degrees (0, 90, 180, or 270).
+    /// @}
+
+    /// @name Key Debounce State
+    /// Per-key pressed tracking for edge-triggered input (replaces function-local statics).
+    /// @{
+    bool m_KeyPressed[GLFW_KEY_LAST + 1] = {};  ///< True while a key is held from last press.
+    int m_LastDeletedTileX;                     ///< Last tile column erased during delete-drag.
+    int m_LastDeletedTileY;                     ///< Last tile row erased during delete-drag.
+    /// @}
+
+    /// @name No-Projection Bounds Cache
+    /// Computed once per frame and shared between overlay rendering passes.
+    /// @{
+    struct NoProjGroupBounds
+    {
+        int minX, maxX, minY, maxY;
+    };
+    std::vector<NoProjGroupBounds> m_CachedNoProjBounds;
+    bool m_NoProjBoundsCached = false;  ///< Reset at the start of each Render() call.
     /// @}
 };

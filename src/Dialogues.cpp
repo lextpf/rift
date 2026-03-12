@@ -1,4 +1,4 @@
-#include "EditorDialogue.h"
+#include "Dialogues.h"
 
 const MysteryDialogueData kMysteryDialogues[] = {
     {"ufo_sighting",
@@ -100,8 +100,7 @@ const MysteryDialogueData kMysteryDialogues[] = {
      "to the touch at dawn. Unnatural warm.",
      "I'll catch them in the act."}};
 
-const int kMysteryDialogueCount =
-    static_cast<int>(sizeof(kMysteryDialogues) / sizeof(kMysteryDialogues[0]));
+const int kMysteryDialogueCount = static_cast<int>(std::size(kMysteryDialogues));
 
 void BuildMysteryDialogueTree(DialogueTree& tree,
                               std::string& outNpcName,
