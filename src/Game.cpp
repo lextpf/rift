@@ -1247,14 +1247,17 @@ void Game::Render()
                 // Pass explicit flag to avoid RenderSingleTile re-reading from layer
                 if (item.tile.noProjection)
                 {
-                    // Keep perspective suspended for no-projection tiles
-                    // RenderSingleTile handles the upright rendering algorithm
+                    // Allow perspective during no-projection tile rendering so structures can
+                    // use warped-quad grounding in globe mode.
+                    m_Renderer->SuspendPerspective(false);
                     m_Tilemap.RenderSingleTile(*m_Renderer,
                                                item.tile.x,
                                                item.tile.y,
                                                item.tile.layer,
                                                m_CameraPosition,
                                                1);
+                    // Suspend perspective again for subsequent entities
+                    m_Renderer->SuspendPerspective(true);
                 }
                 else
                 {
