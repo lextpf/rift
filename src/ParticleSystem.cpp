@@ -941,81 +941,37 @@ void ParticleSystem::Render(IRenderer& renderer,
 
         // Convert world position to screen position
         data.screenPos = p.position - cameraPos;
+        glm::vec2 rawScreenPos = data.screenPos;
 
         // Get perspective state for viewport checking
         auto perspState = renderer.GetPerspectiveState();
 
-        // NoProjection particles: Use tilemap's actual structure bounds
-        if (isNoProjection && m_Tilemap && m_TileWidth > 0 && m_TileHeight > 0)
+        if (isNoProjection)
         {
-            // Find which tile the particle is on
-            int tileX = static_cast<int>(std::floor(p.position.x / m_TileWidth));
-            int tileY = static_cast<int>(std::floor(p.position.y / m_TileHeight));
-
-            // Get the actual structure bounds from the tilemap
-            int minTileX, maxTileX, minTileY, maxTileY;
-            if (m_Tilemap->FindNoProjectionStructureBounds(
-                    tileX, tileY, minTileX, maxTileX, minTileY, maxTileY))
+            bool projectedOnStructure = false;
+            if (m_Tilemap)
             {
-                // Structure bounds in pixels
-                float leftPixelX = static_cast<float>(minTileX * m_TileWidth);
-                float rightPixelX = static_cast<float>((maxTileX + 1) * m_TileWidth);
-                float bottomPixelY = static_cast<float>((maxTileY + 1) * m_TileHeight);
-
-                // Calculate anchor screen position
-                float anchorScreenX = leftPixelX - cameraPos.x;
-                float anchorScreenY = bottomPixelY - cameraPos.y;
-
-                bool anchorInViewport =
-                    renderer.IsPointInExpandedViewport(glm::vec2(anchorScreenX, anchorScreenY));
-
-                float scaleX = 1.0f;
-                glm::vec2 projectedLeft(anchorScreenX, anchorScreenY);
-
-                if (anchorInViewport)
+                glm::vec2 structureScreenPos;
+                projectedOnStructure = m_Tilemap->ProjectNoProjectionStructurePoint(
+                    renderer, p.position, cameraPos, structureScreenPos);
+                if (projectedOnStructure)
                 {
-                    // Project bottom-left and bottom-right corners
-                    projectedLeft = renderer.ProjectPoint(glm::vec2(anchorScreenX, anchorScreenY));
-                    glm::vec2 projectedRight =
-                        renderer.ProjectPoint(glm::vec2(rightPixelX - cameraPos.x, anchorScreenY));
-
-                    // Calculate horizontal scale based on projected width
-                    float originalWidth = rightPixelX - leftPixelX;
-                    float projectedWidth = projectedRight.x - projectedLeft.x;
-                    scaleX = (originalWidth > 0.0f) ? (projectedWidth / originalWidth) : 1.0f;
-
-                    // Apply exponential Y offset
-                    float distanceFactor = 1.0f - scaleX;
-                    float exponent = 2.0f;
-                    float multiplier = static_cast<float>(m_TileHeight) * 4.0f;
-                    float exponentialYOffset = std::pow(distanceFactor, exponent) * multiplier;
-                    projectedLeft.y += exponentialYOffset;
+                    data.screenPos = structureScreenPos;
                 }
-
-                // Calculate particle position relative to structure
-                float tileLeftX = static_cast<float>(tileX * m_TileWidth);
-                float tileTopY = static_cast<float>(tileY * m_TileHeight);
-
-                float tileRelativeX = tileLeftX - leftPixelX;
-                float tileRelativeY = tileTopY - bottomPixelY;
-
-                float offsetInTileX = p.position.x - tileLeftX;
-                float offsetInTileY = p.position.y - tileTopY;
-
-                data.screenPos.x = projectedLeft.x + (tileRelativeX + offsetInTileX) * scaleX;
-                data.screenPos.y = projectedLeft.y + tileRelativeY + offsetInTileY;
             }
-            m_NoProjectionBatch.push_back(data);
-        }
-        else if (isNoProjection)
-        {
-            bool inViewport = renderer.IsPointInExpandedViewport(data.screenPos);
 
-            if (inViewport)
+            if (!projectedOnStructure)
             {
-                glm::vec2 projected = renderer.ProjectPoint(data.screenPos);
-                data.screenPos = projected;
+                bool inViewport = renderer.IsPointInExpandedViewport(data.screenPos);
+                if (inViewport)
+                {
+                    data.screenPos = renderer.ProjectPoint(data.screenPos);
+                }
             }
+
+            if (renderer.IsPointBehindSphere(rawScreenPos) ||
+                renderer.IsPointBehindSphere(data.screenPos))
+                continue;
             m_NoProjectionBatch.push_back(data);
         }
         else

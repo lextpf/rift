@@ -66,6 +66,39 @@ static glm::vec2 ComputeSteppedEdgeVertex(IRenderer& renderer,
     return renderer.ComputeBuildingVertex(edgeBaseLeft, edgeBaseRight, u, v, edgeHeightWorld);
 }
 
+/// Compute one shared strip-mesh point for an arbitrary world Y position.
+/// Unlike tile corner generation, this accepts continuous Y so particles can
+/// stay locked to the same warped mesh as no-projection structure tiles.
+static glm::vec2 ComputeSteppedEdgePoint(IRenderer& renderer,
+                                         float anchorMinScreenX,
+                                         float anchorMaxScreenX,
+                                         float bottomScreenY,
+                                         int layerMinY,
+                                         int layerMaxY,
+                                         int tileHeight,
+                                         int structureWidthTiles,
+                                         int edgeIndex,
+                                         float edgeEffMaxY,
+                                         float worldTileY)
+{
+    float edgeHeightTiles = std::max(1.0f, edgeEffMaxY - static_cast<float>(layerMinY) + 1.0f);
+    float edgeBaseY = bottomScreenY -
+                      static_cast<float>(layerMaxY - edgeEffMaxY) * static_cast<float>(tileHeight);
+
+    glm::vec2 edgeBaseLeft(anchorMinScreenX, edgeBaseY);
+    glm::vec2 edgeBaseRight(anchorMaxScreenX, edgeBaseY);
+
+    float safeWidth = static_cast<float>(std::max(1, structureWidthTiles));
+    float u = static_cast<float>(edgeIndex) / safeWidth;
+
+    float edgeTileRow = edgeEffMaxY - worldTileY;
+    float v = (edgeTileRow + 1.0f) / edgeHeightTiles;
+    v = std::max(-2.0f, std::min(2.0f, v));
+
+    float edgeHeightWorld = edgeHeightTiles * static_cast<float>(tileHeight);
+    return renderer.ComputeBuildingVertex(edgeBaseLeft, edgeBaseRight, u, v, edgeHeightWorld);
+}
+
 /// Smooth a shared-edge profile while preserving watertight constraints.
 /// The profile is only raised (never lowered), so each edge stays at or below
 /// the ground and column continuity constraints are preserved.
@@ -718,6 +751,231 @@ bool Tilemap::FindNoProjectionStructureBounds(
         stack.push_back({cx, cy + 1});
     }
 
+    return true;
+}
+
+bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
+                                                const glm::vec2& worldPos,
+                                                const glm::vec2& cameraPos,
+                                                glm::vec2& outScreenPos) const
+{
+    if (m_TileWidth <= 0 || m_TileHeight <= 0)
+        return false;
+
+    int queryTileX = static_cast<int>(std::floor(worldPos.x / static_cast<float>(m_TileWidth)));
+    int queryTileY = static_cast<int>(std::floor(worldPos.y / static_cast<float>(m_TileHeight)));
+
+    if (queryTileX < 0 || queryTileX >= m_MapWidth)
+        return false;
+
+    struct RowCandidate
+    {
+        bool valid = false;
+        size_t layerIdx = 0;
+        int structId = -1;
+        int tileY = 0;
+    };
+
+    auto findCandidateInRow = [&](int tileY) -> RowCandidate
+    {
+        RowCandidate best;
+        if (tileY < 0 || tileY >= m_MapHeight)
+            return best;
+
+        size_t idx = static_cast<size_t>(tileY * m_MapWidth + queryTileX);
+        bool haveBest = false;
+        int bestRenderOrder = 0;
+
+        for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
+        {
+            const TileLayer& layer = m_Layers[layerIdx];
+            if (idx >= layer.noProjection.size() || !layer.noProjection[idx])
+                continue;
+            if (idx >= layer.structureId.size())
+                continue;
+
+            int sid = layer.structureId[idx];
+            if (sid < 0 || sid >= static_cast<int>(m_NoProjectionStructures.size()))
+                continue;
+
+            if (!haveBest || layer.renderOrder > bestRenderOrder)
+            {
+                haveBest = true;
+                bestRenderOrder = layer.renderOrder;
+                best.valid = true;
+                best.layerIdx = layerIdx;
+                best.structId = sid;
+                best.tileY = tileY;
+            }
+        }
+
+        return best;
+    };
+
+    constexpr int kSearchDownTiles = 8;
+    RowCandidate candidate;
+    for (int dy = 0; dy <= kSearchDownTiles; ++dy)
+    {
+        int testY = queryTileY + dy;
+        candidate = findCandidateInRow(testY);
+        if (candidate.valid)
+            break;
+    }
+
+    if (!candidate.valid)
+        return false;
+
+    const TileLayer& layer = m_Layers[candidate.layerIdx];
+    int structId = candidate.structId;
+
+    int minX = queryTileX;
+    int maxX = queryTileX;
+    int minY = candidate.tileY;
+    int maxY = candidate.tileY;
+    bool foundAny = false;
+
+    for (int sy = 0; sy < m_MapHeight; ++sy)
+    {
+        for (int sx = 0; sx < m_MapWidth; ++sx)
+        {
+            size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
+            if (sIdx >= layer.noProjection.size() || !layer.noProjection[sIdx])
+                continue;
+            if (sIdx >= layer.structureId.size() || layer.structureId[sIdx] != structId)
+                continue;
+
+            if (!foundAny)
+            {
+                foundAny = true;
+                minX = maxX = sx;
+                minY = maxY = sy;
+            }
+            else
+            {
+                minX = std::min(minX, sx);
+                maxX = std::max(maxX, sx);
+                minY = std::min(minY, sy);
+                maxY = std::max(maxY, sy);
+            }
+        }
+    }
+
+    if (!foundAny)
+        return false;
+
+    int structureWidthTiles = maxX - minX + 1;
+    if (structureWidthTiles < 1)
+        return false;
+
+    float tileWf = static_cast<float>(m_TileWidth);
+    float tileHf = static_cast<float>(m_TileHeight);
+    float localXTiles = (worldPos.x / tileWf) - static_cast<float>(minX);
+    float widthTilesF = static_cast<float>(structureWidthTiles);
+
+    if (localXTiles < 0.0f || localXTiles > widthTilesF)
+        return false;
+
+    localXTiles = std::max(0.0f, std::min(localXTiles, widthTilesF - 0.0001f));
+    int tileCol = static_cast<int>(std::floor(localXTiles));
+    float fracX = localXTiles - static_cast<float>(tileCol);
+
+    std::vector<int> colEffMaxY(structureWidthTiles, minY - 1);
+    for (int col = 0; col < structureWidthTiles; ++col)
+    {
+        int scanX = minX + col;
+        for (int cy = maxY; cy >= minY; --cy)
+        {
+            size_t cIdx = static_cast<size_t>(cy * m_MapWidth + scanX);
+            if (cIdx >= layer.noProjection.size() || !layer.noProjection[cIdx])
+                continue;
+            if (cIdx >= layer.structureId.size() || layer.structureId[cIdx] != structId)
+                continue;
+
+            int ctid = layer.tiles[cIdx];
+            if (ctid < 0)
+                continue;
+
+            if (cIdx < layer.animationMap.size())
+            {
+                int animId = layer.animationMap[cIdx];
+                if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
+                {
+                    ctid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
+                }
+            }
+
+            if (!IsTileTransparent(ctid))
+            {
+                colEffMaxY[col] = cy;
+                break;
+            }
+        }
+    }
+
+    int effMaxY = colEffMaxY[tileCol];
+    if (effMaxY < minY)
+        return false;
+
+    std::vector<float> edgeEffMaxY(structureWidthTiles + 1, static_cast<float>(minY - 1));
+    edgeEffMaxY[0] = static_cast<float>(colEffMaxY[0]);
+    for (int edge = 1; edge < structureWidthTiles; ++edge)
+    {
+        edgeEffMaxY[edge] = static_cast<float>(std::max(colEffMaxY[edge - 1], colEffMaxY[edge]));
+    }
+    edgeEffMaxY[structureWidthTiles] = static_cast<float>(colEffMaxY[structureWidthTiles - 1]);
+    constexpr float kMaxEdgeStepTiles = 0.5f;
+    SmoothSharedEdgeProfile(edgeEffMaxY, kMaxEdgeStepTiles);
+
+    int leftEdgeIndex = tileCol;
+    int rightEdgeIndex = tileCol + 1;
+    if (leftEdgeIndex < 0 || rightEdgeIndex >= static_cast<int>(edgeEffMaxY.size()))
+        return false;
+
+    const NoProjectionStructure& structDef = m_NoProjectionStructures[structId];
+    float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
+    float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
+    float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
+    float bottomScreenY = bottomWorldY - cameraPos.y + 1.0f;
+    float anchorMinScreenX = anchorMinX - cameraPos.x;
+    float anchorMaxScreenX = anchorMaxX - cameraPos.x;
+
+    int colHeightTiles = effMaxY - minY + 1;
+    float worldTileY = worldPos.y / tileHf;
+    float pointTileRow = static_cast<float>(effMaxY) - worldTileY;
+    glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f, bottomScreenY);
+    float horizonFade = ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
+    int hiddenRows = std::max(
+        0,
+        std::min(colHeightTiles,
+                 static_cast<int>(std::floor(horizonFade * static_cast<float>(colHeightTiles)))));
+    if (pointTileRow < static_cast<float>(hiddenRows))
+        return false;
+
+    glm::vec2 leftPoint = ComputeSteppedEdgePoint(renderer,
+                                                  anchorMinScreenX,
+                                                  anchorMaxScreenX,
+                                                  bottomScreenY,
+                                                  minY,
+                                                  maxY,
+                                                  m_TileHeight,
+                                                  structureWidthTiles,
+                                                  leftEdgeIndex,
+                                                  edgeEffMaxY[leftEdgeIndex],
+                                                  worldTileY);
+
+    glm::vec2 rightPoint = ComputeSteppedEdgePoint(renderer,
+                                                   anchorMinScreenX,
+                                                   anchorMaxScreenX,
+                                                   bottomScreenY,
+                                                   minY,
+                                                   maxY,
+                                                   m_TileHeight,
+                                                   structureWidthTiles,
+                                                   rightEdgeIndex,
+                                                   edgeEffMaxY[rightEdgeIndex],
+                                                   worldTileY);
+
+    outScreenPos = leftPoint + (rightPoint - leftPoint) * fracX;
     return true;
 }
 

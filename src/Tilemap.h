@@ -624,6 +624,30 @@ public:
         int tileX, int tileY, int& outMinX, int& outMaxX, int& outMinY, int& outMaxY) const;
 
     /**
+     * @brief Project a world-space point onto a no-projection structure surface.
+     *
+
+     * * Uses the same stepped shared-edge mesh math as no-projection structure tile
+     *
+     * rendering so attached effects (for example particles) remain locked to the
+     * structure
+     * under globe/fisheye projection.
+     *
+     * @param renderer Active renderer.
+     * @param
+     * worldPos World position in pixels.
+     * @param cameraPos Camera world position in pixels.
+
+     * * @param outScreenPos Output projected screen-space position.
+     * @return true when the
+     * point was projected using a no-projection structure.
+     */
+    bool ProjectNoProjectionStructurePoint(IRenderer& renderer,
+                                           const glm::vec2& worldPos,
+                                           const glm::vec2& cameraPos,
+                                           glm::vec2& outScreenPos) const;
+
+    /**
      * @brief Add a new no-projection structure definition.
      * @param leftAnchor Left anchor world position (corner of tile).
      * @param rightAnchor Right anchor world position (corner of tile).
