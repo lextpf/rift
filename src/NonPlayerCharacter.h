@@ -182,9 +182,22 @@ public:
      */
     glm::vec2 GetSpriteCoords(int frame, NPCDirection dir) const;
 
-    /// @name Public State (for editor/debug access)
-    /// @{
+    /// @brief Get NPC's current target tile column (next waypoint).
+    int GetTargetTileX() const { return m_TargetTileX; }
+    /// @brief Get NPC's current target tile row (next waypoint).
+    int GetTargetTileY() const { return m_TargetTileY; }
 
+    /// @brief Get read-only reference to the patrol route.
+    const PatrolRoute& GetPatrolRoute() const { return m_PatrolRoute; }
+    /// @brief Get mutable reference to the patrol route (for editor recalculation).
+    PatrolRoute& GetPatrolRoute() { return m_PatrolRoute; }
+
+    /// @brief Get the sprite sheet texture (const, for rendering).
+    const Texture& GetSpriteSheet() const { return m_SpriteSheet; }
+    /// @brief Get mutable reference to sprite sheet (for texture upload).
+    Texture& GetSpriteSheet() { return m_SpriteSheet; }
+
+private:
     Texture m_SpriteSheet;        ///< Loaded sprite sheet texture
     std::string m_Type;           ///< NPC type identifier (e.g., "elder", "guard")
     std::string m_Name;           ///< Display name shown during dialogue
@@ -206,9 +219,6 @@ public:
 
     PatrolRoute m_PatrolRoute;  ///< Generated patrol waypoints through navigation map
 
-    /// @}
-
-private:
     /// @brief Cycle through random facing directions during idle.
     /// @param deltaTime Frame time in seconds.
     void UpdateLookAround(float deltaTime);

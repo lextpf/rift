@@ -112,14 +112,16 @@ public:
     /**
      * @brief Get a boolean flag value.
      * @param key Flag name.
-     * @return True if flag is set and equals true or 1, false otherwise.
+     * @return True if flag is set and equals "true", false otherwise.
      */
     [[nodiscard]] bool GetFlag(const std::string& key) const
     {
         auto it = m_Flags.find(key);
         if (it == m_Flags.end())
+        {
             return false;
-        return (it->second == "true" || it->second == "1");
+        }
+        return it->second == "true";
     }
 
     /**
@@ -160,6 +162,58 @@ public:
      * @brief Clear all state.
      */
     void Clear() { m_Flags.clear(); }
+
+    /// @name Typed Quest API
+    /// @brief Structured quest operations that enforce the naming convention.
+    ///
+    /// These methods use the same underlying flag storage as SetFlag/HasFlag
+    /// but encode the `accepted_`/`completed_` prefix convention so callers
+    /// cannot mistype flag names.
+    /// @{
+
+    /**
+     * @brief Accept a quest and store its description.
+     *
+     * Sets `"accepted_<questName>"` to the given description string.
+     *
+     * @param questName Quest identifier (e.g., "ufo_quest").
+     * @param description Human-readable quest objective text.
+     */
+    void AcceptQuest(const std::string& questName, const std::string& description)
+    {
+        m_Flags["accepted_" + questName] = description;
+    }
+
+    /**
+     * @brief Mark a quest as completed.
+     *
+     * Sets `"completed_<questName>"` to `"true"`.
+     *
+     * @param questName Quest identifier (e.g., "ufo_quest").
+     */
+    void CompleteQuest(const std::string& questName) { m_Flags["completed_" + questName] = "true"; }
+
+    /**
+     * @brief Check if a quest is currently active (accepted but not completed).
+     * @param questName Quest identifier (e.g., "ufo_quest").
+     * @return True if accepted and not yet completed.
+     */
+    [[nodiscard]] bool IsQuestActive(const std::string& questName) const
+    {
+        return HasFlag("accepted_" + questName) && !HasFlag("completed_" + questName);
+    }
+
+    /**
+     * @brief Check if a quest has been completed.
+     * @param questName Quest identifier (e.g., "ufo_quest").
+     * @return True if the completed flag exists.
+     */
+    [[nodiscard]] bool IsQuestCompleted(const std::string& questName) const
+    {
+        return HasFlag("completed_" + questName);
+    }
+
+    /// @}
 
     /**
      * @brief Get list of active quest names.

@@ -466,10 +466,11 @@ public:
         double resultX = static_cast<double>(p.x);
         double resultY = static_cast<double>(p.y);
 
-        perspectiveTransform::Params params;
-        params.applyGlobe = (s.mode == ProjectionMode::Globe || s.mode == ProjectionMode::Fisheye);
-        params.applyVanishing =
+        bool hasGlobe = (s.mode == ProjectionMode::Globe || s.mode == ProjectionMode::Fisheye);
+        bool hasVanishing =
             (s.mode == ProjectionMode::VanishingPoint || s.mode == ProjectionMode::Fisheye);
+
+        perspectiveTransform::Params params;
         params.centerX = static_cast<double>(s.viewWidth) * 0.5;
         params.centerY = static_cast<double>(s.viewHeight) * 0.5;
         params.horizonY = static_cast<double>(s.horizonY);
@@ -479,7 +480,7 @@ public:
         params.sphereRadiusX = baseR * perspectiveTransform::kGlobeRadiusXScale;
         params.sphereRadiusY = baseR * perspectiveTransform::kGlobeRadiusYScale;
 
-        perspectiveTransform::TransformPoint(resultX, resultY, params);
+        perspectiveTransform::GetTransformFn(hasGlobe, hasVanishing)(resultX, resultY, params);
 
         return glm::vec2(static_cast<float>(resultX), static_cast<float>(resultY));
     }

@@ -174,13 +174,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     // Navigation tiles determine where NPCs can walk for pathfinding.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_M])
     {
-        m_EditNavigationMode = !m_EditNavigationMode;
-        if (m_EditNavigationMode)
+        if (m_EditMode != EditMode::Navigation)
         {
-            ClearAllEditModes();
-            m_EditNavigationMode = true;
+            m_EditMode = EditMode::Navigation;
         }
-        std::cout << "Navigation edit mode: " << (m_EditNavigationMode ? "ON" : "OFF") << std::endl;
+        else
+        {
+            m_EditMode = EditMode::None;
+        }
+        std::cout << "Navigation edit mode: " << (m_EditMode == EditMode::Navigation ? "ON" : "OFF")
+                  << std::endl;
         m_KeyPressed[GLFW_KEY_M] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_RELEASE)
@@ -194,11 +197,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Use , and . keys to cycle through available NPC types
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_N])
     {
-        m_NPCPlacementMode = !m_NPCPlacementMode;
-        if (m_NPCPlacementMode)
+        if (m_EditMode != EditMode::NPCPlacement)
         {
-            ClearAllEditModes();
-            m_NPCPlacementMode = true;
+            m_EditMode = EditMode::NPCPlacement;
             if (!m_AvailableNPCTypes.empty())
             {
                 std::cout << "NPC placement mode: ON - Selected NPC: "
@@ -209,6 +210,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "NPC placement mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_N] = true;
@@ -224,17 +226,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Use scroll to adjust elevation value
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_H) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_H])
     {
-        m_ElevationEditMode = !m_ElevationEditMode;
-        if (m_ElevationEditMode)
+        if (m_EditMode != EditMode::Elevation)
         {
-            ClearAllEditModes();
-            m_ElevationEditMode = true;
+            m_EditMode = EditMode::Elevation;
             std::cout << "Elevation edit mode: ON - Current elevation: " << m_CurrentElevation
                       << " pixels" << std::endl;
             std::cout << "Use scroll wheel to adjust elevation value" << std::endl;
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "Elevation edit mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_H] = true;
@@ -250,17 +251,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Used for buildings that should appear to have height in 3D mode
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_B])
     {
-        m_NoProjectionEditMode = !m_NoProjectionEditMode;
-        if (m_NoProjectionEditMode)
+        if (m_EditMode != EditMode::NoProjection)
         {
-            ClearAllEditModes();
-            m_NoProjectionEditMode = true;
+            m_EditMode = EditMode::NoProjection;
             std::cout << "No-projection edit mode: ON (Layer " << m_CurrentLayer
                       << ") - Click to mark tiles that bypass 3D projection" << std::endl;
             std::cout << "Use 1-6 keys to change layer" << std::endl;
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "No-projection edit mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_B] = true;
@@ -276,17 +276,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Used for tiles that should appear in front/behind player based on Y
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_Y])
     {
-        m_YSortPlusEditMode = !m_YSortPlusEditMode;
-        if (m_YSortPlusEditMode)
+        if (m_EditMode != EditMode::YSortPlus)
         {
-            ClearAllEditModes();
-            m_YSortPlusEditMode = true;
+            m_EditMode = EditMode::YSortPlus;
             std::cout << "Y-sort+1 edit mode: ON (Layer " << m_CurrentLayer
                       << ") - Click to mark tiles for Y-sorting with entities" << std::endl;
             std::cout << "Use 1-6 keys to change layer" << std::endl;
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "Y-sort-plus edit mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_Y] = true;
@@ -302,11 +301,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Only affects tiles that are already Y-sort-plus
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_O) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_O])
     {
-        m_YSortMinusEditMode = !m_YSortMinusEditMode;
-        if (m_YSortMinusEditMode)
+        if (m_EditMode != EditMode::YSortMinus)
         {
-            ClearAllEditModes();
-            m_YSortMinusEditMode = true;
+            m_EditMode = EditMode::YSortMinus;
             std::cout << "========================================" << std::endl;
             std::cout << "Y-SORT-1 EDIT MODE: ON (Layer " << m_CurrentLayer << ")" << std::endl;
             std::cout << "Click the BOTTOM tile of a structure to mark it" << std::endl;
@@ -315,6 +312,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "Y-sort-minus edit mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_O] = true;
@@ -330,17 +328,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Use , and . keys to cycle particle type
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_J) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_J])
     {
-        m_ParticleZoneEditMode = !m_ParticleZoneEditMode;
-        if (m_ParticleZoneEditMode)
+        if (m_EditMode != EditMode::ParticleZone)
         {
-            ClearAllEditModes();
-            m_ParticleZoneEditMode = true;
+            m_EditMode = EditMode::ParticleZone;
             std::cout << "Particle zone edit mode: ON - Type: "
-                      << PARTICLE_TYPE_NAMES[static_cast<int>(m_CurrentParticleType)] << std::endl;
+                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
             std::cout << "Click and drag to place zones, use , and . to change type" << std::endl;
         }
         else
         {
+            m_EditMode = EditMode::None;
             std::cout << "Particle zone edit mode: OFF" << std::endl;
         }
         m_KeyPressed[GLFW_KEY_J] = true;
@@ -351,14 +348,15 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     }
 
     // Particle type cycling
-    if (m_Active && m_ParticleZoneEditMode)
+    if (m_Active && (m_EditMode == EditMode::ParticleZone))
     {
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
-            int type = static_cast<int>(m_CurrentParticleType);
-            type = (type + 7) % 8;  // Decrement with wrap-around
+            constexpr int N = static_cast<int>(EnumTraits<ParticleType>::Count);
+            int type = (static_cast<int>(m_CurrentParticleType) + N - 1) % N;
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            std::cout << "Particle type: " << PARTICLE_TYPE_NAMES[type] << std::endl;
+            std::cout << "Particle type: "
+                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
             m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
@@ -366,10 +364,11 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
-            int type = static_cast<int>(m_CurrentParticleType);
-            type = (type + 1) % 8;  // Next with wrap-around
+            constexpr int N = static_cast<int>(EnumTraits<ParticleType>::Count);
+            int type = (static_cast<int>(m_CurrentParticleType) + 1) % N;
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            std::cout << "Particle type: " << PARTICLE_TYPE_NAMES[type] << std::endl;
+            std::cout << "Particle type: "
+                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
             m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
@@ -398,11 +397,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Delete to remove current structure
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_G) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_G])
     {
-        m_StructureEditMode = !m_StructureEditMode;
-        if (m_StructureEditMode)
+        if (m_EditMode != EditMode::Structure)
         {
-            ClearAllEditModes();
-            m_StructureEditMode = true;
+            m_EditMode = EditMode::Structure;
             m_PlacingAnchor = 0;
             m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
             m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
@@ -419,6 +416,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
         else
         {
+            m_EditMode = EditMode::None;
             m_PlacingAnchor = 0;
             std::cout << "Structure edit mode: OFF" << std::endl;
         }
@@ -430,7 +428,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     }
 
     // Structure mode controls
-    if (m_Active && m_StructureEditMode)
+    if (m_Active && (m_EditMode == EditMode::Structure))
     {
         // Cycle through structures with , and .
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
@@ -516,11 +514,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Use , and . to adjust frame duration
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_K) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_K])
     {
-        m_AnimationEditMode = !m_AnimationEditMode;
-        if (m_AnimationEditMode)
+        if (m_EditMode != EditMode::Animation)
         {
-            ClearAllEditModes();
-            m_AnimationEditMode = true;
+            m_EditMode = EditMode::Animation;
             m_AnimationFrames.clear();
             std::cout << "Animation edit mode: ON" << std::endl;
             std::cout << "Click tiles in picker to add frames, Enter to create, Esc to cancel"
@@ -532,6 +528,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
         else
         {
+            m_EditMode = EditMode::None;
             m_AnimationFrames.clear();
             m_SelectedAnimationId = -1;
             std::cout << "Animation edit mode: OFF" << std::endl;
@@ -544,7 +541,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     }
 
     // Animation frame duration adjustment and controls
-    if (m_Active && m_AnimationEditMode)
+    if (m_Active && (m_EditMode == EditMode::Animation))
     {
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
@@ -606,7 +603,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     // Cycles through available NPC types when in NPC placement mode.
     // Comma (,) previous type, Period (.) next type
     // Wraps around at list boundaries.
-    if (m_Active && m_NPCPlacementMode && !m_AvailableNPCTypes.empty())
+    if (m_Active && (m_EditMode == EditMode::NPCPlacement) && !m_AvailableNPCTypes.empty())
     {
         // Comma key cycles to previous NPC type
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
@@ -912,7 +909,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             tileY < ctx.tilemap.GetMapHeight())
         {
             // Animation edit mode, right-click removes animation from tile
-            if (m_AnimationEditMode)
+            if ((m_EditMode == EditMode::Animation))
             {
                 int currentAnim = ctx.tilemap.GetTileAnimation(tileX, tileY, m_CurrentLayer);
                 if (currentAnim >= 0)
@@ -925,7 +922,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 return;
             }
             // Elevation edit mode, right-click clears elevation at tile
-            else if (m_ElevationEditMode)
+            else if ((m_EditMode == EditMode::Elevation))
             {
                 ctx.tilemap.SetElevation(tileX, tileY, 0);
                 std::cout << "Cleared elevation at (" << tileX << ", " << tileY << ")" << std::endl;
@@ -933,7 +930,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             }
             // Structure edit mode, right-click clears structure assignment from tiles
             // Shift+right-click, flood-fill to clear all connected tiles
-            else if (m_StructureEditMode)
+            else if ((m_EditMode == EditMode::Structure))
             {
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -962,7 +959,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             }
             // No-projection edit mode, right-click clears no-projection flag for current layer
             // Shift+right-click, flood-fill to clear all connected tiles
-            else if (m_NoProjectionEditMode)
+            else if ((m_EditMode == EditMode::NoProjection))
             {
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -1003,7 +1000,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             }
             // Y-sort-plus edit mode, right-click clears Y-sort-plus flag for current layer
             // Shift+right-click, flood-fill to clear all connected tiles
-            else if (m_YSortPlusEditMode)
+            else if ((m_EditMode == EditMode::YSortPlus))
             {
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -1032,7 +1029,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             }
             // Y-sort-minus edit mode, right-click clears Y-sort-minus flag for current layer
             // Shift+right-click, flood-fill to clear all connected tiles
-            else if (m_YSortMinusEditMode)
+            else if ((m_EditMode == EditMode::YSortMinus))
             {
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -1060,7 +1057,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 m_RightMousePressed = true;
             }
             // Particle zone edit mode, right-click removes zone under cursor
-            else if (m_ParticleZoneEditMode)
+            else if ((m_EditMode == EditMode::ParticleZone))
             {
                 // Find zone under cursor and remove it
                 auto* zones = ctx.tilemap.GetParticleZonesMutable();
@@ -1070,7 +1067,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     if (worldX >= zone.position.x && worldX < zone.position.x + zone.size.x &&
                         worldY >= zone.position.y && worldY < zone.position.y + zone.size.y)
                     {
-                        std::cout << "Removed " << PARTICLE_TYPE_NAMES[static_cast<int>(zone.type)]
+                        std::cout << "Removed " << EnumTraits<ParticleType>::ToString(zone.type)
                                   << " zone at (" << zone.position.x << ", " << zone.position.y
                                   << ")" << std::endl;
                         ctx.particles.OnZoneRemoved(static_cast<int>(i));
@@ -1080,7 +1077,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
                 m_RightMousePressed = true;
             }
-            else if (m_EditNavigationMode)
+            else if ((m_EditMode == EditMode::Navigation))
             {
                 // Navigation editing mode, support drag-to-draw
                 bool navigationChanged = false;
@@ -1199,7 +1196,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 if (clickedTileID >= 0 && clickedTileID < totalTiles)
                 {
                     // Animation edit mode, collect frames instead of normal selection
-                    if (m_AnimationEditMode)
+                    if ((m_EditMode == EditMode::Animation))
                     {
                         // Add frame to animation
                         m_AnimationFrames.push_back(clickedTileID);
@@ -1245,7 +1242,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Reset mouse pressed state when mouse released in animation mode
-        if (!leftMouseDown && m_AnimationEditMode && m_MousePressed)
+        if (!leftMouseDown && (m_EditMode == EditMode::Animation) && m_MousePressed)
         {
             m_MousePressed = false;
         }
@@ -1320,7 +1317,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         int tileY = st.tileY;
 
         // NPC placement mode, toggle NPC on this tile instead of placing tiles
-        if (m_Active && m_NPCPlacementMode)
+        if (m_Active && (m_EditMode == EditMode::NPCPlacement))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1404,7 +1401,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Particle zone editing mode, click and drag to create zones
-        if (m_Active && m_ParticleZoneEditMode)
+        if (m_Active && (m_EditMode == EditMode::ParticleZone))
         {
             if (!m_PlacingParticleZone)
             {
@@ -1419,7 +1416,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Animation edit mode, apply selected animation to clicked tile
-        if (m_Active && m_AnimationEditMode && m_SelectedAnimationId >= 0)
+        if (m_Active && (m_EditMode == EditMode::Animation) && m_SelectedAnimationId >= 0)
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1432,7 +1429,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Elevation editing mode, paint elevation values
-        if (m_Active && m_ElevationEditMode)
+        if (m_Active && (m_EditMode == EditMode::Elevation))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1446,7 +1443,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Structure editing mode - works like no-projection mode with anchor placement
         // Click = toggle no-projection, Shift+click = flood-fill, Ctrl+click = place anchors
-        if (m_Active && m_StructureEditMode)
+        if (m_Active && (m_EditMode == EditMode::Structure))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1551,7 +1548,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // No-projection editing mode, set no-projection flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_Active && m_NoProjectionEditMode)
+        if (m_Active && (m_EditMode == EditMode::NoProjection))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1589,7 +1586,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Y-sort-plus editing mode, set Y-sort-plus flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_Active && m_YSortPlusEditMode)
+        if (m_Active && (m_EditMode == EditMode::YSortPlus))
         {
             SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortPlus, "Y-sort-plus");
             return;
@@ -1597,7 +1594,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Y-sort-minus editing mode, set Y-sort-minus flag for current layer
         // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_Active && m_YSortMinusEditMode)
+        if (m_Active && (m_EditMode == EditMode::YSortMinus))
         {
             SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortMinus, "Y-sort-minus");
             // Warn if Y-sort-plus isn't set on this tile (only relevant for single-tile placement)
@@ -1687,7 +1684,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
     if (!leftMouseDown)
     {
         // Finalize particle zone placement on mouse release
-        if (m_PlacingParticleZone && m_ParticleZoneEditMode)
+        if (m_PlacingParticleZone && (m_EditMode == EditMode::ParticleZone))
         {
             auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
             auto zr = CalculateParticleZoneRect(
@@ -1730,7 +1727,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             zone.noProjection = hasNoProjection;
             ctx.tilemap.AddParticleZone(zone);
 
-            std::cout << "Created " << PARTICLE_TYPE_NAMES[static_cast<int>(m_CurrentParticleType)]
+            std::cout << "Created " << EnumTraits<ParticleType>::ToString(m_CurrentParticleType)
                       << " zone at (" << zr.x << ", " << zr.y << ") size " << zr.w << "x" << zr.h;
             if (hasNoProjection)
                 std::cout << " [noProjection]";
@@ -1758,7 +1755,7 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
                     glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL);
 
     // Elevation adjustment with scroll wheel when in elevation edit mode
-    if (m_ElevationEditMode && ctrlState != GLFW_PRESS)
+    if ((m_EditMode == EditMode::Elevation) && ctrlState != GLFW_PRESS)
     {
         if (yoffset > 0)
         {

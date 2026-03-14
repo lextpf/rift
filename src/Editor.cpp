@@ -21,15 +21,7 @@ Editor::Editor()
     // -- Mode flags: all sub-modes start inactive --
     : m_Active(false),
       m_ShowTilePicker(false),
-      m_EditNavigationMode(false),
-      m_ElevationEditMode(false),
-      m_NPCPlacementMode(false),
-      m_NoProjectionEditMode(false),
-      m_YSortPlusEditMode(false),
-      m_YSortMinusEditMode(false),
-      m_ParticleZoneEditMode(false),
-      m_StructureEditMode(false),
-      m_AnimationEditMode(false),
+      m_EditMode(EditMode::None),
 
       // -- Particle zone editing --
       m_CurrentParticleType(ParticleType::Firefly),  // default particle visual
@@ -196,15 +188,7 @@ void Editor::Update(float deltaTime, const EditorContext& ctx)
 
 void Editor::ClearAllEditModes()
 {
-    m_EditNavigationMode = false;
-    m_NPCPlacementMode = false;
-    m_ElevationEditMode = false;
-    m_NoProjectionEditMode = false;
-    m_YSortPlusEditMode = false;
-    m_YSortMinusEditMode = false;
-    m_ParticleZoneEditMode = false;
-    m_StructureEditMode = false;
-    m_AnimationEditMode = false;
+    m_EditMode = EditMode::None;
 }
 
 void Editor::Render(const EditorContext& ctx)

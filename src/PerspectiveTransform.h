@@ -84,8 +84,6 @@ inline double GetPerspectiveCullHeightScale(bool hasGlobe)
  */
 struct Params
 {
-    bool applyGlobe;       ///< Apply spherical globe curvature.
-    bool applyVanishing;   ///< Apply vanishing-point depth scaling.
     double centerX;        ///< Screen center X (viewWidth / 2).
     double centerY;        ///< Screen center Y (viewHeight / 2).
     double horizonY;       ///< Y position of the horizon line.
@@ -98,17 +96,21 @@ struct Params
 /**
  * @brief Transform a single point through the active projection.
  *
- * Applies globe curvature (step 1) then vanishing-point scaling (step 2)
- * in-place. Either step is skipped when its flag is false in @p p.
+ * Compile-time specialization eliminates branches in the inner loop.
+ * The 4 combinations (globe x vanishing) generate separate code paths
+ * with dead branches removed at compile time via `if constexpr`.
  *
+ * @tparam ApplyGlobe     Enable spherical globe curvature (step 1).
+ * @tparam ApplyVanishing Enable vanishing-point depth scaling (step 2).
  * @param[in,out] x  Screen-space X coordinate (modified in place).
  * @param[in,out] y  Screen-space Y coordinate (modified in place).
  * @param         p  Projection parameters.
  */
+template <bool ApplyGlobe, bool ApplyVanishing>
 inline void TransformPoint(double& x, double& y, const Params& p)
 {
     // Step 1: Apply globe curvature using true spherical projection
-    if (p.applyGlobe)
+    if constexpr (ApplyGlobe)
     {
         double Rx = std::max(1e-5, p.sphereRadiusX);
         double Ry = std::max(1e-5, p.sphereRadiusY);
@@ -127,7 +129,7 @@ inline void TransformPoint(double& x, double& y, const Params& p)
     }
 
     // Step 2: Apply vanishing point perspective
-    if (p.applyVanishing)
+    if constexpr (ApplyVanishing)
     {
         double denom = p.screenHeight - p.horizonY;
         if (denom < 1e-5)
@@ -144,15 +146,44 @@ inline void TransformPoint(double& x, double& y, const Params& p)
     }
 }
 
+/// @brief Function pointer type for a TransformPoint specialization.
+using TransformFn = void (*)(double&, double&, const Params&);
+
+/**
+ * @brief Compile-time dispatch table indexed by [applyGlobe][applyVanishing].
+ *
+ * Select the appropriate specialization once per frame, then call it
+ * in the per-vertex inner loop without any runtime branch overhead.
+ *
+ * @code{.cpp}
+ * auto fn = kTransformDispatch[hasGlobe][hasVanishing];
+ * for (auto& vertex : vertices)
+ *     fn(vertex.x, vertex.y, params);  // no branches
+ * @endcode
+ */
+inline constexpr TransformFn kTransformDispatch[2][2] = {
+    {TransformPoint<false, false>, TransformPoint<false, true>},
+    {TransformPoint<true, false>, TransformPoint<true, true>},
+};
+
+/// @brief Select the appropriate TransformPoint specialization at runtime.
+inline TransformFn GetTransformFn(bool applyGlobe, bool applyVanishing)
+{
+    return kTransformDispatch[applyGlobe][applyVanishing];
+}
+
 /**
  * @brief Transform the four corners of a quad in place.
  *
  * Convenience wrapper that converts each corner to double precision,
- * calls TransformPoint, and converts back to float.
+ * calls the appropriate TransformPoint specialization, and converts back.
  *
+ * @tparam ApplyGlobe     Enable spherical globe curvature.
+ * @tparam ApplyVanishing Enable vanishing-point depth scaling.
  * @param[in,out] corners  Array of 4 screen-space positions [TL, TR, BR, BL].
  * @param         p        Projection parameters.
  */
+template <bool ApplyGlobe, bool ApplyVanishing>
 inline void TransformCorners(glm::vec2 corners[4], const Params& p)
 {
     double dCorners[4][2];
@@ -164,7 +195,7 @@ inline void TransformCorners(glm::vec2 corners[4], const Params& p)
 
     for (int i = 0; i < 4; i++)
     {
-        TransformPoint(dCorners[i][0], dCorners[i][1], p);
+        TransformPoint<ApplyGlobe, ApplyVanishing>(dCorners[i][0], dCorners[i][1], p);
     }
 
     for (int i = 0; i < 4; i++)
@@ -172,6 +203,21 @@ inline void TransformCorners(glm::vec2 corners[4], const Params& p)
         corners[i].x = static_cast<float>(dCorners[i][0]);
         corners[i].y = static_cast<float>(dCorners[i][1]);
     }
+}
+
+/// @brief Function pointer type for a TransformCorners specialization.
+using TransformCornersFn = void (*)(glm::vec2[4], const Params&);
+
+/// @brief Compile-time dispatch table for TransformCorners.
+inline constexpr TransformCornersFn kTransformCornersDispatch[2][2] = {
+    {TransformCorners<false, false>, TransformCorners<false, true>},
+    {TransformCorners<true, false>, TransformCorners<true, true>},
+};
+
+/// @brief Select the appropriate TransformCorners specialization at runtime.
+inline TransformCornersFn GetTransformCornersFn(bool applyGlobe, bool applyVanishing)
+{
+    return kTransformCornersDispatch[applyGlobe][applyVanishing];
 }
 
 }  // namespace perspectiveTransform

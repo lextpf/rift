@@ -296,20 +296,32 @@ private:
                                            int tileWidth,
                                            int tileHeight) const;
 
-    /// @name Mode Flags
-    /// Only one sub-mode is active at a time; toggled via hotkeys (see class docs).
+    /**
+     * @enum EditMode
+     * @brief Mutually exclusive editor sub-modes, selected by hotkey.
+     *
+     * Only one sub-mode is active at a time. `None` means the default
+     * tile-placement mode is active (left-click places, right-click toggles collision).
+     */
+    enum class EditMode
+    {
+        None,          ///< Default tile placement / collision toggle.
+        Navigation,    ///< Painting walkability flags (M key).
+        Elevation,     ///< Painting elevation values (H key).
+        NPCPlacement,  ///< Placing / removing NPCs (N key).
+        NoProjection,  ///< Editing no-projection flags (B key).
+        YSortPlus,     ///< Editing Y-sort-plus flags (Y key).
+        YSortMinus,    ///< Editing Y-sort-minus flags (O key).
+        ParticleZone,  ///< Defining particle emitter zones (J key).
+        Structure,     ///< Assigning tiles to structures (G key).
+        Animation,     ///< Applying animations to tiles (K key).
+    };
+
+    /// @name Mode State
     /// @{
-    bool m_Active;                ///< Master toggle for the level editor (E key).
-    bool m_ShowTilePicker;        ///< Whether the tile picker panel is visible.
-    bool m_EditNavigationMode;    ///< Painting walkability flags (M key).
-    bool m_ElevationEditMode;     ///< Painting elevation values (H key).
-    bool m_NPCPlacementMode;      ///< Placing / removing NPCs (N key).
-    bool m_NoProjectionEditMode;  ///< Editing no-projection flags (B key).
-    bool m_YSortPlusEditMode;     ///< Editing Y-sort-plus flags (Y key).
-    bool m_YSortMinusEditMode;    ///< Editing Y-sort-minus flags (O key).
-    bool m_ParticleZoneEditMode;  ///< Defining particle emitter zones (J key).
-    bool m_StructureEditMode;     ///< Assigning tiles to structures (G key).
-    bool m_AnimationEditMode;     ///< Applying animations to tiles (K key).
+    bool m_Active;          ///< Master toggle for the level editor (E key).
+    bool m_ShowTilePicker;  ///< Whether the tile picker panel is visible.
+    EditMode m_EditMode;    ///< Current sub-mode (only one active at a time).
     /// @}
 
     /// @name Particle Zone Editing

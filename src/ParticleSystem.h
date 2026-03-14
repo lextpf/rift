@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EnumTraits.h"
 #include "IRenderer.h"
 #include "Texture.h"
 
@@ -39,15 +40,31 @@ enum class ParticleType
     Sunshine = 7   ///< Sun rays (day=yellow) / moon beams (night=blue)
 };
 
-/// Number of entries in ParticleType.
-static constexpr int PARTICLE_TYPE_COUNT = 8;
+/// Compile-time reflection for ParticleType.
+template <>
+struct EnumTraits<ParticleType>
+{
+    static constexpr size_t Count = 8;
+    static constexpr std::string_view Names[] = {
+        "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
 
-/// Human-readable names indexed by ParticleType.
-static constexpr const char* PARTICLE_TYPE_NAMES[PARTICLE_TYPE_COUNT] = {
-    "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
+    static_assert(static_cast<int>(ParticleType::Sunshine) == Count - 1,
+                  "Update EnumTraits<ParticleType> when adding new ParticleType values");
 
-static_assert(static_cast<int>(ParticleType::Sunshine) == PARTICLE_TYPE_COUNT - 1,
-              "Update PARTICLE_TYPE_NAMES when adding new ParticleType values");
+    static constexpr std::string_view ToString(ParticleType value)
+    {
+        auto i = static_cast<size_t>(value);
+        return i < Count ? Names[i] : "Unknown";
+    }
+
+    static constexpr std::optional<ParticleType> FromString(std::string_view name)
+    {
+        for (size_t i = 0; i < Count; ++i)
+            if (Names[i] == name)
+                return static_cast<ParticleType>(i);
+        return std::nullopt;
+    }
+};
 
 /**
  * @struct Particle
@@ -321,14 +338,6 @@ public:
 
 private:
     void SpawnParticleInZone(int zoneIndex, const ParticleZone& zone);
-    void SpawnFirefly(int zoneIndex, const ParticleZone& zone);
-    void SpawnRain(int zoneIndex, const ParticleZone& zone);
-    void SpawnSnow(int zoneIndex, const ParticleZone& zone);
-    void SpawnFog(int zoneIndex, const ParticleZone& zone);
-    void SpawnSparkles(int zoneIndex, const ParticleZone& zone);
-    void SpawnWisp(int zoneIndex, const ParticleZone& zone);
-    void SpawnLantern(int zoneIndex, const ParticleZone& zone);
-    void SpawnSunshine(int zoneIndex, const ParticleZone& zone);
 
     /// @name Particle Pool
     /// @{

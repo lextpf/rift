@@ -25,11 +25,12 @@ void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
 {
     if (m_Persp.enabled && !m_PerspectiveSuspended && m_Persp.viewHeight > 0.0f)
     {
-        perspectiveTransform::Params p;
-        p.applyGlobe =
+        bool hasGlobe =
             (m_Persp.mode == ProjectionMode::Globe || m_Persp.mode == ProjectionMode::Fisheye);
-        p.applyVanishing = (m_Persp.mode == ProjectionMode::VanishingPoint ||
-                            m_Persp.mode == ProjectionMode::Fisheye);
+        bool hasVanishing = (m_Persp.mode == ProjectionMode::VanishingPoint ||
+                             m_Persp.mode == ProjectionMode::Fisheye);
+
+        perspectiveTransform::Params p;
         p.centerX = static_cast<double>(m_Persp.viewWidth) * 0.5;
         p.centerY = static_cast<double>(m_Persp.viewHeight) * 0.5;
         p.horizonY = static_cast<double>(m_Persp.horizonY);
@@ -38,7 +39,8 @@ void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
         double baseR = static_cast<double>(m_Persp.sphereRadius);
         p.sphereRadiusX = baseR * perspectiveTransform::kGlobeRadiusXScale;
         p.sphereRadiusY = baseR * perspectiveTransform::kGlobeRadiusYScale;
-        perspectiveTransform::TransformCorners(corners, p);
+
+        perspectiveTransform::GetTransformCornersFn(hasGlobe, hasVanishing)(corners, p);
     }
 }
 

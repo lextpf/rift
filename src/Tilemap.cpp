@@ -1553,23 +1553,17 @@ const TileLayer& Tilemap::GetLayer(size_t index) const
 
 int Tilemap::GetLayerTile(int x, int y, size_t layer) const
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return -1;
-    return m_Layers[layer].tiles[static_cast<size_t>(y * m_MapWidth + x)];
+    return GetLayerField<&TileLayer::tiles>(x, y, layer);
 }
 
 void Tilemap::SetLayerTile(int x, int y, size_t layer, int tileID)
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return;
-    m_Layers[layer].tiles[static_cast<size_t>(y * m_MapWidth + x)] = tileID;
+    SetLayerField<&TileLayer::tiles>(x, y, layer, tileID);
 }
 
 float Tilemap::GetLayerRotation(int x, int y, size_t layer) const
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return 0.0f;
-    return m_Layers[layer].rotation[static_cast<size_t>(y * m_MapWidth + x)];
+    return GetLayerField<&TileLayer::rotation>(x, y, layer);
 }
 
 void Tilemap::SetLayerRotation(int x, int y, size_t layer, float rotation)
@@ -1580,49 +1574,37 @@ void Tilemap::SetLayerRotation(int x, int y, size_t layer, float rotation)
     rotation = std::fmod(rotation, 360.0f);
     if (rotation < 0.0f)
         rotation += 360.0f;
-    m_Layers[layer].rotation[static_cast<size_t>(y * m_MapWidth + x)] = rotation;
+    (m_Layers[layer].rotation)[static_cast<size_t>(y * m_MapWidth + x)] = rotation;
 }
 
 bool Tilemap::GetLayerNoProjection(int x, int y, size_t layer) const
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return false;
-    return m_Layers[layer].noProjection[static_cast<size_t>(y * m_MapWidth + x)];
+    return GetLayerField<&TileLayer::noProjection>(x, y, layer);
 }
 
 void Tilemap::SetLayerNoProjection(int x, int y, size_t layer, bool noProjection)
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return;
-    m_Layers[layer].noProjection[static_cast<size_t>(y * m_MapWidth + x)] = noProjection;
+    SetLayerField<&TileLayer::noProjection>(x, y, layer, noProjection);
 }
 
 bool Tilemap::GetLayerYSortPlus(int x, int y, size_t layer) const
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return false;
-    return m_Layers[layer].ySortPlus[static_cast<size_t>(y * m_MapWidth + x)];
+    return GetLayerField<&TileLayer::ySortPlus>(x, y, layer);
 }
 
 void Tilemap::SetLayerYSortPlus(int x, int y, size_t layer, bool ySortPlus)
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return;
-    m_Layers[layer].ySortPlus[static_cast<size_t>(y * m_MapWidth + x)] = ySortPlus;
+    SetLayerField<&TileLayer::ySortPlus>(x, y, layer, ySortPlus);
 }
 
 bool Tilemap::GetLayerYSortMinus(int x, int y, size_t layer) const
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return false;
-    return m_Layers[layer].ySortMinus[static_cast<size_t>(y * m_MapWidth + x)];
+    return GetLayerField<&TileLayer::ySortMinus>(x, y, layer);
 }
 
 void Tilemap::SetLayerYSortMinus(int x, int y, size_t layer, bool ySortMinus)
 {
-    if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
-        return;
-    m_Layers[layer].ySortMinus[static_cast<size_t>(y * m_MapWidth + x)] = ySortMinus;
+    SetLayerField<&TileLayer::ySortMinus>(x, y, layer, ySortMinus);
 }
 
 std::vector<size_t> Tilemap::GetLayerRenderOrder() const

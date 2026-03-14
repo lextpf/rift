@@ -2,6 +2,7 @@
 
 #include "CollisionMap.h"
 #include "ColumnProxy.h"
+#include "DefaultedVector.h"
 #include "IRenderer.h"
 #include "NavigationMap.h"
 #include "ParticleSystem.h"
@@ -70,17 +71,17 @@ struct NoProjectionStructure
  */
 struct TileLayer
 {
-    std::string name;                ///< Human-readable layer name
-    std::vector<int> tiles;          ///< Tile IDs in row-major order (-1 = empty)
-    std::vector<float> rotation;     ///< Rotation in degrees per tile
-    std::vector<bool> noProjection;  ///< Tiles that bypass 3D projection
-    std::vector<int>
+    std::string name;                            ///< Human-readable layer name
+    defaulted_vector<int, -1> tiles;             ///< Tile IDs in row-major order (-1 = empty)
+    defaulted_vector<float, 0.0f> rotation;      ///< Rotation in degrees per tile
+    defaulted_vector<bool, false> noProjection;  ///< Tiles that bypass 3D projection
+    defaulted_vector<int, -1>
         structureId;  ///< Per-tile structure ID (-1 = auto flood-fill, 0+ = belongs to structure)
-    std::vector<bool> ySortPlus;  ///< Tiles that sort with entities by Y position (Y-sort+1: player
-                                  ///< in front at same Y)
-    std::vector<bool>
+    defaulted_vector<bool, false> ySortPlus;  ///< Tiles that sort with entities by Y position
+                                              ///< (Y-sort+1: player in front at same Y)
+    defaulted_vector<bool, false>
         ySortMinus;  ///< When true, player renders behind tile at same Y (Y-sort-1: tile in front)
-    std::vector<int> animationMap;  ///< Per-tile animation ID (-1 = not animated)
+    defaulted_vector<int, -1> animationMap;  ///< Per-tile animation ID (-1 = not animated)
     int renderOrder;    ///< Lower = rendered first (background), higher = later (foreground)
     bool isBackground;  ///< true = before player/NPCs, false = after
 
@@ -96,29 +97,18 @@ struct TileLayer
     {
     }
 
-    /// @brief Resize all per-tile vectors to the given number of tiles.
+    /// @brief Resize all per-tile fields to the given number of tiles.
     /// @param size Total number of tiles (mapWidth * mapHeight).
     void Resize(size_t size)
     {
-        tiles.resize(size, -1);
-        rotation.resize(size, 0.0f);
-        noProjection.resize(size, false);
-        structureId.resize(size, -1);
-        ySortPlus.resize(size, false);
-        ySortMinus.resize(size, false);
-        animationMap.resize(size, -1);
+        resize_all(
+            size, tiles, rotation, noProjection, structureId, ySortPlus, ySortMinus, animationMap);
     }
 
     /// @brief Reset all per-tile data to default values without changing size.
     void Clear()
     {
-        std::fill(tiles.begin(), tiles.end(), -1);
-        std::fill(rotation.begin(), rotation.end(), 0.0f);
-        std::fill(noProjection.begin(), noProjection.end(), false);
-        std::fill(structureId.begin(), structureId.end(), -1);
-        std::fill(ySortPlus.begin(), ySortPlus.end(), false);
-        std::fill(ySortMinus.begin(), ySortMinus.end(), false);
-        std::fill(animationMap.begin(), animationMap.end(), -1);
+        reset_all(tiles, rotation, noProjection, structureId, ySortPlus, ySortMinus, animationMap);
     }
 };
 
@@ -1003,6 +993,36 @@ public:
 
     /** @} */
 
+    /// @name Layer Field Accessor Templates
+    /// @brief Generic get/set for any per-tile defaulted_vector field on TileLayer.
+    /// @{
+
+    /// Get a per-tile field value with bounds checking. Returns the field's default on OOB.
+    template <auto Field>
+    auto GetLayerField(int x, int y, size_t layer) const
+    {
+        using Vec = std::decay_t<decltype(std::declval<TileLayer>().*Field)>;
+        if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
+            return static_cast<typename Vec::value_type>(Vec::default_value);
+        return static_cast<typename Vec::value_type>(
+            (m_Layers[layer].*Field)[static_cast<size_t>(y * m_MapWidth + x)]);
+    }
+
+    /// Set a per-tile field value with bounds checking. Silently ignores OOB.
+    template <auto Field>
+    void SetLayerField(
+        int x,
+        int y,
+        size_t layer,
+        typename std::decay_t<decltype(std::declval<TileLayer>().*Field)>::value_type value)
+    {
+        if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
+            return;
+        (m_Layers[layer].*Field)[static_cast<size_t>(y * m_MapWidth + x)] = value;
+    }
+
+    /// @}
+
     /**
      * @brief Compute the visible tile range from a camera rectangle, clamped to map bounds.
      * @param mapW Map width in tiles.
@@ -1061,9 +1081,9 @@ public:
      * @param x Tile column.
      * @return ColumnProxy for row access.
      */
-    ColumnProxy<std::vector<int>, int, -1> operator[](int x)
+    ColumnProxy<defaulted_vector<int, -1>, int, -1> operator[](int x)
     {
-        return ColumnProxy<std::vector<int>, int, -1>(
+        return ColumnProxy<defaulted_vector<int, -1>, int, -1>(
             &m_Layers[0].tiles, &m_MapWidth, &m_MapHeight, x);
     }
 
@@ -1077,9 +1097,9 @@ public:
      * @param x Tile column.
      * @return ColumnProxy for const-qualified access.
      */
-    ConstColumnProxy<std::vector<int>, int, -1> operator[](int x) const
+    ConstColumnProxy<defaulted_vector<int, -1>, int, -1> operator[](int x) const
     {
-        return ConstColumnProxy<std::vector<int>, int, -1>(
+        return ConstColumnProxy<defaulted_vector<int, -1>, int, -1>(
             &m_Layers[0].tiles, &m_MapWidth, &m_MapHeight, x);
     }
     /** @} */

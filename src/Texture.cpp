@@ -238,7 +238,10 @@ bool Texture::LoadFromFile(const std::string& path)
 {
     // stb_image loads images with (0,0) at the top-left by default.
     // OpenGL expects (0,0) at the bottom-left, so we flip vertically.
-    stbi_set_flip_vertically_on_load(true);
+    // Use stbi__vertically_flip_on_load_set to avoid global state mutation
+    // (stbi_set_flip_vertically_on_load modifies a process-wide flag that
+    // would be unsafe under concurrent loading or third-party stbi use).
+    stbi_set_flip_vertically_on_load_thread(true);
 
     // stb_load returns the actual channel count in m_Channels.
     // The last param (0) means "give me whatever channels the file has".
@@ -267,8 +270,10 @@ bool Texture::LoadFromFile(const std::string& path)
     const unsigned char* sourceData = data;
     int sourceChannels = m_Channels;
 
-    // Normalize uncommon formats (1/2 channels) to RGBA so both backends share one safe path.
-    if (sourceChannels == 1 || sourceChannels == 2)
+    // Normalize non-RGBA formats to RGBA so both backends share one safe path.
+    // VK_FORMAT_R8G8B8_UNORM is not universally supported for optimal tiling,
+    // so 3-channel textures must also be expanded.
+    if (sourceChannels != 4)
     {
         const size_t srcSize = static_cast<size_t>(m_Width) * static_cast<size_t>(m_Height) *
                                static_cast<size_t>(sourceChannels);
@@ -332,7 +337,7 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
 
     std::vector<unsigned char> normalizedData;
     const unsigned char* sourceData = data;
-    if (channels == 1 || channels == 2)
+    if (channels != 4)
     {
         const size_t srcSize = static_cast<size_t>(width) * static_cast<size_t>(height) *
                                static_cast<size_t>(channels);
@@ -536,9 +541,9 @@ void Texture::CreateVulkanTexture(VkDevice device,
         std::cerr << "Cannot create Vulkan texture: no image data" << std::endl;
         return;
     }
-    if (m_Channels != 3 && m_Channels != 4)
+    if (m_Channels != 4)
     {
-        throw std::runtime_error("Unsupported channel count for Vulkan texture (expected 3 or 4)");
+        throw std::runtime_error("Unsupported channel count for Vulkan texture (expected 4 RGBA)");
     }
 
     size_t imageSizeBytes = 0;
@@ -574,7 +579,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     // Use UNORM format (linear color space) to match OpenGL behavior.
     // SRGB format would apply gamma correction, making textures appear brighter.
-    imageInfo.format = (m_Channels == 4) ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8_UNORM;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
 
     // OPTIMAL tiling lets the GPU arrange pixels however is fastest for sampling
     // LINEAR tiling would allow CPU access but is slower for rendering

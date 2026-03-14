@@ -20,8 +20,7 @@ std::vector<std::string> GameStateManager::GetActiveQuests() const
             // Check if this quest is not completed
             std::string completedKey = "completed_" + questName;
             auto completedIt = m_Flags.find(completedKey);
-            if (completedIt == m_Flags.end() ||
-                (completedIt->second != "true" && completedIt->second != "1"))
+            if (completedIt == m_Flags.end() || completedIt->second != "true")
             {
                 activeQuests.push_back(questName);
             }
@@ -35,8 +34,7 @@ std::string GameStateManager::GetQuestDescription(const std::string& questName) 
 {
     std::string flagKey = "accepted_" + questName;
     auto it = m_Flags.find(flagKey);
-    if (it != m_Flags.end() && it->second != "true" && it->second != "1" && it->second != "false" &&
-        it->second != "0")
+    if (it != m_Flags.end() && it->second != "true" && it->second != "false")
     {
         return it->second;
     }

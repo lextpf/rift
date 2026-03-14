@@ -2,6 +2,7 @@
 #include "TimeManager.h"
 
 #include "MathConstants.h"
+#include "ProceduralTexture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -162,138 +163,104 @@ void SkyRenderer::Render(IRenderer& renderer,
 void SkyRenderer::GenerateRayTexture()
 {
     // Create a VERTICAL ray texture - soft, wide gradient
-    std::vector<unsigned char> pixels(RAY_TEXTURE_WIDTH * RAY_TEXTURE_HEIGHT * 4);
-    float centerX = RAY_TEXTURE_WIDTH / 2.0f;
+    std::vector<unsigned char> pixels;
+    GeneratePixels(pixels,
+                   RAY_TEXTURE_WIDTH,
+                   RAY_TEXTURE_HEIGHT,
+                   [](int x, int y, int w, int h) -> Pixel
+                   {
+                       float centerX = w / 2.0f;
+                       float progress = static_cast<float>(y) / h;
+                       float distFromCenter = std::abs(x - centerX) / centerX;
 
-    for (int y = 0; y < RAY_TEXTURE_HEIGHT; y++)
-    {
-        for (int x = 0; x < RAY_TEXTURE_WIDTH; x++)
-        {
-            int idx = (y * RAY_TEXTURE_WIDTH + x) * 4;
+                       // Vertical fade: pow(0.4) stays bright longer before dropping off
+                       float verticalFade = std::pow(1.0f - progress, 0.4f);
 
-            // Progress along ray (0 = top/start, 1 = bottom/end)
-            float progress = static_cast<float>(y) / RAY_TEXTURE_HEIGHT;
+                       // Horizontal fade: gaussian profile for soft diffuse edges
+                       float horizontalFade = std::exp(-distFromCenter * distFromCenter * 3.0f);
 
-            // Distance from center (0 = center, 1 = edge)
-            float distFromCenter = std::abs(x - centerX) / centerX;
+                       float alpha = verticalFade * horizontalFade;
 
-            // Vertical fade: pow(0.4) flattens the linear falloff into a curve
-            // that stays bright longer before dropping off, mimicking how real
-            // crepuscular rays maintain intensity through most of their length.
-            float verticalFade = 1.0f - progress;
-            verticalFade = std::pow(verticalFade, 0.4f);
+                       // Additional softening at the very bottom
+                       if (progress > 0.7f)
+                       {
+                           float bottomFade = 1.0f - (progress - 0.7f) / 0.3f;
+                           alpha *= bottomFade * bottomFade;
+                       }
 
-            // Horizontal fade: gaussian profile (e^(-x^2*3)) gives soft diffuse
-            // edges rather than a hard cutoff, matching natural light scattering.
-            float horizontalFade = std::exp(-distFromCenter * distFromCenter * 3.0f);
-
-            // Combine with smooth multiplication
-            float alpha = verticalFade * horizontalFade;
-
-            // Additional softening at the very bottom
-            if (progress > 0.7f)
-            {
-                float bottomFade = 1.0f - (progress - 0.7f) / 0.3f;
-                alpha *= bottomFade * bottomFade;
-            }
-
-            pixels[idx + 0] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] =
-                static_cast<unsigned char>(std::max(0.0f, std::min(alpha * 255.0f, 255.0f)));
-        }
-    }
+                       auto a =
+                           static_cast<uint8_t>(std::max(0.0f, std::min(alpha * 255.0f, 255.0f)));
+                       return {255, 255, 255, a};
+                   });
 
     m_RayTexture.LoadFromData(pixels.data(), RAY_TEXTURE_WIDTH, RAY_TEXTURE_HEIGHT, 4, false);
 }
 
 void SkyRenderer::GenerateStarTexture()
 {
-    std::vector<unsigned char> pixels(STAR_TEXTURE_SIZE * STAR_TEXTURE_SIZE * 4);
-    float center = STAR_TEXTURE_SIZE / 2.0f;
-
-    for (int y = 0; y < STAR_TEXTURE_SIZE; y++)
-    {
-        for (int x = 0; x < STAR_TEXTURE_SIZE; x++)
+    std::vector<unsigned char> pixels;
+    GeneratePixels(
+        pixels,
+        STAR_TEXTURE_SIZE,
+        STAR_TEXTURE_SIZE,
+        [](int x, int y, int w, int) -> Pixel
         {
+            float center = w / 2.0f;
             float dx = x - center;
             float dy = y - center;
-            float distance = std::sqrt(dx * dx + dy * dy);
-            float maxDist = STAR_TEXTURE_SIZE / 2.0f;
-            float normalizedDist = distance / maxDist;
+            float normalizedDist = std::sqrt(dx * dx + dy * dy) / center;
 
-            int idx = (y * STAR_TEXTURE_SIZE + x) * 4;
-
-            // Gaussian core: sigma^2=1/100 makes it very narrow (bright point source).
-            // The 50.0 coefficient = 1/(2*sigma^2) with sigma~=0.1
+            // Gaussian core (bright point source)
             float core = std::exp(-normalizedDist * normalizedDist * 50.0f);
 
-            // Wider gaussian glow (sigma~=0.2), 70% brightness
+            // Wider gaussian glow, 70% brightness
             float inner = std::exp(-normalizedDist * normalizedDist * 12.0f) * 0.7f;
 
-            // Exponential halo - extends much further than the gaussians,
-            // giving stars a visible soft glow at distance
+            // Exponential halo for soft glow at distance
             float outer = std::exp(-normalizedDist * 3.0f) * 0.25f;
 
-            // 6-point diffraction spikes: cos(3*angle) has 6 zero-crossings per
-            // revolution. pow(12) sharpens the peaks into thin lines. The radial
-            // exponential (0.8) controls how far spikes extend from center.
+            // 6-point diffraction spikes
             float angle = std::atan2(dy, dx);
             float spike6 = std::pow(std::abs(std::cos(angle * 3.0f)), 12.0f);
             float spikeIntensity = spike6 * std::exp(-normalizedDist * 0.8f) * 0.5f;
 
-            // Secondary 4-point spikes rotated 45 deg (0.785 rad = pi/4).
-            // pow(16) makes these thinner than the primary spikes. The faster
-            // radial decay (1.2) keeps them shorter, adding subtle detail.
+            // Secondary 4-point spikes rotated 45 deg
             float spike4 = std::pow(std::abs(std::cos(angle * 2.0f + 0.785f)), 16.0f);
             float spike4Intensity = spike4 * std::exp(-normalizedDist * 1.2f) * 0.2f;
 
-            float intensity = core + inner + outer + spikeIntensity + spike4Intensity;
-            intensity = std::min(1.0f, intensity);
+            float intensity =
+                std::min(1.0f, core + inner + outer + spikeIntensity + spike4Intensity);
 
-            pixels[idx + 0] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] =
-                static_cast<unsigned char>(std::max(0.0f, std::min(intensity * 255.0f, 255.0f)));
-        }
-    }
+            auto a = static_cast<uint8_t>(std::max(0.0f, std::min(intensity * 255.0f, 255.0f)));
+            return {255, 255, 255, a};
+        });
 
     m_StarTexture.LoadFromData(pixels.data(), STAR_TEXTURE_SIZE, STAR_TEXTURE_SIZE, 4, false);
 }
 
 void SkyRenderer::GenerateStarGlowTexture()
 {
-    std::vector<unsigned char> pixels(STAR_GLOW_TEXTURE_SIZE * STAR_GLOW_TEXTURE_SIZE * 4);
-    float center = STAR_GLOW_TEXTURE_SIZE / 2.0f;
+    std::vector<unsigned char> pixels;
+    GeneratePixels(pixels,
+                   STAR_GLOW_TEXTURE_SIZE,
+                   STAR_GLOW_TEXTURE_SIZE,
+                   [](int x, int y, int w, int) -> Pixel
+                   {
+                       float center = w / 2.0f;
+                       float dx = x - center;
+                       float dy = y - center;
+                       float normalizedDist = std::sqrt(dx * dx + dy * dy) / center;
 
-    for (int y = 0; y < STAR_GLOW_TEXTURE_SIZE; y++)
-    {
-        for (int x = 0; x < STAR_GLOW_TEXTURE_SIZE; x++)
-        {
-            float dx = x - center;
-            float dy = y - center;
-            float distance = std::sqrt(dx * dx + dy * dy);
-            float normalizedDist = distance / center;
+                       // Soft gaussian glow for bright star halos
+                       float glow = std::exp(-normalizedDist * normalizedDist * 2.5f);
 
-            int idx = (y * STAR_GLOW_TEXTURE_SIZE + x) * 4;
+                       // Additional soft outer ring
+                       float ring = std::exp(-normalizedDist * 1.5f) * 0.3f;
 
-            // Soft gaussian glow for bright star halos
-            float glow = std::exp(-normalizedDist * normalizedDist * 2.5f);
+                       float intensity = std::min(1.0f, glow + ring);
 
-            // Additional soft outer ring
-            float ring = std::exp(-normalizedDist * 1.5f) * 0.3f;
-
-            float intensity = glow + ring;
-            intensity = std::min(1.0f, intensity);
-
-            pixels[idx + 0] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] = static_cast<unsigned char>(intensity * 255);
-        }
-    }
+                       return {255, 255, 255, static_cast<uint8_t>(intensity * 255)};
+                   });
 
     m_StarGlowTexture.LoadFromData(
         pixels.data(), STAR_GLOW_TEXTURE_SIZE, STAR_GLOW_TEXTURE_SIZE, 4, false);
@@ -304,17 +271,15 @@ void SkyRenderer::GenerateShootingStarTexture()
     // Create a horizontal streak texture for shooting stars
     const int width = 128;
     const int height = 16;
-    std::vector<unsigned char> pixels(width * height * 4);
-
-    float centerY = height / 2.0f;
-
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
+    std::vector<unsigned char> pixels;
+    GeneratePixels(
+        pixels,
+        width,
+        height,
+        [](int x, int y, int w, int h) -> Pixel
         {
-            int idx = (y * width + x) * 4;
-
-            float progress = static_cast<float>(x) / width;  // 0 at left (head), 1 at right (tail)
+            float centerY = h / 2.0f;
+            float progress = static_cast<float>(x) / w;
             float distFromCenter = std::abs(y - centerY) / centerY;
 
             // Bright head fading to dim tail
@@ -325,12 +290,8 @@ void SkyRenderer::GenerateShootingStarTexture()
 
             float intensity = lengthFade * widthFade;
 
-            pixels[idx + 0] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] = static_cast<unsigned char>(std::min(intensity * 255.0f, 255.0f));
-        }
-    }
+            return {255, 255, 255, static_cast<uint8_t>(std::min(intensity * 255.0f, 255.0f))};
+        });
 
     m_ShootingStarTexture.LoadFromData(pixels.data(), width, height, 4, false);
 }

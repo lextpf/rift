@@ -152,6 +152,9 @@ glm::vec2 NonPlayerCharacter::GetSpriteCoords(int frame, NPCDirection dir) const
         case NPCDirection::RIGHT:
             spriteY = 0 * NPC_SPRITE_HEIGHT;
             break;
+        default:
+            spriteY = 2 * NPC_SPRITE_HEIGHT;
+            break;
     }
 
     return glm::vec2(static_cast<float>(spriteX), static_cast<float>(spriteY));

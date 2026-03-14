@@ -340,7 +340,7 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
         for (int x = vr.startX; x < vr.endX; ++x)
         {
             // In no-projection edit mode, only show flags for current layer
-            if (m_NoProjectionEditMode)
+            if (m_EditMode == EditMode::NoProjection)
             {
                 if (!ctx.tilemap.GetLayerNoProjection(x, y, m_CurrentLayer))
                     continue;
@@ -596,7 +596,7 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 
 void Editor::RenderStructureOverlays(const EditorContext& ctx)
 {
-    if (!m_StructureEditMode)
+    if (m_EditMode != EditMode::Structure)
         return;
 
     auto vr = CalcVisibleTileRange(ctx);
@@ -800,14 +800,18 @@ void Editor::RenderLayerFlagOverlays(const EditorContext& ctx,
 
 void Editor::RenderYSortPlusOverlays(const EditorContext& ctx)
 {
-    RenderLayerFlagOverlays(
-        ctx, m_YSortPlusEditMode, &Tilemap::GetLayerYSortPlus, glm::vec3(0.0f, 0.8f, 0.8f));
+    RenderLayerFlagOverlays(ctx,
+                            (m_EditMode == EditMode::YSortPlus),
+                            &Tilemap::GetLayerYSortPlus,
+                            glm::vec3(0.0f, 0.8f, 0.8f));
 }
 
 void Editor::RenderYSortMinusOverlays(const EditorContext& ctx)
 {
-    RenderLayerFlagOverlays(
-        ctx, m_YSortMinusEditMode, &Tilemap::GetLayerYSortMinus, glm::vec3(0.9f, 0.2f, 0.9f));
+    RenderLayerFlagOverlays(ctx,
+                            (m_EditMode == EditMode::YSortMinus),
+                            &Tilemap::GetLayerYSortMinus,
+                            glm::vec3(0.9f, 0.2f, 0.9f));
 }
 
 void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
@@ -911,8 +915,8 @@ void Editor::RenderNPCDebugInfo(const EditorContext& ctx)
                 npcHitboxPos, npcHitboxSize, glm::vec4(1.0f, 0.0f, 1.0f, 0.3f));
         }
 
-        int targetX = npc.m_TargetTileX;
-        int targetY = npc.m_TargetTileY;
+        int targetX = npc.GetTargetTileX();
+        int targetY = npc.GetTargetTileY();
 
         glm::vec2 targetPos(targetX * vr.tileWidth - ctx.cameraPosition.x + vr.tileWidth * 0.5f,
                             targetY * vr.tileHeight - ctx.cameraPosition.y + vr.tileHeight * 0.5f);
@@ -1229,7 +1233,7 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
     }
 
     // Draw animation frame highlights in animation edit mode
-    if (m_AnimationEditMode && !m_AnimationFrames.empty())
+    if ((m_EditMode == EditMode::Animation) && !m_AnimationFrames.empty())
     {
         for (size_t i = 0; i < m_AnimationFrames.size(); ++i)
         {
@@ -1272,7 +1276,7 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
     }
 
     // Draw animation mode status
-    if (m_AnimationEditMode)
+    if (m_EditMode == EditMode::Animation)
     {
         std::string animStatus;
         if (m_SelectedAnimationId >= 0)
@@ -1299,7 +1303,7 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
 void Editor::RenderPlacementPreview(const EditorContext& ctx)
 {
     // Draw animation mode status when not in tile picker
-    if (m_AnimationEditMode && !m_ShowTilePicker && m_SelectedAnimationId >= 0)
+    if ((m_EditMode == EditMode::Animation) && !m_ShowTilePicker && m_SelectedAnimationId >= 0)
     {
         std::string animStatus = "Animation tile: Click map to apply #" +
                                  std::to_string(m_SelectedAnimationId) +
