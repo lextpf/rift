@@ -21,17 +21,62 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     r.tileHeight = ctx.tilemap.GetTileHeight();
     if (r.tileWidth <= 0 || r.tileHeight <= 0)
         return r;
+
     float zoom = std::max(ctx.cameraZoom, 0.01f);
     float worldWidth = static_cast<float>(ctx.tilesVisibleWidth * r.tileWidth) / zoom;
     float worldHeight = static_cast<float>(ctx.tilesVisibleHeight * r.tileHeight) / zoom;
     r.screenSize = glm::vec2(worldWidth, worldHeight);
-    r.startX = std::max(0, static_cast<int>(ctx.cameraPosition.x / r.tileWidth) - 1);
+
+    float cullMinX = ctx.cameraPosition.x;
+    float cullMinY = ctx.cameraPosition.y;
+    float cullMaxX = ctx.cameraPosition.x + worldWidth;
+    float cullMaxY = ctx.cameraPosition.y + worldHeight;
+
+    auto s = ctx.renderer.GetPerspectiveState();
+    if (s.enabled)
+    {
+        float safeHorizonScale = std::max(s.horizonScale, 0.001f);
+        float expansion = 1.0f / safeHorizonScale;
+        bool hasGlobe = (s.mode == IRenderer::ProjectionMode::Globe ||
+                         s.mode == IRenderer::ProjectionMode::Fisheye);
+        float cullWidthScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(hasGlobe));
+        float cullHeightScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(hasGlobe));
+        float expandedWidth = worldWidth * expansion * cullWidthScale;
+        float expandedHeight = worldHeight * expansion * cullHeightScale;
+        float widthPadding = (expandedWidth - worldWidth) * 0.5f;
+        float heightPadding = (expandedHeight - worldHeight) * 0.5f;
+        cullMinX -= widthPadding;
+        cullMaxX += widthPadding;
+        cullMinY -= heightPadding;
+        cullMaxY += heightPadding;
+    }
+
+    r.startX = std::max(0, static_cast<int>(std::floor(cullMinX / r.tileWidth)) - 1);
     r.endX = std::min(ctx.tilemap.GetMapWidth(),
-                      static_cast<int>((ctx.cameraPosition.x + worldWidth) / r.tileWidth) + 1);
-    r.startY = std::max(0, static_cast<int>(ctx.cameraPosition.y / r.tileHeight) - 1);
+                      static_cast<int>(std::ceil(cullMaxX / r.tileWidth)) + 1);
+    r.startY = std::max(0, static_cast<int>(std::floor(cullMinY / r.tileHeight)) - 1);
     r.endY = std::min(ctx.tilemap.GetMapHeight(),
-                      static_cast<int>((ctx.cameraPosition.y + worldHeight) / r.tileHeight) + 1);
+                      static_cast<int>(std::ceil(cullMaxY / r.tileHeight)) + 1);
     return r;
+}
+
+bool IsRectFullyBehindSphere(IRenderer& renderer, const glm::vec2& pos, const glm::vec2& size)
+{
+    auto s = renderer.GetPerspectiveState();
+    if (!s.enabled)
+        return false;
+
+    glm::vec2 corners[4] = {
+        pos,
+        glm::vec2(pos.x + size.x, pos.y),
+        glm::vec2(pos.x + size.x, pos.y + size.y),
+        glm::vec2(pos.x, pos.y + size.y),
+    };
+
+    return renderer.IsPointBehindSphere(corners[0]) && renderer.IsPointBehindSphere(corners[1]) &&
+           renderer.IsPointBehindSphere(corners[2]) && renderer.IsPointBehindSphere(corners[3]);
 }
 
 struct StructureBounds
@@ -784,6 +829,8 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
         if (screenPos.x + zone.size.x < 0 || screenPos.x > worldWidth ||
             screenPos.y + zone.size.y < 0 || screenPos.y > worldHeight)
             continue;
+        if (IsRectFullyBehindSphere(ctx.renderer, screenPos, zone.size))
+            continue;
 
         // Color based on particle type
         glm::vec4 color = GetParticleTypeColor(zone.type, 0.3f);
@@ -835,7 +882,11 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
         glm::vec4 previewColor = GetParticleTypeColor(m_CurrentParticleType, 0.5f);
 
         glm::vec2 previewPos(zr.x - ctx.cameraPosition.x, zr.y - ctx.cameraPosition.y);
-        ctx.renderer.DrawColoredRect(previewPos, glm::vec2(zr.w, zr.h), previewColor);
+        glm::vec2 previewSize(zr.w, zr.h);
+        if (!IsRectFullyBehindSphere(ctx.renderer, previewPos, previewSize))
+        {
+            ctx.renderer.DrawColoredRect(previewPos, previewSize, previewColor);
+        }
     }
 }
 

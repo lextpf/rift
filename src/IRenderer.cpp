@@ -35,7 +35,9 @@ void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
         p.horizonY = static_cast<double>(m_Persp.horizonY);
         p.screenHeight = static_cast<double>(m_Persp.viewHeight);
         p.horizonScale = static_cast<double>(m_Persp.horizonScale);
-        p.sphereRadius = static_cast<double>(m_Persp.sphereRadius);
+        double baseR = static_cast<double>(m_Persp.sphereRadius);
+        p.sphereRadiusX = baseR * perspectiveTransform::kGlobeRadiusXScale;
+        p.sphereRadiusY = baseR * perspectiveTransform::kGlobeRadiusYScale;
         perspectiveTransform::TransformCorners(corners, p);
     }
 }

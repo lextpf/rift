@@ -580,10 +580,25 @@ void Game::Update(float deltaTime)
     // Update particle system
     float pWorldW = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float pWorldH = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
+    glm::vec2 particleCullCam = m_CameraPosition;
     glm::vec2 viewSize(pWorldW / m_CameraZoom, pWorldH / m_CameraZoom);
+    if (m_Enable3DEffect)
+    {
+        float horizonScale = 0.6f + (1.0f - m_CameraTilt) * 0.15f;
+        float expansion = 1.0f / std::max(horizonScale, 0.001f);
+        float cullWidthScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(true));
+        float cullHeightScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(true));
+        glm::vec2 expandedSize(viewSize.x * expansion * cullWidthScale,
+                               viewSize.y * expansion * cullHeightScale);
+        glm::vec2 padding = (expandedSize - viewSize) * 0.5f;
+        particleCullCam -= padding;
+        viewSize = expandedSize;
+    }
     // Set night factor for lantern glows and rays
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
-    m_Particles.Update(deltaTime, m_CameraPosition, viewSize);
+    m_Particles.Update(deltaTime, particleCullCam, viewSize);
 
     // Update animated tiles
     m_Tilemap.UpdateAnimations(deltaTime);
@@ -1057,8 +1072,15 @@ void Game::Render()
         // culled but become visible due to the perspective warping.
         float horizonScale = 0.6f + (1.0f - m_CameraTilt) * 0.15f;
         float expansion = 1.0f / horizonScale;
-        float expandedWidth = zoomedWidth * expansion * 1.5f;
-        float expandedHeight = zoomedHeight * expansion;
+        auto persp = m_Renderer->GetPerspectiveState();
+        bool hasGlobe = persp.enabled && (persp.mode == IRenderer::ProjectionMode::Globe ||
+                                          persp.mode == IRenderer::ProjectionMode::Fisheye);
+        float cullWidthScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(hasGlobe));
+        float cullHeightScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(hasGlobe));
+        float expandedWidth = zoomedWidth * expansion * cullWidthScale;
+        float expandedHeight = zoomedHeight * expansion * cullHeightScale;
 
         // Center the expanded cull rect on the camera position
         float widthDiff = (expandedWidth - zoomedWidth) * 0.5f;
@@ -1123,10 +1145,18 @@ void Game::Render()
     int tileH = m_Tilemap.GetTileHeight();
     for (const auto& tile : ySortPlusTiles)
     {
-        // Check if tile center is behind the sphere
-        float screenX = static_cast<float>(tile.x * tileW) - renderCam.x + tileW * 0.5f;
-        float screenY = static_cast<float>(tile.y * tileH) - renderCam.y + tileH * 0.5f;
-        if (m_Renderer->IsPointBehindSphere(glm::vec2(screenX, screenY)))
+        float tileX = static_cast<float>(tile.x * tileW) - renderCam.x;
+        float tileY = static_cast<float>(tile.y * tileH) - renderCam.y;
+        glm::vec2 corners[4] = {
+            glm::vec2(tileX, tileY),
+            glm::vec2(tileX + tileW, tileY),
+            glm::vec2(tileX + tileW, tileY + tileH),
+            glm::vec2(tileX, tileY + tileH),
+        };
+        if (m_Renderer->IsPointBehindSphere(corners[0]) &&
+            m_Renderer->IsPointBehindSphere(corners[1]) &&
+            m_Renderer->IsPointBehindSphere(corners[2]) &&
+            m_Renderer->IsPointBehindSphere(corners[3]))
             continue;
 
         RenderItem item;

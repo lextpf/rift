@@ -43,6 +43,36 @@
 namespace perspectiveTransform
 {
 
+// Oval globe tuning: slightly larger globe with gentler curvature.
+inline constexpr double kGlobeRadiusXScale = 1.35;
+inline constexpr double kGlobeRadiusYScale = 0.98;
+
+// Baseline perspective cull scales (historical tuning from pre-oval globe).
+inline constexpr double kBaseCullWidthScale = 1.5;
+inline constexpr double kBaseCullHeightScale = 1.0;
+inline constexpr double kCullRefGlobeRadiusXScale = 1.0;
+inline constexpr double kCullRefGlobeRadiusYScale = 0.72;
+
+/// Return the world-cull width multiplier for perspective rendering.
+inline double GetPerspectiveCullWidthScale(bool hasGlobe)
+{
+    if (!hasGlobe)
+        return kBaseCullWidthScale;
+
+    double ovalFactor = std::max(0.25, kGlobeRadiusXScale / kCullRefGlobeRadiusXScale);
+    return kBaseCullWidthScale * ovalFactor;
+}
+
+/// Return the world-cull height multiplier for perspective rendering.
+inline double GetPerspectiveCullHeightScale(bool hasGlobe)
+{
+    if (!hasGlobe)
+        return kBaseCullHeightScale;
+
+    double ovalFactor = std::max(0.25, kGlobeRadiusYScale / kCullRefGlobeRadiusYScale);
+    return kBaseCullHeightScale * ovalFactor;
+}
+
 /**
  * @struct Params
  * @brief Configuration for a perspective transformation pass.
@@ -54,14 +84,15 @@ namespace perspectiveTransform
  */
 struct Params
 {
-    bool applyGlobe;      ///< Apply spherical globe curvature.
-    bool applyVanishing;  ///< Apply vanishing-point depth scaling.
-    double centerX;       ///< Screen center X (viewWidth / 2).
-    double centerY;       ///< Screen center Y (viewHeight / 2).
-    double horizonY;      ///< Y position of the horizon line.
-    double screenHeight;  ///< Viewport height in pixels.
-    double horizonScale;  ///< Scale factor at the horizon (0-1).
-    double sphereRadius;  ///< Radius of the virtual sphere in pixels.
+    bool applyGlobe;       ///< Apply spherical globe curvature.
+    bool applyVanishing;   ///< Apply vanishing-point depth scaling.
+    double centerX;        ///< Screen center X (viewWidth / 2).
+    double centerY;        ///< Screen center Y (viewHeight / 2).
+    double horizonY;       ///< Y position of the horizon line.
+    double screenHeight;   ///< Viewport height in pixels.
+    double horizonScale;   ///< Scale factor at the horizon (0-1).
+    double sphereRadiusX;  ///< Horizontal globe radius in pixels.
+    double sphereRadiusY;  ///< Vertical globe radius in pixels.
 };
 
 /**
@@ -79,15 +110,17 @@ inline void TransformPoint(double& x, double& y, const Params& p)
     // Step 1: Apply globe curvature using true spherical projection
     if (p.applyGlobe)
     {
-        double R = p.sphereRadius;
+        double Rx = std::max(1e-5, p.sphereRadiusX);
+        double Ry = std::max(1e-5, p.sphereRadiusY);
         double dx = x - p.centerX;
         double dy = y - p.centerY;
-        double d = std::sqrt(dx * dx + dy * dy);
+        double ndx = dx / Rx;
+        double ndy = dy / Ry;
+        double dNorm = std::sqrt(ndx * ndx + ndy * ndy);
 
-        if (d > 0.001)
+        if (dNorm > 0.001)
         {
-            double projectedD = R * std::sin(d / R);
-            double ratio = projectedD / d;
+            double ratio = std::sin(dNorm) / dNorm;
             x = p.centerX + dx * ratio;
             y = p.centerY + dy * ratio;
         }

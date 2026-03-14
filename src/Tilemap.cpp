@@ -35,6 +35,24 @@ static bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (
     return behindCount == 4;
 }
 
+/// Return true when the full no-projection structure base segment is behind the globe.
+/// We sample multiple points along the base to avoid false visibility on long bases.
+static bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
+                                             float anchorMinScreenX,
+                                             float anchorMaxScreenX,
+                                             float bottomScreenY)
+{
+    constexpr int kBaseSamples = 7;
+    for (int i = 0; i < kBaseSamples; ++i)
+    {
+        float t = static_cast<float>(i) / static_cast<float>(kBaseSamples - 1);
+        float x = anchorMinScreenX + (anchorMaxScreenX - anchorMinScreenX) * t;
+        if (!renderer.IsPointBehindSphere(glm::vec2(x, bottomScreenY)))
+            return false;
+    }
+    return true;
+}
+
 /// Compute one shared strip-mesh point for an arbitrary world Y position.
 /// Unlike tile corner generation, this accepts continuous Y so particles can
 /// stay locked to the same warped mesh as no-projection structure tiles.
@@ -102,29 +120,136 @@ static float ComputeSharedEdgeBaseForSample(const std::vector<int>& colEffMaxY,
 
 /// Compute horizon fade amount for no-projection structures in globe/fisheye mode.
 /// 0 = fully visible, 1 = fully faded.
-static float ComputeStructureHorizonFade(IRenderer& renderer,
-                                         const glm::vec2& structureBaseCenter,
-                                         float fadeBandPixels)
+struct StructureHorizonFade
 {
+    float amount = 0.0f;
+    bool columnFade = false;  // true: fade by columns, false: fade by rows
+    bool fromLeft = true;
+    bool fromTop = false;
+};
+
+static StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
+                                                        const glm::vec2& structureBaseCenter,
+                                                        float fadeBandPixels)
+{
+    StructureHorizonFade result;
+
     auto s = renderer.GetPerspectiveState();
     bool hasGlobe = s.enabled && (s.mode == IRenderer::ProjectionMode::Globe ||
                                   s.mode == IRenderer::ProjectionMode::Fisheye);
     if (!hasGlobe)
-        return 0.0f;
+        return result;
 
     float centerX = s.viewWidth * 0.5f;
     float centerY = s.viewHeight * 0.5f;
     float dx = structureBaseCenter.x - centerX;
     float dy = structureBaseCenter.y - centerY;
-    float d = std::sqrt(dx * dx + dy * dy);
+    float baseR = s.sphereRadius;
+    float radiusX = baseR * static_cast<float>(perspectiveTransform::kGlobeRadiusXScale);
+    float radiusY = baseR * static_cast<float>(perspectiveTransform::kGlobeRadiusYScale);
+    radiusX = std::max(1.0f, radiusX);
+    radiusY = std::max(1.0f, radiusY);
+    float dNorm = std::sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
+    float ndx = dx / radiusX;
+    float ndy = dy / radiusY;
 
     constexpr float kPi = 3.14159265358979323846f;
-    float edgeDist = s.sphereRadius * (kPi * 0.5f);
-    float band = std::max(1.0f, fadeBandPixels);
-    float start = edgeDist - band;
-    float end = edgeDist + band;
-    float t = (d - start) / (end - start);
-    return std::max(0.0f, std::min(1.0f, t));
+    float edgeNorm = kPi * 0.5f;
+    float avgRadius = (radiusX + radiusY) * 0.5f;
+    float bandNorm = std::max(1e-4f, std::max(1.0f, fadeBandPixels) / std::max(1.0f, avgRadius));
+    float start = edgeNorm - bandNorm;
+    float end = edgeNorm + bandNorm;
+    float t = (dNorm - start) / (end - start);
+    result.amount = std::max(0.0f, std::min(1.0f, t));
+
+    // Side-on globe fade should peel by columns; top/bottom fade should peel by rows.
+    result.columnFade = std::abs(ndx) >= std::abs(ndy);
+    result.fromLeft = ndx < 0.0f;
+    result.fromTop = ndy < 0.0f;
+    return result;
+}
+
+static bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
+                                                  int tileCol,
+                                                  int structureWidthTiles,
+                                                  int tileY,
+                                                  int layerMinY,
+                                                  int effMaxY)
+{
+    if (fade.amount <= 0.0f)
+        return false;
+
+    if (fade.columnFade)
+    {
+        int hiddenCols = std::max(
+            0,
+            std::min(structureWidthTiles,
+                     static_cast<int>(
+                         std::floor(fade.amount * static_cast<float>(structureWidthTiles)))));
+        if (hiddenCols <= 0)
+            return false;
+
+        if (fade.fromLeft)
+            return tileCol < hiddenCols;
+
+        return tileCol >= structureWidthTiles - hiddenCols;
+    }
+
+    int colHeightTiles = std::max(0, effMaxY - layerMinY + 1);
+    if (colHeightTiles <= 0)
+        return true;
+
+    int hiddenRows = std::max(
+        0,
+        std::min(colHeightTiles,
+                 static_cast<int>(std::floor(fade.amount * static_cast<float>(colHeightTiles)))));
+    if (hiddenRows <= 0)
+        return false;
+
+    int rowFromTop = tileY - layerMinY;
+    int rowFromBottom = effMaxY - tileY;
+    if (fade.fromTop)
+        return rowFromTop < hiddenRows;
+
+    return rowFromBottom < hiddenRows;
+}
+
+static bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
+                                                   float localXTiles,
+                                                   int structureWidthTiles,
+                                                   float worldTileY,
+                                                   int layerMinY,
+                                                   int effMaxY)
+{
+    if (fade.amount <= 0.0f)
+        return false;
+
+    if (fade.columnFade)
+    {
+        float hiddenCols = fade.amount * static_cast<float>(structureWidthTiles);
+        if (hiddenCols <= 0.0f)
+            return false;
+
+        if (fade.fromLeft)
+            return localXTiles < hiddenCols;
+
+        return localXTiles >= static_cast<float>(structureWidthTiles) - hiddenCols;
+    }
+
+    float colHeightTiles = static_cast<float>(std::max(0, effMaxY - layerMinY + 1));
+    if (colHeightTiles <= 0.0f)
+        return true;
+
+    float hiddenRows = fade.amount * colHeightTiles;
+    if (hiddenRows <= 0.0f)
+        return false;
+
+    float rowFromTop = worldTileY - static_cast<float>(layerMinY);
+    float rowFromBottom = static_cast<float>(effMaxY) - worldTileY;
+    if (fade.fromTop)
+        return rowFromTop < hiddenRows;
+
+    return rowFromBottom < hiddenRows;
 }
 
 Tilemap::Tilemap()
@@ -907,16 +1032,16 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
     float anchorMinScreenX = anchorMinX - cameraPos.x;
     float anchorMaxScreenX = anchorMaxX - cameraPos.x;
 
-    int colHeightTiles = effMaxY - minY + 1;
+    if (IsStructureBaseFullyBehindSphere(
+            renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
+        return false;
+
     float worldTileY = worldPos.y / tileHf;
-    float pointTileRow = static_cast<float>(effMaxY) - worldTileY;
     glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f, bottomScreenY);
-    float horizonFade = ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
-    int hiddenRows = std::max(
-        0,
-        std::min(colHeightTiles,
-                 static_cast<int>(std::floor(horizonFade * static_cast<float>(colHeightTiles)))));
-    if (pointTileRow < static_cast<float>(hiddenRows))
+    StructureHorizonFade horizonFade =
+        ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
+    if (IsNoProjectionPointHiddenByHorizonFade(
+            horizonFade, localXTiles, structureWidthTiles, worldTileY, minY, effMaxY))
         return false;
 
     float leftEdgeEffMaxY = ComputeSharedEdgeBaseForSample(colEffMaxY, leftEdgeIndex, worldTileY);
@@ -1286,6 +1411,10 @@ void Tilemap::RenderSingleTile(
                 float anchorMinScreenX = anchorMinX - cameraPos.x;
                 float anchorMaxScreenX = anchorMaxX - cameraPos.x;
 
+                if (IsStructureBaseFullyBehindSphere(
+                        renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
+                    return;
+
                 int leftEdgeIndex = tileCol;
                 int rightEdgeIndex = tileCol + 1;
                 if (leftEdgeIndex < 0 || rightEdgeIndex > static_cast<int>(colEffMaxY.size()))
@@ -1302,18 +1431,12 @@ void Tilemap::RenderSingleTile(
                 float rightEdgeBottomEffMaxY =
                     ComputeSharedEdgeBaseForSample(colEffMaxY, rightEdgeIndex, bottomTileY);
 
-                int colHeightTiles = effMaxY - minY + 1;
-                int tileRow = effMaxY - y;
                 glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
                                               bottomScreenY);
-                float horizonFade =
+                StructureHorizonFade horizonFade =
                     ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
-                int hiddenRows = std::max(
-                    0,
-                    std::min(colHeightTiles,
-                             static_cast<int>(
-                                 std::floor(horizonFade * static_cast<float>(colHeightTiles)))));
-                if (tileRow < hiddenRows)
+                if (IsNoProjectionTileHiddenByHorizonFade(
+                        horizonFade, tileCol, structureWidthTiles, y, minY, effMaxY))
                     return;
 
                 glm::vec2 corners[4];
@@ -1572,9 +1695,14 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
                 static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
-            // Skip tiles behind the sphere (when full globe is visible)
-            glm::vec2 tileCenter(tilePosX + tileWf * 0.5f, tilePosY + tileHf * 0.5f);
-            if (renderer.IsPointBehindSphere(tileCenter))
+            // Skip only when the whole tile quad is behind the sphere.
+            glm::vec2 tileCorners[4] = {
+                glm::vec2(tilePosX, tilePosY),
+                glm::vec2(tilePosX + tileWf, tilePosY),
+                glm::vec2(tilePosX + tileWf, tilePosY + tileHf),
+                glm::vec2(tilePosX, tilePosY + tileHf),
+            };
+            if (IsWarpedQuadFullyBehindSphere(renderer, tileCorners))
                 continue;
 
             // Render all background layers at this position (in render order)
@@ -1682,9 +1810,14 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
                 static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
-            // Skip tiles behind the sphere (when full globe is visible)
-            glm::vec2 tileCenter(tilePosX + tileWf * 0.5f, tilePosY + tileHf * 0.5f);
-            if (renderer.IsPointBehindSphere(tileCenter))
+            // Skip only when the whole tile quad is behind the sphere.
+            glm::vec2 tileCorners[4] = {
+                glm::vec2(tilePosX, tilePosY),
+                glm::vec2(tilePosX + tileWf, tilePosY),
+                glm::vec2(tilePosX + tileWf, tilePosY + tileHf),
+                glm::vec2(tilePosX, tilePosY + tileHf),
+            };
+            if (IsWarpedQuadFullyBehindSphere(renderer, tileCorners))
                 continue;
 
             // Render all foreground layers at this position (in render order)
@@ -1784,8 +1917,12 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     {
         // Globe projection compresses distant world-space tiles toward the edge,
         // so no-projection structures need a much wider world cull margin.
-        cullPadX = std::max(cullPadX, s.viewWidth * 1.25f);
-        cullPadY = std::max(cullPadY, s.viewHeight * 0.5f);
+        float ovalPadXFactor =
+            0.9f + 0.35f * static_cast<float>(perspectiveTransform::kGlobeRadiusXScale);
+        float ovalPadYFactor =
+            0.25f + 0.35f * static_cast<float>(perspectiveTransform::kGlobeRadiusYScale);
+        cullPadX = std::max(cullPadX, s.viewWidth * ovalPadXFactor);
+        cullPadY = std::max(cullPadY, s.viewHeight * ovalPadYFactor);
     }
     glm::vec2 expandedCullCam(cullCam.x - cullPadX, cullCam.y - cullPadY);
     glm::vec2 expandedCullSize(cullSize.x + cullPadX * 2.0f, cullSize.y + cullPadY * 2.0f);
@@ -2020,6 +2157,10 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                 float anchorMinScreenX = anchorMinX - renderCam.x;
                 float anchorMaxScreenX = anchorMaxX - renderCam.x;
 
+                if (IsStructureBaseFullyBehindSphere(
+                        renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
+                    continue;
+
                 struct NoProjectionDrawCmd
                 {
                     size_t layerIdx = 0;
@@ -2103,24 +2244,23 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                               return a.tx < b.tx;
                           });
 
+                glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
+                                              bottomScreenY);
+                StructureHorizonFade horizonFade =
+                    ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
+
                 for (const auto& cmd : drawCommands)
                 {
                     const auto& b = layerBounds[cmd.layerIdx];
                     if (!b.valid)
                         continue;
 
-                    int colHeightTiles = cmd.effMaxY - b.minY + 1;
-                    int tileRow = cmd.effMaxY - cmd.ty;
-                    glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
-                                                  bottomScreenY);
-                    float horizonFade =
-                        ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
-                    int hiddenRows =
-                        std::max(0,
-                                 std::min(colHeightTiles,
-                                          static_cast<int>(std::floor(
-                                              horizonFade * static_cast<float>(colHeightTiles)))));
-                    if (tileRow < hiddenRows)
+                    if (IsNoProjectionTileHiddenByHorizonFade(horizonFade,
+                                                              cmd.tileCol,
+                                                              cmd.structureWidthTiles,
+                                                              cmd.ty,
+                                                              b.minY,
+                                                              cmd.effMaxY))
                         continue;
 
                     const auto& colBaseRow = colEffMaxY[cmd.layerIdx];

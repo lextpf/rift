@@ -475,7 +475,9 @@ public:
         params.horizonY = static_cast<double>(s.horizonY);
         params.screenHeight = static_cast<double>(s.viewHeight);
         params.horizonScale = static_cast<double>(s.horizonScale);
-        params.sphereRadius = static_cast<double>(s.sphereRadius);
+        double baseR = static_cast<double>(s.sphereRadius);
+        params.sphereRadiusX = baseR * perspectiveTransform::kGlobeRadiusXScale;
+        params.sphereRadiusY = baseR * perspectiveTransform::kGlobeRadiusYScale;
 
         perspectiveTransform::TransformPoint(resultX, resultY, params);
 
@@ -550,6 +552,10 @@ public:
             }
         }
 
+        // Keep no-projection structures visually stable in globe mode:
+        // use only a fraction of vanishing shrink to avoid "dragging" as camera moves.
+        heightScale = 1.0f + (heightScale - 1.0f) * 0.40f;
+
         // Apply scaled height - rise straight up from projected base
         float scaledHeight = height * heightScale;
 
@@ -566,11 +572,37 @@ public:
             // Rigid position: straight up from projected base with scaled height
             glm::vec2 rigidUp(projectedBase.x, projectedBase.y - scaledHeight);
 
-            // Blend: 0 = fully rigid (straight up), 1 = fully conforming (follows sphere)
-            // 0.25 gives buildings that stand mostly upright with subtle sphere conforming
-            float conformBlend = 0.25f;
+            // Blend: 0 = fully rigid (straight up), 1 = fully conforming (follows sphere).
+            // Keep this very low so structures stay anchored while still getting subtle curvature.
+            constexpr float kBaseConformBlend = 0.04f;
+            float conformBlend = kBaseConformBlend;
 
-            float finalX = rigidUp.x + conformBlend * (fullyConforming.x - rigidUp.x);
+            // Fade conforming toward the globe edge where spherical lateral pull is strongest.
+            // This keeps far no-projection structures visually anchored instead of drifting.
+            double centerX = static_cast<double>(s.viewWidth) * 0.5;
+            double centerY = static_cast<double>(s.viewHeight) * 0.5;
+            double baseR = static_cast<double>(s.sphereRadius);
+            double Rx = std::max(1e-5, baseR * perspectiveTransform::kGlobeRadiusXScale);
+            double Ry = std::max(1e-5, baseR * perspectiveTransform::kGlobeRadiusYScale);
+            double dx = static_cast<double>(basePoint.x) - centerX;
+            double dy = static_cast<double>(basePoint.y) - centerY;
+            double dNorm = std::sqrt((dx * dx) / (Rx * Rx) + (dy * dy) / (Ry * Ry));
+            constexpr double halfPi = rift::Pi * 0.5;
+            float edgeT = static_cast<float>(dNorm / halfPi);
+            edgeT = std::max(0.0f, std::min(1.0f, edgeT));
+
+            auto smoothstep = [](float e0, float e1, float x) -> float
+            {
+                float t = (x - e0) / std::max(1e-5f, e1 - e0);
+                t = std::max(0.0f, std::min(1.0f, t));
+                return t * t * (3.0f - 2.0f * t);
+            };
+
+            float edgeDampen = 1.0f - smoothstep(0.45f, 0.95f, edgeT);
+            conformBlend *= edgeDampen;
+
+            // Suppress lateral conforming (X) to prevent "staying in view" drag at globe edges.
+            float finalX = rigidUp.x;
             float finalY = rigidUp.y + conformBlend * (fullyConforming.y - rigidUp.y);
 
             return glm::vec2(finalX, finalY);
@@ -604,16 +636,18 @@ public:
 
         double centerX = static_cast<double>(s.viewWidth) * 0.5;
         double centerY = static_cast<double>(s.viewHeight) * 0.5;
-        double R = static_cast<double>(s.sphereRadius);
+        double baseR = static_cast<double>(s.sphereRadius);
+        double Rx = baseR * perspectiveTransform::kGlobeRadiusXScale;
+        double Ry = baseR * perspectiveTransform::kGlobeRadiusYScale;
 
         double dx = static_cast<double>(p.x) - centerX;
         double dy = static_cast<double>(p.y) - centerY;
-        double d = std::sqrt(dx * dx + dy * dy);
+        double dNorm = std::sqrt((dx * dx) / (Rx * Rx) + (dy * dy) / (Ry * Ry));
 
-        // Visible edge of sphere is at d = R * pi/2 (90 degrees from center)
-        // Points beyond this are on the back of the sphere
+        // Visible edge is at normalized angular distance pi/2 in oval-globe space.
+        // Points beyond this are on the back of the globe.
         constexpr double halfPi = rift::Pi * 0.5;
-        return d > R * halfPi;
+        return dNorm > halfPi;
     }
 
     /**
@@ -634,8 +668,13 @@ public:
 
         float safeHorizonScale = std::max(s.horizonScale, 0.001f);
         float expansion = 1.0f / safeHorizonScale;
-        float expandedWidth = s.viewWidth * expansion * 1.5f;
-        float expandedHeight = s.viewHeight * expansion;
+        bool hasGlobe = (s.mode == ProjectionMode::Globe || s.mode == ProjectionMode::Fisheye);
+        float cullWidthScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(hasGlobe));
+        float cullHeightScale =
+            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(hasGlobe));
+        float expandedWidth = s.viewWidth * expansion * cullWidthScale;
+        float expandedHeight = s.viewHeight * expansion * cullHeightScale;
         float widthPadding = (expandedWidth - s.viewWidth) * 0.5f;
         float heightPadding = (expandedHeight - s.viewHeight) * 0.5f;
 
