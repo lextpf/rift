@@ -472,6 +472,8 @@ private:
     GameStateManager m_GameState;          ///< Game flags and state for consequences
     int m_DialoguePage = 0;                ///< Current page of dialogue text (for pagination)
     mutable int m_DialogueTotalPages = 1;  ///< Total pages (cached during rendering)
+    float m_DialogueBoxFadeTimer = 0.0f;   ///< Fade-in timer for dialogue box (seconds)
+    float m_DialogueCharReveal = -1.0f;    ///< Typewriter char count (<0 = fully revealed)
 
     /// @name Dialogue Snap Alignment
     /// @brief Smooth pre-dialogue alignment state (player + NPC slide into final talk positions).

@@ -19,8 +19,10 @@
  *
  * @see RIFT_VERSION
  */
-#define RIFT_VERSION_STRINGIFY(major, minor, patch, release) \
+#define RIFT_VERSION_STRINGIFY_(major, minor, patch, release) \
     #major "." #minor "." #patch "." #release
+#define RIFT_VERSION_STRINGIFY(major, minor, patch, release) \
+    RIFT_VERSION_STRINGIFY_(major, minor, patch, release)
 
 /// Complete version string (e.g., "0.1.0.0").
 #define RIFT_VERSION        \

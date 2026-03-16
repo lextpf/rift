@@ -33,7 +33,7 @@ struct ParticleSpawnContext
     std::vector<Particle>& particles;
 };
 
-/// Primary template — specialize for each ParticleType enumerator.
+/// Primary template - specialize for each ParticleType enumerator.
 template <ParticleType PT>
 struct ParticleBehavior
 {
@@ -555,7 +555,7 @@ struct ParticleBehavior<ParticleType::Sunshine>
 };
 
 // ---------------------------------------------------------------------------
-// Dispatch tables — auto-generated from ParticleBehavior specializations
+// Dispatch tables - auto-generated from ParticleBehavior specializations
 // ---------------------------------------------------------------------------
 
 using UpdateFn = void (*)(Particle&, const ParticleUpdateContext&);

@@ -53,69 +53,33 @@ static bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
     return true;
 }
 
-/// Compute one shared strip-mesh point for an arbitrary world Y position.
-/// Unlike tile corner generation, this accepts continuous Y so particles can
-/// stay locked to the same warped mesh as no-projection structure tiles.
-static glm::vec2 ComputeSteppedEdgePoint(IRenderer& renderer,
-                                         float anchorMinScreenX,
-                                         float anchorMaxScreenX,
-                                         float bottomScreenY,
-                                         int layerMinY,
-                                         int layerMaxY,
-                                         int tileHeight,
-                                         int structureWidthTiles,
-                                         int edgeIndex,
-                                         float edgeEffMaxY,
-                                         float worldTileY)
+/// Compute one edge point for a no-projection structure at an arbitrary world Y.
+/// Accepts continuous Y so particles can stay locked to the same warped mesh.
+static glm::vec2 ComputeEdgePoint(IRenderer& renderer,
+                                  float anchorMinScreenX,
+                                  float anchorMaxScreenX,
+                                  float bottomScreenY,
+                                  int layerMinY,
+                                  int layerMaxY,
+                                  int tileHeight,
+                                  int structureWidthTiles,
+                                  int edgeIndex,
+                                  float worldTileY)
 {
-    float edgeHeightTiles = std::max(1.0f, edgeEffMaxY - static_cast<float>(layerMinY) + 1.0f);
-    float edgeBaseY = bottomScreenY -
-                      static_cast<float>(layerMaxY - edgeEffMaxY) * static_cast<float>(tileHeight);
+    float heightTiles = std::max(1.0f, static_cast<float>(layerMaxY - layerMinY) + 1.0f);
 
-    glm::vec2 edgeBaseLeft(anchorMinScreenX, edgeBaseY);
-    glm::vec2 edgeBaseRight(anchorMaxScreenX, edgeBaseY);
+    glm::vec2 baseLeft(anchorMinScreenX, bottomScreenY);
+    glm::vec2 baseRight(anchorMaxScreenX, bottomScreenY);
 
     float safeWidth = static_cast<float>(std::max(1, structureWidthTiles));
     float u = static_cast<float>(edgeIndex) / safeWidth;
 
-    float edgeTileRow = edgeEffMaxY - worldTileY;
-    float v = (edgeTileRow + 1.0f) / edgeHeightTiles;
+    float tileRow = static_cast<float>(layerMaxY) - worldTileY;
+    float v = (tileRow + 1.0f) / heightTiles;
     v = std::max(-2.0f, std::min(2.0f, v));
 
-    float edgeHeightWorld = edgeHeightTiles * static_cast<float>(tileHeight);
-    return renderer.ComputeBuildingVertex(edgeBaseLeft, edgeBaseRight, u, v, edgeHeightWorld);
-}
-
-/// Choose a shared edge base between neighboring columns.
-/// Midpoint minimizes absolute distortion in the overlap region.
-static float ComputeAdaptiveSharedEdgeBase(float leftBaseY, float rightBaseY)
-{
-    return 0.5f * (leftBaseY + rightBaseY);
-}
-
-/// Compute row-aware shared edge base. In overlapping height we blend; below the
-/// shorter neighbor we snap to the deeper column to preserve protruding bases.
-static float ComputeSharedEdgeBaseForSample(const std::vector<int>& colEffMaxY,
-                                            int edgeIndex,
-                                            float worldTileY)
-{
-    if (colEffMaxY.empty())
-        return 0.0f;
-
-    int cols = static_cast<int>(colEffMaxY.size());
-    if (edgeIndex <= 0)
-        return static_cast<float>(colEffMaxY.front());
-    if (edgeIndex >= cols)
-        return static_cast<float>(colEffMaxY.back());
-
-    float leftBase = static_cast<float>(colEffMaxY[edgeIndex - 1]);
-    float rightBase = static_cast<float>(colEffMaxY[edgeIndex]);
-    float overlapTop = std::min(leftBase, rightBase);
-
-    if (worldTileY > overlapTop + 0.0001f)
-        return std::max(leftBase, rightBase);
-
-    return ComputeAdaptiveSharedEdgeBase(leftBase, rightBase);
+    float heightWorld = heightTiles * static_cast<float>(tileHeight);
+    return renderer.ComputeBuildingVertex(baseLeft, baseRight, u, v, heightWorld);
 }
 
 /// Compute horizon fade amount for no-projection structures in globe/fisheye mode.
@@ -982,46 +946,9 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
     int tileCol = static_cast<int>(std::floor(localXTiles));
     float fracX = localXTiles - static_cast<float>(tileCol);
 
-    std::vector<int> colEffMaxY(structureWidthTiles, minY - 1);
-    for (int col = 0; col < structureWidthTiles; ++col)
-    {
-        int scanX = minX + col;
-        for (int cy = maxY; cy >= minY; --cy)
-        {
-            size_t cIdx = static_cast<size_t>(cy * m_MapWidth + scanX);
-            if (cIdx >= layer.noProjection.size() || !layer.noProjection[cIdx])
-                continue;
-            if (cIdx >= layer.structureId.size() || layer.structureId[cIdx] != structId)
-                continue;
-
-            int ctid = layer.tiles[cIdx];
-            if (ctid < 0)
-                continue;
-
-            if (cIdx < layer.animationMap.size())
-            {
-                int animId = layer.animationMap[cIdx];
-                if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
-                {
-                    ctid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
-                }
-            }
-
-            if (!IsTileTransparent(ctid))
-            {
-                colEffMaxY[col] = cy;
-                break;
-            }
-        }
-    }
-
-    int effMaxY = colEffMaxY[tileCol];
-    if (effMaxY < minY)
-        return false;
-
     int leftEdgeIndex = tileCol;
     int rightEdgeIndex = tileCol + 1;
-    if (leftEdgeIndex < 0 || rightEdgeIndex > static_cast<int>(colEffMaxY.size()))
+    if (leftEdgeIndex < 0 || rightEdgeIndex > structureWidthTiles)
         return false;
 
     const NoProjectionStructure& structDef = m_NoProjectionStructures[structId];
@@ -1041,35 +968,30 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
     StructureHorizonFade horizonFade =
         ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
     if (IsNoProjectionPointHiddenByHorizonFade(
-            horizonFade, localXTiles, structureWidthTiles, worldTileY, minY, effMaxY))
+            horizonFade, localXTiles, structureWidthTiles, worldTileY, minY, maxY))
         return false;
 
-    float leftEdgeEffMaxY = ComputeSharedEdgeBaseForSample(colEffMaxY, leftEdgeIndex, worldTileY);
-    float rightEdgeEffMaxY = ComputeSharedEdgeBaseForSample(colEffMaxY, rightEdgeIndex, worldTileY);
+    glm::vec2 leftPoint = ComputeEdgePoint(renderer,
+                                           anchorMinScreenX,
+                                           anchorMaxScreenX,
+                                           bottomScreenY,
+                                           minY,
+                                           maxY,
+                                           m_TileHeight,
+                                           structureWidthTiles,
+                                           leftEdgeIndex,
+                                           worldTileY);
 
-    glm::vec2 leftPoint = ComputeSteppedEdgePoint(renderer,
-                                                  anchorMinScreenX,
-                                                  anchorMaxScreenX,
-                                                  bottomScreenY,
-                                                  minY,
-                                                  maxY,
-                                                  m_TileHeight,
-                                                  structureWidthTiles,
-                                                  leftEdgeIndex,
-                                                  leftEdgeEffMaxY,
-                                                  worldTileY);
-
-    glm::vec2 rightPoint = ComputeSteppedEdgePoint(renderer,
-                                                   anchorMinScreenX,
-                                                   anchorMaxScreenX,
-                                                   bottomScreenY,
-                                                   minY,
-                                                   maxY,
-                                                   m_TileHeight,
-                                                   structureWidthTiles,
-                                                   rightEdgeIndex,
-                                                   rightEdgeEffMaxY,
-                                                   worldTileY);
+    glm::vec2 rightPoint = ComputeEdgePoint(renderer,
+                                            anchorMinScreenX,
+                                            anchorMaxScreenX,
+                                            bottomScreenY,
+                                            minY,
+                                            maxY,
+                                            m_TileHeight,
+                                            structureWidthTiles,
+                                            rightEdgeIndex,
+                                            worldTileY);
 
     outScreenPos = leftPoint + (rightPoint - leftPoint) * fracX;
     return true;
@@ -1360,51 +1282,8 @@ void Tilemap::RenderSingleTile(
 
                 int tileCol = x - minX;
 
-                // Effective column bases (first non-transparent tile from bottom) for
-                // all columns in this structure layer.
-                std::vector<int> colEffMaxY(structureWidthTiles, minY - 1);
-                for (int col = 0; col < structureWidthTiles; ++col)
-                {
-                    int scanX = minX + col;
-                    for (int cy = maxY; cy >= minY; --cy)
-                    {
-                        size_t cIdx = static_cast<size_t>(cy * m_MapWidth + scanX);
-                        if (cIdx >= tileLayer.structureId.size())
-                            continue;
-                        if (tileLayer.structureId[cIdx] != structId)
-                            continue;
-                        if (cIdx >= tileLayer.noProjection.size() || !tileLayer.noProjection[cIdx])
-                            continue;
-
-                        int ctid = tileLayer.tiles[cIdx];
-                        if (ctid < 0)
-                            continue;
-                        if (cIdx < tileLayer.animationMap.size())
-                        {
-                            int animId = tileLayer.animationMap[cIdx];
-                            if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
-                            {
-                                ctid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
-                            }
-                        }
-                        if (!IsTileTransparent(ctid))
-                        {
-                            colEffMaxY[col] = cy;
-                            break;
-                        }
-                    }
-                }
-
-                int effMaxY = colEffMaxY[tileCol];
-                if (effMaxY < minY || y > effMaxY)
-                    return;
-
-                // Match the old code's coordinate calculation for perfect base pinning
-                // Sort anchor X positions (old code used min/max)
                 float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
                 float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
-
-                // Base Y: max of anchor Y values + 1 pixel offset (matches old seam fix)
                 float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
                 float bottomScreenY = bottomWorldY - cameraPos.y + 1.0f;
 
@@ -1417,73 +1296,61 @@ void Tilemap::RenderSingleTile(
 
                 int leftEdgeIndex = tileCol;
                 int rightEdgeIndex = tileCol + 1;
-                if (leftEdgeIndex < 0 || rightEdgeIndex > static_cast<int>(colEffMaxY.size()))
+                if (leftEdgeIndex < 0 || rightEdgeIndex > structureWidthTiles)
                     return;
 
                 float topTileY = static_cast<float>(y);
                 float bottomTileY = topTileY + 1.0f;
-                float leftEdgeTopEffMaxY =
-                    ComputeSharedEdgeBaseForSample(colEffMaxY, leftEdgeIndex, topTileY);
-                float rightEdgeTopEffMaxY =
-                    ComputeSharedEdgeBaseForSample(colEffMaxY, rightEdgeIndex, topTileY);
-                float leftEdgeBottomEffMaxY =
-                    ComputeSharedEdgeBaseForSample(colEffMaxY, leftEdgeIndex, bottomTileY);
-                float rightEdgeBottomEffMaxY =
-                    ComputeSharedEdgeBaseForSample(colEffMaxY, rightEdgeIndex, bottomTileY);
 
                 glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
                                               bottomScreenY);
                 StructureHorizonFade horizonFade =
                     ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
                 if (IsNoProjectionTileHiddenByHorizonFade(
-                        horizonFade, tileCol, structureWidthTiles, y, minY, effMaxY))
+                        horizonFade, tileCol, structureWidthTiles, y, minY, maxY))
                     return;
 
                 glm::vec2 corners[4];
-                corners[0] = ComputeSteppedEdgePoint(renderer,
-                                                     anchorMinScreenX,
-                                                     anchorMaxScreenX,
-                                                     bottomScreenY,
-                                                     minY,
-                                                     maxY,
-                                                     m_TileHeight,
-                                                     structureWidthTiles,
-                                                     leftEdgeIndex,
-                                                     leftEdgeTopEffMaxY,
-                                                     topTileY);
-                corners[1] = ComputeSteppedEdgePoint(renderer,
-                                                     anchorMinScreenX,
-                                                     anchorMaxScreenX,
-                                                     bottomScreenY,
-                                                     minY,
-                                                     maxY,
-                                                     m_TileHeight,
-                                                     structureWidthTiles,
-                                                     rightEdgeIndex,
-                                                     rightEdgeTopEffMaxY,
-                                                     topTileY);
-                corners[2] = ComputeSteppedEdgePoint(renderer,
-                                                     anchorMinScreenX,
-                                                     anchorMaxScreenX,
-                                                     bottomScreenY,
-                                                     minY,
-                                                     maxY,
-                                                     m_TileHeight,
-                                                     structureWidthTiles,
-                                                     rightEdgeIndex,
-                                                     rightEdgeBottomEffMaxY,
-                                                     bottomTileY);
-                corners[3] = ComputeSteppedEdgePoint(renderer,
-                                                     anchorMinScreenX,
-                                                     anchorMaxScreenX,
-                                                     bottomScreenY,
-                                                     minY,
-                                                     maxY,
-                                                     m_TileHeight,
-                                                     structureWidthTiles,
-                                                     leftEdgeIndex,
-                                                     leftEdgeBottomEffMaxY,
-                                                     bottomTileY);
+                corners[0] = ComputeEdgePoint(renderer,
+                                              anchorMinScreenX,
+                                              anchorMaxScreenX,
+                                              bottomScreenY,
+                                              minY,
+                                              maxY,
+                                              m_TileHeight,
+                                              structureWidthTiles,
+                                              leftEdgeIndex,
+                                              topTileY);
+                corners[1] = ComputeEdgePoint(renderer,
+                                              anchorMinScreenX,
+                                              anchorMaxScreenX,
+                                              bottomScreenY,
+                                              minY,
+                                              maxY,
+                                              m_TileHeight,
+                                              structureWidthTiles,
+                                              rightEdgeIndex,
+                                              topTileY);
+                corners[2] = ComputeEdgePoint(renderer,
+                                              anchorMinScreenX,
+                                              anchorMaxScreenX,
+                                              bottomScreenY,
+                                              minY,
+                                              maxY,
+                                              m_TileHeight,
+                                              structureWidthTiles,
+                                              rightEdgeIndex,
+                                              bottomTileY);
+                corners[3] = ComputeEdgePoint(renderer,
+                                              anchorMinScreenX,
+                                              anchorMaxScreenX,
+                                              bottomScreenY,
+                                              minY,
+                                              maxY,
+                                              m_TileHeight,
+                                              structureWidthTiles,
+                                              leftEdgeIndex,
+                                              bottomTileY);
 
                 if (IsWarpedQuadFullyBehindSphere(renderer, corners))
                     return;
@@ -2087,51 +1954,6 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                 if (structureTiles.empty())
                     continue;
 
-                // Pre-compute per-column effective base Y for each layer.
-                // For columns where the bottom tiles are transparent, the base
-                // bends upward so the column doesn't appear floating.
-                std::vector<std::vector<int>> colEffMaxY(m_Layers.size());
-                for (size_t layerIdx : layers)
-                {
-                    const auto& b = layerBounds[layerIdx];
-                    if (!b.valid)
-                        continue;
-                    int cols = b.maxX - b.minX + 1;
-                    colEffMaxY[layerIdx].resize(cols, b.minY - 1);
-
-                    for (int col = 0; col < cols; ++col)
-                    {
-                        int tileX = b.minX + col;
-                        for (int tileY = b.maxY; tileY >= b.minY; --tileY)
-                        {
-                            size_t cIdx = static_cast<size_t>(tileY * m_MapWidth + tileX);
-                            const TileLayer& cl = m_Layers[layerIdx];
-                            if (!cl.noProjection[cIdx] || cl.ySortPlus[cIdx])
-                                continue;
-                            int sid = (cIdx < cl.structureId.size()) ? cl.structureId[cIdx] : -1;
-                            if (sid != foundStructId)
-                                continue;
-                            int ctid = cl.tiles[cIdx];
-                            if (ctid < 0)
-                                continue;
-                            if (cIdx < cl.animationMap.size())
-                            {
-                                int animId = cl.animationMap[cIdx];
-                                if (animId >= 0 &&
-                                    animId < static_cast<int>(m_AnimatedTiles.size()))
-                                {
-                                    ctid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
-                                }
-                            }
-                            if (!IsTileTransparent(ctid))
-                            {
-                                colEffMaxY[layerIdx][col] = tileY;
-                                break;
-                            }
-                        }
-                    }
-                }
-
                 float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
                 float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
                 float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
@@ -2152,7 +1974,6 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                     int tid = -1;
                     int structureWidthTiles = 0;
                     int tileCol = 0;
-                    int effMaxY = 0;
                 };
                 std::vector<NoProjectionDrawCmd> drawCommands;
                 drawCommands.reserve(structureTiles.size() * layers.size());
@@ -2194,9 +2015,6 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                             continue;
 
                         int tileCol = tx - b.minX;
-                        int effMaxY = colEffMaxY[layerIdx][tileCol];
-                        if (effMaxY < b.minY)
-                            continue;  // empty column
 
                         NoProjectionDrawCmd cmd;
                         cmd.layerIdx = layerIdx;
@@ -2206,19 +2024,14 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                         cmd.tid = tid;
                         cmd.structureWidthTiles = structureWidthTiles;
                         cmd.tileCol = tileCol;
-                        cmd.effMaxY = effMaxY;
                         drawCommands.push_back(cmd);
                     }
                 }
 
-                // Render by effective base depth so each stepped column behaves like its
-                // own grounded object: back first, front last for natural occlusion.
                 std::sort(drawCommands.begin(),
                           drawCommands.end(),
                           [](const auto& a, const auto& b)
                           {
-                              if (a.effMaxY != b.effMaxY)
-                                  return a.effMaxY < b.effMaxY;
                               if (a.layerRank != b.layerRank)
                                   return a.layerRank < b.layerRank;
                               if (a.ty != b.ty)
@@ -2242,75 +2055,59 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                                                               cmd.structureWidthTiles,
                                                               cmd.ty,
                                                               b.minY,
-                                                              cmd.effMaxY))
-                        continue;
-
-                    const auto& colBaseRow = colEffMaxY[cmd.layerIdx];
-                    if (colBaseRow.empty())
+                                                              b.maxY))
                         continue;
 
                     int leftEdgeIndex = cmd.tileCol;
                     int rightEdgeIndex = cmd.tileCol + 1;
 
-                    if (leftEdgeIndex < 0 || rightEdgeIndex > static_cast<int>(colBaseRow.size()))
+                    if (leftEdgeIndex < 0 || rightEdgeIndex > cmd.structureWidthTiles)
                         continue;
 
                     float topTileY = static_cast<float>(cmd.ty);
                     float bottomTileY = topTileY + 1.0f;
-                    float leftEdgeTopEffMaxY =
-                        ComputeSharedEdgeBaseForSample(colBaseRow, leftEdgeIndex, topTileY);
-                    float rightEdgeTopEffMaxY =
-                        ComputeSharedEdgeBaseForSample(colBaseRow, rightEdgeIndex, topTileY);
-                    float leftEdgeBottomEffMaxY =
-                        ComputeSharedEdgeBaseForSample(colBaseRow, leftEdgeIndex, bottomTileY);
-                    float rightEdgeBottomEffMaxY =
-                        ComputeSharedEdgeBaseForSample(colBaseRow, rightEdgeIndex, bottomTileY);
 
                     glm::vec2 corners[4];
-                    corners[0] = ComputeSteppedEdgePoint(renderer,
-                                                         anchorMinScreenX,
-                                                         anchorMaxScreenX,
-                                                         bottomScreenY,
-                                                         b.minY,
-                                                         b.maxY,
-                                                         m_TileHeight,
-                                                         cmd.structureWidthTiles,
-                                                         leftEdgeIndex,
-                                                         leftEdgeTopEffMaxY,
-                                                         topTileY);
-                    corners[1] = ComputeSteppedEdgePoint(renderer,
-                                                         anchorMinScreenX,
-                                                         anchorMaxScreenX,
-                                                         bottomScreenY,
-                                                         b.minY,
-                                                         b.maxY,
-                                                         m_TileHeight,
-                                                         cmd.structureWidthTiles,
-                                                         rightEdgeIndex,
-                                                         rightEdgeTopEffMaxY,
-                                                         topTileY);
-                    corners[2] = ComputeSteppedEdgePoint(renderer,
-                                                         anchorMinScreenX,
-                                                         anchorMaxScreenX,
-                                                         bottomScreenY,
-                                                         b.minY,
-                                                         b.maxY,
-                                                         m_TileHeight,
-                                                         cmd.structureWidthTiles,
-                                                         rightEdgeIndex,
-                                                         rightEdgeBottomEffMaxY,
-                                                         bottomTileY);
-                    corners[3] = ComputeSteppedEdgePoint(renderer,
-                                                         anchorMinScreenX,
-                                                         anchorMaxScreenX,
-                                                         bottomScreenY,
-                                                         b.minY,
-                                                         b.maxY,
-                                                         m_TileHeight,
-                                                         cmd.structureWidthTiles,
-                                                         leftEdgeIndex,
-                                                         leftEdgeBottomEffMaxY,
-                                                         bottomTileY);
+                    corners[0] = ComputeEdgePoint(renderer,
+                                                  anchorMinScreenX,
+                                                  anchorMaxScreenX,
+                                                  bottomScreenY,
+                                                  b.minY,
+                                                  b.maxY,
+                                                  m_TileHeight,
+                                                  cmd.structureWidthTiles,
+                                                  leftEdgeIndex,
+                                                  topTileY);
+                    corners[1] = ComputeEdgePoint(renderer,
+                                                  anchorMinScreenX,
+                                                  anchorMaxScreenX,
+                                                  bottomScreenY,
+                                                  b.minY,
+                                                  b.maxY,
+                                                  m_TileHeight,
+                                                  cmd.structureWidthTiles,
+                                                  rightEdgeIndex,
+                                                  topTileY);
+                    corners[2] = ComputeEdgePoint(renderer,
+                                                  anchorMinScreenX,
+                                                  anchorMaxScreenX,
+                                                  bottomScreenY,
+                                                  b.minY,
+                                                  b.maxY,
+                                                  m_TileHeight,
+                                                  cmd.structureWidthTiles,
+                                                  rightEdgeIndex,
+                                                  bottomTileY);
+                    corners[3] = ComputeEdgePoint(renderer,
+                                                  anchorMinScreenX,
+                                                  anchorMaxScreenX,
+                                                  bottomScreenY,
+                                                  b.minY,
+                                                  b.maxY,
+                                                  m_TileHeight,
+                                                  cmd.structureWidthTiles,
+                                                  leftEdgeIndex,
+                                                  bottomTileY);
 
                     if (IsWarpedQuadFullyBehindSphere(renderer, corners))
                         continue;

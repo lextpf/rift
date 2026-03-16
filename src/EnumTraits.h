@@ -9,10 +9,12 @@
  * @tparam E The enum type to reflect.
  *
  * Specialize this template to provide:
- * - `Count`      — number of enumerators
- * - `Names[]`    — string names indexed by underlying value
- * - `ToString()` — enumerator to string_view
- * - `FromString()` — string_view to optional enumerator
+ * - `Count`      - number of enumerators
+ * - `Names[]`    - string names indexed by underlying
+ * value
+ * - `ToString()` - enumerator to string_view
+ * - `FromString()` - string_view to optional
+ * enumerator
  *
  * @par Example Specialization
  * @code

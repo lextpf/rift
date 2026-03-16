@@ -3,6 +3,7 @@
 #include "OpenGLRenderer.h"
 #include "PlayerCharacter.h"
 #include "RendererFactory.h"
+#include "Version.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -111,7 +112,8 @@ bool Game::Initialize()
 
     std::cout << "Initialize() step 4: Creating GLFW window..." << std::endl;
 
-    m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
+    m_Window =
+        glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift " RIFT_VERSION, nullptr, nullptr);
     if (!m_Window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -657,6 +659,8 @@ void Game::Update(float deltaTime)
                     if (startedTree)
                     {
                         m_DialoguePage = 0;
+                        m_DialogueBoxFadeTimer = 0.0f;
+                        m_DialogueCharReveal = 0.0f;
                     }
                 }
                 if (!startedTree)
@@ -669,6 +673,13 @@ void Game::Update(float deltaTime)
                 playerPos = m_Player.GetPosition();
             }
         }
+    }
+
+    if (m_DialogueManager.IsActive())
+    {
+        m_DialogueBoxFadeTimer += deltaTime;
+        if (m_DialogueCharReveal >= 0.0f)
+            m_DialogueCharReveal += 35.0f * deltaTime;
     }
 
     // Update player elevation based on tilemap
@@ -1673,7 +1684,8 @@ bool Game::SwitchRenderer(RendererAPI api)
         }
 
         // Create new window at same position
-        m_Window = glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift", nullptr, nullptr);
+        m_Window =
+            glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift " RIFT_VERSION, nullptr, nullptr);
         if (!m_Window)
         {
             std::cerr << "Failed to create GLFW window for "

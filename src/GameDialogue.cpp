@@ -2,6 +2,7 @@
 #include "DialogueTypes.h"
 #include "Game.h"
 
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <vector>
@@ -87,18 +88,28 @@ void DrawRightArrow(IRenderer& renderer, float arrowX, float arrowCenterY, float
         glm::vec2(arrowX, arrowCenterY + 2.0f * z), glm::vec2(1.0f * z, 1.0f * z), color);
 }
 
-void DrawContinuePrompt(
-    IRenderer& renderer, float promptX, float promptY, float textScale, float outlineSize, float z)
+void DrawContinuePrompt(IRenderer& renderer,
+                        float promptX,
+                        float promptY,
+                        float textScale,
+                        float outlineSize,
+                        float z,
+                        float fade = 1.0f,
+                        float time = 0.0f)
 {
     const float promptScale = textScale * 0.85f;
     glm::vec3 promptColor(0.55f, 0.52f, 0.48f);
-    renderer.DrawText(
-        "Continue", glm::vec2(promptX, promptY), promptScale, promptColor, outlineSize, 0.7f);
+    renderer.DrawText("Continue",
+                      glm::vec2(promptX, promptY),
+                      promptScale,
+                      promptColor,
+                      outlineSize,
+                      0.7f * fade);
 
     float promptAscent = renderer.GetTextAscent(promptScale);
     float arrowCenterY = promptY - promptAscent * 0.5f;
     float arrowX = promptX - 6.0f * z;
-    DrawRightArrow(renderer, arrowX, arrowCenterY, z, glm::vec4(0.65f, 0.52f, 0.2f, 0.85f));
+    DrawRightArrow(renderer, arrowX, arrowCenterY, z, glm::vec4(0.65f, 0.52f, 0.2f, 0.85f * fade));
 }
 // Draw a filled rounded rectangle using a pixel-stepped staircase pattern.
 // The corner radius is approximated by progressively wider horizontal strips.
@@ -128,6 +139,52 @@ void DrawFilledRoundedRect(
     // Center body at full width
     renderer.DrawColoredRect(
         glm::vec2(pos.x, pos.y + radius), glm::vec2(size.x, size.y - 2 * radius), color);
+}
+
+// Draw a filled rounded rectangle with a vertical gradient (top to bottom color).
+void DrawFilledRoundedRectGradient(IRenderer& renderer,
+                                   glm::vec2 pos,
+                                   glm::vec2 size,
+                                   glm::vec4 colorTop,
+                                   glm::vec4 colorBot,
+                                   float radius,
+                                   float step)
+{
+    constexpr int kStrips = 10;
+    float bodyH = size.y - 2 * radius;
+    float stripH = bodyH / static_cast<float>(kStrips);
+    int cornerSteps = static_cast<int>(std::round(radius / step));
+
+    // Top corner rows
+    for (int i = cornerSteps; i >= 1; --i)
+    {
+        float inset = static_cast<float>(i) * step;
+        float y = pos.y + static_cast<float>(cornerSteps - i) * step;
+        float t = (y - pos.y) / size.y;
+        glm::vec4 c = colorTop + (colorBot - colorTop) * t;
+        renderer.DrawColoredRect(
+            glm::vec2(pos.x + inset, y), glm::vec2(size.x - 2 * inset, step), c);
+    }
+
+    // Center body as gradient strips
+    for (int s = 0; s < kStrips; ++s)
+    {
+        float y = pos.y + radius + static_cast<float>(s) * stripH;
+        float t = (y - pos.y) / size.y;
+        glm::vec4 c = colorTop + (colorBot - colorTop) * t;
+        renderer.DrawColoredRect(glm::vec2(pos.x, y), glm::vec2(size.x, stripH), c);
+    }
+
+    // Bottom corner rows
+    for (int i = 1; i <= cornerSteps; ++i)
+    {
+        float inset = static_cast<float>(i) * step;
+        float y = pos.y + size.y - static_cast<float>(cornerSteps - i + 1) * step;
+        float t = (y - pos.y) / size.y;
+        glm::vec4 c = colorTop + (colorBot - colorTop) * t;
+        renderer.DrawColoredRect(
+            glm::vec2(pos.x + inset, y), glm::vec2(size.x - 2 * inset, step), c);
+    }
 }
 
 // Draw the border outline of a rounded rectangle with pixel-stepped corners.
@@ -259,30 +316,43 @@ void Game::RenderDialogueTreeBox()
     // Scale factor for UI elements, inverse of zoom so they appear constant size on screen
     float z = 1.0f / m_CameraZoom;
 
+    // Fade-in animation
+    constexpr float kFadeDuration = 0.2f;
+    float fadeT = std::min(1.0f, m_DialogueBoxFadeTimer / kFadeDuration);
+    float fadeAlpha = fadeT * fadeT * (3.0f - 2.0f * fadeT);  // smoothstep
+
     // Dialogue box dimensions and position (fixed at bottom of visible screen)
     float boxWidth = baseWorldWidth * 0.9f * z;
     float boxHeight = 60.0f * z;
     float boxX = (worldWidth - boxWidth) * 0.5f;
     float boxY = worldHeight - boxHeight - (10.0f * z);
 
-    glm::vec4 bgColor(0.22f, 0.21f, 0.20f, 0.92f);
     float r = 3.0f * z;  // Corner radius
     float s = 1.0f * z;  // Step size (1 pixel per step)
 
     glm::vec2 boxPos(boxX, boxY);
     glm::vec2 boxSize(boxWidth, boxHeight);
 
-    DrawFilledRoundedRect(*m_Renderer, boxPos, boxSize, bgColor, r, s);
+    // Drop shadow
+    float shadowOff = 2.0f * z;
+    glm::vec4 shadowColor(0.0f, 0.0f, 0.0f, 0.15f * fadeAlpha);
+    DrawFilledRoundedRect(
+        *m_Renderer, glm::vec2(boxX + shadowOff, boxY + shadowOff), boxSize, shadowColor, r, s);
+
+    // Gradient background (lighter/more transparent top, darker bottom)
+    glm::vec4 bgTop(0.26f, 0.25f, 0.24f, 0.82f * fadeAlpha);
+    glm::vec4 bgBot(0.22f, 0.21f, 0.20f, 0.95f * fadeAlpha);
+    DrawFilledRoundedRectGradient(*m_Renderer, boxPos, boxSize, bgTop, bgBot, r, s);
 
     // Outer border - muted, subtle, following the rounded shape
     float bw = 1.0f * z;
-    glm::vec4 borderColorOuter(0.50f, 0.48f, 0.45f, 0.8f);
+    glm::vec4 borderColorOuter(0.50f, 0.48f, 0.45f, 0.8f * fadeAlpha);
     DrawRoundedRectBorder(*m_Renderer, boxPos, boxSize, borderColorOuter, r, s, bw);
 
     // Inner border - subtle accent, following the rounded shape
     float ibo = 3.0f * z;  // inner border offset
     float ibw = 1.0f * z;
-    glm::vec4 borderColorInner(0.42f, 0.40f, 0.37f, 0.5f);
+    glm::vec4 borderColorInner(0.42f, 0.40f, 0.37f, 0.5f * fadeAlpha);
     m_Renderer->DrawColoredRect(glm::vec2(boxX + ibo + r, boxY + ibo),
                                 glm::vec2(boxWidth - ibo * 2 - r * 2, ibw),
                                 borderColorInner);  // Top
@@ -307,7 +377,7 @@ void Game::RenderDialogueTreeBox()
     float textAscent = m_Renderer->GetTextAscent(textScale);
     float outlineSize = 2.0f;  // Constant outline size
     // TODO: Scale outlineSize by z to keep stroke weight visually consistent across zoom levels.
-    float textAlpha = 1.0f;  // Full opacity text
+    float textAlpha = fadeAlpha;
 
     // Calculate available content height
     float contentBottomY = boxY + boxHeight - padding;
@@ -327,7 +397,7 @@ void Game::RenderDialogueTreeBox()
         float nameY = currentY - speakerAscent - 2.0f * z;
 
         // Nameplate background - darker muted gold, with rounded corners
-        glm::vec4 nameBg(0.38f, 0.36f, 0.30f, 0.9f);
+        glm::vec4 nameBg(0.38f, 0.36f, 0.30f, 0.9f * fadeAlpha);
         float nr = 2.0f * z;  // Nameplate corner radius
         float ns = 1.0f * z;
         glm::vec2 namePos(nameX, nameY);
@@ -335,7 +405,7 @@ void Game::RenderDialogueTreeBox()
         DrawFilledRoundedRect(*m_Renderer, namePos, nameSize, nameBg, nr, ns);
 
         // Nameplate border - subtle, following rounded shape
-        glm::vec4 nameBorder(0.50f, 0.48f, 0.44f, 0.5f);
+        glm::vec4 nameBorder(0.50f, 0.48f, 0.44f, 0.5f * fadeAlpha);
         float nb = 1.0f * z;
         DrawRoundedRectBorder(*m_Renderer, namePos, nameSize, nameBorder, nr, ns, nb);
 
@@ -422,16 +492,42 @@ void Game::RenderDialogueTreeBox()
         linesToShow = maxTextLines;
     }
 
-    // Render dialogue text lines
+    // Typewriter: count total chars on this page to know when reveal is done
+    int totalCharsOnPage = 0;
+    for (int i = 0; i < linesToShow && (startLine + i) < totalLines; ++i)
+        totalCharsOnPage += static_cast<int>(allLines[startLine + i].size());
+    int charsToShow =
+        (m_DialogueCharReveal < 0.0f) ? totalCharsOnPage : static_cast<int>(m_DialogueCharReveal);
+    bool textFullyRevealed = (charsToShow >= totalCharsOnPage);
+
+    // Render dialogue text lines with typewriter reveal
     glm::vec3 textColor(0.82f, 0.80f, 0.75f);
+    int charsRemaining = charsToShow;
     for (int i = 0; i < linesToShow && (startLine + i) < totalLines; ++i)
     {
-        m_Renderer->DrawText(allLines[startLine + i],
-                             glm::vec2(boxX + padding, currentY),
-                             textScale,
-                             textColor,
-                             outlineSize,
-                             textAlpha);
+        const std::string& line = allLines[startLine + i];
+        int lineLen = static_cast<int>(line.size());
+        if (charsRemaining <= 0)
+            break;
+        if (charsRemaining >= lineLen)
+        {
+            m_Renderer->DrawText(line,
+                                 glm::vec2(boxX + padding, currentY),
+                                 textScale,
+                                 textColor,
+                                 outlineSize,
+                                 textAlpha);
+        }
+        else
+        {
+            m_Renderer->DrawText(line.substr(0, charsRemaining),
+                                 glm::vec2(boxX + padding, currentY),
+                                 textScale,
+                                 textColor,
+                                 outlineSize,
+                                 textAlpha);
+        }
+        charsRemaining -= lineLen;
         currentY += lineHeight;
     }
     currentY += 1.0f * z;
@@ -440,10 +536,22 @@ void Game::RenderDialogueTreeBox()
     float promptY = boxY + boxHeight - padding * 0.8f;
     float promptX = boxX + boxWidth - padding - 16.0f * z;
 
+    // Only show continue prompt / options once typewriter is done
     const bool showContinuePrompt = !isLastPage || visibleOptions.empty();
-    if (showContinuePrompt)
+    if (!textFullyRevealed)
     {
-        DrawContinuePrompt(*m_Renderer, promptX, promptY, textScale, outlineSize, z);
+        // Still revealing - don't show prompt or options yet
+    }
+    else if (showContinuePrompt)
+    {
+        DrawContinuePrompt(*m_Renderer,
+                           promptX,
+                           promptY,
+                           textScale,
+                           outlineSize,
+                           z,
+                           fadeAlpha,
+                           m_DialogueBoxFadeTimer);
     }
     else
     {
@@ -457,10 +565,29 @@ void Game::RenderDialogueTreeBox()
 
             if (isSelected)
             {
+                // Feathered additive glow behind the selected option line.
+                // Multiple layers expand outward with decreasing alpha.
+                float glowCenterY = currentY - textAscent * 0.5f;
+                float baseH = lineHeight;
+                float baseW = boxWidth - padding * 2;
+                float baseX = boxX + padding;
+                constexpr int kGlowLayers = 4;
+                for (int g = 0; g < kGlowLayers; ++g)
+                {
+                    float expand = static_cast<float>(g) * 1.0f * z;
+                    float layerAlpha = 0.06f * (1.0f - static_cast<float>(g) / kGlowLayers);
+                    glm::vec4 gc(0.85f, 0.65f, 0.2f, layerAlpha * fadeAlpha);
+                    m_Renderer->DrawColoredRect(
+                        glm::vec2(baseX - expand, glowCenterY - baseH * 0.5f - expand),
+                        glm::vec2(baseW + expand * 2, baseH + expand * 2),
+                        gc,
+                        true);
+                }
+
                 float arrowCenterY = currentY - textAscent * 0.5f;
                 float arrowX = boxX + padding;
                 DrawRightArrow(
-                    *m_Renderer, arrowX, arrowCenterY, z, glm::vec4(1.0f, 0.88f, 0.4f, 1.0f));
+                    *m_Renderer, arrowX, arrowCenterY, z, glm::vec4(1.0f, 0.88f, 0.4f, fadeAlpha));
             }
 
             std::string prefix = "   ";
@@ -503,7 +630,7 @@ void Game::RenderDialogueTreeBox()
                                      textScale,
                                      questYellow,
                                      outlineSize,
-                                     1.0f);
+                                     textAlpha);
             }
             currentY += lineHeight;
         }

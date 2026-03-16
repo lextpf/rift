@@ -486,110 +486,24 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
         if (!ctx.renderer.IsPointBehindSphere(screenRight))
             DrawCrossMarker(ctx.renderer, anchorRight, defMarkerSize, definedAnchorColor);
 
-        // Stepped base line between anchors showing per-column effective base
+        // Straight base line between anchors
         if (!ctx.renderer.IsPointBehindSphere(screenLeft) &&
             !ctx.renderer.IsPointBehindSphere(screenRight))
         {
-            // Compute structure bounds across all layers
-            int mapW = ctx.tilemap.GetMapWidth();
-            int mapH = ctx.tilemap.GetMapHeight();
-            size_t layerCount = ctx.tilemap.GetLayerCount();
-            int sMinX = mapW, sMaxX = 0, sMinY = mapH, sMaxY = 0;
-            for (int sy = 0; sy < mapH; ++sy)
+            glm::vec4 lineColor(0.0f, 1.0f, 1.0f, 0.5f);
+            float baseY = std::max(screenLeft.y, screenRight.y);
+            float lineX = std::min(screenLeft.x, screenRight.x);
+            float lineW = std::abs(screenRight.x - screenLeft.x);
+            glm::vec2 hScreen(lineX, baseY - 1.0f);
+            glm::vec2 hSize(lineW, 2.0f);
+            if (is3DMode)
             {
-                for (int sx = 0; sx < mapW; ++sx)
-                {
-                    for (size_t li = 0; li < layerCount; ++li)
-                    {
-                        if (!ctx.tilemap.GetLayerNoProjection(sx, sy, li))
-                            continue;
-                        if (ctx.tilemap.GetTileStructureId(sx, sy, static_cast<int>(li) + 1) !=
-                            s.id)
-                            continue;
-                        sMinX = std::min(sMinX, sx);
-                        sMaxX = std::max(sMaxX, sx);
-                        sMinY = std::min(sMinY, sy);
-                        sMaxY = std::max(sMaxY, sy);
-                        break;
-                    }
-                }
+                glm::vec2 p0 = ctx.renderer.ProjectPoint(hScreen);
+                glm::vec2 p1 = ctx.renderer.ProjectPoint(glm::vec2(lineX + lineW, baseY - 1.0f));
+                hScreen = p0;
+                hSize = glm::vec2(p1.x - p0.x, 2.0f);
             }
-
-            if (sMinX <= sMaxX)
-            {
-                int cols = sMaxX - sMinX + 1;
-                float tw = static_cast<float>(tileWidth);
-                float th = static_cast<float>(tileHeight);
-                float anchorBaseY =
-                    static_cast<float>((sMaxY + 1) * tileHeight) - ctx.cameraPosition.y;
-                glm::vec4 lineColor(0.0f, 1.0f, 1.0f, 0.5f);
-
-                // Compute per-column effective maxY (lowest non-transparent tile)
-                std::vector<int> colEffMaxY(cols, sMinY - 1);
-                for (int col = 0; col < cols; ++col)
-                {
-                    int tileX = sMinX + col;
-                    for (int tileY = sMaxY; tileY >= sMinY; --tileY)
-                    {
-                        for (size_t li = 0; li < layerCount; ++li)
-                        {
-                            if (!ctx.tilemap.GetLayerNoProjection(tileX, tileY, li))
-                                continue;
-                            if (ctx.tilemap.GetTileStructureId(
-                                    tileX, tileY, static_cast<int>(li) + 1) != s.id)
-                                continue;
-                            int tid = ctx.tilemap.GetLayerTile(tileX, tileY, li);
-                            if (tid >= 0 && !ctx.tilemap.IsTileTransparent(tid))
-                            {
-                                colEffMaxY[col] = std::max(colEffMaxY[col], tileY);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                // Draw stepped base line
-                float prevBaseY = -1.0f;
-                for (int col = 0; col < cols; ++col)
-                {
-                    int effMaxY = colEffMaxY[col];
-                    if (effMaxY < sMinY)
-                        continue;
-                    float colBaseY = anchorBaseY - static_cast<float>(sMaxY - effMaxY) * th;
-                    float colX = static_cast<float>(sMinX + col) * tw - ctx.cameraPosition.x;
-
-                    glm::vec2 hScreen(colX, colBaseY - 1.0f);
-                    glm::vec2 hSize(tw, 2.0f);
-                    if (is3DMode)
-                    {
-                        glm::vec2 p0 = ctx.renderer.ProjectPoint(hScreen);
-                        glm::vec2 p1 =
-                            ctx.renderer.ProjectPoint(glm::vec2(colX + tw, colBaseY - 1.0f));
-                        hScreen = p0;
-                        hSize = glm::vec2(p1.x - p0.x, 2.0f);
-                    }
-                    ctx.renderer.DrawColoredRect(hScreen, hSize, lineColor);
-
-                    // Vertical connector between adjacent columns with different base
-                    if (prevBaseY >= 0.0f && prevBaseY != colBaseY)
-                    {
-                        float vx = colX;
-                        float vy = std::min(prevBaseY, colBaseY) - 1.0f;
-                        float vh = std::abs(prevBaseY - colBaseY);
-                        glm::vec2 vScreen(vx, vy);
-                        glm::vec2 vSize(2.0f, vh);
-                        if (is3DMode)
-                        {
-                            glm::vec2 pv = ctx.renderer.ProjectPoint(vScreen);
-                            glm::vec2 pv2 = ctx.renderer.ProjectPoint(glm::vec2(vx, vy + vh));
-                            vScreen = pv;
-                            vSize = glm::vec2(2.0f, pv2.y - pv.y);
-                        }
-                        ctx.renderer.DrawColoredRect(vScreen, vSize, lineColor);
-                    }
-                    prevBaseY = colBaseY;
-                }
-            }
+            ctx.renderer.DrawColoredRect(hScreen, hSize, lineColor);
         }
     }
 }
@@ -642,89 +556,14 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
         // Right anchor cross
         DrawCrossMarker(ctx.renderer, rightPos, markerSize, anchorColor);
 
-        // Draw stepped base line showing per-column effective base
+        // Straight base line between anchors
         {
-            int mapW = ctx.tilemap.GetMapWidth();
-            int mapH = ctx.tilemap.GetMapHeight();
-            size_t layerCount = ctx.tilemap.GetLayerCount();
-            int sMinX = mapW, sMaxX = 0, sMinY = mapH, sMaxY = 0;
-            for (int sy = 0; sy < mapH; ++sy)
-            {
-                for (int sx = 0; sx < mapW; ++sx)
-                {
-                    for (size_t li = 0; li < layerCount; ++li)
-                    {
-                        if (!ctx.tilemap.GetLayerNoProjection(sx, sy, li))
-                            continue;
-                        if (ctx.tilemap.GetTileStructureId(sx, sy, static_cast<int>(li) + 1) !=
-                            s.id)
-                            continue;
-                        sMinX = std::min(sMinX, sx);
-                        sMaxX = std::max(sMaxX, sx);
-                        sMinY = std::min(sMinY, sy);
-                        sMaxY = std::max(sMaxY, sy);
-                        break;
-                    }
-                }
-            }
-
-            if (sMinX <= sMaxX)
-            {
-                int cols = sMaxX - sMinX + 1;
-                float tw = static_cast<float>(vr.tileWidth);
-                float th = static_cast<float>(vr.tileHeight);
-                float anchorBaseY =
-                    static_cast<float>((sMaxY + 1) * vr.tileHeight) - ctx.cameraPosition.y;
-                glm::vec4 lineColor(anchorColor.r, anchorColor.g, anchorColor.b, 0.5f);
-
-                // Compute per-column effective maxY (lowest non-transparent tile)
-                std::vector<int> colEffMaxY(cols, sMinY - 1);
-                for (int col = 0; col < cols; ++col)
-                {
-                    int tileX = sMinX + col;
-                    for (int tileY = sMaxY; tileY >= sMinY; --tileY)
-                    {
-                        for (size_t li = 0; li < layerCount; ++li)
-                        {
-                            if (!ctx.tilemap.GetLayerNoProjection(tileX, tileY, li))
-                                continue;
-                            if (ctx.tilemap.GetTileStructureId(
-                                    tileX, tileY, static_cast<int>(li) + 1) != s.id)
-                                continue;
-                            int tid = ctx.tilemap.GetLayerTile(tileX, tileY, li);
-                            if (tid >= 0 && !ctx.tilemap.IsTileTransparent(tid))
-                            {
-                                colEffMaxY[col] = std::max(colEffMaxY[col], tileY);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                // Draw stepped base line
-                float prevBaseY = -1.0f;
-                for (int col = 0; col < cols; ++col)
-                {
-                    int effMaxY = colEffMaxY[col];
-                    if (effMaxY < sMinY)
-                        continue;
-                    float colBaseY = anchorBaseY - static_cast<float>(sMaxY - effMaxY) * th;
-                    float colX = static_cast<float>(sMinX + col) * tw - ctx.cameraPosition.x;
-
-                    ctx.renderer.DrawColoredRect(
-                        glm::vec2(colX, colBaseY - 1.0f), glm::vec2(tw, 2.0f), lineColor);
-
-                    // Vertical connector between adjacent columns with different base
-                    if (prevBaseY >= 0.0f && prevBaseY != colBaseY)
-                    {
-                        float vy = std::min(prevBaseY, colBaseY) - 1.0f;
-                        float vh = std::abs(prevBaseY - colBaseY);
-                        ctx.renderer.DrawColoredRect(
-                            glm::vec2(colX, vy), glm::vec2(2.0f, vh), lineColor);
-                    }
-                    prevBaseY = colBaseY;
-                }
-            }
+            glm::vec4 lineColor(anchorColor.r, anchorColor.g, anchorColor.b, 0.5f);
+            float baseY = std::max(leftPos.y, rightPos.y);
+            float lineX = std::min(leftPos.x, rightPos.x);
+            float lineW = std::abs(rightPos.x - leftPos.x);
+            ctx.renderer.DrawColoredRect(
+                glm::vec2(lineX, baseY - 1.0f), glm::vec2(lineW, 2.0f), lineColor);
         }
     }
 

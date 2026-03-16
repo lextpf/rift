@@ -1198,13 +1198,22 @@ void Game::CloseSimpleDialogue()
 
 void Game::ConfirmOrAdvanceTreeDialogue()
 {
+    // If typewriter is still revealing text, skip to full reveal first
+    if (m_DialogueCharReveal >= 0.0f)
+    {
+        m_DialogueCharReveal = -1.0f;
+        return;
+    }
+
     if (!IsDialogueOnLastPage())
     {
         m_DialoguePage++;
+        m_DialogueCharReveal = 0.0f;
     }
     else
     {
         m_DialoguePage = 0;
+        m_DialogueCharReveal = 0.0f;
         m_DialogueManager.ConfirmSelection();
         if (!m_DialogueManager.IsActive())
         {
