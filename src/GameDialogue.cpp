@@ -150,9 +150,20 @@ void DrawFilledRoundedRectGradient(IRenderer& renderer,
                                    float radius,
                                    float step)
 {
+    // Guard against degenerate sizes that would produce sub-pixel or
+    // negative-area strips (e.g., when the dialogue box is very small).
+    if (size.y <= 0.0f || size.x <= 0.0f)
+    {
+        return;
+    }
+
     constexpr int kStrips = 10;
     float bodyH = size.y - 2 * radius;
-    float stripH = bodyH / static_cast<float>(kStrips);
+    if (bodyH < 0.0f)
+    {
+        bodyH = 0.0f;
+    }
+    float stripH = (kStrips > 0) ? bodyH / static_cast<float>(kStrips) : bodyH;
     int cornerSteps = static_cast<int>(std::round(radius / step));
 
     // Top corner rows
@@ -245,7 +256,7 @@ void Game::RenderNPCHeadText()
 
     // Get NPC position in screen space
     glm::vec2 npcWorldPos = m_NPCs[m_DialogueNPCIndex].GetPosition();
-    glm::vec2 npcScreenPos = npcWorldPos - m_CameraPosition;
+    glm::vec2 npcScreenPos = npcWorldPos - m_Camera.position;
 
     // Position text above the NPC's head
     float textAreaWidth = 180.0f;
@@ -310,11 +321,11 @@ void Game::RenderDialogueTreeBox()
     // Get world dimensions for positioning, adjusted for zoom
     float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float baseWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    float worldWidth = baseWorldWidth / m_CameraZoom;
-    float worldHeight = baseWorldHeight / m_CameraZoom;
+    float worldWidth = baseWorldWidth / m_Camera.zoom;
+    float worldHeight = baseWorldHeight / m_Camera.zoom;
 
     // Scale factor for UI elements, inverse of zoom so they appear constant size on screen
-    float z = 1.0f / m_CameraZoom;
+    float z = 1.0f / m_Camera.zoom;
 
     // Fade-in animation
     constexpr float kFadeDuration = 0.2f;

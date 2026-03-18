@@ -145,13 +145,13 @@ void VulkanRenderer::CreateDescriptorPool()
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     // Allocate enough for many textures (1000 should be plenty for most games)
-    poolSize.descriptorCount = 1000;
+    poolSize.descriptorCount = DESCRIPTOR_POOL_MAX_SETS;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1000;  // Allow up to 1000 descriptor sets
+    poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS;  // Allow up to 1000 descriptor sets
     poolInfo.flags =
         VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;  // Allow freeing individual sets
 

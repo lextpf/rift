@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "MathConstants.h"
 #include "NonPlayerCharacter.h"
 #include "OpenGLRenderer.h"
 #include "PlayerCharacter.h"
@@ -39,16 +40,6 @@ Game::Game()
       m_ResizeSnapTimer(0.0f),   // countdown before snapping window to tile-aligned size
       m_PendingWindowSnap(false),
 
-      // -- Camera --
-      m_CameraPosition(0.0f),
-      m_CameraFollowTarget(0.0f),  // world position the camera smoothly tracks
-      m_HasCameraFollowTarget(false),
-      m_CameraZoom(1.0f),
-      m_CameraTilt(0.2f),  // perspective tilt intensity for 3D effect
-      m_Enable3DEffect(false),
-      m_GlobeSphereRadius(200.0f),  // radius for globe/sphere projection distortion
-      m_FreeCameraMode(false),      // when true, camera is decoupled from the player
-
       // -- Timing --
       m_LastFrameTime(0.0f),
       m_PlayerPreviousPosition(0.0f),  // used for movement delta / animation direction
@@ -60,15 +51,6 @@ Game::Game()
 
       // -- Renderer --
       m_Renderer(nullptr),
-
-      // -- FPS / performance tracking --
-      m_FpsUpdateTimer(0.0f),   // accumulator for HUD FPS refresh interval
-      m_FpsConsoleTimer(0.0f),  // accumulator for console FPS log interval
-      m_FrameCount(0),
-      m_CurrentFps(0.0f),
-      m_TargetFps(0.0f),
-      m_DrawCallAccumulator(0),  // summed draw calls between FPS samples
-      m_CurrentDrawCalls(0),     // draw calls displayed on HUD
       m_RendererAPI(RendererAPI::OpenGL)
 {
 }
@@ -377,16 +359,16 @@ bool Game::Initialize()
     // Player's visual center is at playerPos.y - HITBOX_HEIGHT (middle of 32px sprite)
     glm::vec2 playerVisualCenter =
         glm::vec2(playerPos.x, playerPos.y - PlayerCharacter::HITBOX_HEIGHT);
-    m_CameraPosition = playerVisualCenter - glm::vec2(camWorldWidth / 2.0f, camWorldHeight / 2.0f);
+    m_Camera.position = playerVisualCenter - glm::vec2(camWorldWidth / 2.0f, camWorldHeight / 2.0f);
     // Initialize follow target to current camera position
-    m_CameraFollowTarget = m_CameraPosition;
-    m_HasCameraFollowTarget = false;
+    m_Camera.followTarget = m_Camera.position;
+    m_Camera.hasFollowTarget = false;
 
     // Clamp camera to map bounds
     float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
     float mapHeight = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
-    m_CameraPosition.x = std::max(0.0f, std::min(m_CameraPosition.x, mapWidth - camWorldWidth));
-    m_CameraPosition.y = std::max(0.0f, std::min(m_CameraPosition.y, mapHeight - camWorldHeight));
+    m_Camera.position.x = std::max(0.0f, std::min(m_Camera.position.x, mapWidth - camWorldWidth));
+    m_Camera.position.y = std::max(0.0f, std::min(m_Camera.position.y, mapHeight - camWorldHeight));
 
     std::cout << "Map size: " << m_Tilemap.GetMapWidth() << "x" << m_Tilemap.GetMapHeight()
               << " tiles = " << mapWidth << "x" << mapHeight << " pixels" << std::endl;
@@ -395,7 +377,7 @@ bool Game::Initialize()
               << std::endl;
     std::cout << "Player position: (" << playerPos.x << ", " << playerPos.y << ") - Tile ("
               << playerTileX << ", " << playerTileY << ")" << std::endl;
-    std::cout << "Camera position: (" << m_CameraPosition.x << ", " << m_CameraPosition.y << ")"
+    std::cout << "Camera position: (" << m_Camera.position.x << ", " << m_Camera.position.y << ")"
               << std::endl;
     std::cout << "PlayerCharacter size: " << PlayerCharacter::RENDER_WIDTH << "x"
               << PlayerCharacter::RENDER_HEIGHT << " pixels (ONE TILE)" << std::endl;
@@ -466,10 +448,10 @@ void Game::Run()
 
             // FPS limiter: busy-wait until target frame time is reached.
             // Busy-waiting is used instead of sleep() for sub-millisecond accuracy,
-            // but this does consume CPU cycles. When m_TargetFps is 0, no limiting.
-            if (m_TargetFps > 0.0f)
+            // but this does consume CPU cycles. When m_Fps.targetFps is 0, no limiting.
+            if (m_Fps.targetFps > 0.0f)
             {
-                double targetFrameTime = 1.0 / static_cast<double>(m_TargetFps);
+                double targetFrameTime = 1.0 / static_cast<double>(m_Fps.targetFps);
                 double elapsed = glfwGetTime() - frameStartTime;
                 double remaining = targetFrameTime - elapsed;
 
@@ -537,30 +519,31 @@ void Game::Update(float deltaTime)
     };
 
     // Update FPS counter
-    m_FrameCount++;
-    m_FpsUpdateTimer += deltaTime;
-    if (m_FpsUpdateTimer >= 1.0f)  // Update FPS display every second
+    m_Fps.frameCount++;
+    m_Fps.updateTimer += deltaTime;
+    if (m_Fps.updateTimer >= 1.0f)  // Update FPS display every second
     {
-        m_CurrentFps = m_FrameCount / m_FpsUpdateTimer;
-        m_CurrentDrawCalls = (m_FrameCount > 0) ? m_DrawCallAccumulator / m_FrameCount : 0;
-        m_FrameCount = 0;
-        m_FpsUpdateTimer = 0.0f;
-        m_DrawCallAccumulator = 0;
+        m_Fps.currentFps = m_Fps.frameCount / m_Fps.updateTimer;
+        m_Fps.currentDrawCalls =
+            (m_Fps.frameCount > 0) ? m_Fps.drawCallAccumulator / m_Fps.frameCount : 0;
+        m_Fps.frameCount = 0;
+        m_Fps.updateTimer = 0.0f;
+        m_Fps.drawCallAccumulator = 0;
     }
 
     // Output stats to console every second [deprecated]
-    m_FpsConsoleTimer += deltaTime;
-    if (m_FpsConsoleTimer >= 1.0f)
+    m_Fps.consoleTimer += deltaTime;
+    if (m_Fps.consoleTimer >= 1.0f)
     {
         const char* renderer = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
-        float frameTimeMs = (m_CurrentFps > 0) ? (1000.0f / m_CurrentFps) : 0.0f;
+        float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
         /*std::cout << "[" << renderer << "] "
-                  << static_cast<int>(m_CurrentFps) << " FPS | "
+                  << static_cast<int>(m_Fps.currentFps) << " FPS | "
                   << std::fixed << std::setprecision(4) << frameTimeMs << "ms | "
                   << m_ScreenWidth << "x" << m_ScreenHeight << " | "
-                  << std::setprecision(2) << m_CameraZoom << "x zoom"
+                  << std::setprecision(2) << m_Camera.zoom << "x zoom"
                   << std::endl;*/
-        m_FpsConsoleTimer = 0.0f;
+        m_Fps.consoleTimer = 0.0f;
     }
 
     // Handle deferred window snap after resize settles
@@ -582,11 +565,11 @@ void Game::Update(float deltaTime)
     // Update particle system
     float pWorldW = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float pWorldH = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    glm::vec2 particleCullCam = m_CameraPosition;
-    glm::vec2 viewSize(pWorldW / m_CameraZoom, pWorldH / m_CameraZoom);
-    if (m_Enable3DEffect)
+    glm::vec2 particleCullCam = m_Camera.position;
+    glm::vec2 viewSize(pWorldW / m_Camera.zoom, pWorldH / m_Camera.zoom);
+    if (m_Camera.enable3DEffect)
     {
-        float horizonScale = 0.6f + (1.0f - m_CameraTilt) * 0.15f;
+        float horizonScale = 0.6f + (1.0f - m_Camera.tilt) * 0.15f;
         float expansion = 1.0f / std::max(horizonScale, 0.001f);
         float cullWidthScale =
             static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(true));
@@ -608,24 +591,24 @@ void Game::Update(float deltaTime)
     // Get player position, needed for NPC updates and collision
     glm::vec2 playerPos = m_Player.GetPosition();
 
-    if (m_DialogueSnapActive)
+    if (m_DialogueSnap.active)
     {
         if (m_DialogueNPCIndex < 0 || m_DialogueNPCIndex >= static_cast<int>(m_NPCs.size()))
         {
-            m_DialogueSnapActive = false;
+            m_DialogueSnap.active = false;
         }
         else
         {
-            m_DialogueSnapTimer += deltaTime;
-            float duration = std::max(0.05f, m_DialogueSnapDuration);
-            float t = std::clamp(m_DialogueSnapTimer / duration, 0.0f, 1.0f);
+            m_DialogueSnap.timer += deltaTime;
+            float duration = std::max(0.05f, m_DialogueSnap.duration);
+            float t = std::clamp(m_DialogueSnap.timer / duration, 0.0f, 1.0f);
             float smoothT = t * t * (3.0f - 2.0f * t);  // Smoothstep easing
 
             glm::vec2 blendedPlayer =
-                m_DialogueSnapPlayerStart +
-                (m_DialogueSnapPlayerTarget - m_DialogueSnapPlayerStart) * smoothT;
-            glm::vec2 blendedNPC = m_DialogueSnapNPCStart +
-                                   (m_DialogueSnapNPCTarget - m_DialogueSnapNPCStart) * smoothT;
+                m_DialogueSnap.playerStart +
+                (m_DialogueSnap.playerTarget - m_DialogueSnap.playerStart) * smoothT;
+            glm::vec2 blendedNPC = m_DialogueSnap.npcStart +
+                                   (m_DialogueSnap.npcTarget - m_DialogueSnap.npcStart) * smoothT;
 
             m_Player.SetPositionRaw(blendedPlayer);
             m_NPCs[m_DialogueNPCIndex].SetPosition(blendedNPC);
@@ -635,25 +618,26 @@ void Game::Update(float deltaTime)
 
             if (t >= 1.0f)
             {
-                if (m_DialogueSnapHasPlayerTile)
+                if (m_DialogueSnap.hasPlayerTile)
                 {
-                    m_Player.SetTilePosition(m_DialogueSnapPlayerTileX, m_DialogueSnapPlayerTileY);
+                    m_Player.SetTilePosition(m_DialogueSnap.playerTileX,
+                                             m_DialogueSnap.playerTileY);
                 }
                 else
                 {
-                    m_Player.SetPositionRaw(m_DialogueSnapPlayerTarget);
+                    m_Player.SetPositionRaw(m_DialogueSnap.playerTarget);
                 }
                 m_NPCs[m_DialogueNPCIndex].SetTilePosition(
-                    m_DialogueSnapNPCTileX, m_DialogueSnapNPCTileY, 16, true);
+                    m_DialogueSnap.npcTileX, m_DialogueSnap.npcTileY, 16, true);
 
                 m_Player.Stop();
-                m_Player.SetDirection(m_DialogueSnapPlayerFacing);
-                m_NPCs[m_DialogueNPCIndex].SetDirection(m_DialogueSnapNPCFacing);
+                m_Player.SetDirection(m_DialogueSnap.playerFacing);
+                m_NPCs[m_DialogueNPCIndex].SetDirection(m_DialogueSnap.npcFacing);
                 m_NPCs[m_DialogueNPCIndex].SetStopped(true);
                 m_NPCs[m_DialogueNPCIndex].ResetAnimationToIdle();
 
                 bool startedTree = false;
-                if (m_DialogueSnapPrefersTree)
+                if (m_DialogueSnap.prefersTree)
                 {
                     startedTree = m_DialogueManager.StartDialogue(&m_NPCs[m_DialogueNPCIndex]);
                     if (startedTree)
@@ -666,10 +650,10 @@ void Game::Update(float deltaTime)
                 if (!startedTree)
                 {
                     m_InDialogue = true;
-                    m_DialogueText = m_DialogueSnapFallbackText;
+                    m_DialogueText = m_DialogueSnap.fallbackText;
                 }
 
-                m_DialogueSnapActive = false;
+                m_DialogueSnap.active = false;
                 playerPos = m_Player.GetPosition();
             }
         }
@@ -688,7 +672,7 @@ void Game::Update(float deltaTime)
 
     // Update NPCs
     // During dialogue, freeze the NPC being talked to
-    bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnapActive;
+    bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnap.active;
     for (auto& npc : m_NPCs)
     {
         // Skip updating the NPC in dialogue
@@ -712,8 +696,8 @@ void Game::Update(float deltaTime)
     // Calculate world space dimensions with camera zoom applied
     float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float baseWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    float worldWidth = baseWorldWidth / m_CameraZoom;
-    float worldHeight = baseWorldHeight / m_CameraZoom;
+    float worldWidth = baseWorldWidth / m_Camera.zoom;
+    float worldHeight = baseWorldHeight / m_Camera.zoom;
 
     // Check if arrow keys are pressed for manual camera control
     bool arrowUp = glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_PRESS;
@@ -728,7 +712,7 @@ void Game::Update(float deltaTime)
     }
 
     // When in dialogue, arrow keys are used for navigating dialogue options
-    if (m_DialogueManager.IsActive() || m_InDialogue || m_DialogueSnapActive)
+    if (m_DialogueManager.IsActive() || m_InDialogue || m_DialogueSnap.active)
     {
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
@@ -760,12 +744,12 @@ void Game::Update(float deltaTime)
     // - Free camera (Space toggle): Arrow keys pan freely, camera ignores player
     // - Manual pan: Arrow keys override player follow temporarily
     // - Auto follow: Camera smoothly tracks player's tile center position
-    if (m_FreeCameraMode)
+    if (m_Camera.freeMode)
     {
         if (arrowKeysPressed)
         {
             // Base speed scales with zoom (faster when zoomed out for easier map navigation)
-            float cameraSpeed = 600.0f / m_CameraZoom;  // Pixels per second
+            float cameraSpeed = 600.0f / m_Camera.zoom;  // Pixels per second
 
             // Shift modifier for faster panning (2.5x)
             if (glfwGetKey(m_Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -786,7 +770,7 @@ void Game::Update(float deltaTime)
             if (arrowRight)
                 cameraMove.x += cameraSpeed * deltaTime;
 
-            m_CameraPosition += cameraMove;
+            m_Camera.position += cameraMove;
         }
         else
         {
@@ -794,29 +778,29 @@ void Game::Update(float deltaTime)
             float tileW = static_cast<float>(m_Tilemap.GetTileWidth());
             float tileH = static_cast<float>(m_Tilemap.GetTileHeight());
             glm::vec2 snappedPos;
-            snappedPos.x = std::round(m_CameraPosition.x / tileW) * tileW;
-            snappedPos.y = std::round(m_CameraPosition.y / tileH) * tileH;
+            snappedPos.x = std::round(m_Camera.position.x / tileW) * tileW;
+            snappedPos.y = std::round(m_Camera.position.y / tileH) * tileH;
 
             float alpha = expApproachAlpha(deltaTime, 0.5f);  // Faster snap than player follow
-            glm::vec2 newPos = m_CameraPosition + (snappedPos - m_CameraPosition) * alpha;
+            glm::vec2 newPos = m_Camera.position + (snappedPos - m_Camera.position) * alpha;
 
             // Snap exactly when very close to avoid jitter
             if (glm::length(snappedPos - newPos) < 0.1f)
             {
-                m_CameraPosition = snappedPos;
+                m_Camera.position = snappedPos;
             }
             else
             {
-                m_CameraPosition = newPos;
+                m_Camera.position = newPos;
             }
         }
-        m_HasCameraFollowTarget = false;
+        m_Camera.hasFollowTarget = false;
     }
     else if (arrowKeysPressed)
     {
         // Manual camera control with arrow keys
         // Speed scales with zoom (faster when zoomed out)
-        float cameraSpeed = 600.0f / m_CameraZoom;
+        float cameraSpeed = 600.0f / m_Camera.zoom;
 
         // Shift modifier for faster panning (2.5x)
         if (glfwGetKey(m_Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -845,39 +829,40 @@ void Game::Update(float deltaTime)
             cameraMove.x += cameraSpeed * deltaTime;
         }
 
-        m_CameraPosition += cameraMove;
+        m_Camera.position += cameraMove;
 
         // When user manually pans, cancel any automatic follow smoothing
-        m_HasCameraFollowTarget = false;
+        m_Camera.hasFollowTarget = false;
     }
     else
     {
         // No manual camera input.
         // If player is moving with WASD, establish a follow target.
-        if (wasdPressed || m_HasCameraFollowTarget)
+        if (wasdPressed || m_Camera.hasFollowTarget)
         {
-            m_CameraFollowTarget = snappedTarget;
-            m_HasCameraFollowTarget = true;
+            m_Camera.followTarget = snappedTarget;
+            m_Camera.hasFollowTarget = true;
         }
 
         // Smoothly move camera towards follow target if we have one
-        if (m_HasCameraFollowTarget)
+        if (m_Camera.hasFollowTarget)
         {
             // Smooth camera follow
             float alpha = expApproachAlpha(deltaTime, 0.6f);
 
-            glm::vec2 newPos = m_CameraPosition + (m_CameraFollowTarget - m_CameraPosition) * alpha;
+            glm::vec2 newPos =
+                m_Camera.position + (m_Camera.followTarget - m_Camera.position) * alpha;
             // Lerp          = |------ a -----| + |--------------- (b - a) ---------------| *   t
 
             // If very close to target, snap and stop smoothing to avoid jitter
-            if (glm::length(m_CameraFollowTarget - newPos) < 0.1f)
+            if (glm::length(m_Camera.followTarget - newPos) < 0.1f)
             {
-                m_CameraPosition = m_CameraFollowTarget;
-                m_HasCameraFollowTarget = false;
+                m_Camera.position = m_Camera.followTarget;
+                m_Camera.hasFollowTarget = false;
             }
             else
             {
-                m_CameraPosition = newPos;
+                m_Camera.position = newPos;
             }
         }
         // If no follow target and no Arrows or WASD, camera simply stays where it is.
@@ -885,13 +870,14 @@ void Game::Update(float deltaTime)
 
     // Clamp camera to map bounds after snapping (skip in editor free-camera mode to allow panning
     // beyond map)
-    if (!(m_Editor.IsActive() && m_FreeCameraMode))
+    if (!(m_Editor.IsActive() && m_Camera.freeMode))
     {
         float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
         float mapHeight = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
 
-        m_CameraPosition.x = std::max(0.0f, std::min(m_CameraPosition.x, mapWidth - worldWidth));
-        m_CameraPosition.y = std::max(0.0f, std::min(m_CameraPosition.y, mapHeight - worldHeight));
+        m_Camera.position.x = std::max(0.0f, std::min(m_Camera.position.x, mapWidth - worldWidth));
+        m_Camera.position.y =
+            std::max(0.0f, std::min(m_Camera.position.y, mapHeight - worldHeight));
     }
 
     // Resolve player vs NPC collisions using axis-aligned bounding boxes.
@@ -948,23 +934,23 @@ void Game::ConfigureRendererPerspective(float width, float height)
     // Configure the renderer's perspective distortion based on current settings.
     // When 3D effect is enabled, applies a fisheye/globe projection that curves
     // the world and creates a vanishing point effect at the horizon.
-    if (m_Enable3DEffect)
+    if (m_Camera.enable3DEffect)
     {
         // horizonY: vertical position of the vanishing point (negative = above center).
         // The 0.20 coefficient dampens the tilt so small tilt values don't push
         // the horizon off-screen. At max tilt (1.0) the horizon sits at -20% of
         // viewport height; at zero tilt it sits at screen center.
-        float horizonY = -height * m_CameraTilt * 0.20f;
+        float horizonY = -height * m_Camera.tilt * 0.20f;
 
         // horizonScale: minimum scale factor for objects at the horizon line.
         // Range [0.75, 0.85] - at full tilt objects shrink to 75% (strong depth),
         // at zero tilt only to 85% (subtle effect). The linear interpolation keeps
         // the visual transition smooth as the player adjusts tilt.
-        float horizonScale = 0.75f + (1.0f - m_CameraTilt) * 0.10f;
+        float horizonScale = 0.75f + (1.0f - m_Camera.tilt) * 0.10f;
 
         // Scale sphere radius with zoom and viewport, but allow globe to be visible
         float viewportDiagonal = std::sqrt(width * width + height * height);
-        float baseRadius = m_GlobeSphereRadius / m_CameraZoom;
+        float baseRadius = m_Camera.globeSphereRadius / m_Camera.zoom;
         // Minimum radius = viewport diagonal / (2*Pi), which maps to roughly a
         // quarter of the sphere's circumference covering the screen. Going smaller
         // would make the fisheye distortion too extreme; going larger makes the
@@ -991,9 +977,9 @@ glm::mat4 Game::GetOrthoProjection(float width, float height)
 
 void Game::Toggle3DEffect()
 {
-    m_Enable3DEffect = !m_Enable3DEffect;
-    std::cout << "3D Effect: " << (m_Enable3DEffect ? "ON" : "OFF")
-              << " (Radius: " << m_GlobeSphereRadius << ")" << std::endl;
+    m_Camera.enable3DEffect = !m_Camera.enable3DEffect;
+    std::cout << "3D Effect: " << (m_Camera.enable3DEffect ? "ON" : "OFF")
+              << " (Radius: " << m_Camera.globeSphereRadius << ")" << std::endl;
 }
 
 void Game::Render()
@@ -1049,14 +1035,14 @@ void Game::Render()
 
     // Apply camera zoom to the projection matrix
     // Zoom > 1.0 = smaller world view, Zoom < 1.0 = larger world view
-    float zoomedWidth = worldWidth / m_CameraZoom;
-    float zoomedHeight = worldHeight / m_CameraZoom;
+    float zoomedWidth = worldWidth / m_Camera.zoom;
+    float zoomedHeight = worldHeight / m_Camera.zoom;
     ConfigureRendererPerspective(zoomedWidth, zoomedHeight);
     glm::mat4 projection = GetOrthoProjection(zoomedWidth, zoomedHeight);
     m_Renderer->SetProjection(projection);
 
     // Snap camera to pixel grid for rendering to avoid per-frame jitter seams (OpenGL only)
-    const glm::vec2 originalCamera = m_CameraPosition;
+    const glm::vec2 originalCamera = m_Camera.position;
     glm::vec2 renderCam = originalCamera;
     glm::vec2 renderSize(zoomedWidth, zoomedHeight);
     glm::vec2 cullCam = originalCamera;  // use unsnapped camera for visibility tests
@@ -1075,13 +1061,13 @@ void Game::Render()
     // When 3D effect is enabled, we need to load more tiles because the perspective widens the
     // view. renderCam may be pixel-snapped (OpenGL) for drawing; cullCam/cullSize use the unsnapped
     // camera to keep conservative tile visibility when the snap shifts by sub-pixels.
-    if (m_Enable3DEffect)
+    if (m_Camera.enable3DEffect)
     {
         // With perspective enabled, the horizon shows more world area than the
         // camera viewport suggests (things shrink toward the horizon). We must
         // expand the culling rectangle to load tiles that would otherwise be
         // culled but become visible due to the perspective warping.
-        float horizonScale = 0.6f + (1.0f - m_CameraTilt) * 0.15f;
+        float horizonScale = 0.6f + (1.0f - m_Camera.tilt) * 0.15f;
         float expansion = 1.0f / horizonScale;
         auto persp = m_Renderer->GetPerspectiveState();
         bool hasGlobe = persp.enabled && (persp.mode == IRenderer::ProjectionMode::Globe ||
@@ -1102,7 +1088,7 @@ void Game::Render()
     }
 
     // Use snapped camera for rendering when OpenGL (restore at end of function)
-    m_CameraPosition = renderCam;
+    m_Camera.position = renderCam;
 
     // Render layers in order with Y-sorted tiles:
     // 1. Background layers (Ground, Ground Detail, Objects, Objects2)
@@ -1295,7 +1281,7 @@ void Game::Render()
                                                item.tile.x,
                                                item.tile.y,
                                                item.tile.layer,
-                                               m_CameraPosition,
+                                               m_Camera.position,
                                                1);
                     // Suspend perspective again for subsequent entities
                     m_Renderer->SuspendPerspective(true);
@@ -1308,23 +1294,23 @@ void Game::Render()
                                                item.tile.x,
                                                item.tile.y,
                                                item.tile.layer,
-                                               m_CameraPosition,
+                                               m_Camera.position,
                                                0);
                     // Suspend perspective again for subsequent entities
                     m_Renderer->SuspendPerspective(true);
                 }
                 break;
             case RenderItem::NPC_BOTTOM:
-                item.npc->RenderBottomHalf(*m_Renderer, m_CameraPosition);
+                item.npc->RenderBottomHalf(*m_Renderer, m_Camera.position);
                 break;
             case RenderItem::NPC_TOP:
-                item.npc->RenderTopHalf(*m_Renderer, m_CameraPosition);
+                item.npc->RenderTopHalf(*m_Renderer, m_Camera.position);
                 break;
             case RenderItem::PLAYER_BOTTOM:
-                m_Player.RenderBottomHalf(*m_Renderer, m_CameraPosition);
+                m_Player.RenderBottomHalf(*m_Renderer, m_Camera.position);
                 break;
             case RenderItem::PLAYER_TOP:
-                m_Player.RenderTopHalf(*m_Renderer, m_CameraPosition);
+                m_Player.RenderTopHalf(*m_Renderer, m_Camera.position);
                 break;
         }
     }
@@ -1334,7 +1320,7 @@ void Game::Render()
         *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Render noProjection particles, particle system handles suspend internally
-    m_Particles.Render(*m_Renderer, m_CameraPosition, true, false);
+    m_Particles.Render(*m_Renderer, m_Camera.position, true, false);
 
     // Resume perspective for normal foreground rendering
     // (perspective may still be suspended from Y-sorted loop or RenderForegroundLayersNoProjection
@@ -1345,7 +1331,7 @@ void Game::Render()
     m_Tilemap.RenderForegroundLayers(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Render regular particles on top of world
-    m_Particles.Render(*m_Renderer, m_CameraPosition, false, false);
+    m_Particles.Render(*m_Renderer, m_Camera.position, false, false);
 
     // Render ambient light overlay
     m_Renderer->SuspendPerspective(true);
@@ -1397,7 +1383,7 @@ void Game::Render()
 
         // Format FPS text
         char fpsText[32];
-        snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", m_CurrentFps);
+        snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", m_Fps.currentFps);
 
         // Get player position and tile
         glm::vec2 playerPos = m_Player.GetPosition();
@@ -1531,7 +1517,7 @@ void Game::Render()
 
         // Frame time
         char frameTimeText[32];
-        float frameTimeMs = (m_CurrentFps > 0) ? (1000.0f / m_CurrentFps) : 0.0f;
+        float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
         snprintf(frameTimeText, sizeof(frameTimeText), "%.2fms", frameTimeMs);
         textWidth = strnlen(frameTimeText, sizeof(frameTimeText)) * 12.0f;
         m_Renderer->DrawText(frameTimeText,
@@ -1543,7 +1529,7 @@ void Game::Render()
 
         // Zoom level
         char zoomText[32];
-        snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_CameraZoom);
+        snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.zoom);
         textWidth = strnlen(zoomText, sizeof(zoomText)) * 12.0f;
         m_Renderer->DrawText(zoomText,
                              glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 3),
@@ -1554,7 +1540,7 @@ void Game::Render()
 
         // Draw calls (averaged over last second)
         char drawCallText[32];
-        snprintf(drawCallText, sizeof(drawCallText), "Draws: %d", m_CurrentDrawCalls);
+        snprintf(drawCallText, sizeof(drawCallText), "Draws: %d", m_Fps.currentDrawCalls);
         textWidth = m_Renderer->GetTextWidth(drawCallText, 1.0f);
         m_Renderer->DrawText(drawCallText,
                              glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 4),
@@ -1578,10 +1564,10 @@ void Game::Render()
     m_Renderer->EndFrame();
 
     // Restore unsnapped camera for game state updates
-    m_CameraPosition = originalCamera;
+    m_Camera.position = originalCamera;
 
     // Accumulate draw calls for averaging (calculated in Update())
-    m_DrawCallAccumulator += m_Renderer->GetDrawCallCount();
+    m_Fps.drawCallAccumulator += m_Renderer->GetDrawCallCount();
 
     // Swap buffers
     if (m_RendererAPI == RendererAPI::OpenGL)
@@ -1750,9 +1736,9 @@ bool Game::SwitchRenderer(RendererAPI api)
         // Set viewport and projection
         m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
         float worldWidth =
-            static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_CameraZoom;
+            static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) / m_Camera.zoom;
         float worldHeight =
-            static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_CameraZoom;
+            static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) / m_Camera.zoom;
         ConfigureRendererPerspective(worldWidth, worldHeight);
         glm::mat4 projection = GetOrthoProjection(worldWidth, worldHeight);
         m_Renderer->SetProjection(projection);
@@ -1891,14 +1877,14 @@ EditorContext Game::MakeEditorContext()
                          m_ScreenHeight,
                          m_TilesVisibleWidth,
                          m_TilesVisibleHeight,
-                         m_CameraPosition,
-                         m_CameraFollowTarget,
-                         m_HasCameraFollowTarget,
-                         m_CameraZoom,
-                         m_FreeCameraMode,
-                         m_Enable3DEffect,
-                         m_CameraTilt,
-                         m_GlobeSphereRadius,
+                         m_Camera.position,
+                         m_Camera.followTarget,
+                         m_Camera.hasFollowTarget,
+                         m_Camera.zoom,
+                         m_Camera.freeMode,
+                         m_Camera.enable3DEffect,
+                         m_Camera.tilt,
+                         m_Camera.globeSphereRadius,
                          m_Tilemap,
                          m_Player,
                          m_NPCs,

@@ -121,87 +121,42 @@ void VulkanRenderer::Init()
     try
     {
         std::cout << "Initializing Vulkan renderer..." << std::endl;
-        std::cout.flush();
 
 #ifdef _WIN32
-        std::cout << "Init() step 0: Loading Vulkan library..." << std::endl;
-        std::cout.flush();
         if (!LoadVulkanLibrary())
         {
             std::cerr << "Warning: Failed to load Vulkan library, but continuing..." << std::endl;
-            std::cerr.flush();
         }
 #endif
 
-        std::cout << "Init() step 1: Calling CreateInstance()..." << std::endl;
-        std::cout.flush();
         CreateInstance();
-        std::cout << "Init() step 1 complete: Vulkan instance created" << std::endl;
-        std::cout.flush();
         CreateSurface();
-        std::cout << "Vulkan surface created" << std::endl;
-        std::cout.flush();
         PickPhysicalDevice();
-        std::cout << "Physical device selected" << std::endl;
-        std::cout.flush();
         CreateLogicalDevice();
-        std::cout << "Logical device created" << std::endl;
-        std::cout.flush();
         CreateSwapchain();
-        std::cout << "Swapchain created" << std::endl;
-        std::cout.flush();
         CreateImageViews();
-        std::cout << "Image views created" << std::endl;
-        std::cout.flush();
         CreateRenderPass();
-        std::cout << "Init() step 7 complete: Render pass created" << std::endl;
-        std::cout.flush();
-
-        std::cout << "Init() step 8: Creating graphics pipeline..." << std::endl;
-        std::cout.flush();
         CreateGraphicsPipeline();
-        std::cout << "Init() step 8 complete: Graphics pipeline created" << std::endl;
-        std::cout.flush();
         CreateFramebuffers();
-        std::cout << "Framebuffers created" << std::endl;
-        std::cout.flush();
         CreateCommandPool();
-        std::cout << "Command pool created" << std::endl;
-        std::cout.flush();
         CreateBuffers();
-        std::cout << "Buffers created" << std::endl;
-        std::cout.flush();
         CreateDescriptorPool();
-        std::cout << "Descriptor pool created" << std::endl;
-        std::cout.flush();
         CreateTextureSampler();
-        std::cout << "Texture sampler created" << std::endl;
-        std::cout.flush();
         CreateWhiteTexture();
-        std::cout << "White texture created" << std::endl;
-        std::cout.flush();
         LoadFont();
-        std::cout << "Font loading complete (Vulkan)" << std::endl;
-        std::cout.flush();
         CreateCommandBuffers();
-        std::cout << "Command buffers created" << std::endl;
-        std::cout.flush();
         CreateSyncObjects();
-        std::cout << "Sync objects created" << std::endl;
-        std::cout.flush();
+
         std::cout << "Vulkan renderer initialized successfully!" << std::endl;
-        std::cout.flush();
     }
     catch (const std::exception& e)
     {
         std::cerr << "Exception in VulkanRenderer::Init(): " << e.what() << std::endl;
-        std::cerr.flush();
-        throw;  // Re-throw to be caught by Game::Initialize()
+        throw;
     }
     catch (...)
     {
         std::cerr << "Unknown exception in VulkanRenderer::Init()" << std::endl;
-        std::cerr.flush();
         throw;
     }
 }
@@ -434,9 +389,6 @@ void VulkanRenderer::RecreateSwapchain()
 
 void VulkanRenderer::CreateInstance()
 {
-    std::cout << "CreateInstance() step 1: Creating VkApplicationInfo..." << std::endl;
-    std::cout.flush();
-
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Rift Game";
@@ -445,34 +397,18 @@ void VulkanRenderer::CreateInstance()
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_0;
 
-    std::cout << "CreateInstance() step 2: Creating VkInstanceCreateInfo..." << std::endl;
-    std::cout.flush();
-
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    std::cout << "CreateInstance() step 3: Getting required extensions..." << std::endl;
-    std::cout.flush();
-
     auto extensions = GetRequiredExtensions();
-    std::cout << "CreateInstance() step 3 complete: Got " << extensions.size() << " extensions"
-              << std::endl;
-    std::cout.flush();
-
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
-
-    std::cout << "CreateInstance() step 4: Checking validation layer support..." << std::endl;
-    std::cout.flush();
 
     const bool enableValidationLayers = ShouldEnableValidationLayers();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
     bool hasValidationLayers = enableValidationLayers && CheckValidationLayerSupport();
-    std::cout << "CreateInstance() step 4 complete: Validation layers "
-              << (hasValidationLayers ? "enabled" : "disabled") << std::endl;
-    std::cout.flush();
 
     if (hasValidationLayers)
     {
@@ -506,85 +442,12 @@ void VulkanRenderer::CreateInstance()
         createInfo.pNext = nullptr;
     }
 
-    std::cout << "CreateInstance() step 5: Calling vkCreateInstance()..." << std::endl;
-    std::cout.flush();
-
-    // Check if vkCreateInstance function pointer is valid
     if (vkCreateInstance == nullptr)
     {
-        std::cerr
-            << "ERROR: vkCreateInstance function pointer is NULL! Vulkan loader may not be loaded."
-            << std::endl;
-        std::cerr.flush();
         throw std::runtime_error("Vulkan loader not properly initialized!");
     }
 
-    std::cout << "vkCreateInstance function pointer is valid, calling..." << std::endl;
-    std::cout.flush();
-
-    // Print extension names for debugging
-    std::cout << "Extensions being requested:" << std::endl;
-    for (uint32_t i = 0; i < createInfo.enabledExtensionCount; i++)
-    {
-        std::cout << "  - " << createInfo.ppEnabledExtensionNames[i] << std::endl;
-    }
-    std::cout.flush();
-
-    if (createInfo.enabledLayerCount > 0)
-    {
-        std::cout << "Validation layers being requested:" << std::endl;
-        for (uint32_t i = 0; i < createInfo.enabledLayerCount; i++)
-        {
-            std::cout << "  - " << createInfo.ppEnabledLayerNames[i] << std::endl;
-        }
-    }
-    else
-    {
-        std::cout << "No validation layers requested" << std::endl;
-    }
-    std::cout.flush();
-
-    VkResult result;
-
-    // Call vkCreateInstance - if it crashes, it's likely a driver/runtime issue
-    result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
-
-    if (result != VK_SUCCESS)
-    {
-        std::cerr << "ERROR: vkCreateInstance failed with result: " << result << std::endl;
-        std::cerr.flush();
-
-        // Print more details about the error
-        switch (result)
-        {
-            case VK_ERROR_OUT_OF_HOST_MEMORY:
-                std::cerr << "  Reason: Out of host memory" << std::endl;
-                break;
-            case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-                std::cerr << "  Reason: Out of device memory" << std::endl;
-                break;
-            case VK_ERROR_INITIALIZATION_FAILED:
-                std::cerr << "  Reason: Initialization failed" << std::endl;
-                break;
-            case VK_ERROR_LAYER_NOT_PRESENT:
-                std::cerr << "  Reason: Layer not present" << std::endl;
-                break;
-            case VK_ERROR_EXTENSION_NOT_PRESENT:
-                std::cerr << "  Reason: Extension not present" << std::endl;
-                break;
-            case VK_ERROR_INCOMPATIBLE_DRIVER:
-                std::cerr << "  Reason: Incompatible driver" << std::endl;
-                break;
-            default:
-                std::cerr << "  Reason: Unknown error code" << std::endl;
-                break;
-        }
-
-        throw std::runtime_error("Failed to create Vulkan instance!");
-    }
-
-    std::cout << "CreateInstance() step 5 complete: Instance created successfully" << std::endl;
-    std::cout.flush();
+    VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 }
 
 void VulkanRenderer::CreateSurface()
@@ -2048,6 +1911,17 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     if (it != m_DescriptorSetCache.end())
     {
         return it->second;
+    }
+
+    if (!m_DescriptorPoolWarned)
+    {
+        size_t currentCount = m_DescriptorSetCache.size();
+        if (currentCount >= static_cast<size_t>(DESCRIPTOR_POOL_MAX_SETS * 0.9f))
+        {
+            std::cerr << "Warning: Descriptor pool at " << currentCount << "/"
+                      << DESCRIPTOR_POOL_MAX_SETS << " sets" << std::endl;
+            m_DescriptorPoolWarned = true;
+        }
     }
 
     // Allocate new descriptor set

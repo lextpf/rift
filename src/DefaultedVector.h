@@ -50,19 +50,16 @@ public:
     using value_type = T;
     static constexpr auto default_value = static_cast<T>(Default);
 
-    /// @brief Index access (mutable). Returns `T&` for most types, proxy for `bool`.
-    [[nodiscard]] decltype(auto) operator[](size_t i) { return m_Data[i]; }
-
-    /// @brief Index access (const).
-    [[nodiscard]] decltype(auto) operator[](size_t i) const { return m_Data[i]; }
+    /// @brief Index access. Returns `T&` for most types, proxy for `bool`.
+    /// Uses C++23 deducing this to unify const/non-const overloads.
+    [[nodiscard]] decltype(auto) operator[](this auto&& self, size_t i) { return self.m_Data[i]; }
 
     [[nodiscard]] size_t size() const noexcept { return m_Data.size(); }
     [[nodiscard]] bool empty() const noexcept { return m_Data.empty(); }
 
-    auto begin() noexcept { return m_Data.begin(); }
-    auto end() noexcept { return m_Data.end(); }
-    [[nodiscard]] auto begin() const noexcept { return m_Data.begin(); }
-    [[nodiscard]] auto end() const noexcept { return m_Data.end(); }
+    /// @brief Iterator access. Deducing this forwards const-ness automatically.
+    [[nodiscard]] auto begin(this auto&& self) noexcept { return self.m_Data.begin(); }
+    [[nodiscard]] auto end(this auto&& self) noexcept { return self.m_Data.end(); }
 
     /// @brief Resize to n elements; new slots initialized to default_value.
     void resize(size_t n) { m_Data.resize(n, default_value); }

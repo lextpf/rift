@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "KeyToggle.h"
 
 #include <glad/glad.h>
 
@@ -43,20 +44,15 @@ void Game::ProcessInput(float deltaTime)
     }
 
     // Toggles between gameplay and editor mode.
-    static bool eKeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_E) == GLFW_PRESS && !eKeyPressed)
+    static KeyToggle<GLFW_KEY_E> eKey;
+    if (eKey.JustPressed(m_Window))
     {
         m_Editor.SetActive(!m_Editor.IsActive());
-        eKeyPressed = true;
         std::cout << "Editor mode: " << (m_Editor.IsActive() ? "ON" : "OFF") << std::endl;
         if (m_Editor.IsActive())
         {
             std::cout << "Press T to toggle tile picker visibility" << std::endl;
         }
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_E) == GLFW_RELEASE)
-    {
-        eKeyPressed = false;
     }
 
     // Delegate all editor-specific key input to Editor
@@ -72,10 +68,10 @@ void Game::ProcessInput(float deltaTime)
 
     // Resets camera zoom to 1.0x and recenters on player.
     // In editor mode, also resets tile picker zoom and pan.
-    static bool zKeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_Z) == GLFW_PRESS && !zKeyPressed)
+    static KeyToggle<GLFW_KEY_Z> zKey;
+    if (zKey.JustPressed(m_Window))
     {
-        m_CameraZoom = 1.0f;
+        m_Camera.zoom = 1.0f;
         std::cout << "Camera zoom reset to 1.0x" << std::endl;
 
         // Recenter camera on player in gameplay mode
@@ -91,24 +87,24 @@ void Game::ProcessInput(float deltaTime)
                 glm::vec2(playerAnchorTileCenter.x, playerAnchorTileCenter.y - TILE_PIXEL_SIZE);
 
             // Position camera so player is centered
-            m_CameraPosition =
+            m_Camera.position =
                 playerVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
             // Clamp to map bounds (skip in editor free-camera mode)
-            if (!(m_Editor.IsActive() && m_FreeCameraMode))
+            if (!(m_Editor.IsActive() && m_Camera.freeMode))
             {
                 float mapWidth =
                     static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
                 float mapHeight =
                     static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
-                m_CameraPosition.x =
-                    std::max(0.0f, std::min(m_CameraPosition.x, mapWidth - worldWidth));
-                m_CameraPosition.y =
-                    std::max(0.0f, std::min(m_CameraPosition.y, mapHeight - worldHeight));
+                m_Camera.position.x =
+                    std::max(0.0f, std::min(m_Camera.position.x, mapWidth - worldWidth));
+                m_Camera.position.y =
+                    std::max(0.0f, std::min(m_Camera.position.y, mapHeight - worldHeight));
             }
 
             // Disable smooth follow to prevent drift after reset
-            m_HasCameraFollowTarget = false;
+            m_Camera.hasFollowTarget = false;
         }
 
         // Reset tile picker state in editor mode
@@ -116,38 +112,23 @@ void Game::ProcessInput(float deltaTime)
         {
             m_Editor.ResetTilePickerState();
         }
-        zKeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_Z) == GLFW_RELEASE)
-    {
-        zKeyPressed = false;
     }
 
     // Toggle between OpenGL and Vulkan renderers at runtime
-    static bool f1KeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_F1) == GLFW_PRESS && !f1KeyPressed)
+    static KeyToggle<GLFW_KEY_F1> f1Key;
+    if (f1Key.JustPressed(m_Window))
     {
         // Toggle between OpenGL and Vulkan
         RendererAPI newApi =
             (m_RendererAPI == RendererAPI::OpenGL) ? RendererAPI::Vulkan : RendererAPI::OpenGL;
         SwitchRenderer(newApi);
-        f1KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F1) == GLFW_RELEASE)
-    {
-        f1KeyPressed = false;
     }
 
     // Toggles FPS and position information display
-    static bool f2KeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_F2) == GLFW_PRESS && !f2KeyPressed)
+    static KeyToggle<GLFW_KEY_F2> f2Key;
+    if (f2Key.JustPressed(m_Window))
     {
         m_Editor.ToggleShowDebugInfo();
-        f2KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F2) == GLFW_RELEASE)
-    {
-        f2KeyPressed = false;
     }
 
     // Enables visual debug overlays including:
@@ -156,21 +137,16 @@ void Game::ProcessInput(float deltaTime)
     //   - Navigation tiles
     //   - NPC information
     //   - All tile layers visible
-    static bool f3KeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_F3) == GLFW_PRESS && !f3KeyPressed)
+    static KeyToggle<GLFW_KEY_F3> f3Key;
+    if (f3Key.JustPressed(m_Window))
     {
         m_Editor.ToggleDebugMode();
-        f3KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F3) == GLFW_RELEASE)
-    {
-        f3KeyPressed = false;
     }
 
     // Cycle through all 8 time periods
-    static bool f4KeyPressed = false;
+    static KeyToggle<GLFW_KEY_F4> f4Key;
     static int timeOfDayCycle = 0;
-    if (glfwGetKey(m_Window, GLFW_KEY_F4) == GLFW_PRESS && !f4KeyPressed)
+    if (f4Key.JustPressed(m_Window))
     {
         timeOfDayCycle = (timeOfDayCycle + 1) % 8;
         const char* periodName = "";
@@ -210,166 +186,88 @@ void Game::ProcessInput(float deltaTime)
                 break;
         }
         std::cout << "Time of day: " << periodName << std::endl;
-        f4KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F4) == GLFW_RELEASE)
-    {
-        f4KeyPressed = false;
     }
 
     // Toggles the 3D globe effect for an isometric-like view
-    static bool f5KeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_F5) == GLFW_PRESS && !f5KeyPressed)
+    static KeyToggle<GLFW_KEY_F5> f5Key;
+    if (f5Key.JustPressed(m_Window))
     {
         Toggle3DEffect();
-        f5KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F5) == GLFW_RELEASE)
-    {
-        f5KeyPressed = false;
     }
 
     // Toggle FPS cap (0 = uncapped, 500 = capped)
-    static bool f6KeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_F6) == GLFW_PRESS && !f6KeyPressed)
+    static KeyToggle<GLFW_KEY_F6> f6Key;
+    if (f6Key.JustPressed(m_Window))
     {
-        if (m_TargetFps <= 0.0f)
+        if (m_Fps.targetFps <= 0.0f)
         {
-            m_TargetFps = 500.0f;
+            m_Fps.targetFps = 500.0f;
             std::cout << "FPS capped at 500" << std::endl;
         }
         else
         {
-            m_TargetFps = 0.0f;
+            m_Fps.targetFps = 0.0f;
             std::cout << "FPS uncapped" << std::endl;
         }
-        f6KeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F6) == GLFW_RELEASE)
-    {
-        f6KeyPressed = false;
     }
 
     // Toggle free camera mode (Space) - camera stops following player
     // WASD/Arrows can then pan camera while player still moves with WASD
-    static bool spaceKeyFreeCamera = false;
-    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnapActive &&
+    static KeyToggle<GLFW_KEY_SPACE> spaceKeyFreeCamera;
+    if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnap.active &&
         !m_Editor.IsActive())
     {
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyFreeCamera)
+        if (spaceKeyFreeCamera.JustPressed(m_Window))
         {
-            m_FreeCameraMode = !m_FreeCameraMode;
-            std::cout << "Free Camera Mode: " << (m_FreeCameraMode ? "ON" : "OFF") << std::endl;
-            spaceKeyFreeCamera = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_RELEASE)
-        {
-            spaceKeyFreeCamera = false;
+            m_Camera.freeMode = !m_Camera.freeMode;
+            std::cout << "Free Camera Mode: " << (m_Camera.freeMode ? "ON" : "OFF") << std::endl;
         }
     }
 
     // Adjusts 3D effect parameters when enabled:
     //   - Page Up/Down adjusts globe radius and tilt
-    static bool pageUpPressed = false;
-    static bool pageDownPressed = false;
-    if (m_Enable3DEffect)
+    static KeyToggle<GLFW_KEY_PAGE_UP> pageUpKey;
+    static KeyToggle<GLFW_KEY_PAGE_DOWN> pageDownKey;
+    if (m_Camera.enable3DEffect)
     {
         // Globe effect parameter adjustment
-        if (glfwGetKey(m_Window, GLFW_KEY_PAGE_UP) == GLFW_PRESS && !pageUpPressed)
+        if (pageUpKey.JustPressed(m_Window))
         {
-            m_GlobeSphereRadius = std::min(500.0f, m_GlobeSphereRadius + 10.0f);
-            m_CameraTilt = std::max(0.0f, m_CameraTilt - 0.05f);
-            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt
-                      << std::endl;
-            pageUpPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_PAGE_UP) == GLFW_RELEASE)
-        {
-            pageUpPressed = false;
+            m_Camera.globeSphereRadius = std::min(500.0f, m_Camera.globeSphereRadius + 10.0f);
+            m_Camera.tilt = std::max(0.0f, m_Camera.tilt - 0.05f);
+            std::cout << "3D Effect - Radius: " << m_Camera.globeSphereRadius
+                      << ", Tilt: " << m_Camera.tilt << std::endl;
         }
 
-        if (glfwGetKey(m_Window, GLFW_KEY_PAGE_DOWN) == GLFW_PRESS && !pageDownPressed)
+        if (pageDownKey.JustPressed(m_Window))
         {
-            m_GlobeSphereRadius = std::max(50.0f, m_GlobeSphereRadius - 10.0f);
-            m_CameraTilt = std::min(1.0f, m_CameraTilt + 0.05f);
-            std::cout << "3D Effect - Radius: " << m_GlobeSphereRadius << ", Tilt: " << m_CameraTilt
-                      << std::endl;
-            pageDownPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_PAGE_DOWN) == GLFW_RELEASE)
-        {
-            pageDownPressed = false;
+            m_Camera.globeSphereRadius = std::max(50.0f, m_Camera.globeSphereRadius - 10.0f);
+            m_Camera.tilt = std::min(1.0f, m_Camera.tilt + 0.05f);
+            std::cout << "3D Effect - Radius: " << m_Camera.globeSphereRadius
+                      << ", Tilt: " << m_Camera.tilt << std::endl;
         }
     }
     // Cycles through available player character sprites.
     // Each character type has its own sprite sheet loaded from assets.
-    static bool cKeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_C) == GLFW_PRESS && !cKeyPressed)
+    static KeyToggle<GLFW_KEY_C> cKey;
+    if (cKey.JustPressed(m_Window))
     {
-        CharacterType currentType = m_Player.GetCharacterType();
-        CharacterType newType;
-
-        // Cycle to next character type
-        switch (currentType)
-        {
-            case CharacterType::BW1_MALE:
-                newType = CharacterType::BW1_FEMALE;
-                break;
-            case CharacterType::BW1_FEMALE:
-                newType = CharacterType::BW2_MALE;
-                break;
-            case CharacterType::BW2_MALE:
-                newType = CharacterType::BW2_FEMALE;
-                break;
-            case CharacterType::BW2_FEMALE:
-                newType = CharacterType::CC_FEMALE;
-                break;
-            case CharacterType::CC_FEMALE:
-                newType = CharacterType::BW1_MALE;  // Wrap to start
-                break;
-            default:
-                newType = CharacterType::BW1_MALE;
-                break;
-        }
+        CharacterType newType = NextEnum(m_Player.GetCharacterType());
 
         // Attempt to load and switch to new character
         if (m_Player.SwitchCharacter(newType))
         {
-            const char* name = "BW1_MALE";
-            switch (newType)
-            {
-                case CharacterType::BW1_MALE:
-                    name = "BW1_MALE";
-                    break;
-                case CharacterType::BW1_FEMALE:
-                    name = "BW1_FEMALE";
-                    break;
-                case CharacterType::BW2_MALE:
-                    name = "BW2_MALE";
-                    break;
-                case CharacterType::BW2_FEMALE:
-                    name = "BW2_FEMALE";
-                    break;
-                case CharacterType::CC_FEMALE:
-                    name = "CC_FEMALE";
-                    break;
-            }
-            std::cout << "Character switched to: " << name << std::endl;
+            std::cout << "Character switched to: " << EnumTraits<CharacterType>::ToString(newType)
+                      << std::endl;
         }
-
-        cKeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_C) == GLFW_RELEASE)
-    {
-        cKeyPressed = false;
     }
 
     // Toggles bicycle mode on/off. When bicycling:
     //   - Movement speed is 2.0x base speed
     //   - Uses center-only collision detection
     //   - Different sprite sheet may be used
-    static bool bKeyPressed = false;
-    if (glfwGetKey(m_Window, GLFW_KEY_B) == GLFW_PRESS && !bKeyPressed && !m_Editor.IsActive())
+    static KeyToggle<GLFW_KEY_B> bKey;
+    if (!m_Editor.IsActive() && bKey.JustPressed(m_Window))
     {
         bool currentBicycling = m_Player.IsBicycling();
         bool newBicycling = !currentBicycling;
@@ -383,11 +281,6 @@ void Game::ProcessInput(float deltaTime)
 
         m_Player.SetBicycling(newBicycling);
         std::cout << "Bicycle: " << (newBicycling ? "ON" : "OFF") << std::endl;
-        bKeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_B) == GLFW_RELEASE)
-    {
-        bKeyPressed = false;
     }
 
     // Copies the appearance of a nearby NPC, transforming the player.
@@ -396,7 +289,7 @@ void Game::ProcessInput(float deltaTime)
     //       since NPCs don't have running/bicycle sprites.
     static bool xKeyPressed = false;
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
-        !m_DialogueSnapActive && glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
+        !m_DialogueSnap.active && glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS && !xKeyPressed)
     {
         if (m_Player.IsUsingCopiedAppearance())
         {
@@ -453,15 +346,15 @@ void Game::ProcessInput(float deltaTime)
         float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
         float baseWorldHeight =
             static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-        float worldWidth = baseWorldWidth / m_CameraZoom;
-        float worldHeight = baseWorldHeight / m_CameraZoom;
+        float worldWidth = baseWorldWidth / m_Camera.zoom;
+        float worldHeight = baseWorldHeight / m_Camera.zoom;
 
         float worldX =
             (static_cast<float>(mouseX) / static_cast<float>(m_ScreenWidth)) * worldWidth +
-            m_CameraPosition.x;
+            m_Camera.position.x;
         float worldY =
             (static_cast<float>(mouseY) / static_cast<float>(m_ScreenHeight)) * worldHeight +
-            m_CameraPosition.y;
+            m_Camera.position.y;
 
         int tileWidth = m_Tilemap.GetTileWidth();
         int tileHeight = m_Tilemap.GetTileHeight();
@@ -523,9 +416,9 @@ void Game::ProcessInput(float deltaTime)
     //   1. Player is within INTERACTION_RANGE and
     //   2. NPC is in front of player or
     //   3. NPC hitbox is overlapping player hitbox
-    static bool fKeyPressed = false;
+    static KeyToggle<GLFW_KEY_F> fKey;
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
-        !m_DialogueSnapActive && glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed)
+        !m_DialogueSnap.active && fKey.JustPressed(m_Window))
     {
         glm::vec2 playerPos = m_Player.GetPosition();
         Direction playerDir = m_Player.GetDirection();
@@ -665,8 +558,8 @@ void Game::ProcessInput(float deltaTime)
                     // Delay dialogue activation until the alignment snap completes.
                     m_DialogueNPCIndex = static_cast<int>(npcIdx);
                     m_DialoguePage = 0;
-                    m_DialogueSnapPrefersTree = npc.HasDialogueTree();
-                    m_DialogueSnapFallbackText = npc.GetDialogue();
+                    m_DialogueSnap.prefersTree = npc.HasDialogueTree();
+                    m_DialogueSnap.fallbackText = npc.GetDialogue();
 
                     // Get current positions
                     playerPos = m_Player.GetPosition();
@@ -679,12 +572,12 @@ void Game::ProcessInput(float deltaTime)
                     int snapTileY = static_cast<int>(
                         std::round((npcPos.y - TILE_PIXEL_SIZE) / TILE_PIXEL_SIZE));
 
-                    m_DialogueSnapNPCTileX = npcTileX;
-                    m_DialogueSnapNPCTileY = snapTileY;
+                    m_DialogueSnap.npcTileX = npcTileX;
+                    m_DialogueSnap.npcTileY = snapTileY;
                     glm::vec2 npcTargetPos(
-                        static_cast<float>(m_DialogueSnapNPCTileX * TILE_PIXEL_SIZE +
+                        static_cast<float>(m_DialogueSnap.npcTileX * TILE_PIXEL_SIZE +
                                            TILE_PIXEL_SIZE / 2),
-                        static_cast<float>(m_DialogueSnapNPCTileY * TILE_PIXEL_SIZE +
+                        static_cast<float>(m_DialogueSnap.npcTileY * TILE_PIXEL_SIZE +
                                            TILE_PIXEL_SIZE));
 
                     // Recalculate player tile position after getting fresh position
@@ -926,153 +819,86 @@ void Game::ProcessInput(float deltaTime)
                     npc.SetStopped(true);
                     npc.ResetAnimationToIdle();
 
-                    m_DialogueSnapActive = true;
-                    m_DialogueSnapTimer = 0.0f;
-                    m_DialogueSnapDuration = 0.42f;
-                    m_DialogueSnapPlayerStart = playerPos;
-                    m_DialogueSnapPlayerTarget = playerTargetPos;
-                    m_DialogueSnapNPCStart = npcPos;
-                    m_DialogueSnapNPCTarget = npcTargetPos;
-                    m_DialogueSnapPlayerTileX =
+                    m_DialogueSnap.active = true;
+                    m_DialogueSnap.timer = 0.0f;
+                    m_DialogueSnap.duration = 0.42f;
+                    m_DialogueSnap.playerStart = playerPos;
+                    m_DialogueSnap.playerTarget = playerTargetPos;
+                    m_DialogueSnap.npcStart = npcPos;
+                    m_DialogueSnap.npcTarget = npcTargetPos;
+                    m_DialogueSnap.playerTileX =
                         hasPlayerTileTarget
                             ? playerTileXFinal
                             : static_cast<int>(std::round(
                                   (playerTargetPos.x - TILE_PIXEL_SIZE / 2) / TILE_PIXEL_SIZE));
-                    m_DialogueSnapPlayerTileY =
+                    m_DialogueSnap.playerTileY =
                         hasPlayerTileTarget
                             ? playerTileYFinal
                             : static_cast<int>(std::round((playerTargetPos.y - TILE_PIXEL_SIZE) /
                                                           TILE_PIXEL_SIZE));
-                    m_DialogueSnapHasPlayerTile = hasPlayerTileTarget;
-                    m_DialogueSnapPlayerFacing = playerFacing;
-                    m_DialogueSnapNPCFacing = npcFacing;
+                    m_DialogueSnap.hasPlayerTile = hasPlayerTileTarget;
+                    m_DialogueSnap.playerFacing = playerFacing;
+                    m_DialogueSnap.npcFacing = npcFacing;
 
                     std::cout << "Starting dialogue snap with NPC: " << npc.GetType()
-                              << " target NPC tile (" << m_DialogueSnapNPCTileX << ", "
-                              << m_DialogueSnapNPCTileY << ")"
-                              << ", target player tile (" << m_DialogueSnapPlayerTileX << ", "
-                              << m_DialogueSnapPlayerTileY << ")" << std::endl;
+                              << " target NPC tile (" << m_DialogueSnap.npcTileX << ", "
+                              << m_DialogueSnap.npcTileY << ")"
+                              << ", target player tile (" << m_DialogueSnap.playerTileX << ", "
+                              << m_DialogueSnap.playerTileY << ")" << std::endl;
                     break;
                 }
             }
         }
-        fKeyPressed = true;
-    }
-    if (glfwGetKey(m_Window, GLFW_KEY_F) == GLFW_RELEASE)
-    {
-        fKeyPressed = false;
     }
 
     // Handle branching dialogue tree input
     if (m_DialogueManager.IsActive())
     {
-        static bool upKeyPressed = false;
-        static bool downKeyPressed = false;
-        static bool enterKeyTree = false;
-        static bool spaceKeyTree = false;
-        static bool escapeKeyTree = false;
+        static KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> upKey;
+        static KeyToggle<GLFW_KEY_DOWN, GLFW_KEY_S> downKey;
+        static KeyToggle<GLFW_KEY_ENTER> enterKeyTree;
+        static KeyToggle<GLFW_KEY_SPACE> spaceKeyTree;
+        static KeyToggle<GLFW_KEY_ESCAPE> escapeKeyTree;
 
         // Navigate options with Up/Down or W/S
-        if ((glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_PRESS ||
-             glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS) &&
-            !upKeyPressed)
-        {
+        if (upKey.JustPressed(m_Window))
             m_DialogueManager.SelectPrevious();
-            upKeyPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_UP) == GLFW_RELEASE &&
-            glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_RELEASE)
-        {
-            upKeyPressed = false;
-        }
 
-        if ((glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_PRESS ||
-             glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS) &&
-            !downKeyPressed)
-        {
+        if (downKey.JustPressed(m_Window))
             m_DialogueManager.SelectNext();
-            downKeyPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_DOWN) == GLFW_RELEASE &&
-            glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_RELEASE)
-        {
-            downKeyPressed = false;
-        }
 
         // Confirm selection with Enter or Space
-        if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterKeyTree)
-        {
+        if (enterKeyTree.JustPressed(m_Window))
             ConfirmOrAdvanceTreeDialogue();
-            enterKeyTree = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_RELEASE)
-        {
-            enterKeyTree = false;
-        }
 
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyTree)
-        {
+        if (spaceKeyTree.JustPressed(m_Window))
             ConfirmOrAdvanceTreeDialogue();
-            spaceKeyTree = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_RELEASE)
-        {
-            spaceKeyTree = false;
-        }
 
         // Escape to force-close dialogue
-        if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyTree)
-        {
+        if (escapeKeyTree.JustPressed(m_Window))
             ForceCloseTreeDialogue();
-            escapeKeyTree = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
-        {
-            escapeKeyTree = false;
-        }
     }
 
     // Close simple dialogue
     if (m_InDialogue)
     {
-        static bool enterKeyPressed = false;
-        static bool spaceKeyPressed = false;
-        static bool escapeKeyPressed = false;
+        static KeyToggle<GLFW_KEY_ENTER> enterKey;
+        static KeyToggle<GLFW_KEY_SPACE> spaceKey;
+        static KeyToggle<GLFW_KEY_ESCAPE> escapeKey;
 
-        if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_PRESS && !enterKeyPressed)
-        {
+        if (enterKey.JustPressed(m_Window))
             CloseSimpleDialogue();
-            enterKeyPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_ENTER) == GLFW_RELEASE)
-        {
-            enterKeyPressed = false;
-        }
 
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyPressed)
-        {
+        if (spaceKey.JustPressed(m_Window))
             CloseSimpleDialogue();
-            spaceKeyPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_RELEASE)
-        {
-            spaceKeyPressed = false;
-        }
 
-        if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escapeKeyPressed)
-        {
+        if (escapeKey.JustPressed(m_Window))
             CloseSimpleDialogue();
-            escapeKeyPressed = true;
-        }
-        if (glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
-        {
-            escapeKeyPressed = false;
-        }
     }
 
     // Only process player movement if not in editor mode and not in dialogue
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
-        !m_DialogueSnapActive)
+        !m_DialogueSnap.active)
     {
         // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
@@ -1087,7 +913,7 @@ void Game::ProcessInput(float deltaTime)
 
         m_Player.Move(moveDirection, deltaTime, &m_Tilemap, &m_NpcPositions);
     }
-    else if (m_InDialogue || m_DialogueSnapActive)
+    else if (m_InDialogue || m_DialogueSnap.active)
     {
         // Stop player movement during dialogue
         m_Player.Stop();
@@ -1133,7 +959,7 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
         float baseWorldHeight =
             static_cast<float>(game->m_TilesVisibleHeight * game->m_Tilemap.GetTileHeight());
 
-        float oldZoom = game->m_CameraZoom;
+        float oldZoom = game->m_Camera.zoom;
         float oldWorldWidth = baseWorldWidth / oldZoom;
         float oldWorldHeight = baseWorldHeight / oldZoom;
 
@@ -1144,39 +970,39 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
 
         // Apply zoom with snapping to prevent sub-pixel seams
         float zoomDelta = yoffset > 0 ? 1.1f : 0.9f;
-        game->m_CameraZoom *= zoomDelta;
+        game->m_Camera.zoom *= zoomDelta;
 
         // Editor mode allows zooming out further (0.1x) to see entire map
-        float minZoom = (game->m_Editor.IsActive() && game->m_FreeCameraMode) ? 0.1f : 0.4f;
-        game->m_CameraZoom = std::max(minZoom, std::min(4.0f, game->m_CameraZoom));
+        float minZoom = (game->m_Editor.IsActive() && game->m_Camera.freeMode) ? 0.1f : 0.4f;
+        game->m_Camera.zoom = std::max(minZoom, std::min(4.0f, game->m_Camera.zoom));
         // Snap to 0.1 increments
-        game->m_CameraZoom = std::round(game->m_CameraZoom * 10.0f) / 10.0f;
+        game->m_Camera.zoom = std::round(game->m_Camera.zoom * 10.0f) / 10.0f;
 
-        float newZoom = game->m_CameraZoom;
+        float newZoom = game->m_Camera.zoom;
         float newWorldWidth = baseWorldWidth / newZoom;
         float newWorldHeight = baseWorldHeight / newZoom;
 
         // Adjust camera position to keep player centered
-        game->m_CameraPosition =
+        game->m_Camera.position =
             playerVisualCenter - glm::vec2(newWorldWidth * 0.5f, newWorldHeight * 0.5f);
 
         // Clamp camera to map bounds (skip in editor free-camera mode)
-        if (!(game->m_Editor.IsActive() && game->m_FreeCameraMode))
+        if (!(game->m_Editor.IsActive() && game->m_Camera.freeMode))
         {
             float mapWidth =
                 static_cast<float>(game->m_Tilemap.GetMapWidth() * game->m_Tilemap.GetTileWidth());
             float mapHeight = static_cast<float>(game->m_Tilemap.GetMapHeight() *
                                                  game->m_Tilemap.GetTileHeight());
-            game->m_CameraPosition.x =
-                std::max(0.0f, std::min(game->m_CameraPosition.x, mapWidth - newWorldWidth));
-            game->m_CameraPosition.y =
-                std::max(0.0f, std::min(game->m_CameraPosition.y, mapHeight - newWorldHeight));
+            game->m_Camera.position.x =
+                std::max(0.0f, std::min(game->m_Camera.position.x, mapWidth - newWorldWidth));
+            game->m_Camera.position.y =
+                std::max(0.0f, std::min(game->m_Camera.position.y, mapHeight - newWorldHeight));
         }
 
         // Also update the follow target so camera doesn't snap back
-        game->m_CameraFollowTarget = game->m_CameraPosition;
+        game->m_Camera.followTarget = game->m_Camera.position;
 
-        std::cout << "Camera zoom: " << game->m_CameraZoom << "x" << std::endl;
+        std::cout << "Camera zoom: " << game->m_Camera.zoom << "x" << std::endl;
     }
 }
 

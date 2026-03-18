@@ -198,6 +198,8 @@ public:
 
     SkyRenderer(const SkyRenderer&) = delete;
     SkyRenderer& operator=(const SkyRenderer&) = delete;
+    SkyRenderer(SkyRenderer&&) noexcept = default;
+    SkyRenderer& operator=(SkyRenderer&&) noexcept = default;
 
     /**
      * @brief Initialize all sky rendering resources.

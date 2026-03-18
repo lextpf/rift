@@ -42,28 +42,14 @@ enum class ParticleType
 
 /// Compile-time reflection for ParticleType.
 template <>
-struct EnumTraits<ParticleType>
+struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
     static constexpr size_t Count = 8;
     static constexpr std::string_view Names[] = {
         "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
 
-    static_assert(static_cast<int>(ParticleType::Sunshine) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::Sunshine) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
-
-    static constexpr std::string_view ToString(ParticleType value)
-    {
-        auto i = static_cast<size_t>(value);
-        return i < Count ? Names[i] : "Unknown";
-    }
-
-    static constexpr std::optional<ParticleType> FromString(std::string_view name)
-    {
-        for (size_t i = 0; i < Count; ++i)
-            if (Names[i] == name)
-                return static_cast<ParticleType>(i);
-        return std::nullopt;
-    }
 };
 
 /**

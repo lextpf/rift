@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "EnumTraits.h"
 #include "GameCharacter.h"
 #include "IRenderer.h"
 #include "Texture.h"
@@ -43,6 +44,20 @@ enum class CharacterType
     BW2_FEMALE = 3,  ///< Black & White 2 Female protagonist
     CC_FEMALE = 4    ///< Crystal Clear Female character
 };
+
+/// Compile-time reflection for CharacterType.
+template <>
+struct EnumTraits<CharacterType> : EnumTraitsBase<CharacterType, EnumTraits<CharacterType>>
+{
+    static constexpr size_t Count = 5;
+    static constexpr std::string_view Names[] = {
+        "BW1_MALE", "BW1_FEMALE", "BW2_MALE", "BW2_FEMALE", "CC_FEMALE"};
+
+    static_assert(std::to_underlying(CharacterType::CC_FEMALE) == Count - 1,
+                  "Update EnumTraits<CharacterType> when adding new CharacterType values");
+};
+
+struct TileOverlapContext;
 
 /**
  * @class PlayerCharacter
@@ -379,10 +394,10 @@ private:
      * @name Sprite Sheet Layout Constants
      * @{
      */
-    static const int SPRITES_PER_ROW = 4;  ///< Sprites per row in sheet
-    static const int IDLE_FRAMES = 3;      ///< Frames in idle animation
-    static const int WALK_FRAMES = 3;      ///< Frames in walk animation
-    static const float ANIMATION_SPEED;    ///< Base frame duration (0.15s)
+    static constexpr int SPRITES_PER_ROW = 4;  ///< Sprites per row in sheet
+    static constexpr int IDLE_FRAMES = 3;      ///< Frames in idle animation
+    static constexpr int WALK_FRAMES = 3;      ///< Frames in walk animation
+    static const float ANIMATION_SPEED;        ///< Base frame duration (0.15s)
     /** @} */
 
     /**
@@ -439,6 +454,19 @@ private:
                     int moveDx = 0,
                     int moveDy = 0,
                     bool diagonalInput = false) const;
+
+    /// @brief Check if a diagonal corner tile should be ignored during cardinal movement.
+    bool ShouldSkipDiagonalTile(const TileOverlapContext& ctx) const;
+
+    /// @brief Check if shallow wall penetration should be tolerated (corridor sliding).
+    bool ShouldTolerateWallPenetration(const TileOverlapContext& ctx) const;
+
+    /// @brief Evaluate corner cutting and side-wall tolerance for a tile overlap.
+    /// @param forceCollision Set to true if a definite collision is detected (closed corner).
+    /// @return true if the overlap should be tolerated (skip tile).
+    bool ShouldAllowCornerCut(const TileOverlapContext& ctx,
+                              const class Tilemap* tilemap,
+                              bool& forceCollision) const;
 
     /// @brief Check if player hitbox overlaps a tile corner diagonally.
     /// @param feetPos Player feet position to test.

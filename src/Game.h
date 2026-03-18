@@ -20,6 +20,63 @@
 #include <vector>
 
 /**
+ * @struct CameraState
+ * @brief Camera position, following, and perspective state.
+ */
+struct CameraState
+{
+    glm::vec2 position{0.0f};          ///< Current camera world position (rendered position)
+    glm::vec2 followTarget{0.0f};      ///< Target position camera is smoothing toward
+    bool hasFollowTarget = false;      ///< True = smooth follow mode, false = instant snap
+    float zoom = 1.0f;                 ///< Zoom multiplier (1.0 = 100%)
+    float tilt = 0.2f;                 ///< Tilt angle for 3D effect
+    bool enable3DEffect = false;       ///< Whether 3D tilt effect is active
+    float globeSphereRadius = 200.0f;  ///< Globe projection radius
+    bool freeMode = false;             ///< Free camera mode (decoupled from player)
+};
+
+/**
+ * @struct FPSCounter
+ * @brief Frame rate measurement and display state.
+ */
+struct FPSCounter
+{
+    float updateTimer = 0.0f;     ///< Accumulator for FPS update interval
+    float consoleTimer = 0.0f;    ///< Timer for console FPS output
+    int frameCount = 0;           ///< Frames since last FPS update
+    float currentFps = 0.0f;      ///< Calculated FPS for display
+    float targetFps = 0.0f;       ///< Target FPS limit (<=0 = unlimited)
+    int drawCallAccumulator = 0;  ///< Accumulated draw calls since last update
+    int currentDrawCalls = 0;     ///< Average draw calls per frame for display
+};
+
+/**
+ * @struct DialogueSnapState
+ * @brief Smooth pre-dialogue alignment animation state.
+ *
+ * Player + NPC slide into final talk positions before dialogue begins.
+ */
+struct DialogueSnapState
+{
+    bool active = false;                          ///< Whether snap animation is in progress
+    float timer = 0.0f;                           ///< Elapsed time during snap animation
+    float duration = 0.4f;                        ///< Total snap animation duration in seconds
+    glm::vec2 playerStart{0.0f};                  ///< Player position at snap start
+    glm::vec2 playerTarget{0.0f};                 ///< Player target position (facing NPC)
+    glm::vec2 npcStart{0.0f};                     ///< NPC position at snap start
+    glm::vec2 npcTarget{0.0f};                    ///< NPC target position (facing player)
+    bool hasPlayerTile = true;                    ///< Whether player has a valid target tile
+    int playerTileX = 0;                          ///< Player target tile column
+    int playerTileY = 0;                          ///< Player target tile row
+    int npcTileX = 0;                             ///< NPC target tile column
+    int npcTileY = 0;                             ///< NPC target tile row
+    Direction playerFacing = Direction::DOWN;     ///< Player facing after snap
+    NPCDirection npcFacing = NPCDirection::DOWN;  ///< NPC facing after snap
+    bool prefersTree = false;                     ///< Use branching tree dialogue after snap
+    std::string fallbackText;                     ///< Simple text if no tree available
+};
+
+/**
  * @class Game
  * @brief Central game manager handling the main loop and all subsystems.
  * @author Alex (https://github.com/lextpf)
@@ -190,7 +247,7 @@ public:
      * @brief Set the target FPS limit.
      * @param fps Target FPS (<=0 = unlimited, default).
      */
-    void SetTargetFps(float fps) { m_TargetFps = fps; }
+    void SetTargetFps(float fps) { m_Fps.targetFps = fps; }
 
     /**
      * @brief Switch to a different renderer API at runtime.
@@ -406,45 +463,14 @@ private:
     RendererAPI m_RendererAPI;               ///< Active renderer type
     /** @} */
 
-    /**
-     * @name Camera State
-     * @brief Variables controlling camera movement.
-     *
-     * The camera uses exponential smoothing to follow the player. The "follow target"
-     * pattern enables smooth transitions: when m_HasCameraFollowTarget is true, the
-     * camera interpolates from m_CameraPosition toward m_CameraFollowTarget each frame.
-     * When false, the camera snaps instantly to the player position (used on load/teleport).
-     * @{
-     */
-    glm::vec2 m_CameraPosition;      ///< Current camera world position (rendered position)
-    glm::vec2 m_CameraFollowTarget;  ///< Target position camera is smoothing toward
-    bool m_HasCameraFollowTarget;    ///< True = smooth follow mode, false = instant snap mode
-    float m_CameraZoom;              ///< Zoom multiplier (1.0 = 100%)
-    float m_CameraTilt;              ///< Tilt angle for 3D effect (0.0 = flat, 1.0 = max tilt)
-    bool m_Enable3DEffect;           ///< Whether 3D tilt effect is active
-    float
-        m_GlobeSphereRadius;  ///< Radius for globe + vanishing point projection (larger = subtler)
-    bool m_FreeCameraMode;    ///< Free camera mode (Space toggle) - camera doesn't follow player
-    /** @} */
+    CameraState m_Camera;  ///< Camera position and perspective state
 
     /// @name Frame Timing
     /// @{
     float m_LastFrameTime;  ///< Timestamp of last frame (for delta calculation)
     /// @}
 
-    /**
-     * @name FPS Counter
-     * @brief Frame rate measurement.
-     * @{
-     */
-    float m_FpsUpdateTimer;     ///< Accumulator for FPS update interval
-    float m_FpsConsoleTimer;    ///< Timer for console FPS output (every 2s)
-    int m_FrameCount;           ///< Frames since last FPS update
-    float m_CurrentFps;         ///< Calculated FPS for display
-    float m_TargetFps;          ///< Target FPS limit (<=0 = unlimited)
-    int m_DrawCallAccumulator;  ///< Accumulated draw calls since last update
-    int m_CurrentDrawCalls;     ///< Average draw calls per frame for display
-    /** @} */
+    FPSCounter m_Fps;  ///< Frame rate measurement
 
     /// @name Editor
     /// @{
@@ -475,25 +501,6 @@ private:
     float m_DialogueBoxFadeTimer = 0.0f;   ///< Fade-in timer for dialogue box (seconds)
     float m_DialogueCharReveal = -1.0f;    ///< Typewriter char count (<0 = fully revealed)
 
-    /// @name Dialogue Snap Alignment
-    /// @brief Smooth pre-dialogue alignment state (player + NPC slide into final talk positions).
-    /// @{
-    bool m_DialogueSnapActive = false;           ///< Whether snap animation is in progress
-    float m_DialogueSnapTimer = 0.0f;            ///< Elapsed time during snap animation
-    float m_DialogueSnapDuration = 0.4f;         ///< Total snap animation duration in seconds
-    glm::vec2 m_DialogueSnapPlayerStart{0.0f};   ///< Player position at snap start
-    glm::vec2 m_DialogueSnapPlayerTarget{0.0f};  ///< Player target position (facing NPC)
-    glm::vec2 m_DialogueSnapNPCStart{0.0f};      ///< NPC position at snap start
-    glm::vec2 m_DialogueSnapNPCTarget{0.0f};     ///< NPC target position (facing player)
-    bool m_DialogueSnapHasPlayerTile = true;     ///< Whether player has a valid target tile
-    int m_DialogueSnapPlayerTileX = 0;           ///< Player target tile column
-    int m_DialogueSnapPlayerTileY = 0;           ///< Player target tile row
-    int m_DialogueSnapNPCTileX = 0;              ///< NPC target tile column
-    int m_DialogueSnapNPCTileY = 0;              ///< NPC target tile row
-    Direction m_DialogueSnapPlayerFacing = Direction::DOWN;     ///< Player facing after snap
-    NPCDirection m_DialogueSnapNPCFacing = NPCDirection::DOWN;  ///< NPC facing after snap
-    bool m_DialogueSnapPrefersTree = false;  ///< Use branching tree dialogue after snap
-    std::string m_DialogueSnapFallbackText;  ///< Simple text if no tree available
-    /// @}
+    DialogueSnapState m_DialogueSnap;  ///< Snap alignment animation state
     /** @} */
 };

@@ -186,44 +186,83 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
                                const Tilemap* tilemap,
                                size_t maxLength)
 {
-    if (path.size() >= maxLength)
+    // Iterative DFS with explicit stack to avoid stack overflow on large
+    // connected regions. Recursive DFS would use O(V) call frames which
+    // can exceed the default 1 MB stack on Windows for maps with 10,000+
+    // walkable tiles.
+    //
+    // Each stack frame stores the current tile and the index of the next
+    // neighbor to explore. When all neighbors are exhausted, we pop the
+    // frame and add a backtrack step (re-adding the parent tile to the
+    // path so the NPC walks back through it without teleporting).
+    //
+    // Example on a T-shaped map:
+    //       A
+    //       |
+    //   C - B - D
+    //
+    // DFS visits: A, then B, then C (dead end, backtrack to B),
+    // then D (dead end, backtrack to B), then back to A.
+    // Path produced: [A, B, C, B, D, B, A]
+    struct Frame
     {
-        return;
-    }
+        glm::ivec2 tile;
+        NeighborResult neighbors;
+        int nextNeighbor;
+    };
 
     int mapWidth = tilemap->GetMapWidth();
-    int index = current.y * mapWidth + current.x;
 
-    visited[index] = true;
+    std::vector<Frame> stack;
+    stack.reserve(64);
+
+    // Seed the traversal with the starting tile.
+    int startIndex = current.y * mapWidth + current.x;
+    visited[startIndex] = true;
     path.push_back(current);
 
-    auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
+    Frame startFrame;
+    startFrame.tile = current;
+    startFrame.neighbors = GetValidNeighbors(current.x, current.y, tilemap);
+    startFrame.nextNeighbor = 0;
+    stack.push_back(startFrame);
 
-    for (int ni = 0; ni < neighbors.count; ++ni)
+    while (!stack.empty() && path.size() < maxLength)
     {
-        const auto& neighbor = neighbors.tiles[ni];
-        int neighborIndex = neighbor.y * mapWidth + neighbor.x;
-        if (!visited[neighborIndex] && path.size() < maxLength)
-        {
-            // Recurse deeper into this branch.
-            DFSTraversal(neighbor, visited, path, tilemap, maxLength);
+        Frame& frame = stack.back();
 
-            // After returning from the recursive call, we "backtrack" by adding
-            // the current tile again. This is the key trick: it means the NPC
-            // path goes A -> B -> C -> B -> D -> B -> A instead of A -> B -> C, D.
-            // Without this, the path would have discontinuities (teleporting).
-            //
-            // Example on a T-shaped map:
-            //       A
-            //       |
-            //   C - B - D
-            //
-            // DFS visits: A, then B, then C (dead end, backtrack to B),
-            // then D (dead end, backtrack to B), then back to A.
-            // Path produced: [A, B, C, B, D, B, A]
-            if (path.size() < maxLength)
+        // Find the next unvisited neighbor from this tile.
+        bool foundChild = false;
+        while (frame.nextNeighbor < frame.neighbors.count)
+        {
+            const auto& neighbor = frame.neighbors.tiles[frame.nextNeighbor];
+            frame.nextNeighbor++;
+
+            int neighborIndex = neighbor.y * mapWidth + neighbor.x;
+            if (!visited[neighborIndex] && path.size() < maxLength)
             {
-                path.push_back(current);
+                // Push the neighbor as a new frame and record it in the path.
+                visited[neighborIndex] = true;
+                path.push_back(neighbor);
+
+                Frame childFrame;
+                childFrame.tile = neighbor;
+                childFrame.neighbors = GetValidNeighbors(neighbor.x, neighbor.y, tilemap);
+                childFrame.nextNeighbor = 0;
+                stack.push_back(childFrame);
+                foundChild = true;
+                break;
+            }
+        }
+
+        if (!foundChild)
+        {
+            // All neighbors of this tile have been explored. Pop the frame
+            // and add a backtrack step so the path remains contiguous.
+            stack.pop_back();
+            if (!stack.empty() && path.size() < maxLength)
+            {
+                path.push_back(stack.back().tile);
             }
         }
     }
@@ -272,12 +311,9 @@ bool PatrolRoute::GetNextWaypoint(int& tileX, int& tileY)
             if (m_CurrentWaypointIndex < 0)
             {
                 // Reached the start, turn around. Go to 1 (not 0) to avoid
-                // repeating the startpoint twice.
-                m_CurrentWaypointIndex = 1;
-                if (m_CurrentWaypointIndex >= static_cast<int>(m_Waypoints.size()))
-                {
-                    m_CurrentWaypointIndex = 0;
-                }
+                // repeating the startpoint twice -- unless there's only 1 waypoint,
+                // in which case we stay at index 0 to prevent out-of-bounds access.
+                m_CurrentWaypointIndex = (static_cast<int>(m_Waypoints.size()) > 1) ? 1 : 0;
                 m_PingPongForward = true;
             }
         }

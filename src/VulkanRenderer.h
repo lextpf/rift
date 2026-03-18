@@ -240,6 +240,7 @@ private:
     /// @name Vertex Buffers (Double-Buffered)
     /// @{
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+    static constexpr uint32_t DESCRIPTOR_POOL_MAX_SETS = 1000;
     VkBuffer m_VertexBuffers[MAX_FRAMES_IN_FLIGHT];
     VkDeviceMemory m_VertexBufferMemories[MAX_FRAMES_IN_FLIGHT];
     void* m_VertexBuffersMapped[MAX_FRAMES_IN_FLIGHT];  ///< Persistent mapping.
@@ -270,6 +271,7 @@ private:
     VkDescriptorSetLayout m_DescriptorSetLayout;
     VkSampler m_TextureSampler;  ///< Shared texture sampler.
     std::unordered_map<VkImageView, VkDescriptorSet> m_DescriptorSetCache;
+    bool m_DescriptorPoolWarned{false};
     /// @}
 
     /// @name White Texture (for colored rects)

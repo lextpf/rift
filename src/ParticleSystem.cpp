@@ -662,19 +662,6 @@ void ParticleSystem::BuildAtlas()
             if (!temp.GetImageData().empty())
             {
                 memcpy(sources[i].pixels.data(), temp.GetImageData().data(), dataSize);
-                // Convert to RGBA if needed
-                if (temp.GetChannels() == 3)
-                {
-                    std::vector<unsigned char> rgba(temp.GetWidth() * temp.GetHeight() * 4);
-                    for (int j = 0; j < temp.GetWidth() * temp.GetHeight(); j++)
-                    {
-                        rgba[j * 4 + 0] = sources[i].pixels[j * 3 + 0];
-                        rgba[j * 4 + 1] = sources[i].pixels[j * 3 + 1];
-                        rgba[j * 4 + 2] = sources[i].pixels[j * 3 + 2];
-                        rgba[j * 4 + 3] = 255;
-                    }
-                    sources[i].pixels = std::move(rgba);
-                }
             }
         }
         else

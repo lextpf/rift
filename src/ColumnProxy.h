@@ -65,47 +65,6 @@ private:
 };
 
 /**
- * @class ConstColumnProxy
- * @brief Read-only proxy for `map[x][y]` syntax on const containers.
- * @author Alex (https://github.com/lextpf)
- *
- * Provides bounds-checked reads only. Out-of-bounds reads return DefaultValue.
- *
- * @tparam C Container type satisfying RandomAccessContainerOf<T>
- * @tparam T Element type
- * @tparam DefaultValue Value returned for out-of-bounds reads
- */
-template <typename C, typename T, T DefaultValue = T{}>
-    requires RandomAccessContainerOf<C, T>
-class ConstColumnProxy
-{
-public:
-    using container_type = C;
-    using value_type = T;
-
-    constexpr ConstColumnProxy(const C* data, const int* width, const int* height, int x) noexcept
-        : m_Data(data),
-          m_Width(width),
-          m_Height(height),
-          m_X(x)
-    {
-    }
-
-    [[nodiscard]] constexpr T operator[](int y) const noexcept
-    {
-        if (m_X >= 0 && m_X < *m_Width && y >= 0 && y < *m_Height)
-            return static_cast<T>((*m_Data)[static_cast<std::size_t>(y * (*m_Width) + m_X)]);
-        return DefaultValue;
-    }
-
-private:
-    const C* m_Data;
-    const int* m_Width;
-    const int* m_Height;
-    int m_X;
-};
-
-/**
  * @class ColumnProxy
  * @brief Generic proxy class enabling `map[x][y]` syntax for flat 2D data.
  * @author Alex (https://github.com/lextpf)
@@ -114,9 +73,15 @@ private:
  * ColumnProxy is a lightweight proxy that captures a column index (x) and
  * provides row access via a second `operator[]`.
  *
+ * When `Mutable` is `true` (default), both read and write access are
+ * available. When `Mutable` is `false`, only read access is provided,
+ * and the proxy stores a `const C*` pointer. This eliminates the need
+ * for a separate ConstColumnProxy class.
+ *
  * @tparam C            Container type satisfying RandomAccessContainerOf<T>
  * @tparam T            Element type
  * @tparam DefaultValue Value returned for out-of-bounds reads (NTTP)
+ * @tparam Mutable      If true, mutable element access via RefProxy is enabled
  *
  * @par Usage
  * @code{.cpp}
@@ -124,9 +89,11 @@ private:
  * int w = 64, h = 64;
  *
  * ColumnProxy<std::vector<bool>, bool, false> boolCol(&flags, &w, &h, 10);
- * boolCol[20] = true;
- * // Write
- * if (boolCol[20]) {}  // Read
+ * boolCol[20] = true;                         // Write (Mutable=true)
+ * if (boolCol[20]) {}                         // Read
+ *
+ * ColumnProxy<std::vector<bool>, bool, false, false> readOnly(&flags, &w, &h, 10);
+ * bool v = readOnly[20];                      // Read-only (Mutable=false)
  * @endcode
  *
  * @par Memory Layout
@@ -141,7 +108,7 @@ private:
  *
  * @see CollisionMap, NavigationMap, Tilemap
  */
-template <typename C, typename T, T DefaultValue = T{}>
+template <typename C, typename T, T DefaultValue = T{}, bool Mutable = true>
     requires RandomAccessContainerOf<C, T>
 class ColumnProxy
 {
@@ -149,14 +116,17 @@ public:
     using container_type = C;
     using value_type = T;
 
+    /// Pointer type: `C*` when Mutable, `const C*` otherwise.
+    using data_ptr = std::conditional_t<Mutable, C*, const C*>;
+
     /**
-     * @brief Construct proxy for mutable container access.
-     * @param data   Pointer to underlying container.
+     * @brief Construct proxy for container access.
+     * @param data   Pointer to underlying container (const when Mutable=false).
      * @param width  Pointer to grid width.
      * @param height Pointer to grid height.
      * @param x      Column index for this proxy.
      */
-    constexpr ColumnProxy(C* data, const int* width, const int* height, int x) noexcept
+    constexpr ColumnProxy(data_ptr data, const int* width, const int* height, int x) noexcept
         : m_Data(data),
           m_Width(width),
           m_Height(height),
@@ -170,6 +140,7 @@ public:
      * @return Proxy that can be assigned to; out-of-bounds assignments are discarded.
      */
     [[nodiscard]] constexpr RefProxy<C, T, DefaultValue> operator[](int y) noexcept
+        requires Mutable
     {
         const bool valid = (m_X >= 0 && m_X < *m_Width && y >= 0 && y < *m_Height);
         const auto index = static_cast<std::size_t>(y * (*m_Width) + m_X);
@@ -177,7 +148,7 @@ public:
     }
 
     /**
-     * @brief Access element at row y (const).
+     * @brief Access element at row y (read-only).
      * @param y Row index.
      * @return Element value, or DefaultValue if out-of-bounds.
      */
@@ -189,8 +160,12 @@ public:
     }
 
 private:
-    C* m_Data;
+    data_ptr m_Data;
     const int* m_Width;
     const int* m_Height;
     int m_X;
 };
+
+/// @brief Backwards-compatible alias for read-only ColumnProxy.
+template <typename C, typename T, T DefaultValue = T{}>
+using ConstColumnProxy = ColumnProxy<C, T, DefaultValue, false>;

@@ -30,6 +30,22 @@ constexpr float NPC_HITBOX_HEIGHT = 16.0f;
 constexpr float MAX_SLIDE_DISTANCE = 16.0f;
 }  // namespace
 
+struct TileOverlapContext
+{
+    glm::vec2 bottomCenterPos;
+    glm::vec2 hitboxCenter;
+    float hitboxArea;
+    float overlapW;
+    float overlapH;
+    float overlapRatio;
+    int tx, ty;
+    float tileMinX, tileMaxX, tileMinY, tileMaxY;
+    int playerTileX, playerTileY;
+    int moveDx, moveDy;
+    bool diagonalInput;
+    float TILE_W, TILE_H;
+};
+
 /* Animation frame duration in seconds (time per frame). */
 const float PlayerCharacter::ANIMATION_SPEED = 0.15f;
 
@@ -95,11 +111,7 @@ void PlayerCharacter::SetCharacterAsset(CharacterType characterType,
 
 bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 {
-    // Character type names for logging
-    static const char* typeNames[] = {
-        "BW1_MALE", "BW1_FEMALE", "BW2_MALE", "BW2_FEMALE", "CC_FEMALE"};
-    int typeIdx = static_cast<int>(characterType);
-    const char* typeName = (typeIdx >= 0 && typeIdx < 5) ? typeNames[typeIdx] : "UNKNOWN";
+    auto typeName = EnumTraits<CharacterType>::ToString(characterType);
 
     // Lambda: Resolve asset path from registry
     auto getAssetPath = [characterType, typeName](const std::string& spriteType) -> std::string
@@ -158,40 +170,38 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 
 bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
 {
-    // Load the NPC sprite sheet as all player sprites
-    // NPC sprites use the same layout as player sprites
-    bool walkLoaded = m_SpriteSheet.LoadFromFile(spritePath);
-    if (!walkLoaded)
+    // Load into temporaries first so the player's existing sprites are
+    // preserved if any load fails. This prevents a partial state where
+    // the walk sheet is replaced but run/bicycle are stale.
+    auto tryLoad = [](Texture& target, const std::string& path) -> bool
     {
-        // Try parent directory
-        walkLoaded = m_SpriteSheet.LoadFromFile("../" + spritePath);
-    }
+        if (target.LoadFromFile(path))
+        {
+            return true;
+        }
+        return target.LoadFromFile("../" + path);
+    };
 
-    if (!walkLoaded)
+    Texture newWalk;
+    Texture newRun;
+    Texture newBike;
+
+    if (!tryLoad(newWalk, spritePath))
     {
         std::cerr << "Failed to copy appearance from: " << spritePath << std::endl;
         return false;
     }
 
-    // Use the same sprite for running and bicycle modes
-    bool runLoaded = m_RunningSpriteSheet.LoadFromFile(spritePath);
-    if (!runLoaded)
-    {
-        runLoaded = m_RunningSpriteSheet.LoadFromFile("../" + spritePath);
-    }
-
-    bool bikeLoaded = m_BicycleSpriteSheet.LoadFromFile(spritePath);
-    if (!bikeLoaded)
-    {
-        bikeLoaded = m_BicycleSpriteSheet.LoadFromFile("../" + spritePath);
-    }
-
-    if (!runLoaded || !bikeLoaded)
+    if (!tryLoad(newRun, spritePath) || !tryLoad(newBike, spritePath))
     {
         std::cerr << "Failed to load running/bicycle sprites from: " << spritePath << std::endl;
         return false;
     }
 
+    // All loads succeeded -- commit the change atomically.
+    m_SpriteSheet = std::move(newWalk);
+    m_RunningSpriteSheet = std::move(newRun);
+    m_BicycleSpriteSheet = std::move(newBike);
     m_IsUsingCopiedAppearance = true;
     std::cout << "Copied appearance from: " << spritePath << std::endl;
     return true;
@@ -462,15 +472,6 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
     constexpr float HALF_W = HITBOX_WIDTH * 0.5f;
     constexpr float BOX_H = HITBOX_HEIGHT;
     constexpr float EPS = 0.05f;
-    // Maximum hitbox-area overlap with a corner tile before we stop allowing
-    // corner cutting. 20% lets the player clip through exposed convex corners
-    // smoothly but still blocks if they push too far into the tile.
-    constexpr float CORNER_OVERLAP_THRESHOLD = 0.20f;
-
-    // Small overlaps with side walls are tolerated when moving along a corridor.
-    // Without this, the player would snag on walls when slightly misaligned
-    // after a corner cut.
-    constexpr float SIDE_WALL_TOLERANCE = 0.15f;
 
     // Calculate player AABB bounds
     float minX = bottomCenterPos.x - HALF_W + EPS;
@@ -492,9 +493,6 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
     auto inBounds = [&](int x, int y)
     { return x >= 0 && y >= 0 && x < tilemap->GetMapWidth() && y < tilemap->GetMapHeight(); };
 
-    auto tileBlocked = [&](int x, int y)
-    { return !inBounds(x, y) || tilemap->GetTileCollision(x, y); };
-
     float hitboxArea = (maxX - minX) * (maxY - minY);
 
     for (int ty = tileY0; ty <= tileY1; ++ty)
@@ -506,325 +504,389 @@ bool PlayerCharacter::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos,
 
             float tileMinX = tx * TILE_W, tileMaxX = (tx + 1) * TILE_W;
             float tileMinY = ty * TILE_H, tileMaxY = (ty + 1) * TILE_H;
-
             float overlapW = std::max(0.0f, std::min(maxX, tileMaxX) - std::max(minX, tileMinX));
             float overlapH = std::max(0.0f, std::min(maxY, tileMaxY) - std::max(minY, tileMinY));
             float overlapRatio = (overlapW * overlapH) / hitboxArea;
 
-            {
-                bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0));  // exactly one axis non-zero
-                if (cardinalMove && !diagonalInput)
-                {
-                    int dxT = tx - playerTileX;
-                    int dyT = ty - playerTileY;
+            TileOverlapContext ctx{bottomCenterPos,
+                                   hitboxCenter,
+                                   hitboxArea,
+                                   overlapW,
+                                   overlapH,
+                                   overlapRatio,
+                                   tx,
+                                   ty,
+                                   tileMinX,
+                                   tileMaxX,
+                                   tileMinY,
+                                   tileMaxY,
+                                   playerTileX,
+                                   playerTileY,
+                                   moveDx,
+                                   moveDy,
+                                   diagonalInput,
+                                   TILE_W,
+                                   TILE_H};
 
-                    // Only diagonally-adjacent tiles
-                    if (std::abs(dxT) == 1 && std::abs(dyT) == 1)
-                    {
-                        // How deep we penetrated into the diagonal tile along the forward axis
-                        float forwardPenetration = (moveDy != 0) ? overlapH : overlapW;
+            if (ShouldSkipDiagonalTile(ctx))
+                continue;
+            if (ShouldTolerateWallPenetration(ctx))
+                continue;
 
-                        // Ignore diagonal tiles until the player is at least this many pixels
-                        // into them. This prevents a diagonal tile from blocking movement when
-                        // the player is only grazing its far edge during cardinal movement.
-                        constexpr float DIAGONAL_CORNER_ACTIVATION_PX = 4.0f;
-
-                        if (forwardPenetration < DIAGONAL_CORNER_ACTIVATION_PX)
-                            continue;  // too far -> don't let this diagonal corner tile influence
-                                       // us yet
-                    }
-                }
-            }
-
-            {
-                const bool hasMotion = (moveDx != 0) || (moveDy != 0);
-                if (hasMotion && !diagonalInput && overlapW > 0.0f && overlapH > 0.0f)
-                {
-                    float tileCenterX = (tileMinX + tileMaxX) * 0.5f;
-                    float tileCenterY = (tileMinY + tileMaxY) * 0.5f;
-
-                    bool tileAbove = tileCenterY < hitboxCenter.y;
-                    bool tileBelow = tileCenterY > hitboxCenter.y;
-                    bool tileLeft = tileCenterX < hitboxCenter.x;
-                    bool tileRight = tileCenterX > hitboxCenter.x;
-
-                    // Determine which axis is the penetration axis
-                    bool penetrationIsY = (overlapH <= overlapW);
-                    float penetrationPx = penetrationIsY ? overlapH : overlapW;
-
-                    // Allow up to 5px of overlap when the player is sliding parallel
-                    // to a wall face (not pushing into it). This prevents getting stuck
-                    // when the hitbox is slightly embedded after a corner cut.
-                    constexpr float PASSIVE_PENETRATION_PX = 5.0f;
-
-                    bool movingInto = false;
-                    if (penetrationIsY)
-                    {
-                        // Y+ is down in our world
-                        if (tileAbove)
-                            movingInto = (moveDy < 0);  // moving up into top wall
-                        if (tileBelow)
-                            movingInto = (moveDy > 0);  // moving down into bottom wall
-                        // moveDy == 0 is OK (sliding sideways while scraping)
-                    }
-                    else
-                    {
-                        if (tileLeft)
-                            movingInto = (moveDx < 0);  // moving left into left wall
-                        if (tileRight)
-                            movingInto = (moveDx > 0);  // moving right into right wall
-                        // moveDx == 0 is OK (sliding vertically while scraping)
-                    }
-
-                    // Require at least 4px of contact along the wall face before
-                    // suppressing collision. Near corners, faceOverlap shrinks - we
-                    // must NOT suppress there or the player could clip through.
-                    constexpr float FACE_CONTACT_MIN_PX = 4.0f;
-                    float faceOverlap = penetrationIsY ? overlapW : overlapH;
-
-                    // Only allow passive tolerance when we're clearly alongside a wall face.
-                    // Near corners, faceOverlap gets small -> do NOT suppress collision there.
-                    if (!movingInto && penetrationPx <= PASSIVE_PENETRATION_PX &&
-                        faceOverlap >= FACE_CONTACT_MIN_PX)
-                        continue;
-                }
-            }
-
-            // ========== Corner Cutting Algorithm ==========
-            // Allows smooth movement around convex corners of collision tiles.
-            //
-            // A "true corner" exists when a blocking tile has two adjacent empty
-            // tiles (e.g., empty above AND empty left = top-left corner exposed).
-            //
-            // When the player clips a true corner with small overlap (<20% hitbox),
-            // we check if there's an "escape route" - open space perpendicular to
-            // movement direction. If so, allow the overlap to enable smooth sliding.
-            //
-            // This prevents the "stuck on corners" problem common in tile-based games
-            // while still preventing players from clipping through solid walls.
-            // ================================================
-
-            // Check adjacent tiles to identify exposed corners
-            bool emptyAbove = !tileBlocked(tx, ty - 1);
-            bool emptyBelow = !tileBlocked(tx, ty + 1);
-            bool emptyLeft = !tileBlocked(tx - 1, ty);
-            bool emptyRight = !tileBlocked(tx + 1, ty);
-
-            // Check if corner cutting is blocked for each corner
-            bool tlBlocked = tilemap->IsCornerCutBlocked(tx, ty, Tilemap::CORNER_TL);
-            bool trBlocked = tilemap->IsCornerCutBlocked(tx, ty, Tilemap::CORNER_TR);
-            bool blBlocked = tilemap->IsCornerCutBlocked(tx, ty, Tilemap::CORNER_BL);
-            bool brBlocked = tilemap->IsCornerCutBlocked(tx, ty, Tilemap::CORNER_BR);
-
-            bool isTopLeftCorner = emptyAbove && emptyLeft && !tlBlocked;
-            bool isTopRightCorner = emptyAbove && emptyRight && !trBlocked;
-            bool isBottomLeftCorner = emptyBelow && emptyLeft && !blBlocked;
-            bool isBottomRightCorner = emptyBelow && emptyRight && !brBlocked;
-
-            bool isTrueCorner =
-                isTopLeftCorner || isTopRightCorner || isBottomLeftCorner || isBottomRightCorner;
-
-            // When moving horizontally, tolerate small overlaps with tiles above/below
-            // When moving vertically, tolerate small overlaps with tiles left/right
-            // This prevents getting stuck in narrow corridors after corner cutting
-            if (!isTrueCorner && overlapRatio <= SIDE_WALL_TOLERANCE && overlapRatio > 0.01f)
-            {
-                float tileCenterX = (tileMinX + tileMaxX) * 0.5f;
-                float tileCenterY = (tileMinY + tileMaxY) * 0.5f;
-
-                bool tileIsAboveOrBelow =
-                    std::abs(hitboxCenter.y - tileCenterY) > std::abs(hitboxCenter.x - tileCenterX);
-                bool tileIsLeftOrRight = !tileIsAboveOrBelow;
-
-                // Moving horizontally and tile is above/below = side wall, tolerate
-                if (moveDx != 0 && moveDy == 0 && tileIsAboveOrBelow)
-                    continue;
-
-                // Moving vertically and tile is left/right = side wall, tolerate
-                if (moveDy != 0 && moveDx == 0 && tileIsLeftOrRight)
-                    continue;
-            }
-
-            if (isTrueCorner)
-            {
-                float tileCenterX = (tileMinX + tileMaxX) * 0.5f;
-                float tileCenterY = (tileMinY + tileMaxY) * 0.5f;
-
-                // Deadzone around the tile center prevents sub-pixel jitter from
-                // flipping the player between quadrants each frame, which would cause
-                // flickering collision results. Must be wide enough to absorb floating-
-                // point noise but narrow enough to still distinguish genuine sides.
-                constexpr float CORNER_QUAD_EPS = 4.0f;
-
-                auto sideSign = [](float v, float eps) -> int
-                {
-                    if (v > eps)
-                        return 1;
-                    if (v < -eps)
-                        return -1;
-                    return 0;  // near center
-                };
-
-                float dx = hitboxCenter.x - tileCenterX;
-                float dy = hitboxCenter.y - tileCenterY;
-
-                int sx = sideSign(dx, CORNER_QUAD_EPS);
-                int sy = sideSign(dy, CORNER_QUAD_EPS);
-
-                // Tie-break when we're near the center using movement direction (approach
-                // direction). If we're moving right, we are approaching the blocking tile from the
-                // left, etc.
-                if (sx == 0)
-                {
-                    if (moveDx > 0)
-                        sx = -1;
-                    else if (moveDx < 0)
-                        sx = 1;
-                }
-                if (sy == 0)
-                {
-                    // Y+ is down in our world
-                    if (moveDy > 0)
-                        sy = -1;  // moving down -> approaching from above
-                    else if (moveDy < 0)
-                        sy = 1;  // moving up -> approaching from below
-                }
-
-                bool playerLeftOfTile = (sx < 0);
-                bool playerRightOfTile = (sx > 0);
-                bool playerAboveTile = (sy < 0);
-                bool playerBelowTile = (sy > 0);
-
-                // If both movement axes are pushing directly into blocked faces (solid rectangle
-                // corner), do not allow corner cutting - force a collision so we slide instead of
-                // clipping through.
-                bool movingIntoClosedCorner =
-                    diagonalInput && ((moveDx > 0 && !emptyRight) || (moveDx < 0 && !emptyLeft)) &&
-                    ((moveDy > 0 && !emptyBelow) || (moveDy < 0 && !emptyAbove));
-                if (movingIntoClosedCorner)
-                    return true;
-
-                bool canCutThisCorner = false;
-
-                // Check if the escape route in the perpendicular direction is clear
-                // by looking at adjacent tiles to the PLAYER, not to the collision tile
-
-                auto hasEscapeRoute = [&](int escapeX, int escapeY) -> bool
-                {
-                    // Check if moving in the escape direction leads to open space
-                    glm::vec2 escapePos = bottomCenterPos + glm::vec2(escapeX * TILE_W * 0.5f,
-                                                                      escapeY * TILE_H * 0.5f);
-
-                    float escMinX = escapePos.x - HALF_W + EPS;
-                    float escMaxX = escapePos.x + HALF_W - EPS;
-                    float escMaxY = escapePos.y - EPS;
-                    float escMinY = escapePos.y - BOX_H + EPS;
-
-                    int escTileX0 = static_cast<int>(std::floor(escMinX / TILE_W));
-                    int escTileX1 = static_cast<int>(std::floor(escMaxX / TILE_W));
-                    int escTileY0 = static_cast<int>(std::floor(escMinY / TILE_H));
-                    int escTileY1 = static_cast<int>(std::floor(escMaxY / TILE_H));
-
-                    for (int ety = escTileY0; ety <= escTileY1; ++ety)
-                    {
-                        for (int etx = escTileX0; etx <= escTileX1; ++etx)
-                        {
-                            if (tileBlocked(etx, ety))
-                            {
-                                // Check overlap at escape position
-                                float etMinX = etx * TILE_W, etMaxX = (etx + 1) * TILE_W;
-                                float etMinY = ety * TILE_H, etMaxY = (ety + 1) * TILE_H;
-
-                                float eOverlapW = std::max(
-                                    0.0f, std::min(escMaxX, etMaxX) - std::max(escMinX, etMinX));
-                                float eOverlapH = std::max(
-                                    0.0f, std::min(escMaxY, etMaxY) - std::max(escMinY, etMinY));
-
-                                // Significant overlap at escape position = blocked
-                                if (eOverlapW > 2.0f && eOverlapH > 2.0f)
-                                    return false;
-                            }
-                        }
-                    }
-                    return true;
-                };
-
-                if (isTopLeftCorner && playerAboveTile && playerLeftOfTile)
-                {
-                    if (hasEscapeRoute(0, -1) || hasEscapeRoute(-1, 0))
-                        canCutThisCorner = true;
-                }
-                if (isTopRightCorner && playerAboveTile && playerRightOfTile)
-                {
-                    if (hasEscapeRoute(0, -1) || hasEscapeRoute(1, 0))
-                        canCutThisCorner = true;
-                }
-                if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile)
-                {
-                    if (hasEscapeRoute(0, 1) || hasEscapeRoute(-1, 0))
-                        canCutThisCorner = true;
-                }
-                if (isBottomRightCorner && playerBelowTile && playerRightOfTile)
-                {
-                    if (hasEscapeRoute(0, 1) || hasEscapeRoute(1, 0))
-                        canCutThisCorner = true;
-                }
-
-                if (diagonalInput && !canCutThisCorner)
-                {
-                    if (isTopLeftCorner && playerAboveTile && playerLeftOfTile && moveDx > 0 &&
-                        moveDy > 0)
-                    {
-                        if (hasEscapeRoute(0, -1) || hasEscapeRoute(-1, 0))
-                            canCutThisCorner = true;
-                    }
-                    if (isTopRightCorner && playerAboveTile && playerRightOfTile && moveDx < 0 &&
-                        moveDy > 0)
-                    {
-                        if (hasEscapeRoute(0, -1) || hasEscapeRoute(1, 0))
-                            canCutThisCorner = true;
-                    }
-                    if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile && moveDx > 0 &&
-                        moveDy < 0)
-                    {
-                        if (hasEscapeRoute(0, 1) || hasEscapeRoute(-1, 0))
-                            canCutThisCorner = true;
-                    }
-                    if (isBottomRightCorner && playerBelowTile && playerRightOfTile && moveDx < 0 &&
-                        moveDy < 0)
-                    {
-                        if (hasEscapeRoute(0, 1) || hasEscapeRoute(1, 0))
-                            canCutThisCorner = true;
-                    }
-                }
-
-                if (canCutThisCorner)
-                {
-                    // For cardinal movement, use perpendicular penetration in pixels
-                    // rather than overlap-area ratio. Area-based thresholds are too strict
-                    // when the player is aligned along one axis (tall, thin overlap sliver).
-                    // Pixel-based check lets us allow up to 4px of corner grazing.
-                    bool cardinalMove = ((moveDx != 0) ^ (moveDy != 0)) && !diagonalInput;
-                    if (cardinalMove)
-                    {
-                        float perpPenPx = (moveDx != 0)
-                                              ? overlapH
-                                              : overlapW;  // moving horizontal -> perp is Y overlap
-                        constexpr float CORNER_PERP_PX = 4.0f;
-                        if (perpPenPx <= CORNER_PERP_PX)
-                            continue;
-                    }
-
-                    // Fallback for diagonal/etc.
-                    if (overlapRatio <= CORNER_OVERLAP_THRESHOLD)
-                        continue;
-                }
-            }
+            bool forceCollision = false;
+            if (ShouldAllowCornerCut(ctx, tilemap, forceCollision))
+                continue;
+            if (forceCollision)
+                return true;
 
             if (overlapRatio > 0.01f)
                 return true;
         }
     }
+    return false;
+}
+
+bool PlayerCharacter::ShouldSkipDiagonalTile(const TileOverlapContext& ctx) const
+{
+    bool cardinalMove = ((ctx.moveDx != 0) ^ (ctx.moveDy != 0));  // exactly one axis non-zero
+    if (cardinalMove && !ctx.diagonalInput)
+    {
+        int dxT = ctx.tx - ctx.playerTileX;
+        int dyT = ctx.ty - ctx.playerTileY;
+
+        // Only diagonally-adjacent tiles
+        if (std::abs(dxT) == 1 && std::abs(dyT) == 1)
+        {
+            // How deep we penetrated into the diagonal tile along the forward axis
+            float forwardPenetration = (ctx.moveDy != 0) ? ctx.overlapH : ctx.overlapW;
+
+            // Ignore diagonal tiles until the player is at least this many pixels
+            // into them. This prevents a diagonal tile from blocking movement when
+            // the player is only grazing its far edge during cardinal movement.
+            constexpr float DIAGONAL_CORNER_ACTIVATION_PX = 4.0f;
+
+            if (forwardPenetration < DIAGONAL_CORNER_ACTIVATION_PX)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool PlayerCharacter::ShouldTolerateWallPenetration(const TileOverlapContext& ctx) const
+{
+    const bool hasMotion = (ctx.moveDx != 0) || (ctx.moveDy != 0);
+    if (hasMotion && !ctx.diagonalInput && ctx.overlapW > 0.0f && ctx.overlapH > 0.0f)
+    {
+        float tileCenterX = (ctx.tileMinX + ctx.tileMaxX) * 0.5f;
+        float tileCenterY = (ctx.tileMinY + ctx.tileMaxY) * 0.5f;
+
+        bool tileAbove = tileCenterY < ctx.hitboxCenter.y;
+        bool tileBelow = tileCenterY > ctx.hitboxCenter.y;
+        bool tileLeft = tileCenterX < ctx.hitboxCenter.x;
+        bool tileRight = tileCenterX > ctx.hitboxCenter.x;
+
+        // Determine which axis is the penetration axis
+        bool penetrationIsY = (ctx.overlapH <= ctx.overlapW);
+        float penetrationPx = penetrationIsY ? ctx.overlapH : ctx.overlapW;
+
+        // Allow up to 5px of overlap when the player is sliding parallel
+        // to a wall face (not pushing into it). This prevents getting stuck
+        // when the hitbox is slightly embedded after a corner cut.
+        constexpr float PASSIVE_PENETRATION_PX = 5.0f;
+
+        bool movingInto = false;
+        if (penetrationIsY)
+        {
+            // Y+ is down in our world
+            if (tileAbove)
+                movingInto = (ctx.moveDy < 0);  // moving up into top wall
+            if (tileBelow)
+                movingInto = (ctx.moveDy > 0);  // moving down into bottom wall
+            // moveDy == 0 is OK (sliding sideways while scraping)
+        }
+        else
+        {
+            if (tileLeft)
+                movingInto = (ctx.moveDx < 0);  // moving left into left wall
+            if (tileRight)
+                movingInto = (ctx.moveDx > 0);  // moving right into right wall
+            // moveDx == 0 is OK (sliding vertically while scraping)
+        }
+
+        // Require at least 4px of contact along the wall face before
+        // suppressing collision. Near corners, faceOverlap shrinks - we
+        // must NOT suppress there or the player could clip through.
+        constexpr float FACE_CONTACT_MIN_PX = 4.0f;
+        float faceOverlap = penetrationIsY ? ctx.overlapW : ctx.overlapH;
+
+        // Only allow passive tolerance when we're clearly alongside a wall face.
+        // Near corners, faceOverlap gets small -> do NOT suppress collision there.
+        if (!movingInto && penetrationPx <= PASSIVE_PENETRATION_PX &&
+            faceOverlap >= FACE_CONTACT_MIN_PX)
+            return true;
+    }
+    return false;
+}
+
+bool PlayerCharacter::ShouldAllowCornerCut(const TileOverlapContext& ctx,
+                                           const Tilemap* tilemap,
+                                           bool& forceCollision) const
+{
+    forceCollision = false;
+    constexpr float HALF_W = HITBOX_WIDTH * 0.5f;
+    constexpr float BOX_H = HITBOX_HEIGHT;
+    constexpr float EPS = 0.05f;
+    // Maximum hitbox-area overlap with a corner tile before we stop allowing
+    // corner cutting. 20% lets the player clip through exposed convex corners
+    // smoothly but still blocks if they push too far into the tile.
+    constexpr float CORNER_OVERLAP_THRESHOLD = 0.20f;
+
+    // Small overlaps with side walls are tolerated when moving along a corridor.
+    // Without this, the player would snag on walls when slightly misaligned
+    // after a corner cut.
+    constexpr float SIDE_WALL_TOLERANCE = 0.15f;
+
+    auto inBounds = [&](int x, int y)
+    { return x >= 0 && y >= 0 && x < tilemap->GetMapWidth() && y < tilemap->GetMapHeight(); };
+
+    auto tileBlocked = [&](int x, int y)
+    { return !inBounds(x, y) || tilemap->GetTileCollision(x, y); };
+
+    // ========== Corner Cutting Algorithm ==========
+    // Allows smooth movement around convex corners of collision tiles.
+    //
+    // A "true corner" exists when a blocking tile has two adjacent empty
+    // tiles (e.g., empty above AND empty left = top-left corner exposed).
+    //
+    // When the player clips a true corner with small overlap (<20% hitbox),
+    // we check if there's an "escape route" - open space perpendicular to
+    // movement direction. If so, allow the overlap to enable smooth sliding.
+    //
+    // This prevents the "stuck on corners" problem common in tile-based games
+    // while still preventing players from clipping through solid walls.
+    // ================================================
+
+    // Check adjacent tiles to identify exposed corners
+    bool emptyAbove = !tileBlocked(ctx.tx, ctx.ty - 1);
+    bool emptyBelow = !tileBlocked(ctx.tx, ctx.ty + 1);
+    bool emptyLeft = !tileBlocked(ctx.tx - 1, ctx.ty);
+    bool emptyRight = !tileBlocked(ctx.tx + 1, ctx.ty);
+
+    // Check if corner cutting is blocked for each corner
+    bool tlBlocked = tilemap->IsCornerCutBlocked(ctx.tx, ctx.ty, Tilemap::CORNER_TL);
+    bool trBlocked = tilemap->IsCornerCutBlocked(ctx.tx, ctx.ty, Tilemap::CORNER_TR);
+    bool blBlocked = tilemap->IsCornerCutBlocked(ctx.tx, ctx.ty, Tilemap::CORNER_BL);
+    bool brBlocked = tilemap->IsCornerCutBlocked(ctx.tx, ctx.ty, Tilemap::CORNER_BR);
+
+    bool isTopLeftCorner = emptyAbove && emptyLeft && !tlBlocked;
+    bool isTopRightCorner = emptyAbove && emptyRight && !trBlocked;
+    bool isBottomLeftCorner = emptyBelow && emptyLeft && !blBlocked;
+    bool isBottomRightCorner = emptyBelow && emptyRight && !brBlocked;
+
+    bool isTrueCorner =
+        isTopLeftCorner || isTopRightCorner || isBottomLeftCorner || isBottomRightCorner;
+
+    // When moving horizontally, tolerate small overlaps with tiles above/below
+    // When moving vertically, tolerate small overlaps with tiles left/right
+    // This prevents getting stuck in narrow corridors after corner cutting
+    if (!isTrueCorner && ctx.overlapRatio <= SIDE_WALL_TOLERANCE && ctx.overlapRatio > 0.01f)
+    {
+        float tileCenterX = (ctx.tileMinX + ctx.tileMaxX) * 0.5f;
+        float tileCenterY = (ctx.tileMinY + ctx.tileMaxY) * 0.5f;
+
+        bool tileIsAboveOrBelow =
+            std::abs(ctx.hitboxCenter.y - tileCenterY) > std::abs(ctx.hitboxCenter.x - tileCenterX);
+        bool tileIsLeftOrRight = !tileIsAboveOrBelow;
+
+        // Moving horizontally and tile is above/below = side wall, tolerate
+        if (ctx.moveDx != 0 && ctx.moveDy == 0 && tileIsAboveOrBelow)
+            return true;
+
+        // Moving vertically and tile is left/right = side wall, tolerate
+        if (ctx.moveDy != 0 && ctx.moveDx == 0 && tileIsLeftOrRight)
+            return true;
+    }
+
+    if (isTrueCorner)
+    {
+        float tileCenterX = (ctx.tileMinX + ctx.tileMaxX) * 0.5f;
+        float tileCenterY = (ctx.tileMinY + ctx.tileMaxY) * 0.5f;
+
+        // Deadzone around the tile center prevents sub-pixel jitter from
+        // flipping the player between quadrants each frame, which would cause
+        // flickering collision results. Must be wide enough to absorb floating-
+        // point noise but narrow enough to still distinguish genuine sides.
+        constexpr float CORNER_QUAD_EPS = 4.0f;
+
+        auto sideSign = [](float v, float eps) -> int
+        {
+            if (v > eps)
+                return 1;
+            if (v < -eps)
+                return -1;
+            return 0;  // near center
+        };
+
+        float dx = ctx.hitboxCenter.x - tileCenterX;
+        float dy = ctx.hitboxCenter.y - tileCenterY;
+
+        int sx = sideSign(dx, CORNER_QUAD_EPS);
+        int sy = sideSign(dy, CORNER_QUAD_EPS);
+
+        // Tie-break when we're near the center using movement direction (approach
+        // direction). If we're moving right, we are approaching the blocking tile from the
+        // left, etc.
+        if (sx == 0)
+        {
+            if (ctx.moveDx > 0)
+                sx = -1;
+            else if (ctx.moveDx < 0)
+                sx = 1;
+        }
+        if (sy == 0)
+        {
+            // Y+ is down in our world
+            if (ctx.moveDy > 0)
+                sy = -1;  // moving down -> approaching from above
+            else if (ctx.moveDy < 0)
+                sy = 1;  // moving up -> approaching from below
+        }
+
+        bool playerLeftOfTile = (sx < 0);
+        bool playerRightOfTile = (sx > 0);
+        bool playerAboveTile = (sy < 0);
+        bool playerBelowTile = (sy > 0);
+
+        // If both movement axes are pushing directly into blocked faces (solid rectangle
+        // corner), do not allow corner cutting - force a collision so we slide instead of
+        // clipping through.
+        bool movingIntoClosedCorner =
+            ctx.diagonalInput &&
+            ((ctx.moveDx > 0 && !emptyRight) || (ctx.moveDx < 0 && !emptyLeft)) &&
+            ((ctx.moveDy > 0 && !emptyBelow) || (ctx.moveDy < 0 && !emptyAbove));
+        if (movingIntoClosedCorner)
+        {
+            forceCollision = true;
+            return false;
+        }
+
+        bool canCutThisCorner = false;
+
+        // Check if the escape route in the perpendicular direction is clear
+        // by looking at adjacent tiles to the PLAYER, not to the collision tile
+
+        auto hasEscapeRoute = [&](int escapeX, int escapeY) -> bool
+        {
+            // Check if moving in the escape direction leads to open space
+            glm::vec2 escapePos = ctx.bottomCenterPos + glm::vec2(escapeX * ctx.TILE_W * 0.5f,
+                                                                  escapeY * ctx.TILE_H * 0.5f);
+
+            float escMinX = escapePos.x - HALF_W + EPS;
+            float escMaxX = escapePos.x + HALF_W - EPS;
+            float escMaxY = escapePos.y - EPS;
+            float escMinY = escapePos.y - BOX_H + EPS;
+
+            int escTileX0 = static_cast<int>(std::floor(escMinX / ctx.TILE_W));
+            int escTileX1 = static_cast<int>(std::floor(escMaxX / ctx.TILE_W));
+            int escTileY0 = static_cast<int>(std::floor(escMinY / ctx.TILE_H));
+            int escTileY1 = static_cast<int>(std::floor(escMaxY / ctx.TILE_H));
+
+            for (int ety = escTileY0; ety <= escTileY1; ++ety)
+            {
+                for (int etx = escTileX0; etx <= escTileX1; ++etx)
+                {
+                    if (tileBlocked(etx, ety))
+                    {
+                        // Check overlap at escape position
+                        float etMinX = etx * ctx.TILE_W, etMaxX = (etx + 1) * ctx.TILE_W;
+                        float etMinY = ety * ctx.TILE_H, etMaxY = (ety + 1) * ctx.TILE_H;
+
+                        float eOverlapW =
+                            std::max(0.0f, std::min(escMaxX, etMaxX) - std::max(escMinX, etMinX));
+                        float eOverlapH =
+                            std::max(0.0f, std::min(escMaxY, etMaxY) - std::max(escMinY, etMinY));
+
+                        // Significant overlap at escape position = blocked
+                        if (eOverlapW > 2.0f && eOverlapH > 2.0f)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        };
+
+        if (isTopLeftCorner && playerAboveTile && playerLeftOfTile)
+        {
+            if (hasEscapeRoute(0, -1) || hasEscapeRoute(-1, 0))
+                canCutThisCorner = true;
+        }
+        if (isTopRightCorner && playerAboveTile && playerRightOfTile)
+        {
+            if (hasEscapeRoute(0, -1) || hasEscapeRoute(1, 0))
+                canCutThisCorner = true;
+        }
+        if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile)
+        {
+            if (hasEscapeRoute(0, 1) || hasEscapeRoute(-1, 0))
+                canCutThisCorner = true;
+        }
+        if (isBottomRightCorner && playerBelowTile && playerRightOfTile)
+        {
+            if (hasEscapeRoute(0, 1) || hasEscapeRoute(1, 0))
+                canCutThisCorner = true;
+        }
+
+        if (ctx.diagonalInput && !canCutThisCorner)
+        {
+            if (isTopLeftCorner && playerAboveTile && playerLeftOfTile && ctx.moveDx > 0 &&
+                ctx.moveDy > 0)
+            {
+                if (hasEscapeRoute(0, -1) || hasEscapeRoute(-1, 0))
+                    canCutThisCorner = true;
+            }
+            if (isTopRightCorner && playerAboveTile && playerRightOfTile && ctx.moveDx < 0 &&
+                ctx.moveDy > 0)
+            {
+                if (hasEscapeRoute(0, -1) || hasEscapeRoute(1, 0))
+                    canCutThisCorner = true;
+            }
+            if (isBottomLeftCorner && playerBelowTile && playerLeftOfTile && ctx.moveDx > 0 &&
+                ctx.moveDy < 0)
+            {
+                if (hasEscapeRoute(0, 1) || hasEscapeRoute(-1, 0))
+                    canCutThisCorner = true;
+            }
+            if (isBottomRightCorner && playerBelowTile && playerRightOfTile && ctx.moveDx < 0 &&
+                ctx.moveDy < 0)
+            {
+                if (hasEscapeRoute(0, 1) || hasEscapeRoute(1, 0))
+                    canCutThisCorner = true;
+            }
+        }
+
+        if (canCutThisCorner)
+        {
+            // For cardinal movement, use perpendicular penetration in pixels
+            // rather than overlap-area ratio. Area-based thresholds are too strict
+            // when the player is aligned along one axis (tall, thin overlap sliver).
+            // Pixel-based check lets us allow up to 4px of corner grazing.
+            bool cardinalMove = ((ctx.moveDx != 0) ^ (ctx.moveDy != 0)) && !ctx.diagonalInput;
+            if (cardinalMove)
+            {
+                float perpPenPx = (ctx.moveDx != 0)
+                                      ? ctx.overlapH
+                                      : ctx.overlapW;  // moving horizontal -> perp is Y overlap
+                constexpr float CORNER_PERP_PX = 4.0f;
+                if (perpPenPx <= CORNER_PERP_PX)
+                    return true;  // allow corner cut
+            }
+
+            // Fallback for diagonal/etc.
+            if (ctx.overlapRatio <= CORNER_OVERLAP_THRESHOLD)
+                return true;  // allow corner cut
+        }
+    }
+
     return false;
 }
 
