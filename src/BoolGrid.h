@@ -127,7 +127,8 @@ public:
     constexpr void Set(int x, int y, bool value) noexcept
     {
         if (x >= 0 && x < m_Width && y >= 0 && y < m_Height)
-            m_Data[static_cast<std::size_t>(y * m_Width + x)] = value;
+            m_Data[static_cast<std::size_t>(y) * static_cast<std::size_t>(m_Width) +
+                   static_cast<std::size_t>(x)] = value;
     }
 
     /**
@@ -140,7 +141,9 @@ public:
     [[nodiscard]] constexpr bool Get(int x, int y) const noexcept
     {
         if (x >= 0 && x < m_Width && y >= 0 && y < m_Height)
-            return static_cast<bool>(m_Data[static_cast<std::size_t>(y * m_Width + x)]);
+            return static_cast<bool>(
+                m_Data[static_cast<std::size_t>(y) * static_cast<std::size_t>(m_Width) +
+                       static_cast<std::size_t>(x)]);
         return false;
     }
 

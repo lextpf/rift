@@ -143,7 +143,8 @@ public:
         requires Mutable
     {
         const bool valid = (m_X >= 0 && m_X < *m_Width && y >= 0 && y < *m_Height);
-        const auto index = static_cast<std::size_t>(y * (*m_Width) + m_X);
+        const auto index = static_cast<std::size_t>(y) * static_cast<std::size_t>(*m_Width) +
+                           static_cast<std::size_t>(m_X);
         return RefProxy<C, T, DefaultValue>(m_Data, valid ? index : 0, valid);
     }
 
@@ -155,7 +156,9 @@ public:
     [[nodiscard]] constexpr T operator[](int y) const noexcept
     {
         if (m_X >= 0 && m_X < *m_Width && y >= 0 && y < *m_Height)
-            return static_cast<T>((*m_Data)[static_cast<std::size_t>(y * (*m_Width) + m_X)]);
+            return static_cast<T>(
+                (*m_Data)[static_cast<std::size_t>(y) * static_cast<std::size_t>(*m_Width) +
+                          static_cast<std::size_t>(m_X)]);
         return DefaultValue;
     }
 
