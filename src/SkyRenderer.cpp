@@ -9,7 +9,7 @@
 #include <random>
 
 SkyRenderer::SkyRenderer()
-    : m_Time(0.0f),
+    : m_Time(0.0),
       m_ShootingStarTimer(0.0f),
       m_LastScreenWidth(0.0f),
       m_LastScreenHeight(0.0f),
@@ -91,7 +91,7 @@ void SkyRenderer::UploadTextures(IRenderer& renderer)
 
 void SkyRenderer::Update(float deltaTime, const TimeManager& time)
 {
-    m_Time += deltaTime;
+    m_Time += static_cast<double>(deltaTime);
 
     // Update shooting stars during night (skip if screen dimensions not yet set)
     if (m_LastScreenWidth > 0.0f && m_LastScreenHeight > 0.0f && time.GetStarVisibility() > 0.3f &&
@@ -315,7 +315,10 @@ void SkyRenderer::GenerateLightRays()
 
         // Origin offset - rays originate from different points along the "sun band"
         // Distribute across the band with some randomness
-        float baseOrigin = (static_cast<float>(i) / (SUN_RAY_COUNT - 1)) * 2.0f - 1.0f;  // -1 to 1
+        float baseOrigin =
+            (SUN_RAY_COUNT > 1)
+                ? (static_cast<float>(i) / (SUN_RAY_COUNT - 1)) * 2.0f - 1.0f  // -1 to 1
+                : 0.0f;
         ray.originOffset = baseOrigin + (posDist(m_Rng) - 0.5f) * 0.3f;
         ray.originOffset = std::max(-1.0f, std::min(1.0f, ray.originOffset));
 
@@ -471,7 +474,8 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
             continue;
 
         float twinkle =
-            0.6f + 0.4f * std::sin(m_Time * star.twinkleSpeed * 1.5f + star.twinklePhase);
+            0.6f + 0.4f * std::sin(static_cast<float>(m_Time) * star.twinkleSpeed * 1.5f +
+                                   star.twinklePhase);
         float brightness = star.baseBrightness * twinkle * visibility * 0.3f;
 
         if (brightness < 0.01f)
@@ -506,9 +510,12 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         // Three sine waves at incommensurate frequencies create a non-repeating
         // twinkle pattern. The frequency ratios (1.2, 2.7, 0.5) are chosen to
         // avoid simple harmonic relationships so stars don't twinkle in unison.
-        float twinkle1 = std::sin(m_Time * star.twinkleSpeed * 1.2f + star.twinklePhase);
-        float twinkle2 = std::sin(m_Time * star.twinkleSpeed * 2.7f + star.twinklePhase * 1.3f);
-        float twinkle3 = std::sin(m_Time * star.twinkleSpeed * 0.5f + star.twinklePhase * 2.1f);
+        float twinkle1 =
+            std::sin(static_cast<float>(m_Time) * star.twinkleSpeed * 1.2f + star.twinklePhase);
+        float twinkle2 = std::sin(static_cast<float>(m_Time) * star.twinkleSpeed * 2.7f +
+                                  star.twinklePhase * 1.3f);
+        float twinkle3 = std::sin(static_cast<float>(m_Time) * star.twinkleSpeed * 0.5f +
+                                  star.twinklePhase * 2.1f);
 
         // Multiplying two sines gives a burst when both are positive at once,
         // creating sharp brief flares that mimic atmospheric scintillation.
@@ -590,7 +597,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
     {
         // Staggered cycles - each ray on its own timeline
         float rayStartDelay = rayIndex * 4.0f;
-        float rayTime = m_Time - rayStartDelay;
+        float rayTime = static_cast<float>(m_Time) - rayStartDelay;
 
         if (rayTime < 0.0f)
         {
@@ -713,7 +720,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
     {
         // Staggered cycles
         float rayStartDelay = rayIndex * 6.0f;
-        float rayTime = m_Time - rayStartDelay;
+        float rayTime = static_cast<float>(m_Time) - rayStartDelay;
 
         if (rayTime < 0.0f)
         {
@@ -813,7 +820,8 @@ void SkyRenderer::UpdateShootingStars(float deltaTime, int screenWidth, int scre
 
     // Spawn new shooting stars occasionally
     m_ShootingStarTimer += deltaTime;
-    float spawnInterval = 4.0f + std::sin(m_Time * 0.1f) * 2.0f;  // 2-6 seconds between spawns
+    float spawnInterval =
+        4.0f + std::sin(static_cast<float>(m_Time) * 0.1f) * 2.0f;  // 2-6 seconds between spawns
 
     if (m_ShootingStarTimer >= spawnInterval && m_ShootingStars.size() < 2)
     {
@@ -910,7 +918,7 @@ void SkyRenderer::RenderAtmosphericGlow(IRenderer& renderer,
                              true);
 
     // Occasional subtle shimmer at top
-    float shimmer = std::sin(m_Time * 0.25f) * 0.5f + 0.5f;
+    float shimmer = std::sin(static_cast<float>(m_Time) * 0.25f) * 0.5f + 0.5f;
     float auroraAlpha = visibility * 0.01f * shimmer;
 
     if (auroraAlpha > 0.003f)
@@ -1036,7 +1044,7 @@ void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
     for (const auto& sparkle : m_DewSparkles)
     {
         // Sharp twinkle - brief bright flashes
-        float twinkle = std::sin(m_Time * sparkle.speed + sparkle.phase);
+        float twinkle = std::sin(static_cast<float>(m_Time) * sparkle.speed + sparkle.phase);
         twinkle = std::max(0.0f, twinkle - 0.5f) / 0.5f;  // Only top 50% of sine wave
         twinkle = twinkle * twinkle;                      // Sharp peaks
 

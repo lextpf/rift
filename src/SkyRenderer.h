@@ -531,7 +531,7 @@ private:
     /// @name Animation State
     /// @brief Time tracking for animations.
     /// @{
-    float m_Time;               ///< Accumulated time for twinkle animations (seconds)
+    double m_Time;              ///< Accumulated time for twinkle animations (seconds)
     float m_ShootingStarTimer;  ///< Countdown to next shooting star spawn
     float m_LastScreenWidth;    ///< Cached screen width for resize detection
     float m_LastScreenHeight;   ///< Cached screen height for resize detection

@@ -32,7 +32,7 @@ void TimeManager::Update(float deltaTime)
 
     // Convert real time to game time
     // DayDuration = real seconds for 24 game hours
-    float hoursPerSecond = 24.0f / m_DayDuration;
+    float hoursPerSecond = 24.0f / std::max(0.001f, m_DayDuration);
     float timeAdvance = deltaTime * hoursPerSecond * m_TimeScale;
 
     m_CurrentTime += timeAdvance;
