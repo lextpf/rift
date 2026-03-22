@@ -370,6 +370,14 @@ private:
     /// @{
     std::vector<std::string> m_AvailableNPCTypes;  ///< Sprite paths loaded at init.
     size_t m_SelectedNPCTypeIndex;                 ///< Index into m_AvailableNPCTypes.
+
+    /// @brief Clamp m_SelectedNPCTypeIndex to valid range after vector changes.
+    void ClampNPCTypeIndex()
+    {
+        if (!m_AvailableNPCTypes.empty())
+            m_SelectedNPCTypeIndex =
+                std::min(m_SelectedNPCTypeIndex, m_AvailableNPCTypes.size() - 1);
+    }
     /// @}
 
     /// @name Mouse/Drag State

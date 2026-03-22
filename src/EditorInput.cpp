@@ -200,6 +200,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (m_EditMode != EditMode::NPCPlacement)
         {
             m_EditMode = EditMode::NPCPlacement;
+            ClampNPCTypeIndex();
             if (!m_AvailableNPCTypes.empty())
             {
                 std::cout << "NPC placement mode: ON - Selected NPC: "
@@ -603,6 +604,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     // Cycles through available NPC types when in NPC placement mode.
     // Comma (,) previous type, Period (.) next type
     // Wraps around at list boundaries.
+    ClampNPCTypeIndex();
     if (m_Active && (m_EditMode == EditMode::NPCPlacement) && !m_AvailableNPCTypes.empty())
     {
         // Comma key cycles to previous NPC type
@@ -787,95 +789,34 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 
     // Selects which tile layer to edit.
     // Layer switching: Keys 1-9,0 map to dynamic layers 0-9
-    if (glfwGetKey(ctx.window, GLFW_KEY_1) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_1] && m_Active)
+    static constexpr struct
     {
-        m_CurrentLayer = 0;
-        std::cout << "Switched to Layer 1: Ground (background)" << std::endl;
-        m_KeyPressed[GLFW_KEY_1] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_1) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_1] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_2) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_2] && m_Active)
+        int key;
+        int layerIndex;
+        const char* name;
+    } kLayerKeys[] = {
+        {GLFW_KEY_1, 0, "Layer 1: Ground (background)"},
+        {GLFW_KEY_2, 1, "Layer 2: Ground Detail (background)"},
+        {GLFW_KEY_3, 2, "Layer 3: Objects (background)"},
+        {GLFW_KEY_4, 3, "Layer 4: Objects2 (background)"},
+        {GLFW_KEY_5, 4, "Layer 5: Objects3 (background)"},
+        {GLFW_KEY_6, 5, "Layer 6: Foreground (foreground)"},
+        {GLFW_KEY_7, 6, "Layer 7: Foreground2 (foreground)"},
+        {GLFW_KEY_8, 7, "Layer 8: Overlay (foreground)"},
+        {GLFW_KEY_9, 8, "Layer 9: Overlay2 (foreground)"},
+        {GLFW_KEY_0, 9, "Layer 10: Overlay3 (foreground)"},
+    };
+    for (const auto& [key, layerIndex, name] : kLayerKeys)
     {
-        m_CurrentLayer = 1;
-        std::cout << "Switched to Layer 2: Ground Detail (background)" << std::endl;
-        m_KeyPressed[GLFW_KEY_2] = true;
+        if (glfwGetKey(ctx.window, key) == GLFW_PRESS && !m_KeyPressed[key] && m_Active)
+        {
+            m_CurrentLayer = layerIndex;
+            std::cout << "Switched to " << name << std::endl;
+            m_KeyPressed[key] = true;
+        }
+        if (glfwGetKey(ctx.window, key) == GLFW_RELEASE)
+            m_KeyPressed[key] = false;
     }
-    if (glfwGetKey(ctx.window, GLFW_KEY_2) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_2] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_3) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_3] && m_Active)
-    {
-        m_CurrentLayer = 2;
-        std::cout << "Switched to Layer 3: Objects (background)" << std::endl;
-        m_KeyPressed[GLFW_KEY_3] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_3) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_3] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_4) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_4] && m_Active)
-    {
-        m_CurrentLayer = 3;
-        std::cout << "Switched to Layer 4: Objects2 (background)" << std::endl;
-        m_KeyPressed[GLFW_KEY_4] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_4) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_4] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_5) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_5] && m_Active)
-    {
-        m_CurrentLayer = 4;
-        std::cout << "Switched to Layer 5: Objects3 (background)" << std::endl;
-        m_KeyPressed[GLFW_KEY_5] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_5) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_5] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_6) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_6] && m_Active)
-    {
-        m_CurrentLayer = 5;
-        std::cout << "Switched to Layer 6: Foreground (foreground)" << std::endl;
-        m_KeyPressed[GLFW_KEY_6] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_6) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_6] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_7) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_7] && m_Active)
-    {
-        m_CurrentLayer = 6;
-        std::cout << "Switched to Layer 7: Foreground2 (foreground)" << std::endl;
-        m_KeyPressed[GLFW_KEY_7] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_7) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_7] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_8) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_8] && m_Active)
-    {
-        m_CurrentLayer = 7;
-        std::cout << "Switched to Layer 8: Overlay (foreground)" << std::endl;
-        m_KeyPressed[GLFW_KEY_8] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_8) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_8] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_9) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_9] && m_Active)
-    {
-        m_CurrentLayer = 8;
-        std::cout << "Switched to Layer 9: Overlay2 (foreground)" << std::endl;
-        m_KeyPressed[GLFW_KEY_9] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_9) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_9] = false;
-
-    if (glfwGetKey(ctx.window, GLFW_KEY_0) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_0] && m_Active)
-    {
-        m_CurrentLayer = 9;
-        std::cout << "Switched to Layer 10: Overlay3 (foreground)" << std::endl;
-        m_KeyPressed[GLFW_KEY_0] = true;
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_0) == GLFW_RELEASE)
-        m_KeyPressed[GLFW_KEY_0] = false;
 }
 
 void Editor::ProcessMouseInput(const EditorContext& ctx)
@@ -998,61 +939,44 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
                 m_RightMousePressed = true;
             }
-            // Y-sort-plus edit mode, right-click clears Y-sort-plus flag for current layer
-            // Shift+right-click, flood-fill to clear all connected tiles
-            else if ((m_EditMode == EditMode::YSortPlus))
+            // Y-sort-plus / Y-sort-minus edit modes share the same clear logic.
+            // Right-click clears flag on single tile; Shift+right-click flood-clears.
+            else if (m_EditMode == EditMode::YSortPlus || m_EditMode == EditMode::YSortMinus)
             {
+                bool isPlus = (m_EditMode == EditMode::YSortPlus);
+                auto getter = [&](int cx, int cy)
+                {
+                    return isPlus ? ctx.tilemap.GetLayerYSortPlus(cx, cy, m_CurrentLayer)
+                                  : ctx.tilemap.GetLayerYSortMinus(cx, cy, m_CurrentLayer);
+                };
+                auto setter = [&](int cx, int cy)
+                {
+                    if (isPlus)
+                    {
+                        ctx.tilemap.SetLayerYSortPlus(cx, cy, m_CurrentLayer, false);
+                    }
+                    else
+                    {
+                        ctx.tilemap.SetLayerYSortMinus(cx, cy, m_CurrentLayer, false);
+                    }
+                };
+                const char* label = isPlus ? "Y-sort-plus" : "Y-sort-minus";
+
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
                 if (shiftHeld)
                 {
-                    int layer = m_CurrentLayer;
-                    int count = FloodFill(
-                        ctx.tilemap,
-                        tileX,
-                        tileY,
-                        [&](int cx, int cy)
-                        { return ctx.tilemap.GetLayerYSortPlus(cx, cy, layer); },
-                        [&](int cx, int cy)
-                        { ctx.tilemap.SetLayerYSortPlus(cx, cy, layer, false); });
-                    std::cout << "Cleared Y-sort-plus on " << count << " connected tiles (layer "
-                              << (layer + 1) << ")" << std::endl;
+                    int count = FloodFill(ctx.tilemap, tileX, tileY, getter, setter);
+                    std::cout << "Cleared " << label << " on " << count
+                              << " connected tiles (layer " << (m_CurrentLayer + 1) << ")"
+                              << std::endl;
                 }
                 else
                 {
-                    ctx.tilemap.SetLayerYSortPlus(tileX, tileY, m_CurrentLayer, false);
-                    std::cout << "Cleared Y-sort-plus at (" << tileX << ", " << tileY << ") layer "
-                              << (m_CurrentLayer + 1) << std::endl;
-                }
-                m_RightMousePressed = true;
-            }
-            // Y-sort-minus edit mode, right-click clears Y-sort-minus flag for current layer
-            // Shift+right-click, flood-fill to clear all connected tiles
-            else if ((m_EditMode == EditMode::YSortMinus))
-            {
-                bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                                  glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
-
-                if (shiftHeld)
-                {
-                    int layer = m_CurrentLayer;
-                    int count = FloodFill(
-                        ctx.tilemap,
-                        tileX,
-                        tileY,
-                        [&](int cx, int cy)
-                        { return ctx.tilemap.GetLayerYSortMinus(cx, cy, layer); },
-                        [&](int cx, int cy)
-                        { ctx.tilemap.SetLayerYSortMinus(cx, cy, layer, false); });
-                    std::cout << "Cleared Y-sort-minus on " << count << " connected tiles (layer "
-                              << (layer + 1) << ")" << std::endl;
-                }
-                else
-                {
-                    ctx.tilemap.SetLayerYSortMinus(tileX, tileY, m_CurrentLayer, false);
-                    std::cout << "Cleared Y-sort-minus at (" << tileX << ", " << tileY << ") layer "
-                              << (m_CurrentLayer + 1) << std::endl;
+                    setter(tileX, tileY);
+                    std::cout << "Cleared " << label << " at (" << tileX << ", " << tileY
+                              << ") layer " << (m_CurrentLayer + 1) << std::endl;
                 }
                 m_RightMousePressed = true;
             }
@@ -1349,6 +1273,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 // Only place new NPCs on navigation tiles
                 if (!removed && ctx.tilemap.GetNavigation(tileX, tileY))
                 {
+                    ClampNPCTypeIndex();
                     if (!m_AvailableNPCTypes.empty())
                     {
                         NonPlayerCharacter npc;
@@ -1362,7 +1287,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             DialogueTree tree;
                             std::string npcName;
                             static std::mt19937 rng(std::random_device{}());
-                            std::uniform_int_distribution<int> dist(0, kMysteryDialogueCount + 1);
+                            // Total dialogue types: mystery dialogues + editor-aware + annoyed NPC
+                            const int TOTAL_DIALOGUE_TYPES = kMysteryDialogueCount + 2;
+                            std::uniform_int_distribution<int> dist(0, TOTAL_DIALOGUE_TYPES - 1);
                             int dialogueType = dist(rng);
                             if (dialogueType < kMysteryDialogueCount)
                             {

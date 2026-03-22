@@ -62,6 +62,30 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     return r;
 }
 
+/// Draw a colored rectangle at every visible tile where @p predicate returns true.
+/// Extracts the common CalcVisibleTileRange + double-loop + DrawColoredRect pattern
+/// shared by multiple overlay functions.
+template <typename Predicate>
+void ForVisibleFlaggedTiles(const EditorContext& ctx, Predicate predicate, const glm::vec4& color)
+{
+    auto vr = CalcVisibleTileRange(ctx);
+    glm::vec2 tileSize(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight));
+
+    for (int y = vr.startY; y < vr.endY; ++y)
+    {
+        for (int x = vr.startX; x < vr.endX; ++x)
+        {
+            if (!predicate(ctx.tilemap, x, y))
+            {
+                continue;
+            }
+            glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
+                              y * vr.tileHeight - ctx.cameraPosition.y);
+            ctx.renderer.DrawColoredRect(tilePos, tileSize, color);
+        }
+    }
+}
+
 bool IsRectFullyBehindSphere(IRenderer& renderer, const glm::vec2& pos, const glm::vec2& size)
 {
     auto s = renderer.GetPerspectiveState();
@@ -215,22 +239,10 @@ void Editor::RenderCollisionOverlays(const EditorContext& ctx)
     auto vr = CalcVisibleTileRange(ctx);
 
     // Render red overlay for each collision tile
-    for (int y = vr.startY; y < vr.endY; ++y)
-    {
-        for (int x = vr.startX; x < vr.endX; ++x)
-        {
-            if (ctx.tilemap.GetTileCollision(x, y))
-            {
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
-
-                ctx.renderer.DrawColoredRect(
-                    tilePos,
-                    glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
-                    glm::vec4(1.0f, 0.0f, 0.0f, 0.5f));
-            }
-        }
-    }
+    ForVisibleFlaggedTiles(
+        ctx,
+        [](const Tilemap& tm, int x, int y) { return tm.GetTileCollision(x, y); },
+        glm::vec4(1.0f, 0.0f, 0.0f, 0.5f));
 
     // Render player hitbox
     glm::vec2 playerPos = ctx.player.GetPosition();
@@ -267,24 +279,10 @@ void Editor::RenderCollisionOverlays(const EditorContext& ctx)
 
 void Editor::RenderNavigationOverlays(const EditorContext& ctx)
 {
-    auto vr = CalcVisibleTileRange(ctx);
-
-    for (int y = vr.startY; y < vr.endY; ++y)
-    {
-        for (int x = vr.startX; x < vr.endX; ++x)
-        {
-            if (!ctx.tilemap.GetNavigation(x, y))
-                continue;
-
-            glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                              y * vr.tileHeight - ctx.cameraPosition.y);
-
-            ctx.renderer.DrawColoredRect(
-                tilePos,
-                glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
-                glm::vec4(0.0f, 1.0f, 1.0f, 0.3f));
-        }
-    }
+    ForVisibleFlaggedTiles(
+        ctx,
+        [](const Tilemap& tm, int x, int y) { return tm.GetNavigation(x, y); },
+        glm::vec4(0.0f, 1.0f, 1.0f, 0.3f));
 }
 
 void Editor::RenderElevationOverlays(const EditorContext& ctx)
@@ -946,6 +944,9 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
         glm::ortho(0.0f, tilePickerWorldWidth, tilePickerWorldHeight, 0.0f, -1.0f, 1.0f);
     ctx.renderer.SetProjection(tilePickerProjection);
 
+    if (ctx.tilemap.GetTileWidth() == 0 || ctx.tilemap.GetTileHeight() == 0)
+        return;
+
     int dataTilesPerRow = ctx.tilemap.GetTilesetDataWidth() / ctx.tilemap.GetTileWidth();
     int dataTilesPerCol = ctx.tilemap.GetTilesetDataHeight() / ctx.tilemap.GetTileHeight();
     int totalTiles = dataTilesPerRow * dataTilesPerCol;
@@ -1176,6 +1177,9 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
         ctx.cameraPosition.y;
 
     // Convert world coordinates to tile coordinates
+    if (ctx.tilemap.GetTileWidth() == 0 || ctx.tilemap.GetTileHeight() == 0)
+        return;
+
     int tileX = static_cast<int>(std::floor(worldX / ctx.tilemap.GetTileWidth()));
     int tileY = static_cast<int>(std::floor(worldY / ctx.tilemap.GetTileHeight()));
 

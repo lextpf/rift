@@ -43,7 +43,7 @@ struct TileOverlapContext
     int playerTileX, playerTileY;
     int moveDx, moveDy;
     bool diagonalInput;
-    float TILE_W, TILE_H;
+    float tileW, tileH;
 };
 
 /* Animation frame duration in seconds (time per frame). */
@@ -183,8 +183,6 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
     };
 
     Texture newWalk;
-    Texture newRun;
-    Texture newBike;
 
     if (!tryLoad(newWalk, spritePath))
     {
@@ -192,16 +190,12 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
         return false;
     }
 
-    if (!tryLoad(newRun, spritePath) || !tryLoad(newBike, spritePath))
-    {
-        std::cerr << "Failed to load running/bicycle sprites from: " << spritePath << std::endl;
-        return false;
-    }
+    // NPC sprite sheets have only a walking sprite, so reuse it for all animation types.
+    // Running and bicycle modes will automatically restore the original appearance anyway,
+    // since NPCs don't have separate run/bike sheets.
 
-    // All loads succeeded -- commit the change atomically.
+    // Commit the change -- only the walking sheet is replaced.
     m_SpriteSheet = std::move(newWalk);
-    m_RunningSpriteSheet = std::move(newRun);
-    m_BicycleSpriteSheet = std::move(newBike);
     m_IsUsingCopiedAppearance = true;
     std::cout << "Copied appearance from: " << spritePath << std::endl;
     return true;
@@ -212,10 +206,16 @@ void PlayerCharacter::RestoreOriginalAppearance()
     if (!m_IsUsingCopiedAppearance)
         return;
 
-    // Reload original character sprites
-    SwitchCharacter(m_CharacterType);
-    m_IsUsingCopiedAppearance = false;
-    std::cout << "Restored original appearance" << std::endl;
+    // Reload original character sprites - only clear the flag on success
+    if (SwitchCharacter(m_CharacterType))
+    {
+        m_IsUsingCopiedAppearance = false;
+        std::cout << "Restored original appearance" << std::endl;
+    }
+    else
+    {
+        std::cerr << "Failed to restore original appearance" << std::endl;
+    }
 }
 
 void PlayerCharacter::SetRunning(bool running)
@@ -237,7 +237,7 @@ void PlayerCharacter::Update(float deltaTime)
 
     if (m_AnimationTime >= animSpeed)
     {
-        m_AnimationTime -= animSpeed;
+        m_AnimationTime = std::fmod(m_AnimationTime, animSpeed);
 
         if (m_AnimationType == AnimationType::IDLE)
         {
@@ -276,16 +276,17 @@ void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
                                                                      : m_SpriteSheet;
 
     // Suspend perspective - we already projected the position, don't double-project
-    renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet,
-                              renderPos,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
-                              spriteCoords,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
-                              0.0f,
-                              glm::vec3(1.0f),
-                              false);
-    renderer.SuspendPerspective(false);
+    {
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
+        renderer.DrawSpriteRegion(sheet,
+                                  renderPos,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
+                                  spriteCoords,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
+                                  0.0f,
+                                  glm::vec3(1.0f),
+                                  false);
+    }
 }
 
 void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
@@ -330,16 +331,17 @@ void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
     glm::vec2 bottomSpriteCoords = spriteCoords;
 
     // Suspend perspective - we already projected the position, don't double-project
-    renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet,
-                              bottomRenderPos,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              bottomSpriteCoords,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              0.0f,
-                              glm::vec3(1.0f),
-                              false);
-    renderer.SuspendPerspective(false);
+    {
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
+        renderer.DrawSpriteRegion(sheet,
+                                  bottomRenderPos,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                                  bottomSpriteCoords,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                                  0.0f,
+                                  glm::vec3(1.0f),
+                                  false);
+    }
 }
 
 void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
@@ -368,16 +370,17 @@ void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
     glm::vec2 topSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
 
     // Suspend perspective - we already projected the position, don't double-project
-    renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(sheet,
-                              renderPos,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              topSpriteCoords,
-                              glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
-                              0.0f,
-                              glm::vec3(1.0f),
-                              false);
-    renderer.SuspendPerspective(false);
+    {
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
+        renderer.DrawSpriteRegion(sheet,
+                                  renderPos,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                                  topSpriteCoords,
+                                  glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
+                                  0.0f,
+                                  glm::vec3(1.0f),
+                                  false);
+    }
 }
 
 float PlayerCharacter::CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon)
@@ -600,7 +603,7 @@ bool PlayerCharacter::ShouldTolerateWallPenetration(const TileOverlapContext& ct
             // Y+ is down in our world
             if (tileAbove)
                 movingInto = (ctx.moveDy < 0);  // moving up into top wall
-            if (tileBelow)
+            else if (tileBelow)
                 movingInto = (ctx.moveDy > 0);  // moving down into bottom wall
             // moveDy == 0 is OK (sliding sideways while scraping)
         }
@@ -608,7 +611,7 @@ bool PlayerCharacter::ShouldTolerateWallPenetration(const TileOverlapContext& ct
         {
             if (tileLeft)
                 movingInto = (ctx.moveDx < 0);  // moving left into left wall
-            if (tileRight)
+            else if (tileRight)
                 movingInto = (ctx.moveDx > 0);  // moving right into right wall
             // moveDx == 0 is OK (sliding vertically while scraping)
         }
@@ -778,18 +781,18 @@ bool PlayerCharacter::ShouldAllowCornerCut(const TileOverlapContext& ctx,
         auto hasEscapeRoute = [&](int escapeX, int escapeY) -> bool
         {
             // Check if moving in the escape direction leads to open space
-            glm::vec2 escapePos = ctx.bottomCenterPos + glm::vec2(escapeX * ctx.TILE_W * 0.5f,
-                                                                  escapeY * ctx.TILE_H * 0.5f);
+            glm::vec2 escapePos = ctx.bottomCenterPos +
+                                  glm::vec2(escapeX * ctx.tileW * 0.5f, escapeY * ctx.tileH * 0.5f);
 
             float escMinX = escapePos.x - HALF_W + EPS;
             float escMaxX = escapePos.x + HALF_W - EPS;
             float escMaxY = escapePos.y - EPS;
             float escMinY = escapePos.y - BOX_H + EPS;
 
-            int escTileX0 = static_cast<int>(std::floor(escMinX / ctx.TILE_W));
-            int escTileX1 = static_cast<int>(std::floor(escMaxX / ctx.TILE_W));
-            int escTileY0 = static_cast<int>(std::floor(escMinY / ctx.TILE_H));
-            int escTileY1 = static_cast<int>(std::floor(escMaxY / ctx.TILE_H));
+            int escTileX0 = static_cast<int>(std::floor(escMinX / ctx.tileW));
+            int escTileX1 = static_cast<int>(std::floor(escMaxX / ctx.tileW));
+            int escTileY0 = static_cast<int>(std::floor(escMinY / ctx.tileH));
+            int escTileY1 = static_cast<int>(std::floor(escMaxY / ctx.tileH));
 
             for (int ety = escTileY0; ety <= escTileY1; ++ety)
             {
@@ -798,8 +801,8 @@ bool PlayerCharacter::ShouldAllowCornerCut(const TileOverlapContext& ctx,
                     if (tileBlocked(etx, ety))
                     {
                         // Check overlap at escape position
-                        float etMinX = etx * ctx.TILE_W, etMaxX = (etx + 1) * ctx.TILE_W;
-                        float etMinY = ety * ctx.TILE_H, etMaxY = (ety + 1) * ctx.TILE_H;
+                        float etMinX = etx * ctx.tileW, etMaxX = (etx + 1) * ctx.tileW;
+                        float etMinY = ety * ctx.tileH, etMaxY = (ety + 1) * ctx.tileH;
 
                         float eOverlapW =
                             std::max(0.0f, std::min(escMaxX, etMaxX) - std::max(escMinX, etMinX));
@@ -904,7 +907,25 @@ bool PlayerCharacter::CollidesAt(const glm::vec2& bottomCenterPos,
     {
         bool centerHit = CollidesWithTilesCenter(bottomCenterPos, tilemap);
         bool cornerPocket = diagonalInput && IsCornerPenetration(bottomCenterPos, tilemap);
-        tileCollision = centerHit || cornerPocket;
+
+        // When sprinting diagonally, the center-only check can miss closed corners
+        // where both axis-adjacent tiles are solid. Check the horizontal and vertical
+        // neighbor tiles of the center tile - if both are collision tiles, the player
+        // would clip through the corner between them.
+        bool straddle = false;
+        if (diagonalInput && !centerHit && tilemap)
+        {
+            const float tileW = static_cast<float>(tilemap->GetTileWidth());
+            const float tileH = static_cast<float>(tilemap->GetTileHeight());
+            glm::vec2 center(bottomCenterPos.x, bottomCenterPos.y - HITBOX_HEIGHT * 0.5f);
+            int baseTileX = static_cast<int>(std::floor(center.x / tileW));
+            int baseTileY = static_cast<int>(std::floor((center.y - COLLISION_EPS) / tileH));
+            bool hBlocked = tilemap->GetTileCollision(baseTileX + moveDx, baseTileY);
+            bool vBlocked = tilemap->GetTileCollision(baseTileX, baseTileY + moveDy);
+            straddle = hBlocked && vBlocked;
+        }
+
+        tileCollision = centerHit || cornerPocket || straddle;
     }
     else
     {
@@ -2178,6 +2199,9 @@ void PlayerCharacter::HandleIdleSnap(float deltaTime,
 
 glm::vec2 PlayerCharacter::GetCurrentTileCenter(float tileSize) const
 {
+    if (tileSize <= 0.0f)
+        return glm::vec2(0.0f);
+
     constexpr float EPS = 0.001f;  // Small epsilon to handle edge cases
 
     // Calculate tile indices

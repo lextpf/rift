@@ -84,10 +84,15 @@ bool NonPlayerCharacter::Load(const std::string& relativePath)
     std::string filename =
         (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
 
-    // Remove .png extension if present
-    if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".png")
+    // Remove .png extension if present (case-insensitive)
+    if (filename.size() > 4)
     {
-        m_Type = filename.substr(0, filename.size() - 4);
+        std::string ext = filename.substr(filename.size() - 4);
+        std::transform(ext.begin(),
+                       ext.end(),
+                       ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        m_Type = (ext == ".png") ? filename.substr(0, filename.size() - 4) : filename;
     }
     else
     {
@@ -257,6 +262,18 @@ void NonPlayerCharacter::Update(float deltaTime,
     // Check if we've reached the current waypoint
     if (dist < WAYPOINT_REACH_THRESHOLD)
     {
+        // Verify the target tile is still walkable before snapping
+        int targetTileX = static_cast<int>(targetPos.x / static_cast<float>(tileWidth));
+        int targetTileY = static_cast<int>((targetPos.y - static_cast<float>(tileHeight) * 0.5f) /
+                                           static_cast<float>(tileHeight));
+        if (tilemap->GetTileCollision(targetTileX, targetTileY))
+        {
+            // Target blocked - stop and invalidate route to trigger re-initialization
+            EnterStandingStillMode(false);
+            m_PatrolRoute = PatrolRoute();
+            return;
+        }
+
         m_Position = targetPos;
 
         // Initialize patrol route if needed
@@ -452,16 +469,17 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraP
 
     // Draw lower 16 pixels (feet area)
     glm::vec2 bottomHalfCoords = spriteCoords;
-    renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(m_SpriteSheet,
-                              renderPos + glm::vec2(0.0f, halfHeight),
-                              glm::vec2(spriteWidth, halfHeight),
-                              bottomHalfCoords,
-                              glm::vec2(spriteWidth, halfHeight),
-                              0.0f,
-                              glm::vec3(1.0f),
-                              false);
-    renderer.SuspendPerspective(false);
+    {
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
+        renderer.DrawSpriteRegion(m_SpriteSheet,
+                                  renderPos + glm::vec2(0.0f, halfHeight),
+                                  glm::vec2(spriteWidth, halfHeight),
+                                  bottomHalfCoords,
+                                  glm::vec2(spriteWidth, halfHeight),
+                                  0.0f,
+                                  glm::vec3(1.0f),
+                                  false);
+    }
 }
 
 void NonPlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos) const
@@ -482,14 +500,15 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
     // Draw upper 16 pixels (head/torso area)
     glm::vec2 topHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
 
-    renderer.SuspendPerspective(true);
-    renderer.DrawSpriteRegion(m_SpriteSheet,
-                              renderPos,
-                              glm::vec2(spriteWidth, halfHeight),
-                              topHalfCoords,
-                              glm::vec2(spriteWidth, halfHeight),
-                              0.0f,
-                              glm::vec3(1.0f),
-                              false);
-    renderer.SuspendPerspective(false);
+    {
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
+        renderer.DrawSpriteRegion(m_SpriteSheet,
+                                  renderPos,
+                                  glm::vec2(spriteWidth, halfHeight),
+                                  topHalfCoords,
+                                  glm::vec2(spriteWidth, halfHeight),
+                                  0.0f,
+                                  glm::vec3(1.0f),
+                                  false);
+    }
 }

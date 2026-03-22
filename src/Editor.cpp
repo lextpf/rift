@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "MathUtils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -157,13 +158,7 @@ void Editor::Update(float deltaTime, const EditorContext& ctx)
     if (m_Active && m_ShowTilePicker)
     {
         // Exponential decay smoothing for tile picker pan
-        auto expApproachAlpha = [](float dt, float st, float e = 0.01f) -> float
-        {
-            dt = std::max(0.0f, dt);
-            st = std::max(1e-5f, st);
-            return std::clamp(1.0f - std::pow(e, dt / st), 0.0f, 1.0f);
-        };
-        float dt = expApproachAlpha(deltaTime, 0.16f);
+        float dt = rift::ExpApproachAlpha(deltaTime, 0.16f);
 
         m_TilePickerOffsetX =
             m_TilePickerOffsetX + (m_TilePickerTargetOffsetX - m_TilePickerOffsetX) * dt;
@@ -197,9 +192,8 @@ void Editor::Render(const EditorContext& ctx)
     // Render editor tile picker UI
     if (m_Active && m_ShowTilePicker)
     {
-        ctx.renderer.SuspendPerspective(true);
+        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         RenderEditorUI(ctx);
-        ctx.renderer.SuspendPerspective(false);
     }
 
     // Shared overlays: rendered once when either editor or debug mode is active
@@ -246,23 +240,24 @@ void Editor::RenderNoProjectionAnchors(const EditorContext& ctx)
 
 void Editor::RecalculateNPCPatrolRoutes(const EditorContext& ctx)
 {
-    for (size_t i = 0; i < ctx.npcs.size();)
-    {
-        auto& npc = ctx.npcs[i];
-        bool hasNavigation = ctx.tilemap.GetNavigation(npc.GetTileX(), npc.GetTileY());
-        if (!hasNavigation)
-        {
-            std::cout << "Removing NPC at tile (" << npc.GetTileX() << ", " << npc.GetTileY()
-                      << ") - no longer on navigation" << std::endl;
-            ctx.npcs.erase(ctx.npcs.begin() + static_cast<std::ptrdiff_t>(i));
-            continue;
-        }
+    std::erase_if(ctx.npcs,
+                  [&](const NonPlayerCharacter& npc)
+                  {
+                      bool remove = !ctx.tilemap.GetNavigation(npc.GetTileX(), npc.GetTileY());
+                      if (remove)
+                      {
+                          std::cout << "Removing NPC at tile (" << npc.GetTileX() << ", "
+                                    << npc.GetTileY() << ") - no longer on navigation" << std::endl;
+                      }
+                      return remove;
+                  });
 
+    for (auto& npc : ctx.npcs)
+    {
         if (!npc.ReinitializePatrolRoute(&ctx.tilemap))
         {
             std::cout << "Warning: NPC at (" << npc.GetTileX() << ", " << npc.GetTileY()
                       << ") could not find valid patrol route" << std::endl;
         }
-        ++i;
     }
 }
