@@ -58,12 +58,16 @@ void CrashHandler(int sig)
         int val = sig < 0 ? -sig : sig;
 
         if (sig < 0)
+        {
             buf[pos++] = '-';
+        }
 
         // Find leading digit position.
         int divisor = 1;
         while (val / divisor >= 10)
+        {
             divisor *= 10;
+        }
 
         while (divisor > 0)
         {
@@ -81,6 +85,15 @@ void CrashHandler(int sig)
 
 #endif  // _WIN32
 
+namespace
+{
+void LogToFile(const std::string& msg)
+{
+    std::ofstream logFile("rift.txt", std::ios::app);
+    logFile << msg << std::endl;
+}
+}  // namespace
+
 int main()
 {
 #ifdef _WIN32
@@ -88,9 +101,9 @@ int main()
     signal(SIGTERM, CrashHandler);
     signal(SIGINT, CrashHandler);
 
-    // Translate Win32 structured exceptions (access violations, stack
-    // overflows, division by zero, etc.) into C++ exceptions so they are
-    // caught by the try/catch blocks below instead of crashing silently.
+    // Handle Win32 structured exceptions (access violations, stack
+    // overflows, division by zero, etc.) by logging the exception code
+    // to rift.txt and terminating immediately via _exit(1).
     //
     // Only async-signal-safe operations are used here: low-level _open/_write/_close
     // and manual integer-to-string conversion. Heap allocation (std::ofstream,
@@ -121,16 +134,13 @@ int main()
                 _write(fd, newline, sizeof(newline) - 1);
                 _close(fd);
             }
-            throw std::runtime_error("SEH Exception");
+            _exit(1);
         });
 #endif
 
     // Log startup then close immediately so the file isn't locked during
     // the entire process lifetime. Catch blocks reopen as needed.
-    {
-        std::ofstream logFile("rift.txt", std::ios::app);
-        logFile << "=== Program Starting ===" << std::endl;
-    }
+    LogToFile("=== Program Starting ===");
 
 #ifdef _WIN32
     if (AllocConsole())
@@ -139,9 +149,11 @@ int main()
         FILE* pCin;
         FILE* pCerr;
 
-        freopen_s(&pCout, "CONOUT$", "w", stdout);
-        freopen_s(&pCin, "CONIN$", "r", stdin);
-        freopen_s(&pCerr, "CONOUT$", "w", stderr);
+        // Redirect standard streams to the newly allocated console.
+        // Failures are non-fatal (AllocConsole succeeded, so this is very unlikely).
+        (void)freopen_s(&pCout, "CONOUT$", "w", stdout);
+        (void)freopen_s(&pCin, "CONIN$", "r", stdin);
+        (void)freopen_s(&pCerr, "CONOUT$", "w", stderr);
 
         std::cout.clear();
         std::cin.clear();
@@ -159,8 +171,7 @@ int main()
             std::cerr << "Failed to initialize game" << std::endl;
             std::cerr << "Check rift.txt for details" << std::endl;
 
-            std::ofstream logFile("rift.txt", std::ios::app);
-            logFile << "ERROR: Initialize() returned false" << std::endl;
+            LogToFile("ERROR: Initialize() returned false");
 
             std::cin.get();
             return -1;
@@ -178,14 +189,12 @@ int main()
         catch (const std::exception& e)
         {
             std::cerr << "Exception during game loop: " << e.what() << std::endl;
-            std::ofstream logFile("rift.txt", std::ios::app);
-            logFile << "EXCEPTION in game loop: " << e.what() << std::endl;
+            LogToFile(std::string("EXCEPTION in game loop: ") + e.what());
         }
         catch (...)
         {
             std::cerr << "Unknown exception during game loop" << std::endl;
-            std::ofstream logFile("rift.txt", std::ios::app);
-            logFile << "UNKNOWN EXCEPTION in game loop" << std::endl;
+            LogToFile("UNKNOWN EXCEPTION in game loop");
         }
 
         // Clean shutdown
@@ -197,8 +206,7 @@ int main()
         std::cerr << "Exception in main: " << e.what() << std::endl;
         std::cerr << "Press Enter to exit..." << std::endl;
 
-        std::ofstream logFile("rift.txt", std::ios::app);
-        logFile << "EXCEPTION in main: " << e.what() << std::endl;
+        LogToFile(std::string("EXCEPTION in main: ") + e.what());
 
         std::cin.get();
         return -1;
@@ -208,17 +216,13 @@ int main()
         std::cerr << "Unknown exception in main" << std::endl;
         std::cerr << "Press Enter to exit..." << std::endl;
 
-        std::ofstream logFile("rift.txt", std::ios::app);
-        logFile << "UNKNOWN EXCEPTION in main" << std::endl;
+        LogToFile("UNKNOWN EXCEPTION in main");
 
         std::cin.get();
         return -1;
     }
 
-    {
-        std::ofstream logFile("rift.txt", std::ios::app);
-        logFile << "=== Program Exiting Normally ===" << std::endl;
-    }
+    LogToFile("=== Program Exiting Normally ===");
 
     return 0;
 }

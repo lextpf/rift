@@ -1,9 +1,11 @@
 #pragma once
 
+#include "CameraController.h"
 #include "DialogueManager.h"
 #include "Editor.h"
 #include "GameStateManager.h"
 #include "IRenderer.h"
+#include "KeyToggle.h"
 #include "NonPlayerCharacter.h"
 #include "ParticleSystem.h"
 #include "PlayerCharacter.h"
@@ -18,22 +20,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-
-/**
- * @struct CameraState
- * @brief Camera position, following, and perspective state.
- */
-struct CameraState
-{
-    glm::vec2 position{0.0f};          ///< Current camera world position (rendered position)
-    glm::vec2 followTarget{0.0f};      ///< Target position camera is smoothing toward
-    bool hasFollowTarget = false;      ///< True = smooth follow mode, false = instant snap
-    float zoom = 1.0f;                 ///< Zoom multiplier (1.0 = 100%)
-    float tilt = 0.2f;                 ///< Tilt angle for 3D effect
-    bool enable3DEffect = false;       ///< Whether 3D tilt effect is active
-    float globeSphereRadius = 200.0f;  ///< Globe projection radius
-    bool freeMode = false;             ///< Free camera mode (decoupled from player)
-};
 
 /**
  * @struct FPSCounter
@@ -186,6 +172,11 @@ public:
      */
     ~Game();
 
+    Game(const Game&) = delete;
+    Game& operator=(const Game&) = delete;
+    Game(Game&&) = delete;
+    Game& operator=(Game&&) = delete;
+
     /**
      * @brief Initialize all game systems.
      *
@@ -292,6 +283,12 @@ private:
      */
     void ProcessInput(float deltaTime);
 
+    /// @brief Handle branching and simple dialogue key input.
+    void ProcessDialogueInput();
+
+    /// @brief Handle player movement, collision, and NPC interaction.
+    void ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime);
+
     /**
      * @brief Update game state.
      *
@@ -317,31 +314,6 @@ private:
      * 6. End frame
      */
     void Render();
-
-    /**
-     * @brief Compute a projection matrix with 3D globe effect.
-     *
-     * Configures the renderer's perspective settings based on whether
-     * the 3D globe effect is enabled.
-     *
-     * @param width  World width in pixels.
-     * @param height World height in pixels.
-     */
-    void ConfigureRendererPerspective(float width, float height);
-
-    /**
-     * @brief Get a standard orthographic projection matrix.
-     *
-     * @param width  World width in pixels.
-     * @param height World height in pixels.
-     * @return Orthographic projection matrix.
-     */
-    glm::mat4 GetOrthoProjection(float width, float height);
-
-    /**
-     * @brief Toggle the 3D globe effect on/off.
-     */
-    void Toggle3DEffect();
 
     /**
      * @brief Build an EditorContext from current Game state.
@@ -375,7 +347,7 @@ private:
      * @brief Check if dialogue is on the last page.
      * @return True if on last page or no dialogue active.
      */
-    bool IsDialogueOnLastPage() const;
+    bool IsDialogueOnLastPage();
 
     /**
      * @brief Release the NPC currently held in dialogue and reset dialogue NPC index.
@@ -403,11 +375,33 @@ private:
      */
     void BeginDialogueSnap(size_t npcIndex);
 
+    /**
+     * @brief Find a valid tile for the player to stand on during dialogue snap.
+     *
+     * Searches cardinal directions from the NPC tile, preferring the direction
+     * the player approached from. Falls back to current player tile or (-1,-1).
+     *
+     * @param npcTileX NPC tile column.
+     * @param npcTileY NPC tile row.
+     * @param playerTileX Current player tile column (rounded).
+     * @param playerTileY Current player tile row (rounded).
+     * @param preferredDx Preferred X direction from NPC to player (-1, 0, or 1).
+     * @param preferredDy Preferred Y direction from NPC to player (-1, 0, or 1).
+     * @return Valid tile coordinates, or (-1, -1) if no safe tile found.
+     */
+    glm::ivec2 FindDialogueSnapTile(int npcTileX,
+                                    int npcTileY,
+                                    int playerTileX,
+                                    int playerTileY,
+                                    int preferredDx,
+                                    int preferredDy) const;
+
     /// @name Window Management
     /// @{
-    GLFWwindow* m_Window;  ///< GLFW window handle
-    int m_ScreenWidth;     ///< Window width in pixels
-    int m_ScreenHeight;    ///< Window height in pixels
+    GLFWwindow* m_Window = nullptr;  ///< GLFW window handle
+    int m_ScreenWidth = 1360;        ///< Window width in pixels
+    int m_ScreenHeight = 960;        ///< Window height in pixels
+    bool m_GlfwInitialized = false;  ///< Whether glfwInit() succeeded (for safe Shutdown)
     /// @}
 
     /**
@@ -418,12 +412,12 @@ private:
      * window size snapped to tile boundaries (16 pixel increments) for clean rendering.
      * @{
      */
-    int m_TilesVisibleWidth;   ///< Tiles visible horizontally (based on window width)
-    int m_TilesVisibleHeight;  ///< Tiles visible vertically (based on window height)
+    int m_TilesVisibleWidth = 17;   ///< Tiles visible horizontally (based on window width)
+    int m_TilesVisibleHeight = 12;  ///< Tiles visible vertically (based on window height)
     static constexpr int TILE_PIXEL_SIZE = 16;  ///< Size of a tile in pixels
     static constexpr int PIXEL_SCALE = 5;       ///< Scale factor for rendering (5x)
-    float m_ResizeSnapTimer;                    ///< Timer for deferred window snap after resize
-    bool m_PendingWindowSnap;                   ///< Whether a window snap is pending
+    float m_ResizeSnapTimer = 0.0f;             ///< Timer for deferred window snap after resize
+    bool m_PendingWindowSnap = false;           ///< Whether a window snap is pending
     /** @} */
 
     /**
@@ -460,14 +454,15 @@ private:
     TimeManager m_TimeManager;               ///< Day/night cycle time management
     SkyRenderer m_SkyRenderer;               ///< Sky rendering (sun, moon, stars)
     std::unique_ptr<IRenderer> m_Renderer;   ///< Graphics renderer
-    RendererAPI m_RendererAPI;               ///< Active renderer type
+    RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type
     /** @} */
 
-    CameraState m_Camera;  ///< Camera position and perspective state
+    CameraController m_Camera;   ///< Camera controller (position, zoom, perspective)
+    bool m_IsRendering = false;  ///< Reentrancy guard for Render()
 
     /// @name Frame Timing
     /// @{
-    float m_LastFrameTime;  ///< Timestamp of last frame (for delta calculation)
+    float m_LastFrameTime = 0.0f;  ///< Timestamp of last frame (for delta calculation)
     /// @}
 
     FPSCounter m_Fps;  ///< Frame rate measurement
@@ -482,25 +477,76 @@ private:
      * @brief For movement rollback.
      * @{
      */
-    glm::vec2 m_PlayerPreviousPosition;     ///< Position before movement (for rollback)
-    std::vector<glm::vec2> m_NpcPositions;  ///< Pre-allocated for per-frame NPC collision checks
+    glm::vec2 m_PlayerPreviousPosition{0.0f};  ///< Position before movement (for rollback)
+    std::vector<glm::vec2> m_NpcPositions;     ///< Pre-allocated for per-frame NPC collision checks
     /** @} */
+
+    /// @name Render Sorting
+    /// @brief Y-sorted render list reused each frame to avoid allocation.
+    /// @{
+    struct RenderItem
+    {
+        enum Type
+        {
+            PLAYER_TOP = 0,
+            PLAYER_BOTTOM = 1,
+            NPC_TOP = 2,
+            NPC_BOTTOM = 3,
+            TILE = 4
+        } type;
+        float sortY;
+        Tilemap::YSortPlusTile tile;
+        const NonPlayerCharacter* npc;
+    };
+    std::vector<RenderItem> m_RenderList;
+    /// @}
 
     /**
      * @name Dialogue System
      * @brief NPC dialogue UI state.
      * @{
      */
-    bool m_InDialogue;                     ///< Dialogue mode active (simple dialogue)
-    int m_DialogueNPCIndex;                ///< Index into m_NPCs of NPC being talked to (-1 = none)
-    std::string m_DialogueText;            ///< Current dialogue text (simple dialogue)
-    DialogueManager m_DialogueManager;     ///< Branching dialogue tree manager
-    GameStateManager m_GameState;          ///< Game flags and state for consequences
-    int m_DialoguePage = 0;                ///< Current page of dialogue text (for pagination)
-    mutable int m_DialogueTotalPages = 1;  ///< Total pages (cached during rendering)
-    float m_DialogueBoxFadeTimer = 0.0f;   ///< Fade-in timer for dialogue box (seconds)
-    float m_DialogueCharReveal = -1.0f;    ///< Typewriter char count (<0 = fully revealed)
+    bool m_InDialogue = false;            ///< Dialogue mode active (simple dialogue)
+    int m_DialogueNPCIndex = -1;          ///< Index into m_NPCs of NPC being talked to (-1 = none)
+    std::string m_DialogueText;           ///< Current dialogue text (simple dialogue)
+    DialogueManager m_DialogueManager;    ///< Branching dialogue tree manager
+    GameStateManager m_GameState;         ///< Game flags and state for consequences
+    int m_DialoguePage = 0;               ///< Current page of dialogue text (for pagination)
+    int m_DialogueTotalPages = 1;         ///< Total pages (cached during rendering)
+    float m_DialogueBoxFadeTimer = 0.0f;  ///< Fade-in timer for dialogue box (seconds)
+    float m_DialogueCharReveal = -1.0f;   ///< Typewriter char count (<0 = fully revealed)
 
     DialogueSnapState m_DialogueSnap;  ///< Snap alignment animation state
     /** @} */
+
+    /// @name Input Toggle State
+    /// @brief Debounced key toggles for one-shot actions (moved from function-local statics).
+    /// @{
+    KeyToggle<GLFW_KEY_E> m_KeyE;
+    KeyToggle<GLFW_KEY_Z> m_KeyZ;
+    KeyToggle<GLFW_KEY_F1> m_KeyF1;
+    KeyToggle<GLFW_KEY_F2> m_KeyF2;
+    KeyToggle<GLFW_KEY_F3> m_KeyF3;
+    KeyToggle<GLFW_KEY_F4> m_KeyF4;
+    KeyToggle<GLFW_KEY_F5> m_KeyF5;
+    KeyToggle<GLFW_KEY_F6> m_KeyF6;
+    KeyToggle<GLFW_KEY_SPACE> m_KeySpaceFreeCamera;
+    KeyToggle<GLFW_KEY_PAGE_UP> m_KeyPageUp;
+    KeyToggle<GLFW_KEY_PAGE_DOWN> m_KeyPageDown;
+    KeyToggle<GLFW_KEY_C> m_KeyC;
+    KeyToggle<GLFW_KEY_B> m_KeyB;
+    KeyToggle<GLFW_KEY_X> m_KeyX;
+    KeyToggle<GLFW_KEY_F> m_KeyF;
+    int m_TimeOfDayCycle = 0;  ///< Current time-of-day preset index for F4 cycling
+
+    // Dialogue-mode input toggles
+    KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> m_KeyDialogueUp;
+    KeyToggle<GLFW_KEY_DOWN, GLFW_KEY_S> m_KeyDialogueDown;
+    KeyToggle<GLFW_KEY_ENTER> m_KeyDialogueEnterTree;
+    KeyToggle<GLFW_KEY_SPACE> m_KeyDialogueSpaceTree;
+    KeyToggle<GLFW_KEY_ESCAPE> m_KeyDialogueEscapeTree;
+    KeyToggle<GLFW_KEY_ENTER> m_KeyDialogueEnter;
+    KeyToggle<GLFW_KEY_SPACE> m_KeyDialogueSpace;
+    KeyToggle<GLFW_KEY_ESCAPE> m_KeyDialogueEscape;
+    /// @}
 };
