@@ -1009,10 +1009,7 @@ void OpenGLRenderer::FlushRectBatch()
     // Restore shader and blend state for next batch
     if (m_UseColorOnlyLoc >= 0)
         glUniform1i(m_UseColorOnlyLoc, 0);
-    if (m_RectBatchAdditive)
-    {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_RectBatchVertices.clear();
 }
@@ -1084,10 +1081,7 @@ void OpenGLRenderer::FlushParticleBatch()
     // Restore state
     if (m_UseColorOnlyLoc >= 0)
         glUniform1i(m_UseColorOnlyLoc, 0);
-    if (m_ParticleBatchAdditive)
-    {
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_ParticleBatchVertices.clear();
     m_CurrentParticleTexture = 0;

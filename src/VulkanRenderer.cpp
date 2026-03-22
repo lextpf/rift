@@ -1,6 +1,19 @@
-#include "VulkanRenderer.h"
+// VK_USE_PLATFORM_WIN32_KHR must be defined before <vulkan/vulkan.h> so that
+// platform surface extension prototypes (vkCreateWin32SurfaceKHR, etc.) are declared.
+// This transitively includes <windows.h>, so we define NOMINMAX first and immediately
+// #undef the DrawText macro that windows.h injects, protecting our
+// VulkanRenderer::DrawText member function from name mangling.
+#ifdef _WIN32
+#define NOMINMAX
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <windows.h>
+#undef DrawText
+#include <excpt.h>
+#endif
+
 #include "Texture.h"
 #include "VulkanCommon.h"
+#include "VulkanRenderer.h"
 #include "VulkanShader.h"
 
 #include <algorithm>
@@ -19,15 +32,16 @@
 
 // Ensure Vulkan functions are loaded
 #ifdef _WIN32
-#define NOMINMAX
-#include <excpt.h>
-#include <windows.h>
+namespace
+{
+HMODULE g_VulkanLib = nullptr;
+}  // namespace
 
 // Try to load vulkan-1.dll explicitly
 static bool LoadVulkanLibrary()
 {
-    HMODULE vulkanLib = LoadLibraryA("vulkan-1.dll");
-    if (vulkanLib == NULL)
+    g_VulkanLib = LoadLibraryA("vulkan-1.dll");
+    if (g_VulkanLib == NULL)
     {
         std::cerr << "Warning: Could not load vulkan-1.dll. Error: " << GetLastError() << std::endl;
         std::cerr.flush();
@@ -37,10 +51,6 @@ static bool LoadVulkanLibrary()
     std::cout.flush();
     return true;
 }
-#endif
-
-#ifdef _WIN32
-#define VK_USE_PLATFORM_WIN32_KHR
 #endif
 
 namespace
@@ -193,6 +203,7 @@ void VulkanRenderer::Shutdown()
             }
         }
         m_UploadedTextures.clear();
+        m_UploadedTextureSet.clear();
 
         // Texture cache stores non-owning references to Texture-managed Vulkan resources.
         // DestroyVulkanTexture() above already released owned resources, so only clear cache.
@@ -334,6 +345,14 @@ void VulkanRenderer::Shutdown()
         vkDestroyInstance(m_Instance, nullptr);
         m_Instance = VK_NULL_HANDLE;  // Prevent double-destroy on teardown
     }
+
+#ifdef _WIN32
+    if (g_VulkanLib != nullptr)
+    {
+        FreeLibrary(g_VulkanLib);
+        g_VulkanLib = nullptr;
+    }
+#endif
 }
 
 void VulkanRenderer::CleanupSwapchain()
@@ -563,6 +582,11 @@ void VulkanRenderer::CreateSwapchain()
 
     uint32_t formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr);
+    if (formatCount == 0)
+    {
+        std::cerr << "Vulkan: no surface formats available" << std::endl;
+        return;
+    }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, formats.data());
 
@@ -1657,7 +1681,9 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
                                      glm::vec4 color,
                                      bool additive)
 {
-    // Note: additive blending not yet fully implemented in Vulkan renderer
+    // TODO(vulkan): Implement additive blending via a second VkPipeline with
+    // VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE. Flush and
+    // switch pipelines when the additive flag changes, mirroring OpenGL behavior.
     (void)additive;
 
     if (!m_FrameActive)
@@ -1724,7 +1750,8 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
                                      glm::vec4 color,
                                      bool additive)
 {
-    // Atlas version with custom UV coordinates
+    // TODO(vulkan): Implement additive blending via a second VkPipeline.
+    // See DrawSpriteAlpha TODO for details.
     (void)additive;
 
     if (!m_FrameActive)
@@ -1790,7 +1817,8 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position,
                                      glm::vec4 color,
                                      bool additive)
 {
-    // Note: additive blending not yet implemented in Vulkan renderer
+    // TODO(vulkan): Implement additive blending via a second VkPipeline.
+    // See DrawSpriteAlpha TODO for details.
     (void)additive;
     if (!m_FrameActive)
         return;
@@ -2075,10 +2103,8 @@ void VulkanRenderer::UploadTexture(const Texture& texture)
     texture.CreateVulkanTexture(m_Device, m_PhysicalDevice, m_CommandPool, m_GraphicsQueue);
     m_TextureCache.erase(&texture);
 
-    // Track for cleanup during shutdown
-    // Check if already tracked to avoid duplicates
-    auto it = std::find(m_UploadedTextures.begin(), m_UploadedTextures.end(), &texture);
-    if (it == m_UploadedTextures.end())
+    // Track for cleanup during shutdown (set provides O(1) dedup)
+    if (m_UploadedTextureSet.insert(&texture).second)
     {
         m_UploadedTextures.push_back(&texture);
     }
@@ -2122,9 +2148,6 @@ float VulkanRenderer::GetTextWidth(const std::string& text, float scale) const
     return width;
 }
 
-#ifdef DrawText
-#undef DrawText
-#endif
 void VulkanRenderer::DrawText(const std::string& text,
                               glm::vec2 position,
                               float scale,

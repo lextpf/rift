@@ -219,7 +219,6 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
     std::cerr << "Warning: Texture " << static_cast<const void*>(textureKey) << " (size " << width
               << "x" << height << ") not uploaded to Vulkan yet. Using white texture fallback."
               << std::endl;
-    std::cerr.flush();
 #endif
 
     // Use white texture as fallback. Cached entries are refreshed above when

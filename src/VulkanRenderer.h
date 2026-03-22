@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef USE_FREETYPE
@@ -189,34 +190,34 @@ private:
 
     /// @name Vulkan Instance and Device
     /// @{
-    VkInstance m_Instance;              ///< Vulkan API entry point.
-    VkPhysicalDevice m_PhysicalDevice;  ///< Selected GPU.
-    VkDevice m_Device;                  ///< Logical device for commands.
-    VkQueue m_GraphicsQueue;            ///< Queue for draw commands.
-    VkQueue m_PresentQueue;             ///< Queue for presentation.
+    VkInstance m_Instance{VK_NULL_HANDLE};              ///< Vulkan API entry point.
+    VkPhysicalDevice m_PhysicalDevice{VK_NULL_HANDLE};  ///< Selected GPU.
+    VkDevice m_Device{VK_NULL_HANDLE};                  ///< Logical device for commands.
+    VkQueue m_GraphicsQueue{VK_NULL_HANDLE};            ///< Queue for draw commands.
+    VkQueue m_PresentQueue{VK_NULL_HANDLE};             ///< Queue for presentation.
     /// @}
 
     /// @name Surface and Swapchain
     /// @{
-    VkSurfaceKHR m_Surface;                          ///< Window surface.
-    VkSwapchainKHR m_Swapchain;                      ///< Presentation swapchain.
+    VkSurfaceKHR m_Surface{VK_NULL_HANDLE};          ///< Window surface.
+    VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};      ///< Presentation swapchain.
     std::vector<VkImage> m_SwapchainImages;          ///< Swapchain images.
     std::vector<VkImageView> m_SwapchainImageViews;  ///< Views into swapchain images.
     std::vector<VkFramebuffer> m_SwapchainFramebuffers;
-    VkExtent2D m_SwapchainExtent;     ///< Swapchain dimensions.
-    VkFormat m_SwapchainImageFormat;  ///< Pixel format.
+    VkExtent2D m_SwapchainExtent{};                        ///< Swapchain dimensions.
+    VkFormat m_SwapchainImageFormat{VK_FORMAT_UNDEFINED};  ///< Pixel format.
     /// @}
 
     /// @name Render Pass and Pipeline
     /// @{
-    VkRenderPass m_RenderPass;          ///< Defines attachment usage.
-    VkPipelineLayout m_PipelineLayout;  ///< Descriptor/push constant layout.
-    VkPipeline m_GraphicsPipeline;      ///< Compiled shader + state.
+    VkRenderPass m_RenderPass{VK_NULL_HANDLE};          ///< Defines attachment usage.
+    VkPipelineLayout m_PipelineLayout{VK_NULL_HANDLE};  ///< Descriptor/push constant layout.
+    VkPipeline m_GraphicsPipeline{VK_NULL_HANDLE};      ///< Compiled shader + state.
     /// @}
 
     /// @name Command Recording
     /// @{
-    VkCommandPool m_CommandPool;                    ///< Command buffer allocator.
+    VkCommandPool m_CommandPool{VK_NULL_HANDLE};    ///< Command buffer allocator.
     std::vector<VkCommandBuffer> m_CommandBuffers;  ///< Per-frame command buffers.
     /// @}
 
@@ -230,32 +231,32 @@ private:
 
     /// @name Frame State
     /// @{
-    size_t m_CurrentFrame;         ///< Current frame index (0 or 1).
-    uint32_t m_ImageIndex;         ///< Acquired swapchain image index.
-    bool m_FrameActive{false};     ///< True after BeginFrame started a render pass.
-    GLFWwindow* m_Window;          ///< GLFW window reference.
-    glm::mat4 m_Projection{1.0f};  ///< Current orthographic projection.
+    size_t m_CurrentFrame{0};       ///< Current frame index (0 or 1).
+    uint32_t m_ImageIndex{0};       ///< Acquired swapchain image index.
+    bool m_FrameActive{false};      ///< True after BeginFrame started a render pass.
+    GLFWwindow* m_Window{nullptr};  ///< GLFW window reference.
+    glm::mat4 m_Projection{1.0f};   ///< Current orthographic projection.
     /// @}
 
     /// @name Vertex Buffers (Double-Buffered)
     /// @{
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
     static constexpr uint32_t DESCRIPTOR_POOL_MAX_SETS = 1000;
-    VkBuffer m_VertexBuffers[MAX_FRAMES_IN_FLIGHT];
-    VkDeviceMemory m_VertexBufferMemories[MAX_FRAMES_IN_FLIGHT];
-    void* m_VertexBuffersMapped[MAX_FRAMES_IN_FLIGHT];  ///< Persistent mapping.
-    VkBuffer m_IndexBuffer;
-    VkDeviceMemory m_IndexBufferMemory;
-    VkDeviceSize m_VertexBufferSize;
-    uint32_t m_CurrentVertexCount;
+    VkBuffer m_VertexBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory m_VertexBufferMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    void* m_VertexBuffersMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};  ///< Persistent mapping.
+    VkBuffer m_IndexBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory m_IndexBufferMemory{VK_NULL_HANDLE};
+    VkDeviceSize m_VertexBufferSize{0};
+    uint32_t m_CurrentVertexCount{0};
     /// @}
 
     /// @name Sprite Batching
     /// @{
-    VkImageView m_BatchImageView;          ///< Current batched texture.
-    VkDescriptorSet m_BatchDescriptorSet;  ///< Descriptor for batch.
-    uint32_t m_BatchStartVertex;           ///< Batch start in buffer.
-    void FlushSpriteBatch();               ///< Submit batch to GPU.
+    VkImageView m_BatchImageView{VK_NULL_HANDLE};          ///< Current batched texture.
+    VkDescriptorSet m_BatchDescriptorSet{VK_NULL_HANDLE};  ///< Descriptor for batch.
+    uint32_t m_BatchStartVertex{0};                        ///< Batch start in buffer.
+    void FlushSpriteBatch();                               ///< Submit batch to GPU.
     /// @}
 
     /// @name Staging Buffer
@@ -267,19 +268,19 @@ private:
 
     /// @name Descriptors
     /// @{
-    VkDescriptorPool m_DescriptorPool;
-    VkDescriptorSetLayout m_DescriptorSetLayout;
-    VkSampler m_TextureSampler;  ///< Shared texture sampler.
+    VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
+    VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
+    VkSampler m_TextureSampler{VK_NULL_HANDLE};  ///< Shared texture sampler.
     std::unordered_map<VkImageView, VkDescriptorSet> m_DescriptorSetCache;
     bool m_DescriptorPoolWarned{false};
     /// @}
 
     /// @name White Texture (for colored rects)
     /// @{
-    VkImage m_WhiteTextureImage;
-    VkDeviceMemory m_WhiteTextureImageMemory;
-    VkImageView m_WhiteTextureImageView;
-    VkSampler m_WhiteTextureSampler;
+    VkImage m_WhiteTextureImage{VK_NULL_HANDLE};
+    VkDeviceMemory m_WhiteTextureImageMemory{VK_NULL_HANDLE};
+    VkImageView m_WhiteTextureImageView{VK_NULL_HANDLE};
+    VkSampler m_WhiteTextureSampler{VK_NULL_HANDLE};
     /// @}
 
     /// @name Texture Cache
@@ -298,6 +299,7 @@ private:
     };
     std::unordered_map<const Texture*, TextureResources> m_TextureCache;
     std::vector<const Texture*> m_UploadedTextures;
+    std::unordered_set<const Texture*> m_UploadedTextureSet;  ///< O(1) dedup for uploads.
     /// @}
 
     /// @name Initialization Helpers
@@ -406,8 +408,8 @@ private:
 
     /// @name Queue Families
     /// @{
-    uint32_t m_GraphicsFamily;
-    uint32_t m_PresentFamily;
+    uint32_t m_GraphicsFamily{0};
+    uint32_t m_PresentFamily{0};
     /// @}
 
     /// @name Validation and Extensions

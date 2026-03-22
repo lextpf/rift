@@ -124,7 +124,7 @@ void VulkanRenderer::CreateBuffers()
                  stagingBufferMemory);
 
     void* data;
-    vkMapMemory(m_Device, stagingBufferMemory, 0, indexBufferSize, 0, &data);
+    VK_CHECK(vkMapMemory(m_Device, stagingBufferMemory, 0, indexBufferSize, 0, &data));
     memcpy(data, indices, (size_t)indexBufferSize);
     vkUnmapMemory(m_Device, stagingBufferMemory);
 
