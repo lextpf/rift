@@ -649,7 +649,9 @@ void ParticleSystem::BuildAtlas()
         "assets/particles/ead11602-6c24-45dc-b657-03d637e2a543.png"   // Wisp
     };
 
-    // Load file-based textures temporarily to get their pixel data
+    // Load file-based textures temporarily to get their pixel data.
+    // All sources are normalized to RGBA (4 channels) so the atlas copy
+    // loop can safely read 4 bytes per pixel regardless of the original format.
     for (int i = 0; i < 6; i++)
     {
         Texture temp;
@@ -657,11 +659,40 @@ void ParticleSystem::BuildAtlas()
         {
             sources[i].width = temp.GetWidth();
             sources[i].height = temp.GetHeight();
-            size_t dataSize = temp.GetWidth() * temp.GetHeight() * temp.GetChannels();
-            sources[i].pixels.resize(dataSize);
-            if (!temp.GetImageData().empty())
+            int channels = temp.GetChannels();
+            size_t pixelCount =
+                static_cast<size_t>(temp.GetWidth()) * static_cast<size_t>(temp.GetHeight());
+
+            if (channels == 4)
             {
-                memcpy(sources[i].pixels.data(), temp.GetImageData().data(), dataSize);
+                // Already RGBA -- straight copy.
+                size_t dataSize = pixelCount * 4;
+                sources[i].pixels.resize(dataSize);
+                if (!temp.GetImageData().empty())
+                {
+                    memcpy(sources[i].pixels.data(), temp.GetImageData().data(), dataSize);
+                }
+            }
+            else if (channels == 3 && !temp.GetImageData().empty())
+            {
+                // RGB -> RGBA: expand each pixel, setting alpha to 255.
+                sources[i].pixels.resize(pixelCount * 4);
+                const unsigned char* src = temp.GetImageData().data();
+                unsigned char* dst = sources[i].pixels.data();
+                for (size_t px = 0; px < pixelCount; ++px)
+                {
+                    dst[px * 4 + 0] = src[px * 3 + 0];
+                    dst[px * 4 + 1] = src[px * 3 + 1];
+                    dst[px * 4 + 2] = src[px * 3 + 2];
+                    dst[px * 4 + 3] = 255;
+                }
+            }
+            else
+            {
+                // Unsupported channel count -- fall through to white fallback.
+                sources[i].width = 16;
+                sources[i].height = 16;
+                sources[i].pixels.resize(16 * 16 * 4, 255);
             }
         }
         else
@@ -677,10 +708,33 @@ void ParticleSystem::BuildAtlas()
     GenerateLanternPixels(sources[6].pixels, sources[6].width, sources[6].height);
     GenerateSunshinePixels(sources[7].pixels, sources[7].width, sources[7].height);
 
-    // Calculate atlas layout - simple horizontal packing with rows
-    // Atlas size: 512x512 should be plenty
+    // Calculate atlas layout - simple horizontal packing with rows.
+    // Pre-scan texture sizes to compute required atlas height so the
+    // atlas is always tall enough for all particle textures.
     const int atlasWidth = 512;
-    const int atlasHeight = 512;
+    int requiredHeight = 0;
+    {
+        int scanX = 0;
+        int scanRowHeight = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            int w = sources[i].width;
+            int h = sources[i].height;
+            if (scanX + w > atlasWidth)
+            {
+                scanX = 0;
+                requiredHeight += scanRowHeight + 1;
+                scanRowHeight = 0;
+            }
+            scanX += w + 1;
+            if (h > scanRowHeight)
+            {
+                scanRowHeight = h;
+            }
+        }
+        requiredHeight += scanRowHeight;
+    }
+    const int atlasHeight = std::max(512, requiredHeight);
     std::vector<unsigned char> atlasPixels(atlasWidth * atlasHeight * 4, 0);
 
     int currentX = 0;
@@ -698,6 +752,18 @@ void ParticleSystem::BuildAtlas()
             currentX = 0;
             currentY += rowHeight + 1;  // 1px padding
             rowHeight = 0;
+        }
+
+        // Guard against atlas overflow -- skip textures that don't fit.
+        if (currentY + h > atlasHeight)
+        {
+            std::cerr << "Particle atlas overflow: texture " << i << " (" << w << "x" << h
+                      << ") does not fit at row " << currentY << " (atlas height=" << atlasHeight
+                      << ")" << std::endl;
+            // Store degenerate UV region so this type renders as a small corner pixel.
+            m_AtlasRegions[i].uvMin = glm::vec2(0.0f);
+            m_AtlasRegions[i].uvMax = glm::vec2(1.0f / atlasWidth, 1.0f / atlasHeight);
+            continue;
         }
 
         // Store UV coordinates (normalized)
@@ -851,8 +917,16 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         // Update position
         p.position += p.velocity * deltaTime;
 
-        // Dispatch to type-specific update via table
-        kUpdateDispatch[static_cast<int>(p.type)](p, updateCtx);
+        // Dispatch to type-specific update via table (bounds-checked)
+        int typeIndex = static_cast<int>(p.type);
+        if (typeIndex >= 0 && typeIndex < static_cast<int>(kUpdateDispatch.size()))
+        {
+            kUpdateDispatch[typeIndex](p, updateCtx);
+        }
+        else
+        {
+            p.lifetime = 0.0f;  // Kill particle with invalid type
+        }
     }
 
     // Remove dead and orphaned particles in one pass
@@ -902,8 +976,13 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
         size_t zoneParticleCount = m_ZoneParticleCounts[i];
 
-        // Spawn rate from dispatch table
-        float spawnRate = kSpawnRates[static_cast<int>(zone.type)];
+        // Spawn rate from dispatch table (bounds-checked)
+        int zoneTypeIndex = static_cast<int>(zone.type);
+        if (zoneTypeIndex < 0 || zoneTypeIndex >= static_cast<int>(kSpawnRates.size()))
+        {
+            continue;
+        }
+        float spawnRate = kSpawnRates[zoneTypeIndex];
 
         // Scale spawn rate by zone size
         float areaFactor = (zone.size.x * zone.size.y) / (64.0f * 64.0f);
@@ -923,8 +1002,13 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
 void ParticleSystem::SpawnParticleInZone(int zoneIndex, const ParticleZone& zone)
 {
+    int typeIndex = static_cast<int>(zone.type);
+    if (typeIndex < 0 || typeIndex >= static_cast<int>(kSpawnDispatch.size()))
+    {
+        return;  // Invalid particle type -- skip silently.
+    }
     ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles};
-    kSpawnDispatch[static_cast<int>(zone.type)](zoneIndex, zone, ctx);
+    kSpawnDispatch[typeIndex](zoneIndex, zone, ctx);
 }
 
 void ParticleSystem::Render(IRenderer& renderer,
@@ -1029,6 +1113,8 @@ void ParticleSystem::Render(IRenderer& renderer,
         if (m_TexturesLoaded)
         {
             int typeIndex = static_cast<int>(data.type);
+            if (typeIndex < 0 || typeIndex >= static_cast<int>(std::size(m_AtlasRegions)))
+                return;
             const AtlasRegion& region = m_AtlasRegions[typeIndex];
 
             glm::vec2 renderSize = data.size;
@@ -1074,18 +1160,23 @@ void ParticleSystem::Render(IRenderer& renderer,
     auto sortByBlendMode = [](const ParticleRenderData& a, const ParticleRenderData& b)
     { return a.additive < b.additive; };
 
-    std::sort(m_NoProjectionBatch.begin(), m_NoProjectionBatch.end(), sortByBlendMode);
-    std::sort(m_RegularBatch.begin(), m_RegularBatch.end(), sortByBlendMode);
+    // Partition by blend mode (O(n)) instead of sorting (O(n log n)).
+    // Non-additive particles come first, then additive ones.
+    std::partition(m_NoProjectionBatch.begin(),
+                   m_NoProjectionBatch.end(),
+                   [](const ParticleRenderData& d) { return !d.additive; });
+    std::partition(m_RegularBatch.begin(),
+                   m_RegularBatch.end(),
+                   [](const ParticleRenderData& d) { return !d.additive; });
 
     // Draw noProjection particles with perspective suspended
     if (!m_NoProjectionBatch.empty())
     {
-        renderer.SuspendPerspective(true);
+        IRenderer::PerspectiveSuspendGuard guard(renderer);
         for (const auto& data : m_NoProjectionBatch)
         {
             drawParticle(data);
         }
-        renderer.SuspendPerspective(false);
     }
 
     // Draw regular particles normally

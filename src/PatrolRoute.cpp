@@ -31,13 +31,19 @@ bool PatrolRoute::Initialize(int startTileX,
     int mapWidth = tilemap->GetMapWidth();
     int mapHeight = tilemap->GetMapHeight();
 
+    if (mapWidth <= 0 || mapHeight <= 0)
+        return false;
+
+    size_t mapSize = static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight);
+    if (mapSize / static_cast<size_t>(mapWidth) != static_cast<size_t>(mapHeight))
+        return false;  // overflow
+
     // Use breadth-first search to collect all walkable tiles reachable from the start.
     // BFS explores in expanding rings outward, so tiles closer to start are found first.
     // This means if we hit maxRouteLength, we get a compact cluster around the start
     // rather than a long tendril in one random direction.
     std::vector<glm::ivec2> connectedTiles;
-    std::vector<bool> visited(static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight),
-                              false);
+    std::vector<bool> visited(mapSize, false);
     std::deque<glm::ivec2> bfsQueue;
 
     glm::ivec2 start(startTileX, startTileY);
@@ -212,6 +218,8 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
     };
 
     int mapWidth = tilemap->GetMapWidth();
+    if (mapWidth <= 0)
+        return;
 
     std::vector<Frame> stack;
     stack.reserve(64);

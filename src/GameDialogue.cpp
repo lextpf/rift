@@ -3,7 +3,6 @@
 #include "Game.h"
 
 #include <cmath>
-#include <functional>
 #include <iostream>
 #include <vector>
 
@@ -18,12 +17,11 @@ namespace
  *
  * @param text         The text to wrap.
  * @param maxWidth     Maximum line width in pixels.
- * @param measureWidth Function to measure the pixel width of a string.
+ * @param measureWidth Callable returning the pixel width of a string.
  * @return Vector of wrapped lines.
  */
-std::vector<std::string> WrapText(const std::string& text,
-                                  float maxWidth,
-                                  const std::function<float(const std::string&)>& measureWidth)
+template <typename MeasureFn>
+std::vector<std::string> WrapText(const std::string& text, float maxWidth, MeasureFn measureWidth)
 {
     std::vector<std::string> lines;
     std::string currentLine;
@@ -72,7 +70,31 @@ std::vector<std::string> WrapText(const std::string& text,
     commitWord();
     commitLine();
 
-    return lines;
+    // Break any line that still exceeds maxWidth (e.g. a single long word).
+    // Split at the last character that fits, producing multiple lines.
+    std::vector<std::string> result;
+    for (auto& line : lines)
+    {
+        while (measureWidth(line) > maxWidth && line.size() > 1)
+        {
+            // Binary-search for the longest prefix that fits.
+            size_t lo = 1;
+            size_t hi = line.size();
+            while (lo < hi)
+            {
+                size_t mid = lo + (hi - lo + 1) / 2;
+                if (measureWidth(line.substr(0, mid)) <= maxWidth)
+                    lo = mid;
+                else
+                    hi = mid - 1;
+            }
+            result.push_back(line.substr(0, lo));
+            line = line.substr(lo);
+        }
+        result.push_back(std::move(line));
+    }
+
+    return result;
 }
 
 void DrawRightArrow(IRenderer& renderer, float arrowX, float arrowCenterY, float z, glm::vec4 color)
@@ -256,7 +278,7 @@ void Game::RenderNPCHeadText()
 
     // Get NPC position in screen space
     glm::vec2 npcWorldPos = m_NPCs[m_DialogueNPCIndex].GetPosition();
-    glm::vec2 npcScreenPos = npcWorldPos - m_Camera.position;
+    glm::vec2 npcScreenPos = npcWorldPos - m_Camera.GetState().position;
 
     // Position text above the NPC's head
     float textAreaWidth = 180.0f;
@@ -291,8 +313,13 @@ void Game::RenderDialogueText(glm::vec2 boxPos, glm::vec2 boxSize)
     float currentY = boxPos.y;
     glm::vec3 textColor(1.0f, 1.0f, 1.0f);
 
+    float boxBottomY = boxPos.y + boxSize.y;
     for (const std::string& line : lines)
     {
+        if (currentY + lineHeight > boxBottomY)
+        {
+            break;  // Stop rendering lines that would spill past the box.
+        }
         if (!line.empty())
         {
             float lineWidth = m_Renderer->GetTextWidth(line, scale);
@@ -301,8 +328,6 @@ void Game::RenderDialogueText(glm::vec2 boxPos, glm::vec2 boxSize)
         }
         currentY += lineHeight;
     }
-    // TODO: Clip or truncate lines when they exceed box height; currently they can spill past the
-    // box.
 }
 
 void Game::RenderDialogueTreeBox()
@@ -321,11 +346,11 @@ void Game::RenderDialogueTreeBox()
     // Get world dimensions for positioning, adjusted for zoom
     float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float baseWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    float worldWidth = baseWorldWidth / m_Camera.zoom;
-    float worldHeight = baseWorldHeight / m_Camera.zoom;
+    float worldWidth = baseWorldWidth / m_Camera.GetState().zoom;
+    float worldHeight = baseWorldHeight / m_Camera.GetState().zoom;
 
     // Scale factor for UI elements, inverse of zoom so they appear constant size on screen
-    float z = 1.0f / m_Camera.zoom;
+    float z = 1.0f / m_Camera.GetState().zoom;
 
     // Fade-in animation
     constexpr float kFadeDuration = 0.2f;
@@ -466,7 +491,10 @@ void Game::RenderDialogueTreeBox()
 
     if (!everythingFits)
     {
-        // Ceiling division: how many pages of maxTextLines to show all text
+        // Ceiling division: how many pages of maxTextLines to show all text.
+        // Belt-and-suspenders guard: ensure divisor is never zero even if the
+        // earlier guard at line 488 is accidentally bypassed by future edits.
+        maxTextLines = std::max(1, maxTextLines);
         int remainingLines = totalLines - maxTextLines;
         totalPages = 1 + (remainingLines + maxTextLines - 1) / maxTextLines;
     }
@@ -622,7 +650,31 @@ void Game::RenderDialogueTreeBox()
             }
 
             std::string displayText = prefix + opt->text;
-            // TODO: Wrap long option text to maxTextWidth; current rendering can overflow the box.
+            // Truncate long option text to prevent overflow
+            float maxTextWidth = boxWidth - 2.0f * padding;
+            if (m_Renderer->GetTextWidth(displayText, textScale) > maxTextWidth)
+            {
+                std::string ellipsis = "...";
+                float ellipsisWidth = m_Renderer->GetTextWidth(ellipsis, textScale);
+                // Binary-search for the longest prefix that fits with ellipsis.
+                size_t lo = 1;
+                size_t hi = displayText.size();
+                while (lo < hi)
+                {
+                    size_t mid = lo + (hi - lo + 1) / 2;
+                    if (m_Renderer->GetTextWidth(displayText.substr(0, mid), textScale) +
+                            ellipsisWidth <=
+                        maxTextWidth)
+                    {
+                        lo = mid;
+                    }
+                    else
+                    {
+                        hi = mid - 1;
+                    }
+                }
+                displayText = displayText.substr(0, lo) + ellipsis;
+            }
             m_Renderer->DrawText(displayText,
                                  glm::vec2(boxX + padding, currentY),
                                  textScale,
@@ -648,7 +700,7 @@ void Game::RenderDialogueTreeBox()
     }
 }
 
-bool Game::IsDialogueOnLastPage() const
+bool Game::IsDialogueOnLastPage()
 {
     return m_DialoguePage >= m_DialogueTotalPages - 1;
 }
