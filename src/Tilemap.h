@@ -10,7 +10,10 @@
 
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Forward declaration
@@ -293,6 +296,14 @@ public:
      * @brief Destructor releases tileset texture resources.
      */
     ~Tilemap();
+
+    /// @brief Tilemap is move-only (owns GPU textures and tileset data).
+    /// Defaulted: all data members are moveable; mutable caches default-construct
+    /// as empty and rebuild lazily (m_StructureBoundsCacheDirty NSDMI = true).
+    Tilemap(Tilemap&&) noexcept = default;
+    Tilemap& operator=(Tilemap&&) noexcept = default;
+    Tilemap(const Tilemap&) = delete;
+    Tilemap& operator=(const Tilemap&) = delete;
 
     /**
      * @brief Load and combine multiple tileset images vertically.
@@ -1107,21 +1118,22 @@ public:
 private:
     /// @name Tileset
     /// @{
-    Texture m_TilesetTexture;                     ///< Combined tileset texture
-    int m_TileWidth, m_TileHeight;                ///< Tile dimensions in pixels
-    int m_TilesetWidth, m_TilesetHeight;          ///< Tileset dimensions in tiles
-    int m_TilesPerRow;                            ///< Tiles per row in tileset
-    unsigned char* m_TilesetData;                 ///< Raw image data for transparency checks
-    int m_TilesetDataWidth, m_TilesetDataHeight;  ///< Raw image dimensions
-    int m_TilesetChannels;                        ///< Number of color channels (3=RGB, 4=RGBA)
-    bool m_TilesetDataFromStbi;  ///< True if allocated by stbi_load, false if by new[]
-    std::vector<bool> m_TileTransparencyCache;  ///< Cached transparency results per tile ID
-    bool m_TransparencyCacheBuilt;              ///< Whether the cache has been built
+    Texture m_TilesetTexture;                   ///< Combined tileset texture
+    int m_TileWidth{16}, m_TileHeight{16};      ///< Tile dimensions in pixels
+    int m_TilesetWidth{0}, m_TilesetHeight{0};  ///< Tileset dimensions in tiles
+    int m_TilesPerRow{0};                       ///< Tiles per row in tileset
+    /// @brief Smart pointer with custom deleter for tileset pixel data.
+    using TilesetDataPtr = std::unique_ptr<unsigned char[], void (*)(unsigned char*)>;
+    TilesetDataPtr m_TilesetData{nullptr, +[](unsigned char* p) { delete[] p; }};
+    int m_TilesetDataWidth{0}, m_TilesetDataHeight{0};  ///< Raw image dimensions
+    int m_TilesetChannels{0};                      ///< Number of color channels (3=RGB, 4=RGBA)
+    std::vector<uint8_t> m_TileTransparencyCache;  ///< Cached transparency results per tile ID
+    bool m_TransparencyCacheBuilt{false};          ///< Whether the cache has been built
     /// @}
 
     /// @name Map Dimensions
     /// @{
-    int m_MapWidth, m_MapHeight;  ///< Map dimensions in tiles
+    int m_MapWidth{125}, m_MapHeight{125};  ///< Map dimensions in tiles
     /// @}
 
     /// @name Dynamic Layers
@@ -1151,7 +1163,7 @@ private:
     /// @{
     std::vector<AnimatedTile> m_AnimatedTiles;  ///< Animation definitions
     std::vector<int> m_TileAnimationMap;        ///< Per-tile animation ID (-1 = not animated)
-    float m_AnimationTime;                      ///< Global animation timer
+    float m_AnimationTime{0.0f};                ///< Global animation timer
     /// @}
 
     /// @name No-Projection Structures
@@ -1160,13 +1172,48 @@ private:
         m_NoProjectionStructures;  ///< Manually defined structures with anchors
     /// @}
 
+    /// @name Structure Bounds Cache
+    /// @brief Cached bounding boxes per (layerIndex, structureId) to avoid full-map scans.
+    /// @{
+
+    /// Cached bounding box for a structure in a specific layer.
+    struct StructureBounds
+    {
+        int minX, maxX, minY, maxY;
+    };
+
+    /// Rebuild the full structure bounds cache from tile data (called lazily).
+    void RebuildStructureBoundsCache() const;
+
+    /// Rebuild bounds for a single (layer, structId) pair by scanning one layer.
+    void RebuildSingleStructureBounds(size_t layerIdx, int structId, int64_t key) const;
+
+    /// Invalidate the entire cache so it is rebuilt on next access.
+    void InvalidateStructureBoundsCache();
+
+    /// Incrementally update cache when a single tile's structure ID changes.
+    /// Expands new-structure bounds O(1); marks old structure dirty for lazy re-scan.
+    void InvalidateStructureBoundsForTile(
+        size_t layerIdx, int x, int y, int oldStructId, int newStructId);
+
+    /// Look up cached bounds for a (layer, structId) pair.
+    /// @return Pointer to bounds, or nullptr if not found.
+    const StructureBounds* GetCachedStructureBounds(size_t layerIdx, int structId) const;
+
+    mutable std::unordered_map<int64_t, StructureBounds>
+        m_StructureBoundsCache;  ///< (layerIdx<<32 | structId) -> bounds
+    mutable std::unordered_set<int64_t> m_DirtyStructureKeys;  ///< Per-structure dirty keys
+    mutable bool m_StructureBoundsCacheDirty = true;           ///< Whether full cache needs rebuild
+    /// @}
+
     /// @name Render Cache (reused each frame to avoid allocations)
     /// @{
     mutable std::vector<YSortPlusTile>
         m_YSortPlusTilesCache;                   ///< Cached Y-sort tiles (reused each frame)
     mutable std::vector<bool> m_ProcessedCache;  ///< Cached processed flags (reused each frame)
     mutable std::vector<bool>
-        m_RenderedStructuresCache;  ///< Cached structure flags (reused each frame)
+        m_RenderedStructuresCache;                   ///< Cached structure flags (reused each frame)
+    mutable std::vector<bool> m_FloodFillProcessed;  ///< Reusable buffer for flood-fill searches
     /// @}
 
     /**

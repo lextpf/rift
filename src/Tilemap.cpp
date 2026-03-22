@@ -19,11 +19,16 @@
 // We just need the header for function declarations
 #include <stb_image.h>
 
+#include "MathConstants.h"
+
+namespace
+{
+
 // Extra cull padding prevents no-projection structures from popping at globe edges.
-static constexpr float kNoProjectionCullPaddingTiles = 8.0f;
+constexpr float NO_PROJECTION_CULL_PADDING_TILES = 8.0f;
 
 /// Return true when every vertex of a warped quad is behind the sphere.
-static bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (&corners)[4])
+bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (&corners)[4])
 {
     int behindCount = 0;
     for (int i = 0; i < 4; ++i)
@@ -37,15 +42,15 @@ static bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (
 
 /// Return true when the full no-projection structure base segment is behind the globe.
 /// We sample multiple points along the base to avoid false visibility on long bases.
-static bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
-                                             float anchorMinScreenX,
-                                             float anchorMaxScreenX,
-                                             float bottomScreenY)
+bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
+                                      float anchorMinScreenX,
+                                      float anchorMaxScreenX,
+                                      float bottomScreenY)
 {
-    constexpr int kBaseSamples = 7;
-    for (int i = 0; i < kBaseSamples; ++i)
+    constexpr int BASE_SAMPLES = 7;
+    for (int i = 0; i < BASE_SAMPLES; ++i)
     {
-        float t = static_cast<float>(i) / static_cast<float>(kBaseSamples - 1);
+        float t = static_cast<float>(i) / static_cast<float>(BASE_SAMPLES - 1);
         float x = anchorMinScreenX + (anchorMaxScreenX - anchorMinScreenX) * t;
         if (!renderer.IsPointBehindSphere(glm::vec2(x, bottomScreenY)))
             return false;
@@ -55,16 +60,16 @@ static bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
 
 /// Compute one edge point for a no-projection structure at an arbitrary world Y.
 /// Accepts continuous Y so particles can stay locked to the same warped mesh.
-static glm::vec2 ComputeEdgePoint(IRenderer& renderer,
-                                  float anchorMinScreenX,
-                                  float anchorMaxScreenX,
-                                  float bottomScreenY,
-                                  int layerMinY,
-                                  int layerMaxY,
-                                  int tileHeight,
-                                  int structureWidthTiles,
-                                  int edgeIndex,
-                                  float worldTileY)
+glm::vec2 ComputeEdgePoint(IRenderer& renderer,
+                           float anchorMinScreenX,
+                           float anchorMaxScreenX,
+                           float bottomScreenY,
+                           int layerMinY,
+                           int layerMaxY,
+                           int tileHeight,
+                           int structureWidthTiles,
+                           int edgeIndex,
+                           float worldTileY)
 {
     float heightTiles = std::max(1.0f, static_cast<float>(layerMaxY - layerMinY) + 1.0f);
 
@@ -92,9 +97,9 @@ struct StructureHorizonFade
     bool fromTop = false;
 };
 
-static StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
-                                                        const glm::vec2& structureBaseCenter,
-                                                        float fadeBandPixels)
+StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
+                                                 const glm::vec2& structureBaseCenter,
+                                                 float fadeBandPixels)
 {
     StructureHorizonFade result;
 
@@ -117,8 +122,7 @@ static StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
     float ndx = dx / radiusX;
     float ndy = dy / radiusY;
 
-    constexpr float kPi = 3.14159265358979323846f;
-    float edgeNorm = kPi * 0.5f;
+    float edgeNorm = rift::PiF * 0.5f;
     float avgRadius = (radiusX + radiusY) * 0.5f;
     float bandNorm = std::max(1e-4f, std::max(1.0f, fadeBandPixels) / std::max(1.0f, avgRadius));
     float start = edgeNorm - bandNorm;
@@ -133,12 +137,12 @@ static StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
     return result;
 }
 
-static bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
-                                                  int tileCol,
-                                                  int structureWidthTiles,
-                                                  int tileY,
-                                                  int layerMinY,
-                                                  int effMaxY)
+bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
+                                           int tileCol,
+                                           int structureWidthTiles,
+                                           int tileY,
+                                           int layerMinY,
+                                           int effMaxY)
 {
     if (fade.amount <= 0.0f)
         return false;
@@ -178,12 +182,12 @@ static bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fa
     return rowFromBottom < hiddenRows;
 }
 
-static bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
-                                                   float localXTiles,
-                                                   int structureWidthTiles,
-                                                   float worldTileY,
-                                                   int layerMinY,
-                                                   int effMaxY)
+bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
+                                            float localXTiles,
+                                            int structureWidthTiles,
+                                            float worldTileY,
+                                            int layerMinY,
+                                            int effMaxY)
 {
     if (fade.amount <= 0.0f)
         return false;
@@ -216,21 +220,9 @@ static bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& f
     return rowFromBottom < hiddenRows;
 }
 
+}  // namespace
+
 Tilemap::Tilemap()
-    : m_TileWidth(16),
-      m_TileHeight(16),
-      m_MapWidth(125),
-      m_MapHeight(125),
-      m_TilesetWidth(0),
-      m_TilesetHeight(0),
-      m_TilesPerRow(0),
-      m_TilesetData(nullptr),
-      m_TilesetDataWidth(0),
-      m_TilesetDataHeight(0),
-      m_TilesetChannels(0),
-      m_TilesetDataFromStbi(false),
-      m_TransparencyCacheBuilt(false),
-      m_AnimationTime(0.0f)
 {
     // Allocate storage for all layers using row-major layout: size = width * height
     const size_t mapSize = m_MapWidth * m_MapHeight;
@@ -277,16 +269,153 @@ Tilemap::Tilemap()
     // GenerateDefaultMap() will be called from SetTilemapSize() after LoadCombinedTilesets()
 }
 
-Tilemap::~Tilemap()
+Tilemap::~Tilemap() = default;
+
+void Tilemap::RebuildStructureBoundsCache() const
 {
-    if (m_TilesetData)
+    m_StructureBoundsCache.clear();
+    for (size_t li = 0; li < m_Layers.size(); ++li)
     {
-        if (m_TilesetDataFromStbi)
-            stbi_image_free(m_TilesetData);
-        else
-            delete[] m_TilesetData;
-        m_TilesetData = nullptr;
+        const TileLayer& layer = m_Layers[li];
+        for (int y = 0; y < m_MapHeight; ++y)
+        {
+            for (int x = 0; x < m_MapWidth; ++x)
+            {
+                size_t idx = static_cast<size_t>(y) * static_cast<size_t>(m_MapWidth) +
+                             static_cast<size_t>(x);
+                if (idx >= layer.structureId.size())
+                    continue;
+                int sid = layer.structureId[idx];
+                if (sid < 0)
+                    continue;
+
+                int64_t key = (static_cast<int64_t>(li) << 32) | static_cast<int64_t>(sid);
+                auto it = m_StructureBoundsCache.find(key);
+                if (it == m_StructureBoundsCache.end())
+                {
+                    m_StructureBoundsCache[key] = {x, x, y, y};
+                }
+                else
+                {
+                    it->second.minX = std::min(it->second.minX, x);
+                    it->second.maxX = std::max(it->second.maxX, x);
+                    it->second.minY = std::min(it->second.minY, y);
+                    it->second.maxY = std::max(it->second.maxY, y);
+                }
+            }
+        }
     }
+    m_StructureBoundsCacheDirty = false;
+    m_DirtyStructureKeys.clear();
+}
+
+void Tilemap::InvalidateStructureBoundsCache()
+{
+    m_StructureBoundsCacheDirty = true;
+    m_DirtyStructureKeys.clear();
+}
+
+void Tilemap::InvalidateStructureBoundsForTile(
+    size_t layerIdx, int x, int y, int oldStructId, int newStructId)
+{
+    if (m_StructureBoundsCacheDirty)
+    {
+        return;  // Full rebuild already pending
+    }
+
+    // Expand bounds for the new structure (O(1))
+    if (newStructId >= 0)
+    {
+        int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(newStructId);
+        auto it = m_StructureBoundsCache.find(key);
+        if (it != m_StructureBoundsCache.end())
+        {
+            it->second.minX = std::min(it->second.minX, x);
+            it->second.maxX = std::max(it->second.maxX, x);
+            it->second.minY = std::min(it->second.minY, y);
+            it->second.maxY = std::max(it->second.maxY, y);
+        }
+        else
+        {
+            m_StructureBoundsCache[key] = {x, x, y, y};
+        }
+        // If the new structure was in the per-structure dirty set, clear it
+        // since we just set bounds that include this tile.
+        m_DirtyStructureKeys.erase(key);
+    }
+
+    // Mark old structure dirty for lazy re-scan (bounds may need to shrink)
+    if (oldStructId >= 0 && oldStructId != newStructId)
+    {
+        int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(oldStructId);
+        m_DirtyStructureKeys.insert(key);
+    }
+}
+
+void Tilemap::RebuildSingleStructureBounds(size_t layerIdx, int structId, int64_t key) const
+{
+    m_StructureBoundsCache.erase(key);
+
+    if (layerIdx >= m_Layers.size())
+    {
+        return;
+    }
+
+    const TileLayer& layer = m_Layers[layerIdx];
+    for (int y = 0; y < m_MapHeight; ++y)
+    {
+        for (int x = 0; x < m_MapWidth; ++x)
+        {
+            size_t idx =
+                static_cast<size_t>(y) * static_cast<size_t>(m_MapWidth) + static_cast<size_t>(x);
+            if (idx >= layer.structureId.size())
+            {
+                continue;
+            }
+            if (layer.structureId[idx] != structId)
+            {
+                continue;
+            }
+
+            auto it = m_StructureBoundsCache.find(key);
+            if (it == m_StructureBoundsCache.end())
+            {
+                m_StructureBoundsCache[key] = {x, x, y, y};
+            }
+            else
+            {
+                it->second.minX = std::min(it->second.minX, x);
+                it->second.maxX = std::max(it->second.maxX, x);
+                it->second.minY = std::min(it->second.minY, y);
+                it->second.maxY = std::max(it->second.maxY, y);
+            }
+        }
+    }
+}
+
+const Tilemap::StructureBounds* Tilemap::GetCachedStructureBounds(size_t layerIdx,
+                                                                  int structId) const
+{
+    if (m_StructureBoundsCacheDirty)
+    {
+        RebuildStructureBoundsCache();
+    }
+
+    int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(structId);
+
+    // Re-scan this single structure if it was marked dirty
+    if (m_DirtyStructureKeys.contains(key))
+    {
+        RebuildSingleStructureBounds(layerIdx, structId, key);
+        m_DirtyStructureKeys.erase(key);
+    }
+
+    auto it = m_StructureBoundsCache.find(key);
+    if (it != m_StructureBoundsCache.end())
+    {
+        return &it->second;
+    }
+    return nullptr;
 }
 
 void Tilemap::BuildTransparencyCache()
@@ -301,7 +430,7 @@ void Tilemap::BuildTransparencyCache()
     int dataTilesPerCol = m_TilesetDataHeight / m_TileHeight;
     int totalTiles = dataTilesPerRow * dataTilesPerCol;
 
-    m_TileTransparencyCache.resize(totalTiles, true);
+    m_TileTransparencyCache.resize(totalTiles, 1);
 
     for (int tileID = 0; tileID < totalTiles; ++tileID)
     {
@@ -342,7 +471,7 @@ void Tilemap::BuildTransparencyCache()
             }
         }
 
-        m_TileTransparencyCache[tileID] = isTransparent;
+        m_TileTransparencyCache[tileID] = static_cast<uint8_t>(isTransparent);
     }
 
     m_TransparencyCacheBuilt = true;
@@ -361,6 +490,13 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
 
     m_TileWidth = tileWidth;
     m_TileHeight = tileHeight;
+
+    if (m_TileWidth <= 0 || m_TileHeight <= 0)
+    {
+        std::cerr << "ERROR: Invalid tile dimensions: " << m_TileWidth << "x" << m_TileHeight
+                  << std::endl;
+        return false;
+    }
 
     // Load all tilesets as raw data
     stbi_set_flip_vertically_on_load(false);
@@ -429,11 +565,13 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
         combinedHeight += ts.height;
     }
 
-    // Allocate combined data
-    unsigned char* combinedData = new unsigned char[combinedWidth * combinedHeight * channels];
+    // Allocate combined data with RAII to prevent leaks on exceptions
+    size_t combinedSize = static_cast<size_t>(combinedWidth) * static_cast<size_t>(combinedHeight) *
+                          static_cast<size_t>(channels);
+    auto combinedData = std::make_unique<unsigned char[]>(combinedSize);
 
     // Initialize combined data to transparent (0)
-    memset(combinedData, 0, combinedWidth * combinedHeight * channels);
+    memset(combinedData.get(), 0, combinedSize);
 
     // Copy each tileset vertically, stacking them
     int currentY = 0;
@@ -448,13 +586,11 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
             size_t srcOffset = static_cast<size_t>(y) * static_cast<size_t>(ts.width) *
                                static_cast<size_t>(channels);
             size_t copySize = static_cast<size_t>(ts.width) * static_cast<size_t>(channels);
-            size_t destSize = static_cast<size_t>(combinedWidth) *
-                              static_cast<size_t>(combinedHeight) * static_cast<size_t>(channels);
 
             // Verify bounds before copy
-            if (destOffset + copySize <= destSize)
+            if (destOffset + copySize <= combinedSize)
             {
-                memcpy(combinedData + destOffset, ts.data + srcOffset, copySize);
+                memcpy(combinedData.get() + destOffset, ts.data + srcOffset, copySize);
             }
             // Rest of the row is already transparent from memset
         }
@@ -463,21 +599,22 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
 
     // Create OpenGL texture from combined data
     // Flip vertically for OpenGL (origin at bottom-left)
-    unsigned char* flippedData = new unsigned char[combinedWidth * combinedHeight * channels];
+    auto flippedData = std::make_unique<unsigned char[]>(combinedSize);
     for (int y = 0; y < combinedHeight; ++y)
     {
         int srcY = combinedHeight - 1 - y;
-        memcpy(flippedData + y * combinedWidth * channels,
-               combinedData + srcY * combinedWidth * channels,
-               combinedWidth * channels);
+        memcpy(flippedData.get() + static_cast<size_t>(y) * static_cast<size_t>(combinedWidth) *
+                                       static_cast<size_t>(channels),
+               combinedData.get() + static_cast<size_t>(srcY) * static_cast<size_t>(combinedWidth) *
+                                        static_cast<size_t>(channels),
+               static_cast<size_t>(combinedWidth) * static_cast<size_t>(channels));
     }
 
     // Load combined texture
-    if (!m_TilesetTexture.LoadFromData(flippedData, combinedWidth, combinedHeight, channels, false))
+    if (!m_TilesetTexture.LoadFromData(
+            flippedData.get(), combinedWidth, combinedHeight, channels, false))
     {
         std::cerr << "ERROR: Failed to create combined texture!" << std::endl;
-        delete[] combinedData;
-        delete[] flippedData;
         for (auto& ts : tilesets)
         {
             stbi_image_free(ts.data);
@@ -485,18 +622,9 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
         return false;
     }
 
-    // Store combined data for transparency checking (don't flip for data checking)
-    if (m_TilesetData)
-    {
-        if (m_TilesetDataFromStbi)
-            stbi_image_free(m_TilesetData);
-        else
-            delete[] m_TilesetData;
-        m_TilesetData = nullptr;
-    }
-
-    m_TilesetData = combinedData;
-    m_TilesetDataFromStbi = false;  // Allocated with new[], must use delete[]
+    // Store combined data for transparency checking (don't flip for data checking).
+    // Transfer ownership from the local unique_ptr<unsigned char[]> to our TilesetDataPtr.
+    m_TilesetData = TilesetDataPtr(combinedData.release(), +[](unsigned char* p) { delete[] p; });
     m_TilesetDataWidth = combinedWidth;
     m_TilesetDataHeight = combinedHeight;
     m_TilesetChannels = channels;
@@ -537,8 +665,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
               << (m_TilesetDataWidth / m_TileWidth) * (m_TilesetDataHeight / m_TileHeight)
               << std::endl;
 
-    // Clean up temporary data
-    delete[] flippedData;
+    // Clean up temporary data (flippedData is auto-freed by unique_ptr)
     for (auto& ts : tilesets)
     {
         stbi_image_free(ts.data);
@@ -590,6 +717,10 @@ void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
     // Initialize animation map
     m_TileAnimationMap.assign(mapSize, -1);
     m_AnimationTime = 0.0f;
+
+    m_FloodFillProcessed.assign(mapSize, false);
+
+    InvalidateStructureBoundsCache();
 
     if (generateMap && m_TilesetWidth > 0 && m_TilesetHeight > 0)
         GenerateDefaultMap();
@@ -769,8 +900,18 @@ bool Tilemap::FindNoProjectionStructureBounds(
     if (!hasNoProj)
         return false;
 
-    // Flood-fill to find all connected noProjection tiles (same as RenderLayerNoProjection)
-    std::vector<bool> processed(static_cast<size_t>(m_MapWidth * m_MapHeight), false);
+    // Flood-fill to find all connected noProjection tiles (same as RenderLayerNoProjection).
+    // Reuse the member buffer to avoid per-call allocation on large maps.
+    const size_t mapSize = static_cast<size_t>(m_MapWidth) * static_cast<size_t>(m_MapHeight);
+    if (m_FloodFillProcessed.size() != mapSize)
+    {
+        m_FloodFillProcessed.assign(mapSize, false);
+    }
+    else
+    {
+        std::fill(m_FloodFillProcessed.begin(), m_FloodFillProcessed.end(), false);
+    }
+    auto& processed = m_FloodFillProcessed;
     std::vector<std::pair<int, int>> stack;
     stack.push_back({tileX, tileY});
 
@@ -879,9 +1020,9 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
         return best;
     };
 
-    constexpr int kSearchDownTiles = 8;
+    constexpr int SEARCH_DOWN_TILES = 8;
     RowCandidate candidate;
-    for (int dy = 0; dy <= kSearchDownTiles; ++dy)
+    for (int dy = 0; dy <= SEARCH_DOWN_TILES; ++dy)
     {
         int testY = queryTileY + dy;
         candidate = findCandidateInRow(testY);
@@ -892,43 +1033,17 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
     if (!candidate.valid)
         return false;
 
-    const TileLayer& layer = m_Layers[candidate.layerIdx];
     int structId = candidate.structId;
 
-    int minX = queryTileX;
-    int maxX = queryTileX;
-    int minY = candidate.tileY;
-    int maxY = candidate.tileY;
-    bool foundAny = false;
-
-    for (int sy = 0; sy < m_MapHeight; ++sy)
-    {
-        for (int sx = 0; sx < m_MapWidth; ++sx)
-        {
-            size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
-            if (sIdx >= layer.noProjection.size() || !layer.noProjection[sIdx])
-                continue;
-            if (sIdx >= layer.structureId.size() || layer.structureId[sIdx] != structId)
-                continue;
-
-            if (!foundAny)
-            {
-                foundAny = true;
-                minX = maxX = sx;
-                minY = maxY = sy;
-            }
-            else
-            {
-                minX = std::min(minX, sx);
-                maxX = std::max(maxX, sx);
-                minY = std::min(minY, sy);
-                maxY = std::max(maxY, sy);
-            }
-        }
-    }
-
-    if (!foundAny)
+    // Look up cached structure bounds (O(1) instead of full-map scan)
+    const StructureBounds* bounds = GetCachedStructureBounds(candidate.layerIdx, structId);
+    if (!bounds)
         return false;
+
+    int minX = bounds->minX;
+    int maxX = bounds->maxX;
+    int minY = bounds->minY;
+    int maxY = bounds->maxY;
 
     int structureWidthTiles = maxX - minX + 1;
     if (structureWidthTiles < 1)
@@ -1003,6 +1118,7 @@ int Tilemap::AddNoProjectionStructure(glm::vec2 leftAnchor,
 {
     int id = static_cast<int>(m_NoProjectionStructures.size());
     m_NoProjectionStructures.emplace_back(id, leftAnchor, rightAnchor, name);
+    InvalidateStructureBoundsCache();
     return id;
 }
 
@@ -1038,6 +1154,8 @@ void Tilemap::RemoveNoProjectionStructure(int id)
     {
         m_NoProjectionStructures[i].id = static_cast<int>(i);
     }
+
+    InvalidateStructureBoundsCache();
 }
 
 int Tilemap::GetTileStructureId(int x, int y, int layer) const
@@ -1069,7 +1187,9 @@ void Tilemap::SetTileStructureId(int x, int y, int layer, int structId)
     if (index >= m_Layers[layerIdx].structureId.size())
         return;
 
+    int oldStructId = m_Layers[layerIdx].structureId[index];
     m_Layers[layerIdx].structureId[index] = structId;
+    InvalidateStructureBoundsForTile(layerIdx, x, y, oldStructId, structId);
 }
 
 const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
@@ -1077,8 +1197,8 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
 {
     m_YSortPlusTilesCache.clear();
 
-    float padX = kNoProjectionCullPaddingTiles * static_cast<float>(m_TileWidth);
-    float padY = kNoProjectionCullPaddingTiles * static_cast<float>(m_TileHeight);
+    float padX = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileWidth);
+    float padY = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileHeight);
     glm::vec2 expandedCullCam(cullCam.x - padX, cullCam.y - padY);
     glm::vec2 expandedCullSize(cullSize.x + padX * 2.0f, cullSize.y + padY * 2.0f);
 
@@ -1258,23 +1378,12 @@ void Tilemap::RenderSingleTile(
                 // Each tile is rendered as a warped quad that bends to match the sphere curvature
                 const NoProjectionStructure& structDef = m_NoProjectionStructures[structId];
 
-                // Find structure bounds by scanning for tiles with same structId
-                int minX = x, maxX = x, minY = y, maxY = y;
-                for (int sy = 0; sy < m_MapHeight; ++sy)
-                {
-                    for (int sx = 0; sx < m_MapWidth; ++sx)
-                    {
-                        size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
-                        if (sIdx < tileLayer.structureId.size() &&
-                            tileLayer.structureId[sIdx] == structId)
-                        {
-                            minX = std::min(minX, sx);
-                            maxX = std::max(maxX, sx);
-                            minY = std::min(minY, sy);
-                            maxY = std::max(maxY, sy);
-                        }
-                    }
-                }
+                // Look up cached structure bounds (O(1) instead of full-map scan)
+                const StructureBounds* bounds = GetCachedStructureBounds(layerIdx, structId);
+                if (!bounds)
+                    return;
+                int minX = bounds->minX, maxX = bounds->maxX;
+                int minY = bounds->minY, maxY = bounds->maxY;
 
                 int structureWidthTiles = maxX - minX + 1;
                 if (structureWidthTiles < 1)
@@ -1368,16 +1477,17 @@ void Tilemap::RenderSingleTile(
                 glm::vec2 renderSize(static_cast<float>(m_TileWidth),
                                      static_cast<float>(m_TileHeight));
 
-                renderer.SuspendPerspective(true);
-                renderer.DrawSpriteRegion(m_TilesetTexture,
-                                          screenPos,
-                                          renderSize,
-                                          texCoord,
-                                          texSize,
-                                          rotation,
-                                          glm::vec3(1.0f),
-                                          flipY);
-                renderer.SuspendPerspective(false);
+                {
+                    IRenderer::PerspectiveSuspendGuard guard(renderer);
+                    renderer.DrawSpriteRegion(m_TilesetTexture,
+                                              screenPos,
+                                              renderSize,
+                                              texCoord,
+                                              texSize,
+                                              rotation,
+                                              glm::vec3(1.0f),
+                                              flipY);
+                }
             }
         }
     }
@@ -1526,7 +1636,7 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
-    const std::vector<bool>& transparencyCache = m_TileTransparencyCache;
+    const std::vector<uint8_t>& transparencyCache = m_TileTransparencyCache;
     const int transparencyCacheSize = static_cast<int>(transparencyCache.size());
 
     // Single pass over visible tiles
@@ -1641,7 +1751,7 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
-    const std::vector<bool>& transparencyCache = m_TileTransparencyCache;
+    const std::vector<uint8_t>& transparencyCache = m_TileTransparencyCache;
     const int transparencyCacheSize = static_cast<int>(transparencyCache.size());
 
     // Single pass over visible tiles
@@ -1757,8 +1867,8 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     if (layers.empty())
         return;
 
-    float cullPadX = kNoProjectionCullPaddingTiles * static_cast<float>(m_TileWidth);
-    float cullPadY = kNoProjectionCullPaddingTiles * static_cast<float>(m_TileHeight);
+    float cullPadX = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileWidth);
+    float cullPadY = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileHeight);
     auto s = renderer.GetPerspectiveState();
     bool hasGlobe = s.enabled && (s.mode == IRenderer::ProjectionMode::Globe ||
                                   s.mode == IRenderer::ProjectionMode::Fisheye);
@@ -1906,11 +2016,42 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                 std::vector<LayerStructBounds> layerBounds(m_Layers.size());
                 std::vector<std::pair<int, int>> structureTiles;
 
-                for (int sy = 0; sy < m_MapHeight; ++sy)
+                // Populate per-layer bounds from the structure bounds cache
+                // instead of scanning the entire map.
+                int unionMinX = m_MapWidth, unionMaxX = -1;
+                int unionMinY = m_MapHeight, unionMaxY = -1;
+                for (size_t layerIdx : layers)
                 {
-                    for (int sx = 0; sx < m_MapWidth; ++sx)
+                    const auto* cached = GetCachedStructureBounds(layerIdx, foundStructId);
+                    if (cached)
+                    {
+                        auto& b = layerBounds[layerIdx];
+                        b.valid = true;
+                        b.minX = cached->minX;
+                        b.maxX = cached->maxX;
+                        b.minY = cached->minY;
+                        b.maxY = cached->maxY;
+                        unionMinX = std::min(unionMinX, cached->minX);
+                        unionMaxX = std::max(unionMaxX, cached->maxX);
+                        unionMinY = std::min(unionMinY, cached->minY);
+                        unionMaxY = std::max(unionMaxY, cached->maxY);
+                    }
+                }
+
+                // Iterate only within (union bounds intersected with visible range)
+                int scanMinX = std::max(unionMinX, x0);
+                int scanMaxX = std::min(unionMaxX, x1);
+                int scanMinY = std::max(unionMinY, y0);
+                int scanMaxY = std::min(unionMaxY, y1);
+
+                for (int sy = scanMinY; sy <= scanMaxY; ++sy)
+                {
+                    for (int sx = scanMinX; sx <= scanMaxX; ++sx)
                     {
                         size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
+                        if (processed[sIdx])
+                            continue;
+
                         bool hasTileInStruct = false;
                         for (size_t layerIdx : layers)
                         {
@@ -1923,27 +2064,10 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                             if (sid == foundStructId)
                             {
                                 hasTileInStruct = true;
-                                auto& b = layerBounds[layerIdx];
-                                if (!b.valid)
-                                {
-                                    b.valid = true;
-                                    b.minX = b.maxX = sx;
-                                    b.minY = b.maxY = sy;
-                                }
-                                else
-                                {
-                                    b.minX = std::min(b.minX, sx);
-                                    b.maxX = std::max(b.maxX, sx);
-                                    b.minY = std::min(b.minY, sy);
-                                    b.maxY = std::max(b.maxY, sy);
-                                }
                                 break;
                             }
                         }
                         if (!hasTileInStruct)
-                            continue;
-
-                        if (sx < x0 || sx > x1 || sy < y0 || sy > y1)
                             continue;
 
                         processed[sIdx] = true;
@@ -3128,7 +3252,23 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                 }
                 for (auto& [key, value] : layerAnimMaps[layerIdx].items())
                 {
-                    size_t idx = static_cast<size_t>(std::stoi(key));
+                    size_t idx;
+                    try
+                    {
+                        idx = static_cast<size_t>(std::stoi(key));
+                    }
+                    catch (const std::invalid_argument& e)
+                    {
+                        std::cerr << "WARNING: Invalid animation map key '" << key
+                                  << "': " << e.what() << std::endl;
+                        continue;
+                    }
+                    catch (const std::out_of_range& e)
+                    {
+                        std::cerr << "WARNING: Out-of-range animation map key '" << key
+                                  << "': " << e.what() << std::endl;
+                        continue;
+                    }
                     if (idx < animMap.size())
                     {
                         animMap[idx] = value.get<int>();
@@ -3141,17 +3281,36 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
     // Backwards compatibility: load old "animationMap" format into layer 0
     else if (j.contains("animationMap") && j["animationMap"].is_object())
     {
-        auto& animMap = m_Layers[0].animationMap;
-        if (animMap.size() != mapSize)
+        if (!m_Layers.empty())
         {
-            animMap.assign(mapSize, -1);
-        }
-        for (auto& [key, value] : j["animationMap"].items())
-        {
-            size_t idx = static_cast<size_t>(std::stoi(key));
-            if (idx < animMap.size())
+            auto& animMap = m_Layers[0].animationMap;
+            if (animMap.size() != mapSize)
             {
-                animMap[idx] = value.get<int>();
+                animMap.assign(mapSize, -1);
+            }
+            for (auto& [key, value] : j["animationMap"].items())
+            {
+                size_t idx;
+                try
+                {
+                    idx = static_cast<size_t>(std::stoi(key));
+                }
+                catch (const std::invalid_argument& e)
+                {
+                    std::cerr << "WARNING: Invalid animation map key '" << key << "': " << e.what()
+                              << std::endl;
+                    continue;
+                }
+                catch (const std::out_of_range& e)
+                {
+                    std::cerr << "WARNING: Out-of-range animation map key '" << key
+                              << "': " << e.what() << std::endl;
+                    continue;
+                }
+                if (idx < animMap.size())
+                {
+                    animMap[idx] = value.get<int>();
+                }
             }
         }
         std::cout << "Loaded animation map placements (legacy format -> layer 0)" << std::endl;
@@ -3201,6 +3360,8 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
         std::cerr << "WARN: LoadMapFromJSON skipped " << loadWarningCount
                   << " malformed/out-of-range entries while loading " << filename << std::endl;
     }
+
+    InvalidateStructureBoundsCache();
 
     std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")"
               << std::endl;
