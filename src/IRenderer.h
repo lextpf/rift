@@ -600,6 +600,27 @@ public:
     virtual void SuspendPerspective(bool suspend);
 
     /**
+     * @brief RAII guard that suspends perspective for its lifetime.
+     *
+     * Ensures perspective is always restored, even if an exception is thrown.
+     */
+    class PerspectiveSuspendGuard
+    {
+        IRenderer& m_Renderer;
+
+    public:
+        explicit PerspectiveSuspendGuard(IRenderer& r)
+            : m_Renderer(r)
+        {
+            r.SuspendPerspective(true);
+        }
+        ~PerspectiveSuspendGuard() { m_Renderer.SuspendPerspective(false); }
+
+        PerspectiveSuspendGuard(const PerspectiveSuspendGuard&) = delete;
+        PerspectiveSuspendGuard& operator=(const PerspectiveSuspendGuard&) = delete;
+    };
+
+    /**
      * @brief Clear the screen to a solid color.
      *
      * Fills the entire viewport with the specified color.
