@@ -246,30 +246,62 @@ foreach(subdir "" "Debug" "Release")
     endif()
 endforeach()
 
-# Collect shader files for dependency tracking
-file(GLOB SHADER_FILES "${SHADERS_DIR}/*.vert" "${SHADERS_DIR}/*.frag" "${SHADERS_DIR}/*.glsl" "${SHADERS_DIR}/*.spv")
+# ============================================================================
+# Shader compilation (SPIR-V)
+# ============================================================================
+find_program(GLSLANG_VALIDATOR glslangValidator)
 
-# Custom target to copy shader folder contents - runs on every build
-add_custom_target(copy_shaders ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/Debug/shaders"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/Release/shaders"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "${CMAKE_BINARY_DIR}/Debug/shaders"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "${CMAKE_BINARY_DIR}/Release/shaders"
-    COMMENT "Copying shader files to Debug and Release directories"
-    SOURCES ${SHADER_FILES}
+set(SHADER_SOURCES
+    "${SHADERS_DIR}/sprite.vert"
+    "${SHADERS_DIR}/sprite.frag"
 )
 
-# Make main target depend on shader copying
-add_dependencies(${PROJECT_NAME} copy_shaders)
+if(GLSLANG_VALIDATOR AND Vulkan_FOUND)
+    message(STATUS "glslangValidator found: ${GLSLANG_VALIDATOR}")
+    message(STATUS "-> Shaders will be compiled to SPIR-V during build")
 
-# Post-build step: make sure assets and shaders sit next to the executable
+    set(SHADER_OUTPUTS "")
+    foreach(SHADER_SRC ${SHADER_SOURCES})
+        get_filename_component(SHADER_NAME ${SHADER_SRC} NAME)
+        set(SHADER_SPV "${SHADERS_DIR}/${SHADER_NAME}.spv")
+        list(APPEND SHADER_OUTPUTS ${SHADER_SPV})
+
+        add_custom_command(
+            OUTPUT ${SHADER_SPV}
+            COMMAND ${GLSLANG_VALIDATOR} -V -DUSE_VULKAN "${SHADER_SRC}" -o "${SHADER_SPV}"
+            DEPENDS ${SHADER_SRC}
+            COMMENT "Compiling ${SHADER_NAME} -> ${SHADER_NAME}.spv"
+            VERBATIM
+        )
+    endforeach()
+
+    add_custom_target(compile_shaders DEPENDS ${SHADER_OUTPUTS})
+else()
+    if(Vulkan_FOUND AND NOT GLSLANG_VALIDATOR)
+        message(STATUS "glslangValidator not found - shader compilation skipped")
+        message(STATUS "  Pre-compiled .spv files will be copied if present")
+    endif()
+    # No-op target so add_dependencies below always works
+    add_custom_target(compile_shaders)
+endif()
+
+# Show shader sources in IDE project tree
+file(GLOB SHADER_FILES "${SHADERS_DIR}/*.vert" "${SHADERS_DIR}/*.frag" "${SHADERS_DIR}/*.glsl")
+if(SHADER_FILES)
+    target_sources(${PROJECT_NAME} PRIVATE ${SHADER_FILES})
+    source_group("Shaders" FILES ${SHADER_FILES})
+endif()
+
+# Ensure shaders are compiled before the main target builds
+add_dependencies(${PROJECT_NAME} compile_shaders)
+
+# Post-build: copy assets and shaders next to the executable
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying assets to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${ASSETS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying shaders to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+    COMMENT "Copying assets and shaders to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
