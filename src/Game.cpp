@@ -587,9 +587,9 @@ void Game::Update(float deltaTime)
                                    (m_DialogueSnap.npcTarget - m_DialogueSnap.npcStart) * smoothT;
 
             m_Player.SetPositionRaw(blendedPlayer);
-            m_NPCs[m_DialogueNPCIndex].SetPosition(blendedNPC);
-            m_NPCs[m_DialogueNPCIndex].SetStopped(true);
-            m_NPCs[m_DialogueNPCIndex].ResetAnimationToIdle();
+            GetDialogueNPC().SetPosition(blendedNPC);
+            GetDialogueNPC().SetStopped(true);
+            GetDialogueNPC().ResetAnimationToIdle();
             playerPos = blendedPlayer;
 
             if (t >= 1.0f)
@@ -603,19 +603,19 @@ void Game::Update(float deltaTime)
                 {
                     m_Player.SetPositionRaw(m_DialogueSnap.playerTarget);
                 }
-                m_NPCs[m_DialogueNPCIndex].SetTilePosition(
+                GetDialogueNPC().SetTilePosition(
                     m_DialogueSnap.npcTileX, m_DialogueSnap.npcTileY, 16, true);
 
                 m_Player.Stop();
                 m_Player.SetDirection(m_DialogueSnap.playerFacing);
-                m_NPCs[m_DialogueNPCIndex].SetDirection(m_DialogueSnap.npcFacing);
-                m_NPCs[m_DialogueNPCIndex].SetStopped(true);
-                m_NPCs[m_DialogueNPCIndex].ResetAnimationToIdle();
+                GetDialogueNPC().SetDirection(m_DialogueSnap.npcFacing);
+                GetDialogueNPC().SetStopped(true);
+                GetDialogueNPC().ResetAnimationToIdle();
 
                 bool startedTree = false;
                 if (m_DialogueSnap.prefersTree)
                 {
-                    startedTree = m_DialogueManager.StartDialogue(&m_NPCs[m_DialogueNPCIndex]);
+                    startedTree = m_DialogueManager.StartDialogue(&GetDialogueNPC());
                     if (startedTree)
                     {
                         m_DialoguePage = 0;
@@ -653,8 +653,7 @@ void Game::Update(float deltaTime)
     {
         // Skip updating the NPC in dialogue
         if (inAnyDialogue && m_DialogueNPCIndex >= 0 &&
-            m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
-            &m_NPCs[m_DialogueNPCIndex] == &npc)
+            m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) && &GetDialogueNPC() == &npc)
         {
             continue;
         }

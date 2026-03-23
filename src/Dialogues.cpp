@@ -201,7 +201,7 @@ void BuildEditorAwareDialogueTree(DialogueTree& tree, std::string& outNpcName)
         outNpcName,
         "You don't see it, do you? We're all just... sprites. Placed on a grid. Someone "
         "out there is arranging us like furniture. I've counted my frames of animation "
-        "- I only have twelve poses. TWELVE.");
+        "- I only have four poses. FOUR.");
     revelationNode.options.push_back(DialogueOption("That's... oddly specific.", "final"));
     revelationNode.options.push_back(DialogueOption("Goodbye.", ""));
     tree.AddNode(revelationNode);
@@ -210,7 +210,7 @@ void BuildEditorAwareDialogueTree(DialogueTree& tree, std::string& outNpcName)
     DialogueNode finalNode(
         "final",
         outNpcName,
-        "Wait - you feel it too, don't you? The way you can only move in four directions? "
+        "Wait - you feel it too, don't you? The way you can only move in eight directions? "
         "How every tile is exactly sixteen pixels? ...Don't tell the others. They're not "
         "ready to know.");
     finalNode.options.push_back(DialogueOption("Your secret's safe with me.", ""));

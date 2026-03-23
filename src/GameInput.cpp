@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <iostream>
 
@@ -663,6 +664,7 @@ void Game::ProcessInput(float deltaTime)
                     }
 
                     // Freeze both and begin smooth alignment.
+                    assert(!m_Editor.IsActive() && "Dialogue cannot start while editor is active");
                     m_Player.Stop();
                     npc.SetStopped(true);
                     npc.ResetAnimationToIdle();
@@ -830,7 +832,7 @@ void Game::ReleaseDialogueNPC()
 {
     if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
     {
-        m_NPCs[m_DialogueNPCIndex].SetStopped(false);
+        GetDialogueNPC().SetStopped(false);
     }
     m_DialogueNPCIndex = -1;
 }

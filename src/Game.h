@@ -24,6 +24,7 @@
 /**
  * @struct FPSCounter
  * @brief Frame rate measurement and display state.
+ * @author Alex (https://github.com/lextpf)
  */
 struct FPSCounter
 {
@@ -39,6 +40,7 @@ struct FPSCounter
 /**
  * @struct DialogueSnapState
  * @brief Smooth pre-dialogue alignment animation state.
+ * @author Alex (https://github.com/lextpf)
  *
  * Player + NPC slide into final talk positions before dialogue begins.
  */
@@ -353,6 +355,11 @@ private:
      * @brief Release the NPC currently held in dialogue and reset dialogue NPC index.
      */
     void ReleaseDialogueNPC();
+
+    /// @brief Validated access to the NPC currently in dialogue.
+    /// @pre m_DialogueNPCIndex is a valid index into m_NPCs.
+    NonPlayerCharacter& GetDialogueNPC();
+    const NonPlayerCharacter& GetDialogueNPC() const;
 
     /**
      * @brief Close simple (non-tree) dialogue and release the NPC.

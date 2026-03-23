@@ -2,6 +2,7 @@
 #include "DialogueTypes.h"
 #include "Game.h"
 
+#include <cassert>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -268,6 +269,20 @@ void DrawRoundedRectBorder(IRenderer& renderer,
 }
 }  // namespace
 
+NonPlayerCharacter& Game::GetDialogueNPC()
+{
+    assert(m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
+           "Dialogue NPC index is out of range");
+    return m_NPCs[m_DialogueNPCIndex];
+}
+
+const NonPlayerCharacter& Game::GetDialogueNPC() const
+{
+    assert(m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
+           "Dialogue NPC index is out of range");
+    return m_NPCs[m_DialogueNPCIndex];
+}
+
 void Game::RenderNPCHeadText()
 {
     if (!m_InDialogue || m_DialogueText.empty() || m_DialogueNPCIndex < 0 ||
@@ -277,7 +292,7 @@ void Game::RenderNPCHeadText()
     }
 
     // Get NPC position in screen space
-    glm::vec2 npcWorldPos = m_NPCs[m_DialogueNPCIndex].GetPosition();
+    glm::vec2 npcWorldPos = GetDialogueNPC().GetPosition();
     glm::vec2 npcScreenPos = npcWorldPos - m_Camera.GetState().position;
 
     // Position text above the NPC's head
