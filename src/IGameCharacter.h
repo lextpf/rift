@@ -6,7 +6,7 @@
  * @enum CharacterDirection
  * @brief Cardinal direction a character is facing.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entity
+ * @ingroup Entities
  *
  * Unified direction enum shared by PlayerCharacter and NonPlayerCharacter.
  * Values map directly to sprite sheet row offsets for animation lookup,
@@ -42,7 +42,7 @@ using NPCDirection = CharacterDirection;  ///< Alias for NonPlayerCharacter code
  * @class IGameCharacter
  * @brief Abstract interface for game character state and behavior.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entity
+ * @ingroup Entities
  *
  * IGameCharacter defines the public API contract that all game characters
  * must implement. This abstraction documents the shared interface between

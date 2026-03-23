@@ -8,7 +8,7 @@ class IRenderer;
  * @class GameCharacter
  * @brief Shared implementation of IGameCharacter for character state and behavior.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entity
+ * @ingroup Entities
  *
  * GameCharacter implements IGameCharacter and factors out the fields and
  * methods common to PlayerCharacter and NonPlayerCharacter: world position,
@@ -165,6 +165,7 @@ protected:
 
     /// @name Movement State
     /// @{
-    float m_Speed{100.0f};  ///< Movement speed in pixels per second
+    float m_Speed{
+        100.0f};  ///< Movement speed in pixels per second (derived classes override in ctor)
     /// @}
 };
