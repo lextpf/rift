@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "CollisionResolver.h"
 #include "EnumTraits.h"
 #include "GameCharacter.h"
 #include "IRenderer.h"
@@ -57,13 +58,11 @@ struct EnumTraits<CharacterType> : EnumTraitsBase<CharacterType, EnumTraits<Char
                   "Update EnumTraits<CharacterType> when adding new CharacterType values");
 };
 
-struct TileOverlapContext;
-
 /**
  * @class PlayerCharacter
  * @brief Player-controlled character with movement, animation, and collision.
  * @author Alex (https://github.com/lextpf)
- * @ingroup Entity
+ * @ingroup Entities
  *
  * @par Position (Bottom-Center)
  * Position is the bottom-center of the sprite.
@@ -106,8 +105,8 @@ public:
 
     PlayerCharacter(const PlayerCharacter&) = delete;
     PlayerCharacter& operator=(const PlayerCharacter&) = delete;
-    PlayerCharacter(PlayerCharacter&&) noexcept = default;
-    PlayerCharacter& operator=(PlayerCharacter&&) noexcept = default;
+    PlayerCharacter(PlayerCharacter&& other) noexcept;
+    PlayerCharacter& operator=(PlayerCharacter&& other) noexcept;
 
     /**
      * @brief Load the walking/idle sprite sheet.
@@ -394,10 +393,11 @@ private:
      * @name Sprite Sheet Layout Constants
      * @{
      */
-    static constexpr int SPRITES_PER_ROW = 4;  ///< Sprites per row in sheet
-    static constexpr int IDLE_FRAMES = 3;      ///< Frames in idle animation
-    static constexpr int WALK_FRAMES = 3;      ///< Frames in walk animation
-    static const float ANIMATION_SPEED;        ///< Base frame duration (0.15s)
+    static constexpr int SPRITES_PER_ROW =
+        3;                                 ///< Sprites per row in sheet (3 frames per direction)
+    static constexpr int IDLE_FRAMES = 3;  ///< Frames in idle animation
+    static constexpr int WALK_FRAMES = 3;  ///< Frames in walk animation
+    static const float ANIMATION_SPEED;    ///< Base frame duration (0.15s)
     /** @} */
 
     /**
@@ -413,145 +413,23 @@ private:
                               AnimationType anim,
                               bool requiresYFlip = false);
 
-    /// @name Collision Detection Helpers
-    /// @{
+    friend class CollisionResolver;
+    CollisionResolver m_Collision;  ///< Handles collision detection and resolution
 
-    /// @brief Check if feet position collides with any NPC hitbox.
-    /// @param feetPos Player feet position to test.
-    /// @param npcPositions List of NPC feet positions (nullable).
-    bool CollidesWithNPC(const glm::vec2& feetPos,
-                         const std::vector<glm::vec2>* npcPositions) const;
+    /// @brief Key for the character asset lookup table.
+    struct CharacterAssetKey
+    {
+        CharacterType type;
+        std::string spriteType;
 
-    /// @brief Full-hitbox collision check against tilemap (walking mode).
-    /// @param feetPos Player feet position to test.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param moveDx Movement direction X sign (-1, 0, +1).
-    /// @param moveDy Movement direction Y sign (-1, 0, +1).
-    /// @param diagonalInput True if player is pressing two directions.
-    bool CollidesWithTilesStrict(const glm::vec2& feetPos,
-                                 const class Tilemap* tilemap,
-                                 int moveDx,
-                                 int moveDy,
-                                 bool diagonalInput) const;
+        bool operator<(const CharacterAssetKey& other) const
+        {
+            if (type != other.type)
+                return type < other.type;
+            return spriteType < other.spriteType;
+        }
+    };
 
-    /// @brief Center-point collision check (running/bicycle mode).
-    /// @param feetPos Player feet position to test.
-    /// @param tilemap Tilemap for collision queries.
-    bool CollidesWithTilesCenter(const glm::vec2& feetPos, const class Tilemap* tilemap) const;
-
-    /// @brief Unified collision check dispatching to strict or center mode.
-    /// @param feetPos Player feet position to test.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions List of NPC feet positions (nullable).
-    /// @param sprintMode True to use center-point collision.
-    /// @param moveDx Movement direction X sign.
-    /// @param moveDy Movement direction Y sign.
-    /// @param diagonalInput True if pressing two directions.
-    bool CollidesAt(const glm::vec2& feetPos,
-                    const class Tilemap* tilemap,
-                    const std::vector<glm::vec2>* npcPositions,
-                    bool sprintMode,
-                    int moveDx = 0,
-                    int moveDy = 0,
-                    bool diagonalInput = false) const;
-
-    /// @brief Check if a diagonal corner tile should be ignored during cardinal movement.
-    bool ShouldSkipDiagonalTile(const TileOverlapContext& ctx) const;
-
-    /// @brief Check if shallow wall penetration should be tolerated (corridor sliding).
-    bool ShouldTolerateWallPenetration(const TileOverlapContext& ctx) const;
-
-    /// @brief Evaluate corner cutting and side-wall tolerance for a tile overlap.
-    /// @param forceCollision Set to true if a definite collision is detected (closed corner).
-    /// @return true if the overlap should be tolerated (skip tile).
-    bool ShouldAllowCornerCut(const TileOverlapContext& ctx,
-                              const class Tilemap* tilemap,
-                              bool& forceCollision) const;
-
-    /// @brief Check if player hitbox overlaps a tile corner diagonally.
-    /// @param feetPos Player feet position to test.
-    /// @param tilemap Tilemap for collision queries.
-    bool IsCornerPenetration(const glm::vec2& feetPos, const class Tilemap* tilemap) const;
-
-    /// @brief Compute ejection vector when sprinting into a corner.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions List of NPC feet positions (nullable).
-    /// @param normalizedDir Normalized movement direction.
-    glm::vec2 ComputeSprintCornerEject(const class Tilemap* tilemap,
-                                       const std::vector<glm::vec2>* npcPositions,
-                                       glm::vec2 normalizedDir) const;
-
-    /// @brief Determine slide direction when blocked by a corner.
-    /// @param testPos Position to test from.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param moveDirX Movement direction X sign.
-    /// @param moveDirY Movement direction Y sign.
-    glm::vec2 GetCornerSlideDirection(const glm::vec2& testPos,
-                                      const class Tilemap* tilemap,
-                                      int moveDirX,
-                                      int moveDirY);
-
-    /// @brief Find the nearest non-colliding tile center for stuck recovery.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions List of NPC feet positions (nullable).
-    glm::vec2 FindClosestSafeTileCenter(const class Tilemap* tilemap,
-                                        const std::vector<glm::vec2>* npcPositions) const;
-
-    /// @brief Calculate exponential smoothing alpha for a given settle time.
-    /// @param deltaTime Frame time in seconds.
-    /// @param settleTime Desired time to reach target.
-    /// @param epsilon Convergence threshold.
-    static float CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon = 0.01f);
-
-    /// @brief Attempt axis-aligned slide movement when direct path is blocked.
-    /// @param desiredMovement Original movement vector.
-    /// @param normalizedDir Normalized movement direction.
-    /// @param deltaTime Frame time in seconds.
-    /// @param currentSpeed Current movement speed.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions NPC positions (nullable).
-    /// @param sprintMode Whether center-point collision is used.
-    /// @param moveDx Movement direction X sign.
-    /// @param moveDy Movement direction Y sign.
-    /// @param diagonalInput True if pressing two directions.
-    glm::vec2 TrySlideMovement(glm::vec2 desiredMovement,
-                               glm::vec2 normalizedDir,
-                               float deltaTime,
-                               float currentSpeed,
-                               const class Tilemap* tilemap,
-                               const std::vector<glm::vec2>* npcPositions,
-                               bool sprintMode,
-                               int moveDx,
-                               int moveDy,
-                               bool diagonalInput);
-
-    /// @brief Snap player to tile lane center during cardinal movement.
-    /// @param desiredMovement Original movement vector.
-    /// @param normalizedDir Normalized movement direction.
-    /// @param deltaTime Frame time in seconds.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions NPC positions (nullable).
-    /// @param sprintMode Whether center-point collision is used.
-    /// @param moveDx Movement direction X sign.
-    /// @param moveDy Movement direction Y sign.
-    glm::vec2 ApplyLaneSnapping(glm::vec2 desiredMovement,
-                                glm::vec2 normalizedDir,
-                                float deltaTime,
-                                const Tilemap* tilemap,
-                                const std::vector<glm::vec2>* npcPositions,
-                                bool sprintMode,
-                                int moveDx,
-                                int moveDy);
-
-    /// @brief Smooth-snap player to nearest tile center when idle.
-    /// @param deltaTime Frame time in seconds.
-    /// @param tilemap Tilemap for collision queries.
-    /// @param npcPositions NPC positions (nullable).
-    void HandleIdleSnap(float deltaTime,
-                        const class Tilemap* tilemap,
-                        const std::vector<glm::vec2>* npcPositions);
-    /// @}
-
-    static std::map<std::pair<CharacterType, std::string>, std::string>
+    static std::map<CharacterAssetKey, std::string>
         s_CharacterAssets;  ///< Custom asset paths keyed by (CharacterType, spriteType)
 };

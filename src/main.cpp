@@ -182,7 +182,7 @@ int main()
         // Run the main game loop
         try
         {
-            // Cap to monitor refresh rate (244 Hz)
+            // Cap frame rate to 244 FPS
             game.SetTargetFps(244.0f);
             game.Run();
         }

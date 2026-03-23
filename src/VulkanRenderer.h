@@ -80,7 +80,7 @@ struct GLFWwindow;
  * @section vk_limitations Current Limitations
  * - Single graphics pipeline (no compute shaders)
  * - No dynamic descriptor indexing
- * - Fixed descriptor pool size
+ * - Descriptor pool starts at a fixed size; overflow pools are allocated on demand
  * - Synchronous texture uploads
  * - Clear color arguments are currently ignored (`Clear()` is handled in `BeginFrame()` with a
  * fixed value)
@@ -227,6 +227,7 @@ private:
     std::vector<VkSemaphore> m_RenderFinishedSemaphores;  ///< Rendering complete.
     std::vector<VkFence> m_InFlightFences;                ///< CPU-GPU sync.
     std::vector<VkFence> m_ImagesInFlight;                ///< Per-image fence tracking.
+    VkFence m_TransferFence{VK_NULL_HANDLE};  ///< Fence for synchronous transfer operations.
     /// @}
 
     /// @name Frame State
@@ -272,6 +273,7 @@ private:
     VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
     VkSampler m_TextureSampler{VK_NULL_HANDLE};  ///< Shared texture sampler.
     std::unordered_map<VkImageView, VkDescriptorSet> m_DescriptorSetCache;
+    std::vector<VkDescriptorPool> m_OverflowPools;  ///< Additional pools created on overflow.
     bool m_DescriptorPoolWarned{false};
     /// @}
 

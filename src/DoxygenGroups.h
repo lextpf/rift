@@ -432,12 +432,14 @@
  * @par Particle Types
  * | Type       | Behavior                                    |
  * |------------|---------------------------------------------|
- * | Leaves     | Float downward with wind sway               |
- * | Rain       | Fall rapidly with slight angle              |
- * | Snow       | Gentle descent with horizontal drift        |
- * | Fireflies  | Random wandering with glow pulsing          |
- * | Dust       | Slow drift with fade in/out                 |
- * | Sparkles   | Brief bright flashes at random positions    |
+ * | Firefly    | Pulsing glow, gentle drift                  |
+ * | Rain       | Fast falling droplets, slight angle         |
+ * | Snow       | Slow falling flakes with side drift         |
+ * | Fog        | Large translucent patches, very slow        |
+ * | Sparkles   | Brief bright flashes, stationary            |
+ * | Wisp       | Magical spiraling orbs, color variety       |
+ * | Lantern    | Warm stationary glow, night-only            |
+ * | Sunshine   | Angled rays, day/night color shift          |
  *
  * @par Particle Lifecycle
  * @f[

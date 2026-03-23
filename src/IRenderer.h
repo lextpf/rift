@@ -198,8 +198,9 @@ public:
      * @brief Draw a sprite using the backend's default texture region.
      *
      * Position is the **top-left corner** of the sprite.
-     * Current backend implementations call DrawSpriteRegion with
-     * `texCoord=(0,0)` and `texSize=(1,1)` in pixel units.
+     * Current backend implementations delegate to DrawSpriteRegion with
+     * `texCoord=(0,0)` and `texSize=(1,1)` as **normalized** coordinates,
+     * meaning the entire texture is sampled.
      * Use DrawSpriteRegion/DrawSpriteAtlas for explicit region control.
      *
      * @par Transformation Order
@@ -401,6 +402,8 @@ public:
         float sphereRadius = 2000.0f;  ///< Radius for globe projection in pixels
     };
 
+    /// @brief Get the current perspective configuration.
+    /// @return Read-only reference to the active perspective state.
     const PerspectiveState& GetPerspectiveState() const { return m_Persp; }
 
     /**
@@ -577,6 +580,14 @@ public:
      *
      * Combines spherical curvature with vanishing point depth scaling.
      * Sets projection mode to ProjectionMode::Fisheye.
+     *
+     * @param enabled      Whether the combined effect is active.
+     * @param sphereRadius Radius of the virtual sphere in pixels.
+     * @param horizonY     Y position of the vanishing point in screen coordinates.
+     * @param horizonScale Scale factor at the horizon (0.0-1.0). Lower values
+     *                     create stronger perspective.
+     * @param viewWidth    Current viewport width in pixels.
+     * @param viewHeight   Current viewport height in pixels.
      *
      * @see SetVanishingPointPerspective() For depth scaling only (no curvature).
      * @see SetGlobePerspective() For curvature only (no depth scaling).
