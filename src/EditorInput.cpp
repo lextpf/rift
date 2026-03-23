@@ -83,8 +83,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (m_ShowTilePicker)
         {
             // Sync smooth scrolling state to prevent jump
-            m_TilePickerTargetOffsetX = m_TilePickerOffsetX;
-            m_TilePickerTargetOffsetY = m_TilePickerOffsetY;
+            m_TilePicker.targetOffsetX = m_TilePicker.offsetX;
+            m_TilePicker.targetOffsetY = m_TilePicker.offsetY;
             std::vector<int> validTiles = ctx.tilemap.GetValidTileIDs();
             std::cout << "Total valid tiles available: " << validTiles.size() << std::endl;
             std::cout << "Currently selected tile ID: " << m_SelectedTileID << std::endl;
@@ -100,9 +100,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
-        m_MultiTileRotation = (m_MultiTileRotation + 90) % 360;
+        m_MultiTile.rotation = (m_MultiTile.rotation + 90) % 360;
         m_KeyPressed[GLFW_KEY_R] = true;
-        std::cout << "Tile rotation: " << m_MultiTileRotation << " degrees" << std::endl;
+        std::cout << "Tile rotation: " << m_MultiTile.rotation << " degrees" << std::endl;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_RELEASE)
     {
@@ -125,19 +125,19 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         // Arrow key input
         if (glfwGetKey(ctx.window, GLFW_KEY_UP) == GLFW_PRESS)
         {
-            m_TilePickerTargetOffsetY += scrollSpeed;  // Scroll down (view up)
+            m_TilePicker.targetOffsetY += scrollSpeed;  // Scroll down (view up)
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_DOWN) == GLFW_PRESS)
         {
-            m_TilePickerTargetOffsetY -= scrollSpeed;  // Scroll up (view down)
+            m_TilePicker.targetOffsetY -= scrollSpeed;  // Scroll up (view down)
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_LEFT) == GLFW_PRESS)
         {
-            m_TilePickerTargetOffsetX += scrollSpeed;  // Scroll right (view left)
+            m_TilePicker.targetOffsetX += scrollSpeed;  // Scroll right (view left)
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_RIGHT) == GLFW_PRESS)
         {
-            m_TilePickerTargetOffsetX -= scrollSpeed;  // Scroll left (view right)
+            m_TilePicker.targetOffsetX -= scrollSpeed;  // Scroll left (view right)
         }
 
         // Calculate tile picker layout dimensions
@@ -148,7 +148,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         // Base size is calculated to fit all tiles horizontally with 1.5x padding
         float baseTileSizePixels =
             (static_cast<float>(ctx.screenWidth) / static_cast<float>(dataTilesPerRow)) * 1.5f;
-        float tileSizePixels = baseTileSizePixels * m_TilePickerZoom;
+        float tileSizePixels = baseTileSizePixels * m_TilePicker.zoom;
 
         // Total content dimensions
         float totalTilesWidth = tileSizePixels * dataTilesPerRow;
@@ -160,10 +160,10 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         float minOffsetY = std::min(0.0f, ctx.screenHeight - totalTilesHeight);
         float maxOffsetY = 0.0f;
 
-        m_TilePickerTargetOffsetX =
-            std::max(minOffsetX, std::min(maxOffsetX, m_TilePickerTargetOffsetX));
-        m_TilePickerTargetOffsetY =
-            std::max(minOffsetY, std::min(maxOffsetY, m_TilePickerTargetOffsetY));
+        m_TilePicker.targetOffsetX =
+            std::max(minOffsetX, std::min(maxOffsetX, m_TilePicker.targetOffsetX));
+        m_TilePicker.targetOffsetY =
+            std::max(minOffsetY, std::min(maxOffsetY, m_TilePicker.targetOffsetY));
     }
 
     // Toggles navigation map editing. When active:
@@ -760,7 +760,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 
     // Rotates the tile under the mouse cursor by 90 on the current layer.
     // Note: This is different from multi-tile rotation which uses R when
-    //       m_MultiTileSelectionMode is true.
+    //       m_MultiTile.selectionMode is true.
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
@@ -842,9 +842,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
         // Check if cursor moved to a new tile
         bool isNewNavigationTilePosition =
-            (tileX != m_LastNavigationTileX || tileY != m_LastNavigationTileY);
+            (tileX != m_Mouse.lastNavigationTileX || tileY != m_Mouse.lastNavigationTileY);
         bool isNewCollisionTilePosition =
-            (tileX != m_LastCollisionTileX || tileY != m_LastCollisionTileY);
+            (tileX != m_Mouse.lastCollisionTileX || tileY != m_Mouse.lastCollisionTileY);
 
         if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
             tileY < ctx.tilemap.GetMapHeight())
@@ -859,7 +859,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     std::cout << "Removed animation from tile (" << tileX << ", " << tileY
                               << ") on layer " << m_CurrentLayer << std::endl;
                 }
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
                 return;
             }
             // Elevation edit mode, right-click clears elevation at tile
@@ -867,7 +867,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             {
                 ctx.tilemap.SetElevation(tileX, tileY, 0);
                 std::cout << "Cleared elevation at (" << tileX << ", " << tileY << ")" << std::endl;
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
             }
             // Structure edit mode, right-click clears structure assignment from tiles
             // Shift+right-click, flood-fill to clear all connected tiles
@@ -896,7 +896,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     std::cout << "Cleared structure assignment at (" << tileX << ", " << tileY
                               << ")" << std::endl;
                 }
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
             }
             // No-projection edit mode, right-click clears no-projection flag for current layer
             // Shift+right-click, flood-fill to clear all connected tiles
@@ -937,7 +937,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     std::cout << "Cleared no-projection at (" << tileX << ", " << tileY
                               << ") all layers" << std::endl;
                 }
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
             }
             // Y-sort-plus / Y-sort-minus edit modes share the same clear logic.
             // Right-click clears flag on single tile; Shift+right-click flood-clears.
@@ -978,7 +978,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     std::cout << "Cleared " << label << " at (" << tileX << ", " << tileY
                               << ") layer " << (m_CurrentLayer + 1) << std::endl;
                 }
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
             }
             // Particle zone edit mode, right-click removes zone under cursor
             else if ((m_EditMode == EditMode::ParticleZone))
@@ -999,40 +999,40 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         break;
                     }
                 }
-                m_RightMousePressed = true;
+                m_Mouse.rightMousePressed = true;
             }
             else if ((m_EditMode == EditMode::Navigation))
             {
                 // Navigation editing mode, support drag-to-draw
                 bool navigationChanged = false;
-                if (!m_RightMousePressed)
+                if (!m_Mouse.rightMousePressed)
                 {
                     // Initial click determines target state
                     bool walkable = ctx.tilemap.GetNavigation(tileX, tileY);
-                    m_NavigationDragState = !walkable;  // Set to opposite of current state
-                    ctx.tilemap.SetNavigation(tileX, tileY, m_NavigationDragState);
+                    m_Mouse.navigationDragState = !walkable;  // Set to opposite of current state
+                    ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
                     navigationChanged = true;
                     std::cout << "=== NAVIGATION DRAG START ===" << std::endl;
                     std::cout << "Tile (" << tileX << ", " << tileY
                               << "): " << (walkable ? "ON" : "OFF") << " -> "
-                              << (m_NavigationDragState ? "ON" : "OFF") << std::endl;
-                    m_LastNavigationTileX = tileX;
-                    m_LastNavigationTileY = tileY;
-                    m_RightMousePressed = true;
+                              << (m_Mouse.navigationDragState ? "ON" : "OFF") << std::endl;
+                    m_Mouse.lastNavigationTileX = tileX;
+                    m_Mouse.lastNavigationTileY = tileY;
+                    m_Mouse.rightMousePressed = true;
                 }
                 else if (isNewNavigationTilePosition)
                 {
                     // Dragging sets navigation to the same state as initial click
                     bool currentWalkable = ctx.tilemap.GetNavigation(tileX, tileY);
-                    if (currentWalkable != m_NavigationDragState)
+                    if (currentWalkable != m_Mouse.navigationDragState)
                     {
-                        ctx.tilemap.SetNavigation(tileX, tileY, m_NavigationDragState);
+                        ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
                         navigationChanged = true;
                         std::cout << "Navigation drag: Tile (" << tileX << ", " << tileY << ") -> "
-                                  << (m_NavigationDragState ? "ON" : "OFF") << std::endl;
+                                  << (m_Mouse.navigationDragState ? "ON" : "OFF") << std::endl;
                     }
-                    m_LastNavigationTileX = tileX;
-                    m_LastNavigationTileY = tileY;
+                    m_Mouse.lastNavigationTileX = tileX;
+                    m_Mouse.lastNavigationTileY = tileY;
                 }
 
                 // Recalculate patrol routes when navigation changes
@@ -1044,38 +1044,39 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             else
             {
                 // Collision editing mode, support drag-to-draw
-                if (!m_RightMousePressed)
+                if (!m_Mouse.rightMousePressed)
                 {
                     // Initial click determines target state
                     bool currentCollision = ctx.tilemap.GetTileCollision(tileX, tileY);
-                    m_CollisionDragState = !currentCollision;  // Set to opposite of current state
-                    ctx.tilemap.SetTileCollision(tileX, tileY, m_CollisionDragState);
+                    m_Mouse.collisionDragState =
+                        !currentCollision;  // Set to opposite of current state
+                    ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
                     std::cout << "=== COLLISION DRAG START ===" << std::endl;
                     std::cout << "Tile (" << tileX << ", " << tileY
                               << "): " << (currentCollision ? "ON" : "OFF") << " -> "
-                              << (m_CollisionDragState ? "ON" : "OFF") << std::endl;
-                    m_LastCollisionTileX = tileX;
-                    m_LastCollisionTileY = tileY;
-                    m_RightMousePressed = true;
+                              << (m_Mouse.collisionDragState ? "ON" : "OFF") << std::endl;
+                    m_Mouse.lastCollisionTileX = tileX;
+                    m_Mouse.lastCollisionTileY = tileY;
+                    m_Mouse.rightMousePressed = true;
                 }
                 else if (isNewCollisionTilePosition)
                 {
                     // Dragging sets collision to the same state as initial click
                     bool currentCollision = ctx.tilemap.GetTileCollision(tileX, tileY);
-                    if (currentCollision != m_CollisionDragState)
+                    if (currentCollision != m_Mouse.collisionDragState)
                     {
-                        ctx.tilemap.SetTileCollision(tileX, tileY, m_CollisionDragState);
+                        ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
                         std::cout << "Collision drag: Tile (" << tileX << ", " << tileY << ") -> "
-                                  << (m_CollisionDragState ? "ON" : "OFF") << std::endl;
+                                  << (m_Mouse.collisionDragState ? "ON" : "OFF") << std::endl;
                     }
-                    m_LastCollisionTileX = tileX;
-                    m_LastCollisionTileY = tileY;
+                    m_Mouse.lastCollisionTileX = tileX;
+                    m_Mouse.lastCollisionTileY = tileY;
                 }
             }
         }
         else
         {
-            if (!m_RightMousePressed)
+            if (!m_Mouse.rightMousePressed)
             {
                 std::cout << "Right-click outside map bounds (tileX=" << tileX << " tileY=" << tileY
                           << " map size=" << ctx.tilemap.GetMapWidth() << "x"
@@ -1085,12 +1086,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
     }
     else if (!rightMouseDown)
     {
-        m_RightMousePressed = false;
+        m_Mouse.rightMousePressed = false;
         // Reset navigation and collision drag tracking when mouse is released
-        m_LastNavigationTileX = -1;
-        m_LastNavigationTileY = -1;
-        m_LastCollisionTileX = -1;
-        m_LastCollisionTileY = -1;
+        m_Mouse.lastNavigationTileX = -1;
+        m_Mouse.lastNavigationTileY = -1;
+        m_Mouse.lastCollisionTileX = -1;
+        m_Mouse.lastCollisionTileY = -1;
     }
 
     // Handle tile picker selection
@@ -1102,16 +1103,16 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         int tilesPerRow = dataTilesPerRow;
         float baseTileSize =
             (static_cast<float>(ctx.screenWidth) / static_cast<float>(tilesPerRow)) * 1.5f;
-        float tileSize = baseTileSize * m_TilePickerZoom;
+        float tileSize = baseTileSize * m_TilePicker.zoom;
 
         // Start selection on mouse down
-        if (leftMouseDown && !m_MousePressed && !m_IsSelectingTiles)
+        if (leftMouseDown && !m_Mouse.mousePressed && !m_MultiTile.isSelecting)
         {
             if (mouseX >= 0 && mouseX < ctx.screenWidth && mouseY >= 0 && mouseY < ctx.screenHeight)
             {
                 // Account for offset when calculating tile position
-                double adjustedMouseX = mouseX - m_TilePickerOffsetX;
-                double adjustedMouseY = mouseY - m_TilePickerOffsetY;
+                double adjustedMouseX = mouseX - m_TilePicker.offsetX;
+                double adjustedMouseY = mouseY - m_TilePicker.offsetY;
                 int pickerTileX = static_cast<int>(adjustedMouseX / tileSize);
                 int pickerTileY = static_cast<int>(adjustedMouseY / tileSize);
                 int localIndex = pickerTileY * tilesPerRow + pickerTileX;
@@ -1124,35 +1125,35 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     {
                         // Add frame to animation
                         m_AnimationFrames.push_back(clickedTileID);
-                        m_MousePressed = true;
+                        m_Mouse.mousePressed = true;
                         std::cout << "Added animation frame: " << clickedTileID
                                   << " (total frames: " << m_AnimationFrames.size() << ")"
                                   << std::endl;
                     }
                     else
                     {
-                        m_IsSelectingTiles = true;
-                        m_SelectionStartTileID = clickedTileID;
+                        m_MultiTile.isSelecting = true;
+                        m_MultiTile.selectionStartTileID = clickedTileID;
                         m_SelectedTileID = clickedTileID;
-                        m_MousePressed = true;  // Prevent other click handlers from firing
+                        m_Mouse.mousePressed = true;  // Prevent other click handlers from firing
                         std::cout << "Started selection at tile ID: " << clickedTileID
                                   << " (mouse: " << mouseX << ", " << mouseY
                                   << ", adjusted: " << adjustedMouseX << ", " << adjustedMouseY
-                                  << ", offset: " << m_TilePickerOffsetX << ", "
-                                  << m_TilePickerOffsetY << ")" << std::endl;
+                                  << ", offset: " << m_TilePicker.offsetX << ", "
+                                  << m_TilePicker.offsetY << ")" << std::endl;
                     }
                 }
             }
         }
 
         // Update selection while dragging
-        if (leftMouseDown && m_IsSelectingTiles)
+        if (leftMouseDown && m_MultiTile.isSelecting)
         {
             if (mouseX >= 0 && mouseX < ctx.screenWidth && mouseY >= 0 && mouseY < ctx.screenHeight)
             {
                 // Account for offset when calculating tile position
-                double adjustedMouseX = mouseX - m_TilePickerOffsetX;
-                double adjustedMouseY = mouseY - m_TilePickerOffsetY;
+                double adjustedMouseX = mouseX - m_TilePicker.offsetX;
+                double adjustedMouseY = mouseY - m_TilePicker.offsetY;
                 int pickerTileX = static_cast<int>(adjustedMouseX / tileSize);
                 int pickerTileY = static_cast<int>(adjustedMouseY / tileSize);
                 int localIndex = pickerTileY * tilesPerRow + pickerTileX;
@@ -1166,17 +1167,17 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Reset mouse pressed state when mouse released in animation mode
-        if (!leftMouseDown && (m_EditMode == EditMode::Animation) && m_MousePressed)
+        if (!leftMouseDown && (m_EditMode == EditMode::Animation) && m_Mouse.mousePressed)
         {
-            m_MousePressed = false;
+            m_Mouse.mousePressed = false;
         }
 
         // Finish selection on mouse up
-        if (!leftMouseDown && m_IsSelectingTiles)
+        if (!leftMouseDown && m_MultiTile.isSelecting)
         {
-            if (m_SelectionStartTileID >= 0)
+            if (m_MultiTile.selectionStartTileID >= 0)
             {
-                int startTileID = m_SelectionStartTileID;
+                int startTileID = m_MultiTile.selectionStartTileID;
                 int endTileID = m_SelectedTileID;
 
                 int startX = startTileID % dataTilesPerRow;
@@ -1189,44 +1190,44 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 int minY = std::min(startY, endY);
                 int maxY = std::max(startY, endY);
 
-                m_SelectedTileStartID = minY * dataTilesPerRow + minX;
-                m_SelectedTileWidth = maxX - minX + 1;
-                m_SelectedTileHeight = maxY - minY + 1;
+                m_MultiTile.selectedStartID = minY * dataTilesPerRow + minX;
+                m_MultiTile.width = maxX - minX + 1;
+                m_MultiTile.height = maxY - minY + 1;
 
-                if (m_SelectedTileWidth > 1 || m_SelectedTileHeight > 1)
+                if (m_MultiTile.width > 1 || m_MultiTile.height > 1)
                 {
                     // Multi-tile selection, enable placement mode,
                     // but do not change the world camera or zoom.
-                    m_MultiTileSelectionMode = true;
-                    m_IsPlacingMultiTile = true;
-                    m_MultiTileRotation = 0;  // Reset rotation for new selection
+                    m_MultiTile.selectionMode = true;
+                    m_MultiTile.isPlacing = true;
+                    m_MultiTile.rotation = 0;  // Reset rotation for new selection
                     std::cout << "=== MULTI-TILE SELECTION ===" << std::endl;
-                    std::cout << "Start tile ID: " << m_SelectedTileStartID << std::endl;
-                    std::cout << "Size: " << m_SelectedTileWidth << "x" << m_SelectedTileHeight
+                    std::cout << "Start tile ID: " << m_MultiTile.selectedStartID << std::endl;
+                    std::cout << "Size: " << m_MultiTile.width << "x" << m_MultiTile.height
                               << std::endl;
                 }
                 else
                 {
-                    m_MultiTileSelectionMode = false;
-                    m_IsPlacingMultiTile = false;
-                    m_MultiTileRotation = 0;  // Reset rotation
+                    m_MultiTile.selectionMode = false;
+                    m_MultiTile.isPlacing = false;
+                    m_MultiTile.rotation = 0;  // Reset rotation
                     std::cout << "=== SINGLE TILE SELECTION ===" << std::endl;
-                    std::cout << "Tile ID: " << m_SelectedTileStartID << std::endl;
+                    std::cout << "Tile ID: " << m_MultiTile.selectedStartID << std::endl;
                 }
 
                 m_ShowTilePicker = false;
             }
-            m_IsSelectingTiles = false;
-            m_SelectionStartTileID = -1;
-            m_MousePressed = false;  // Reset mouse pressed state
+            m_MultiTile.isSelecting = false;
+            m_MultiTile.selectionStartTileID = -1;
+            m_Mouse.mousePressed = false;  // Reset mouse pressed state
         }
 
         // Early return to prevent tile placement when tile picker is shown
         if (m_ShowTilePicker)
         {
             // Update mouse position for preview
-            m_LastMouseX = mouseX;
-            m_LastMouseY = mouseY;
+            m_Mouse.lastMouseX = mouseX;
+            m_Mouse.lastMouseY = mouseY;
             return;  // Don't process tile placement when picker is shown
         }
     }
@@ -1247,12 +1248,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 tileY < ctx.tilemap.GetMapHeight())
             {
                 // Only process if this is a new tile
-                if (tileX == m_LastNPCPlacementTileX && tileY == m_LastNPCPlacementTileY)
+                if (tileX == m_Mouse.lastNPCPlacementTileX &&
+                    tileY == m_Mouse.lastNPCPlacementTileY)
                 {
                     return;  // Already processed this tile during this click
                 }
-                m_LastNPCPlacementTileX = tileX;
-                m_LastNPCPlacementTileY = tileY;
+                m_Mouse.lastNPCPlacementTileX = tileX;
+                m_Mouse.lastNPCPlacementTileY = tileY;
 
                 const int tileSize = ctx.tilemap.GetTileWidth();
 
@@ -1380,7 +1382,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 bool ctrlHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                                  glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
-                if (ctrlHeld && !m_MousePressed)
+                if (ctrlHeld && !m_Mouse.mousePressed)
                 {
                     // Ctrl+click: place anchor at clicked corner of tile (no tile modification)
                     int tileWidth = ctx.tilemap.GetTileWidth();
@@ -1405,7 +1407,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         // Place left anchor
                         m_TempLeftAnchor = glm::vec2(cornerX, cornerY);
                         m_PlacingAnchor = 2;
-                        m_MousePressed = true;
+                        m_Mouse.mousePressed = true;
                         std::cout << "Left anchor: " << cornerNames[cornerIdx] << " of tile ("
                                   << tileX << ", " << tileY << ")" << std::endl;
                     }
@@ -1414,7 +1416,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         // Place right anchor and create structure
                         m_TempRightAnchor = glm::vec2(cornerX, cornerY);
                         m_PlacingAnchor = 0;
-                        m_MousePressed = true;
+                        m_Mouse.mousePressed = true;
 
                         int id = ctx.tilemap.AddNoProjectionStructure(m_TempLeftAnchor,
                                                                       m_TempRightAnchor);
@@ -1427,10 +1429,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     }
                     // Don't process any tile modifications when placing anchors
                 }
-                else if (shiftHeld && !m_MousePressed)
+                else if (shiftHeld && !m_Mouse.mousePressed)
                 {
                     // Shift+click: flood-fill set no-projection and assign to structure
-                    m_MousePressed = true;
+                    m_Mouse.mousePressed = true;
                     int layer = m_CurrentLayer;
                     int structId = m_CurrentStructureId;
                     int count = FloodFill(
@@ -1455,10 +1457,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         std::cout << "Set no-projection on " << count << " tiles (no structure)"
                                   << std::endl;
                 }
-                else if (!ctrlHeld && !shiftHeld && !m_MousePressed)
+                else if (!ctrlHeld && !shiftHeld && !m_Mouse.mousePressed)
                 {
                     // Normal click: toggle no-projection on single tile
-                    m_MousePressed = true;
+                    m_Mouse.mousePressed = true;
                     bool current = ctx.tilemap.GetLayerNoProjection(tileX, tileY, m_CurrentLayer);
                     ctx.tilemap.SetLayerNoProjection(tileX, tileY, m_CurrentLayer, !current);
                     if (m_CurrentStructureId >= 0 && !current)
@@ -1538,22 +1540,23 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
 
         // Check if this is a new tile position
-        bool isNewTilePosition = (tileX != m_LastPlacedTileX || tileY != m_LastPlacedTileY);
+        bool isNewTilePosition =
+            (tileX != m_Mouse.lastPlacedTileX || tileY != m_Mouse.lastPlacedTileY);
 
-        if (m_MultiTileSelectionMode)
+        if (m_MultiTile.selectionMode)
         {
             // Multi-tile placement, only place on initial click, not on drag
-            if (!m_MousePressed)
+            if (!m_Mouse.mousePressed)
             {
                 int dataTilesPerRow =
                     ctx.tilemap.GetTilesetDataWidth() / ctx.tilemap.GetTileWidth();
 
-                int rotatedWidth = (m_MultiTileRotation == 90 || m_MultiTileRotation == 270)
-                                       ? m_SelectedTileHeight
-                                       : m_SelectedTileWidth;
-                int rotatedHeight = (m_MultiTileRotation == 90 || m_MultiTileRotation == 270)
-                                        ? m_SelectedTileWidth
-                                        : m_SelectedTileHeight;
+                int rotatedWidth = (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+                                       ? m_MultiTile.height
+                                       : m_MultiTile.width;
+                int rotatedHeight = (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+                                        ? m_MultiTile.width
+                                        : m_MultiTile.height;
                 float tileRotation = GetCompensatedTileRotation();
 
                 for (int dy = 0; dy < rotatedHeight; ++dy)
@@ -1566,7 +1569,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         int placeX = tileX + dx;
                         int placeY = tileY + dy;
                         int sourceTileID =
-                            m_SelectedTileStartID + sourceDy * dataTilesPerRow + sourceDx;
+                            m_MultiTile.selectedStartID + sourceDy * dataTilesPerRow + sourceDx;
 
                         if (placeX >= 0 && placeX < ctx.tilemap.GetMapWidth() && placeY >= 0 &&
                             placeY < ctx.tilemap.GetMapHeight())
@@ -1577,31 +1580,32 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         }
                     }
                 }
-                std::cout << "Placed " << m_SelectedTileWidth << "x" << m_SelectedTileHeight
+                std::cout << "Placed " << m_MultiTile.width << "x" << m_MultiTile.height
                           << " tiles starting at (" << tileX << ", " << tileY << ") on layer "
                           << (m_CurrentLayer + 1) << std::endl;
 
                 // Keep multi-tile selection active for multiple placements
-                m_LastPlacedTileX = tileX;
-                m_LastPlacedTileY = tileY;
-                m_MousePressed = true;
+                m_Mouse.lastPlacedTileX = tileX;
+                m_Mouse.lastPlacedTileY = tileY;
+                m_Mouse.mousePressed = true;
             }
         }
         else
         {
             // Single tile placement, support drag-to-place with rotation
-            if (isNewTilePosition || !m_MousePressed)
+            if (isNewTilePosition || !m_Mouse.mousePressed)
             {
                 if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                     tileY < ctx.tilemap.GetMapHeight())
                 {
                     float tileRotation = GetCompensatedTileRotation();
-                    ctx.tilemap.SetLayerTile(tileX, tileY, m_CurrentLayer, m_SelectedTileStartID);
+                    ctx.tilemap.SetLayerTile(
+                        tileX, tileY, m_CurrentLayer, m_MultiTile.selectedStartID);
                     ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, tileRotation);
 
-                    m_LastPlacedTileX = tileX;
-                    m_LastPlacedTileY = tileY;
-                    m_MousePressed = true;
+                    m_Mouse.lastPlacedTileX = tileX;
+                    m_Mouse.lastPlacedTileY = tileY;
+                    m_Mouse.mousePressed = true;
                 }
             }
         }
@@ -1663,16 +1667,16 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             m_PlacingParticleZone = false;
         }
 
-        m_MousePressed = false;
-        m_LastPlacedTileX = -1;
-        m_LastPlacedTileY = -1;
-        m_LastNPCPlacementTileX = -1;
-        m_LastNPCPlacementTileY = -1;
+        m_Mouse.mousePressed = false;
+        m_Mouse.lastPlacedTileX = -1;
+        m_Mouse.lastPlacedTileY = -1;
+        m_Mouse.lastNPCPlacementTileX = -1;
+        m_Mouse.lastNPCPlacementTileY = -1;
     }
 
     // Update mouse position for preview
-    m_LastMouseX = mouseX;
-    m_LastMouseY = mouseY;
+    m_Mouse.lastMouseX = mouseX;
+    m_Mouse.lastMouseY = mouseY;
 }
 
 void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
@@ -1714,18 +1718,18 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
             double mouseX, mouseY;
             glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
 
-            float oldTileSize = baseTileSizePixels * m_TilePickerZoom;
+            float oldTileSize = baseTileSizePixels * m_TilePicker.zoom;
 
-            float adjustedMouseX = static_cast<float>(mouseX) - m_TilePickerOffsetX;
-            float adjustedMouseY = static_cast<float>(mouseY) - m_TilePickerOffsetY;
+            float adjustedMouseX = static_cast<float>(mouseX) - m_TilePicker.offsetX;
+            float adjustedMouseY = static_cast<float>(mouseY) - m_TilePicker.offsetY;
             int pickerTileX = static_cast<int>(adjustedMouseX / oldTileSize);
             int pickerTileY = static_cast<int>(adjustedMouseY / oldTileSize);
 
             float zoomDelta = yoffset > 0 ? 1.1f : 0.9f;
-            m_TilePickerZoom *= zoomDelta;
-            m_TilePickerZoom = std::max(0.25f, std::min(8.0f, m_TilePickerZoom));
+            m_TilePicker.zoom *= zoomDelta;
+            m_TilePicker.zoom = std::max(0.25f, std::min(8.0f, m_TilePicker.zoom));
 
-            float newTileSize = baseTileSizePixels * m_TilePickerZoom;
+            float newTileSize = baseTileSizePixels * m_TilePicker.zoom;
 
             // Keep the tile under the cursor fixed by adjusting offsets
             float newTileCenterX = pickerTileX * newTileSize + newTileSize * 0.5f;
@@ -1745,22 +1749,22 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
             newOffsetY = std::max(minOffsetY, std::min(maxOffsetY, newOffsetY));
 
             // For zoom, update both current and target for immediate response
-            m_TilePickerOffsetX = newOffsetX;
-            m_TilePickerOffsetY = newOffsetY;
-            m_TilePickerTargetOffsetX = newOffsetX;
-            m_TilePickerTargetOffsetY = newOffsetY;
+            m_TilePicker.offsetX = newOffsetX;
+            m_TilePicker.offsetY = newOffsetY;
+            m_TilePicker.targetOffsetX = newOffsetX;
+            m_TilePicker.targetOffsetY = newOffsetY;
 
-            std::cout << "Tile picker zoom: " << m_TilePickerZoom
-                      << "x (offset: " << m_TilePickerOffsetX << ", " << m_TilePickerOffsetY << ")"
-                      << std::endl;
+            std::cout << "Tile picker zoom: " << m_TilePicker.zoom
+                      << "x (offset: " << m_TilePicker.offsetX << ", " << m_TilePicker.offsetY
+                      << ")" << std::endl;
         }
         else
         {
             // Vertical pan with scroll wheel
             float panAmount = static_cast<float>(yoffset) * 200.0f;
-            m_TilePickerTargetOffsetY += panAmount;
+            m_TilePicker.targetOffsetY += panAmount;
 
-            float tileSizePixels = baseTileSizePixels * m_TilePickerZoom;
+            float tileSizePixels = baseTileSizePixels * m_TilePicker.zoom;
             float totalTilesWidth = tileSizePixels * dataTilesPerRow;
             float totalTilesHeight = tileSizePixels * dataTilesPerCol;
             float minOffsetX = ctx.screenWidth - totalTilesWidth;
@@ -1768,43 +1772,43 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
             float minOffsetY = ctx.screenHeight - totalTilesHeight;
             float maxOffsetY = 0.0f;
 
-            m_TilePickerTargetOffsetX =
-                std::max(minOffsetX, std::min(maxOffsetX, m_TilePickerTargetOffsetX));
-            m_TilePickerTargetOffsetY =
-                std::max(minOffsetY, std::min(maxOffsetY, m_TilePickerTargetOffsetY));
+            m_TilePicker.targetOffsetX =
+                std::max(minOffsetX, std::min(maxOffsetX, m_TilePicker.targetOffsetX));
+            m_TilePicker.targetOffsetY =
+                std::max(minOffsetY, std::min(maxOffsetY, m_TilePicker.targetOffsetY));
         }
     }
 }
 
 void Editor::CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const
 {
-    if (m_MultiTileRotation == 0)
+    if (m_MultiTile.rotation == 0)
     {
         sourceDx = dx;
         sourceDy = dy;
     }
-    else if (m_MultiTileRotation == 90)
+    else if (m_MultiTile.rotation == 90)
     {
-        sourceDx = m_SelectedTileWidth - 1 - dy;
+        sourceDx = m_MultiTile.width - 1 - dy;
         sourceDy = dx;
     }
-    else if (m_MultiTileRotation == 180)
+    else if (m_MultiTile.rotation == 180)
     {
-        sourceDx = m_SelectedTileWidth - 1 - dx;
-        sourceDy = m_SelectedTileHeight - 1 - dy;
+        sourceDx = m_MultiTile.width - 1 - dx;
+        sourceDy = m_MultiTile.height - 1 - dy;
     }
     else  // 270 degrees
     {
         sourceDx = dy;
-        sourceDy = m_SelectedTileHeight - 1 - dx;
+        sourceDy = m_MultiTile.height - 1 - dx;
     }
 }
 
 float Editor::GetCompensatedTileRotation() const
 {
-    float tileRotation = static_cast<float>(m_MultiTileRotation);
-    if (m_MultiTileRotation == 90 || m_MultiTileRotation == 270)
-        tileRotation = static_cast<float>((m_MultiTileRotation + 180) % 360);
+    float tileRotation = static_cast<float>(m_MultiTile.rotation);
+    if (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+        tileRotation = static_cast<float>((m_MultiTile.rotation + 180) % 360);
     return tileRotation;
 }
 

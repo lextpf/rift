@@ -54,41 +54,12 @@ Editor::Editor()
       // -- NPC placement --
       m_SelectedNPCTypeIndex(0),
 
-      // -- Mouse / drag tracking: -1 sentinels mean "no previous tile" --
-      m_LastMouseX(0.0),
-      m_LastMouseY(0.0),
-      m_MousePressed(false),
-      m_RightMousePressed(false),
-      m_LastPlacedTileX(-1),
-      m_LastPlacedTileY(-1),
-      m_LastNavigationTileX(-1),
-      m_LastNavigationTileY(-1),
-      m_NavigationDragState(false),  // value painted while dragging navigation
-      m_LastCollisionTileX(-1),
-      m_LastCollisionTileY(-1),
-      m_CollisionDragState(false),  // value painted while dragging collision
-      m_LastNPCPlacementTileX(-1),
-      m_LastNPCPlacementTileY(-1),
+      // -- Mouse / drag, tile picker, multi-tile: use default member initializers --
+      m_Mouse{},
+      m_TilePicker{},
+      m_MultiTile{},
 
-      // -- Tile picker camera: starts at 2x zoom, centered --
-      m_TilePickerZoom(2.0f),
-      m_TilePickerOffsetX(0.0f),
-      m_TilePickerOffsetY(0.0f),
-      m_TilePickerTargetOffsetX(0.0f),  // smoothed scroll target
-      m_TilePickerTargetOffsetY(0.0f),
-
-      // -- Multi-tile selection: defaults to a single 1x1 tile --
-      m_MultiTileSelectionMode(false),
-      m_SelectedTileStartID(0),
-      m_SelectedTileWidth(1),
-      m_SelectedTileHeight(1),
-      m_IsSelectingTiles(false),    // true while drag-selecting in picker
-      m_SelectionStartTileID(-1),   // -1 = no selection started
-      m_PlacementCameraZoom(1.0f),  // snapshot of camera zoom at placement time
-      m_IsPlacingMultiTile(false),
-      m_MultiTileRotation(0),  // 0/90/180/270 degrees
-
-      // -- Key debounce: m_KeyPressed[] is value-initialized to false via = {} --
+      // -- Key debounce: m_KeyPressed default-constructs to all-zero --
       m_LastDeletedTileX(-1),
       m_LastDeletedTileY(-1)
 {
@@ -120,8 +91,8 @@ void Editor::SetActive(bool active)
     if (active)
     {
         m_ShowTilePicker = true;
-        m_TilePickerTargetOffsetX = m_TilePickerOffsetX;
-        m_TilePickerTargetOffsetY = m_TilePickerOffsetY;
+        m_TilePicker.targetOffsetX = m_TilePicker.offsetX;
+        m_TilePicker.targetOffsetY = m_TilePicker.offsetY;
     }
     else
     {
@@ -144,11 +115,11 @@ void Editor::ToggleShowDebugInfo()
 
 void Editor::ResetTilePickerState()
 {
-    m_TilePickerZoom = 2.0f;
-    m_TilePickerOffsetX = 0.0f;
-    m_TilePickerOffsetY = 0.0f;
-    m_TilePickerTargetOffsetX = 0.0f;
-    m_TilePickerTargetOffsetY = 0.0f;
+    m_TilePicker.zoom = 2.0f;
+    m_TilePicker.offsetX = 0.0f;
+    m_TilePicker.offsetY = 0.0f;
+    m_TilePicker.targetOffsetX = 0.0f;
+    m_TilePicker.targetOffsetY = 0.0f;
     std::cout << "Tile picker zoom and offset reset to defaults" << std::endl;
 }
 
@@ -160,24 +131,24 @@ void Editor::Update(float deltaTime, const EditorContext& ctx)
         // Exponential decay smoothing for tile picker pan
         float dt = rift::ExpApproachAlpha(deltaTime, 0.16f);
 
-        m_TilePickerOffsetX =
-            m_TilePickerOffsetX + (m_TilePickerTargetOffsetX - m_TilePickerOffsetX) * dt;
-        m_TilePickerOffsetY =
-            m_TilePickerOffsetY + (m_TilePickerTargetOffsetY - m_TilePickerOffsetY) * dt;
+        m_TilePicker.offsetX =
+            m_TilePicker.offsetX + (m_TilePicker.targetOffsetX - m_TilePicker.offsetX) * dt;
+        m_TilePicker.offsetY =
+            m_TilePicker.offsetY + (m_TilePicker.targetOffsetY - m_TilePicker.offsetY) * dt;
 
-        if (std::abs(m_TilePickerTargetOffsetX - m_TilePickerOffsetX) < 0.1f)
+        if (std::abs(m_TilePicker.targetOffsetX - m_TilePicker.offsetX) < 0.1f)
         {
-            m_TilePickerOffsetX = m_TilePickerTargetOffsetX;
+            m_TilePicker.offsetX = m_TilePicker.targetOffsetX;
         }
-        if (std::abs(m_TilePickerTargetOffsetY - m_TilePickerOffsetY) < 0.1f)
+        if (std::abs(m_TilePicker.targetOffsetY - m_TilePicker.offsetY) < 0.1f)
         {
-            m_TilePickerOffsetY = m_TilePickerTargetOffsetY;
+            m_TilePicker.offsetY = m_TilePicker.targetOffsetY;
         }
     }
     else
     {
-        m_TilePickerOffsetX = m_TilePickerTargetOffsetX;
-        m_TilePickerOffsetY = m_TilePickerTargetOffsetY;
+        m_TilePicker.offsetX = m_TilePicker.targetOffsetX;
+        m_TilePicker.offsetY = m_TilePicker.targetOffsetY;
     }
 }
 

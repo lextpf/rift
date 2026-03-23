@@ -7,6 +7,7 @@
 #include "Tilemap.h"
 
 #include <GLFW/glfw3.h>
+#include <bitset>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -381,55 +382,67 @@ private:
     /// @}
 
     /// @name Mouse/Drag State
-    /// Tracks mouse position and per-mode drag state.  "Last" tile coords use -1
+    /// Tracks mouse position and per-mode drag state. "Last" tile coords use -1
     /// as a sentinel meaning "no tile touched yet this drag".
     /// @{
-    double m_LastMouseX;          ///< Previous frame cursor X (screen pixels).
-    double m_LastMouseY;          ///< Previous frame cursor Y (screen pixels).
-    bool m_MousePressed;          ///< Left mouse button held.
-    bool m_RightMousePressed;     ///< Right mouse button held.
-    int m_LastPlacedTileX;        ///< Last tile column written during tile drag.
-    int m_LastPlacedTileY;        ///< Last tile row written during tile drag.
-    int m_LastNavigationTileX;    ///< Last tile column toggled in navigation drag.
-    int m_LastNavigationTileY;    ///< Last tile row toggled in navigation drag.
-    bool m_NavigationDragState;   ///< Walkability value being painted this drag.
-    int m_LastCollisionTileX;     ///< Last tile column toggled in collision drag.
-    int m_LastCollisionTileY;     ///< Last tile row toggled in collision drag.
-    bool m_CollisionDragState;    ///< Collision value being painted this drag.
-    int m_LastNPCPlacementTileX;  ///< Last tile column used for NPC placement.
-    int m_LastNPCPlacementTileY;  ///< Last tile row used for NPC placement.
+    struct MouseDragState
+    {
+        double lastMouseX = 0.0;
+        double lastMouseY = 0.0;
+        bool mousePressed = false;
+        bool rightMousePressed = false;
+        int lastPlacedTileX = -1;
+        int lastPlacedTileY = -1;
+        int lastNavigationTileX = -1;
+        int lastNavigationTileY = -1;
+        bool navigationDragState = false;
+        int lastCollisionTileX = -1;
+        int lastCollisionTileY = -1;
+        bool collisionDragState = false;
+        int lastNPCPlacementTileX = -1;
+        int lastNPCPlacementTileY = -1;
+    };
+    MouseDragState m_Mouse;
     /// @}
 
     /// @name Tile Picker State
     /// Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
     /// @{
-    float m_TilePickerZoom;           ///< Current zoom level (default 2x).
-    float m_TilePickerOffsetX;        ///< Current scroll X (interpolates toward target).
-    float m_TilePickerOffsetY;        ///< Current scroll Y (interpolates toward target).
-    float m_TilePickerTargetOffsetX;  ///< Desired scroll X (set by scroll input).
-    float m_TilePickerTargetOffsetY;  ///< Desired scroll Y (set by scroll input).
+    struct TilePickerCamera
+    {
+        float zoom = 2.0f;
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        float targetOffsetX = 0.0f;
+        float targetOffsetY = 0.0f;
+    };
+    TilePickerCamera m_TilePicker;
     /// @}
 
     /// @name Multi-Tile Selection
     /// Allows selecting and placing rectangular regions of tiles from the picker.
     /// @{
-    bool m_MultiTileSelectionMode;  ///< True when a multi-tile region is selected.
-    int m_SelectedTileStartID;      ///< Top-left tile ID of the selected region.
-    int m_SelectedTileWidth;        ///< Width of selection in tiles (default 1).
-    int m_SelectedTileHeight;       ///< Height of selection in tiles (default 1).
-    bool m_IsSelectingTiles;        ///< True while drag-selecting in the picker.
-    int m_SelectionStartTileID;     ///< Tile ID where the selection drag began (-1 = none).
-    float m_PlacementCameraZoom;    ///< Snapshot of camera zoom when placement began.
-    bool m_IsPlacingMultiTile;      ///< True while previewing multi-tile placement.
-    int m_MultiTileRotation;        ///< Rotation in degrees (0, 90, 180, or 270).
+    struct MultiTileState
+    {
+        bool selectionMode = false;
+        int selectedStartID = 0;
+        int width = 1;
+        int height = 1;
+        bool isSelecting = false;
+        int selectionStartTileID = -1;
+        float placementCameraZoom = 1.0f;
+        bool isPlacing = false;
+        int rotation = 0;
+    };
+    MultiTileState m_MultiTile;
     /// @}
 
     /// @name Key Debounce State
     /// Per-key pressed tracking for edge-triggered input (replaces function-local statics).
     /// @{
-    bool m_KeyPressed[GLFW_KEY_LAST + 1] = {};  ///< True while a key is held from last press.
-    int m_LastDeletedTileX;                     ///< Last tile column erased during delete-drag.
-    int m_LastDeletedTileY;                     ///< Last tile row erased during delete-drag.
+    std::bitset<GLFW_KEY_LAST + 1> m_KeyPressed;  ///< True while a key is held from last press.
+    int m_LastDeletedTileX;                       ///< Last tile column erased during delete-drag.
+    int m_LastDeletedTileY;                       ///< Last tile row erased during delete-drag.
     /// @}
 
     /// @name No-Projection Bounds Cache

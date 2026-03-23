@@ -955,7 +955,7 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
 
     float baseTileSizePixels =
         (static_cast<float>(ctx.screenWidth) / static_cast<float>(tilesPerRow)) * 1.5f;
-    float tileSizePixels = baseTileSizePixels * m_TilePickerZoom;
+    float tileSizePixels = baseTileSizePixels * m_TilePicker.zoom;
 
     float worldWidth = tilePickerWorldWidth;
     float worldHeight = tilePickerWorldHeight;
@@ -973,15 +973,15 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
 
     // Render only visible tiles, cull off-screen tiles
     int startCol =
-        std::max(0, static_cast<int>(std::floor((-m_TilePickerOffsetX) / tileSizePixels)));
+        std::max(0, static_cast<int>(std::floor((-m_TilePicker.offsetX) / tileSizePixels)));
     int endCol = std::min(
         tilesPerRow - 1,
-        static_cast<int>(std::floor((ctx.screenWidth - m_TilePickerOffsetX) / tileSizePixels)));
+        static_cast<int>(std::floor((ctx.screenWidth - m_TilePicker.offsetX) / tileSizePixels)));
     int startRow =
-        std::max(0, static_cast<int>(std::floor((-m_TilePickerOffsetY) / tileSizePixels)));
+        std::max(0, static_cast<int>(std::floor((-m_TilePicker.offsetY) / tileSizePixels)));
     int endRow = std::min(
         dataTilesPerCol - 1,
-        static_cast<int>(std::floor((ctx.screenHeight - m_TilePickerOffsetY) / tileSizePixels)));
+        static_cast<int>(std::floor((ctx.screenHeight - m_TilePicker.offsetY) / tileSizePixels)));
 
     for (int row = startRow; row <= endRow; ++row)
     {
@@ -994,8 +994,8 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
             if (ctx.tilemap.IsTileTransparent(tileID))
                 continue;
 
-            float screenX = col * tileSizePixels + m_TilePickerOffsetX;
-            float screenY = row * tileSizePixels + m_TilePickerOffsetY;
+            float screenX = col * tileSizePixels + m_TilePicker.offsetX;
+            float screenY = row * tileSizePixels + m_TilePicker.offsetY;
 
             float worldX = (screenX / ctx.screenWidth) * worldWidth;
             float worldY = (screenY / ctx.screenHeight) * worldHeight;
@@ -1025,9 +1025,9 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
     }
 
     // Selection rectangle
-    if (m_IsSelectingTiles && m_SelectionStartTileID >= 0)
+    if (m_MultiTile.isSelecting && m_MultiTile.selectionStartTileID >= 0)
     {
-        int startTileID = m_SelectionStartTileID;
+        int startTileID = m_MultiTile.selectionStartTileID;
         int endTileID = m_SelectedTileID;
 
         int startX = startTileID % tilesPerRow;
@@ -1040,8 +1040,8 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
         int minY = std::min(startY, endY);
         int maxY = std::max(startY, endY);
 
-        float selStartX = minX * tileSizePixels + m_TilePickerOffsetX;
-        float selStartY = minY * tileSizePixels + m_TilePickerOffsetY;
+        float selStartX = minX * tileSizePixels + m_TilePicker.offsetX;
+        float selStartY = minY * tileSizePixels + m_TilePicker.offsetY;
         float selWidth = (maxX - minX + 1) * tileSizePixels;
         float selHeight = (maxY - minY + 1) * tileSizePixels;
 
@@ -1081,8 +1081,8 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
             int frameX = frameID % tilesPerRow;
             int frameY = frameID / tilesPerRow;
 
-            float frameScreenX = frameX * tileSizePixels + m_TilePickerOffsetX;
-            float frameScreenY = frameY * tileSizePixels + m_TilePickerOffsetY;
+            float frameScreenX = frameX * tileSizePixels + m_TilePicker.offsetX;
+            float frameScreenY = frameY * tileSizePixels + m_TilePicker.offsetY;
 
             float worldFrameX = (frameScreenX / ctx.screenWidth) * worldWidth;
             float worldFrameY = (frameScreenY / ctx.screenHeight) * worldHeight;
@@ -1155,7 +1155,7 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
     // Only show preview if we have a selection and are not in tile picker
     if (m_ShowTilePicker)
         return;
-    if (m_SelectedTileStartID < 0)
+    if (m_MultiTile.selectedStartID < 0)
         return;
 
     double mouseX, mouseY;
@@ -1187,14 +1187,14 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
     int tileWidth = ctx.tilemap.GetTileWidth();
     int tileHeight = ctx.tilemap.GetTileHeight();
 
-    if (m_MultiTileSelectionMode)
+    if (m_MultiTile.selectionMode)
     {
-        int rotatedWidth = (m_MultiTileRotation == 90 || m_MultiTileRotation == 270)
-                               ? m_SelectedTileHeight
-                               : m_SelectedTileWidth;
-        int rotatedHeight = (m_MultiTileRotation == 90 || m_MultiTileRotation == 270)
-                                ? m_SelectedTileWidth
-                                : m_SelectedTileHeight;
+        int rotatedWidth = (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+                               ? m_MultiTile.height
+                               : m_MultiTile.width;
+        int rotatedHeight = (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+                                ? m_MultiTile.width
+                                : m_MultiTile.height;
         float tileRotation = GetCompensatedTileRotation();
 
         // Render preview of multi-tile selection with rotation
@@ -1207,7 +1207,8 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
 
                 int previewX = tileX + dx;
                 int previewY = tileY + dy;
-                int sourceTileID = m_SelectedTileStartID + sourceDy * dataTilesPerRow + sourceDx;
+                int sourceTileID =
+                    m_MultiTile.selectedStartID + sourceDy * dataTilesPerRow + sourceDx;
 
                 // Calculate tile position in camera-relative coordinates
                 glm::vec2 tilePos((previewX * tileWidth) - ctx.cameraPosition.x,
@@ -1259,8 +1260,8 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
             glm::vec2 tilePos((tileX * tileWidth) - ctx.cameraPosition.x,
                               (tileY * tileHeight) - ctx.cameraPosition.y);
 
-            int tilesetX = (m_SelectedTileStartID % dataTilesPerRow) * tileWidth;
-            int tilesetY = (m_SelectedTileStartID / dataTilesPerRow) * tileHeight;
+            int tilesetX = (m_MultiTile.selectedStartID % dataTilesPerRow) * tileWidth;
+            int tilesetY = (m_MultiTile.selectedStartID / dataTilesPerRow) * tileHeight;
 
             glm::vec2 texCoord(static_cast<float>(tilesetX), static_cast<float>(tilesetY));
             glm::vec2 texSize(ctx.tilemap.GetTileWidth(), ctx.tilemap.GetTileHeight());
