@@ -225,8 +225,14 @@ Texture::~Texture()
     m_OpenGLContextGeneration = 0;
 
     // Vulkan resources must be destroyed in a specific order and require the device handle
-    if (m_VulkanDevice != VK_NULL_HANDLE)
+    if (m_VulkanDevice != VK_NULL_HANDLE && m_VulkanImage != VK_NULL_HANDLE)
     {
+        // Vulkan resources should have been explicitly destroyed before the
+        // destructor runs. If we reach here, the renderer's Shutdown() missed
+        // this texture. Destroy now to avoid leaking, but log a warning.
+        std::cerr << "Warning: Texture destructor destroying Vulkan resources - "
+                  << "DestroyVulkanTexture should have been called before device destruction"
+                  << std::endl;
         DestroyVulkanTexture(m_VulkanDevice);
     }
 
@@ -884,8 +890,23 @@ void Texture::CreateVulkanTexture(VkDevice device,
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    // Use a local fence to wait for the transfer to complete instead of
+    // vkQueueWaitIdle, which would stall all work on the queue.
+    VkFenceCreateInfo uploadFenceInfo{};
+    uploadFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence uploadFence;
+    if (vkCreateFence(device, &uploadFenceInfo, nullptr, &uploadFence) != VK_SUCCESS)
     {
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        DestroyVulkanTexture(device);
+        throw std::runtime_error("Failed to create upload fence!");
+    }
+
+    if (vkQueueSubmit(queue, 1, &submitInfo, uploadFence) != VK_SUCCESS)
+    {
+        vkDestroyFence(device, uploadFence, nullptr);
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
         vkDestroyBuffer(device, stagingBuffer, nullptr);
@@ -893,9 +914,9 @@ void Texture::CreateVulkanTexture(VkDevice device,
         throw std::runtime_error("Failed to submit command buffer!");
     }
 
-    // Wait for GPU to finish the transfer before cleaning up staging resources
-    // In a production app you'd use fences for async uploads, but this is simpler
-    vkQueueWaitIdle(queue);
+    // Wait for this specific submit to complete via fence
+    vkWaitForFences(device, 1, &uploadFence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(device, uploadFence, nullptr);
 
     // Clean up staging resources - no longer needed, data is now on GPU
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
