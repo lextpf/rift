@@ -25,8 +25,6 @@ layout (location = 1) in vec2 aTexCoord;
 //  - gradients
 //  - per-vertex tinting effects
 layout (location = 2) in vec4 aColor;  // RGBA
-// Texture index within bound array (OpenGL batching)
-layout (location = 3) in float aTexIndex;
 
 // ---------------------------
 // Varyings (outputs to fragment shader)
@@ -39,8 +37,6 @@ layout (location = 0) out vec2 TexCoord;
 
 // Per-vertex color forwarded to fragment shader (interpolated across the face).
 layout (location = 1) out vec4 VertexColor;
-// Texture index forwarded to fragment shader
-layout (location = 2) out float TexIndex;
 
 // -----------------------------------------------------------------------------
 // Uniform / per-draw data
@@ -104,5 +100,4 @@ void main() {
     // These will be interpolated automatically across the triangle surface.
     TexCoord = aTexCoord;
     VertexColor = aColor;
-    TexIndex = aTexIndex;
 }

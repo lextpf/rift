@@ -8,6 +8,9 @@
 //   2 OpenGL: uses traditional uniforms
 // -----------------------------------------------------------------------------
 
+// Alpha cutoff threshold for hard sprite cutouts.
+const float ALPHA_CUTOFF = 0.1;
+
 // ---------------------------
 // Fragment shader output
 // ---------------------------
@@ -47,8 +50,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 128) vec3 spriteColor;    // tint color multiplied with texture RGB
     layout(offset = 140) float useColorOnly;  // mode flag (float for Vulkan packing/alignment)
     layout(offset = 144) vec4 colorOnly;      // solid RGBA color if "color-only" mode is active
-    layout(offset = 160) float spriteAlpha;   // alpha multiplier for texture mode (default 1.0)
-    layout(offset = 176) vec3 ambientColor;   // global ambient light color for day/night cycle
+    layout(offset = 160) vec3 ambientColor;   // global ambient light color for day/night cycle
+    layout(offset = 172) float spriteAlpha;   // alpha multiplier for texture mode (default 1.0)
 } pc;
 
 #else
@@ -103,7 +106,7 @@ void main() {
         //   - No depth write
         // Useful for hard cutout sprites / avoiding tiny alpha noise.
         // Tradeoff: can create hard edges if you wanted smooth transparency.
-        if (texColor.a < 0.1)
+        if (texColor.a < ALPHA_CUTOFF)
             discard;
 
         // Tint the sampled texture:
@@ -121,7 +124,7 @@ void main() {
         // Textured particle mode:
         // Sample texture and multiply by per-vertex color (for batched particles).
         vec4 texColor = texture(sprite, TexCoord);
-        if (texColor.a < 0.1)
+        if (texColor.a < ALPHA_CUTOFF)
             discard;
         FragColor = texColor * VertexColor;
 
@@ -143,7 +146,7 @@ void main() {
 
         // Alpha cutout (same idea as Vulkan branch):
         // Discard fragments with very low alpha to avoid drawing invisible pixels.
-        if (texColor.a < 0.1)
+        if (texColor.a < ALPHA_CUTOFF)
             discard;
 
         // Tint the texture with spriteColor and ambientColor (for day/night cycle).
