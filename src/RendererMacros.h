@@ -3,6 +3,7 @@
 /**
  * @brief Declares all IRenderer override methods for a concrete renderer class.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Rendering
  *
  * Expands to the full set of overridden virtual method declarations:
  * Init, Shutdown, BeginFrame, EndFrame, DrawSprite, DrawSpriteRegion,

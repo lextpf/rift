@@ -6,6 +6,7 @@
 namespace rift
 {
 
+/// @ingroup Core
 /// Compute exponential-decay smoothing alpha for use with lerp.
 ///
 /// Produces frame-rate independent motion: unlike a fixed lerp factor

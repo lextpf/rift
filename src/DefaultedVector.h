@@ -6,9 +6,9 @@
 #include <vector>
 
 /**
- * @concept resettable_container
  * @brief Type supporting parallel resize and reset-to-default operations.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * Satisfied by any type with `resize(size_t)` and `resetToDefault()` methods,
  * including the defaulted_vector template below.

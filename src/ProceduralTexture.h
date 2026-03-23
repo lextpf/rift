@@ -6,6 +6,7 @@
 
 /**
  * @brief RGBA pixel value returned by procedural texture generators.
+ * @ingroup Rendering
  *
  * @see GeneratePixels
  */

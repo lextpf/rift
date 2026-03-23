@@ -155,6 +155,7 @@ struct AnimatedTile
  * @class Tilemap
  * @brief Multi-layer tile-based world with collision and navigation.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
  * The Tilemap class is the primary world representation, managing:
  * - **10 tile layers** (5 background, 5 foreground) with configurable depth ordering

@@ -7,6 +7,7 @@
 
 /**
  * @brief Check a VkResult and throw std::runtime_error on failure.
+ * @ingroup Rendering
  *
  * Logs the file, line, and VkResult code to stderr before throwing.
  *

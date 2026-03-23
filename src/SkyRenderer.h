@@ -131,6 +131,7 @@ struct DewSparkle
  * @class SkyRenderer
  * @brief Renders atmospheric sky effects synchronized with the day/night cycle.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
  *
  * The SkyRenderer creates an immersive sky atmosphere by rendering multiple
  * layered effects that respond to the current time of day. All effects are

@@ -1,5 +1,6 @@
 #pragma once
 
+/// @ingroup Core
 /// Major version number.
 #define RIFT_VERSION_MAJOR 0
 /// Minor version number.

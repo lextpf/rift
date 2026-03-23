@@ -5,6 +5,7 @@
 /**
  * @brief Debounced key-press detector for one-shot toggle actions.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Input
  * @tparam Keys One or more GLFW key codes (int NTTP).
  *
  * Detects the first frame any specified key is pressed, then suppresses
@@ -39,11 +40,15 @@ struct KeyToggle
      */
     bool JustPressed(GLFWwindow* window)
     {
+        // Unary left fold (... || expr): expands to (expr(K1) || expr(K2) || ...).
+        // True when ANY key in the pack is pressed.
         if ((... || (glfwGetKey(window, Keys) == GLFW_PRESS)) && !pressed)
         {
             pressed = true;
             return true;
         }
+        // Unary left fold (... && expr): expands to (expr(K1) && expr(K2) && ...).
+        // True only when ALL keys in the pack are released.
         if ((... && (glfwGetKey(window, Keys) == GLFW_RELEASE)))
             pressed = false;
         return false;

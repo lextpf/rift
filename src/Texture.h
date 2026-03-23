@@ -11,6 +11,7 @@
  * @class Texture
  * @brief GPU texture resource with support for OpenGL and Vulkan backends.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Rendering
  *
  * The Texture class provides a unified interface for loading and managing
  * textures across different graphics APIs. It maintains a CPU-side copy of

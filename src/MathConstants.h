@@ -3,6 +3,7 @@
 /**
  * @namespace rift
  * @brief Root namespace for engine-wide utilities and constants.
+ * @ingroup Core
  */
 namespace rift
 {

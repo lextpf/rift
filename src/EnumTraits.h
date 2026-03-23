@@ -8,6 +8,9 @@
 
 /**
  * @brief CRTP base providing common ToString/FromString for EnumTraits.
+ * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
+ *
  * @tparam E       Enum type.
  * @tparam Derived The concrete EnumTraits<E> specialization.
  *
@@ -35,6 +38,8 @@ struct EnumTraitsBase
 
 /**
  * @brief Compile-time reflection traits for enum types.
+ * @author Alex (https://github.com/lextpf)
+ *
  * @tparam E The enum type to reflect.
  *
  * Specialize this template, inheriting from EnumTraitsBase, to provide:
@@ -59,6 +64,8 @@ struct EnumTraits;
 
 /**
  * @brief Advance an enum value to the next enumerator, wrapping at Count.
+ * @author Alex (https://github.com/lextpf)
+ *
  * @tparam E Enum type with a valid EnumTraits specialization.
  *
  * Requires contiguous zero-based enumerators (0, 1, ..., Count-1).
@@ -82,6 +89,8 @@ constexpr E NextEnum(E value)
 
 /**
  * @brief Range of all enumerator values for an enum with EnumTraits.
+ * @author Alex (https://github.com/lextpf)
+ *
  * @tparam E Enum type with a valid EnumTraits specialization.
  *
  * @par Example
@@ -100,6 +109,8 @@ constexpr auto EnumValues()
 
 /**
  * @brief Invoke a callable for each enumerator value.
+ * @author Alex (https://github.com/lextpf)
+ *
  * @tparam E  Enum type with a valid EnumTraits specialization.
  * @tparam Fn Callable accepting E.
  */
