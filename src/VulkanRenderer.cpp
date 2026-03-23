@@ -73,13 +73,11 @@ struct CombinedPushConstants
     glm::vec3 spriteColor;   // 128-139
     float useColorOnly;      // 140-143
     glm::vec4 colorOnly;     // 144-159
-    float spriteAlpha;       // 160-163
-    float _padding[3];       // 164-175
-    glm::vec3 ambientColor;  // 176-187
-    float _padding2;         // 188-191
+    glm::vec3 ambientColor;  // 160-171
+    float spriteAlpha;       // 172-175
 };
-static_assert(sizeof(CombinedPushConstants) == 192,
-              "CombinedPushConstants must be 192 bytes to match SPIR-V shader layout");
+static_assert(sizeof(CombinedPushConstants) == 176,
+              "CombinedPushConstants must be 176 bytes to match SPIR-V shader layout");
 
 VulkanRenderer::VulkanRenderer(GLFWwindow* window)
     : m_Instance(VK_NULL_HANDLE),
@@ -281,9 +279,20 @@ void VulkanRenderer::Shutdown()
         {
             vkDestroyDescriptorPool(m_Device, m_DescriptorPool, nullptr);
         }
+        for (auto pool : m_OverflowPools)
+        {
+            vkDestroyDescriptorPool(m_Device, pool, nullptr);
+        }
+        m_OverflowPools.clear();
         if (m_DescriptorSetLayout != VK_NULL_HANDLE)
         {
             vkDestroyDescriptorSetLayout(m_Device, m_DescriptorSetLayout, nullptr);
+        }
+
+        if (m_TransferFence != VK_NULL_HANDLE)
+        {
+            vkDestroyFence(m_Device, m_TransferFence, nullptr);
+            m_TransferFence = VK_NULL_HANDLE;
         }
 
         for (auto fence : m_InFlightFences)
@@ -1092,6 +1101,12 @@ void VulkanRenderer::CreateSyncObjects()
             vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]));
         VK_CHECK(vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[i]));
     }
+
+    // Create transfer fence for synchronous buffer/image upload operations.
+    // Don't set SIGNALED flag - we'll reset before each use.
+    VkFenceCreateInfo transferFenceInfo{};
+    transferFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VK_CHECK(vkCreateFence(m_Device, &transferFenceInfo, nullptr, &m_TransferFence));
 }
 
 bool VulkanRenderer::CheckValidationLayerSupport()
@@ -1966,16 +1981,34 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     VkResult result = tryAllocate();
     if (result != VK_SUCCESS)
     {
-        // Try one recovery pass: reset the pool and rebuild cache.
+        // If allocation failed, create an overflow pool and retry
         if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL)
         {
-            std::cerr << "Warning: Descriptor pool exhausted, resetting descriptor pool cache."
-                      << std::endl;
-            vkDeviceWaitIdle(m_Device);
-            vkResetDescriptorPool(m_Device, m_DescriptorPool, 0);
-            m_DescriptorSetCache.clear();
+            if (!m_DescriptorPoolWarned)
+            {
+                std::cerr << "VulkanRenderer: Descriptor pool overflow, creating additional pool"
+                          << std::endl;
+                m_DescriptorPoolWarned = true;
+            }
+
+            VkDescriptorPoolSize poolSize{};
+            poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            poolSize.descriptorCount = DESCRIPTOR_POOL_MAX_SETS;
+
+            VkDescriptorPoolCreateInfo poolInfo{};
+            poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            poolInfo.poolSizeCount = 1;
+            poolInfo.pPoolSizes = &poolSize;
+            poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS;
+            poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+
+            VkDescriptorPool overflowPool;
+            VK_CHECK(vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &overflowPool));
+            m_OverflowPools.push_back(overflowPool);
+
+            allocInfo.descriptorPool = overflowPool;
             descriptorSet = VK_NULL_HANDLE;
-            result = tryAllocate();
+            result = vkAllocateDescriptorSets(m_Device, &allocInfo, &descriptorSet);
         }
 
         if (result != VK_SUCCESS)

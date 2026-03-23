@@ -76,8 +76,9 @@ void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    VK_CHECK(vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(m_GraphicsQueue));
+    VK_CHECK(vkResetFences(m_Device, 1, &m_TransferFence));
+    VK_CHECK(vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, m_TransferFence));
+    VK_CHECK(vkWaitForFences(m_Device, 1, &m_TransferFence, VK_TRUE, UINT64_MAX));
 
     vkFreeCommandBuffers(m_Device, m_CommandPool, 1, &commandBuffer);
 }
