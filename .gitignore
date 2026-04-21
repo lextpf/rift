@@ -4,6 +4,7 @@ build_tests/
 
 # Assets
 assets/
+external/
 
 # Generated documentation
 docs/html/
