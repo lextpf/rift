@@ -204,7 +204,7 @@ void Editor::Render(const EditorContext& ctx)
     }
 
     // Status toast (save success/failure, load result). Rendered on top of
-    // everything so the user actually sees it — this is what distinguishes
+    // everything so the user actually sees it - this is what distinguishes
     // "save silently failed" from "save succeeded".
     if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
     {
