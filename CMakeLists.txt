@@ -346,9 +346,22 @@ if(BUILD_TESTS)
     # Collect test source files
     file(GLOB TEST_SOURCES "tests/*.cpp")
 
-    # Source files needed for tests (exclude main.cpp)
+    # Source files needed for tests (exclude main.cpp).
+    # CollisionResolverTests exercises the collision pipeline end-to-end, so
+    # it requires Tilemap + PlayerCharacter + their transitive deps. The test
+    # binary is linked against the same graphics libraries as the game but
+    # never creates a GL/VK context, so rendering methods are not called at
+    # runtime. Tests should not invoke render paths.
     set(TEST_LIB_SOURCES
         "${CMAKE_SOURCE_DIR}/src/TimeManager.cpp"
+        "${CMAKE_SOURCE_DIR}/src/CollisionResolver.cpp"
+        "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
+        "${CMAKE_SOURCE_DIR}/src/NonPlayerCharacter.cpp"
+        "${CMAKE_SOURCE_DIR}/src/PatrolRoute.cpp"
+        "${CMAKE_SOURCE_DIR}/src/GameCharacter.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Tilemap.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Texture.cpp"
+        "${CMAKE_SOURCE_DIR}/src/IRenderer.cpp"
     )
 
     # Create test executable
@@ -365,9 +378,36 @@ if(BUILD_TESTS)
         target_link_libraries(rift_tests PRIVATE gtest gtest_main)
     endif()
 
-    # Link GLM (required for TimeManager)
+    # Link graphics libraries used by Tilemap/Texture/etc. Tests don't create
+    # a GL/VK context, so these are only needed to resolve link-time symbols.
+    target_link_libraries(rift_tests PRIVATE OpenGL::GL glfw)
+
+    if(GLAD_FROM_VCPKG)
+        target_link_libraries(rift_tests PRIVATE glad::glad)
+    else()
+        target_link_libraries(rift_tests PRIVATE glad)
+    endif()
+
     if(GLM_FROM_VCPKG)
         target_link_libraries(rift_tests PRIVATE glm::glm)
+    endif()
+
+    if(JSON_FROM_VCPKG)
+        target_link_libraries(rift_tests PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+
+    if(STB_FROM_VCPKG)
+        target_include_directories(rift_tests PRIVATE ${Stb_INCLUDE_DIR})
+    endif()
+
+    if(Vulkan_FOUND)
+        target_link_libraries(rift_tests PRIVATE ${Vulkan_LIBRARIES})
+        target_include_directories(rift_tests PRIVATE ${Vulkan_INCLUDE_DIRS})
+    endif()
+
+    if(Freetype_FOUND)
+        target_link_libraries(rift_tests PRIVATE ${FREETYPE_LIBRARIES})
+        target_include_directories(rift_tests PRIVATE ${FREETYPE_INCLUDE_DIRS})
     endif()
 
     # Register tests with CTest

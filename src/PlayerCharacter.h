@@ -350,6 +350,11 @@ public:
         HITBOX_HEIGHT / 2;  ///< Half of the collision box height
     /** @} */
 
+    /// @brief Access to the underlying collision resolver (for tests and rare
+    /// callers that need the collision pipeline outside of Move()).
+    CollisionResolver& GetCollision() { return m_Collision; }
+    const CollisionResolver& GetCollision() const { return m_Collision; }
+
 private:
     /**
      * @name Sprite Sheet Textures
