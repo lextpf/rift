@@ -134,6 +134,12 @@ public:
     /// @return `true` when the editor is active (toggled with E key).
     [[nodiscard]] bool IsActive() const { return m_Active; }
 
+    /// @brief Push an on-screen status toast (e.g. from save/load).
+    /// @param message Text to display.
+    /// @param color Tint for the text (green for success, red for error).
+    /// @param durationSeconds How long the toast stays on screen.
+    void ShowStatus(std::string message, glm::vec3 color, float durationSeconds = 3.0f);
+
     /// @brief Activate or deactivate the level editor.
     /// @param active `true` to enable, `false` to disable.
     void SetActive(bool active);
@@ -357,6 +363,15 @@ private:
     bool m_DebugMode;                ///< Enables all debug overlays (F3).
     bool m_ShowDebugInfo;            ///< Shows text debug info (FPS, tile coords, etc.).
     bool m_ShowNoProjectionAnchors;  ///< Renders no-projection anchor markers on top of UI.
+    /// @}
+
+    /// @name Status toast
+    /// On-screen transient message (save success/failure, load result). Drawn
+    /// while m_StatusTimer > 0 and decremented by Update().
+    /// @{
+    std::string m_StatusMessage;        ///< Text to display; empty = hidden.
+    float m_StatusTimer = 0.0f;         ///< Seconds remaining to display.
+    glm::vec3 m_StatusColor{1, 1, 1};   ///< Tint (e.g. green for success, red for error).
     /// @}
 
     /// @name Tile Selection

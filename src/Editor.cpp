@@ -150,11 +150,47 @@ void Editor::Update(float deltaTime, const EditorContext& ctx)
         m_TilePicker.offsetX = m_TilePicker.targetOffsetX;
         m_TilePicker.offsetY = m_TilePicker.targetOffsetY;
     }
+
+    // Fade out the status toast.
+    if (m_StatusTimer > 0.0f)
+    {
+        m_StatusTimer = std::max(0.0f, m_StatusTimer - deltaTime);
+        if (m_StatusTimer <= 0.0f)
+            m_StatusMessage.clear();
+    }
+}
+
+void Editor::ShowStatus(std::string message, glm::vec3 color, float durationSeconds)
+{
+    m_StatusMessage = std::move(message);
+    m_StatusColor = color;
+    m_StatusTimer = durationSeconds;
 }
 
 void Editor::ClearAllEditModes()
 {
+    // Reset every transient per-mode flag. Must be called before entering or
+    // leaving any mode so that, e.g., a half-drawn particle zone or half-
+    // placed structure anchor can't outlive its owning mode and render a
+    // ghost preview forever.
     m_EditMode = EditMode::None;
+
+    // Particle zone drag state
+    m_PlacingParticleZone = false;
+
+    // Structure anchor/flood state
+    m_PlacingAnchor = 0;
+    m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
+    m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
+    m_AssigningTilesToStructure = false;
+
+    // Animation editing state
+    m_AnimationFrames.clear();
+    m_SelectedAnimationId = -1;
+
+    // Drag state (a mid-drag mode switch invalidates the drag)
+    m_Mouse.mousePressed = false;
+    m_Mouse.rightMousePressed = false;
 }
 
 void Editor::Render(const EditorContext& ctx)
@@ -165,6 +201,16 @@ void Editor::Render(const EditorContext& ctx)
     {
         IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         RenderEditorUI(ctx);
+    }
+
+    // Status toast (save success/failure, load result). Rendered on top of
+    // everything so the user actually sees it — this is what distinguishes
+    // "save silently failed" from "save succeeded".
+    if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
+    {
+        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
+        const glm::vec2 pos(20.0f, static_cast<float>(ctx.screenHeight) - 40.0f);
+        ctx.renderer.DrawText(m_StatusMessage, pos, 0.5f, m_StatusColor);
     }
 
     // Shared overlays: rendered once when either editor or debug mode is active
