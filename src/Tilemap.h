@@ -471,6 +471,22 @@ public:
     inline int GetTileHeight() const { return m_TileHeight; }  ///< Tile height in pixels
     inline int GetMapWidth() const { return m_MapWidth; }      ///< Map width in tiles
     inline int GetMapHeight() const { return m_MapHeight; }    ///< Map height in tiles
+
+    /// @brief Flatten (x,y) to a row-major size_t index. Promotes to size_t
+    /// before the multiplication so the product never overflows `int` on
+    /// very large maps. Caller is responsible for bounds.
+    inline size_t FlatIndex(int x, int y) const
+    {
+        return static_cast<size_t>(y) * static_cast<size_t>(m_MapWidth) +
+               static_cast<size_t>(x);
+    }
+
+    /// @brief Total cell count (width * height) as size_t without intermediate
+    /// int overflow.
+    inline size_t MapCellCount() const
+    {
+        return static_cast<size_t>(m_MapWidth) * static_cast<size_t>(m_MapHeight);
+    }
     inline const Texture& GetTilesetTexture() const
     {
         return m_TilesetTexture;
@@ -963,7 +979,7 @@ public:
             return;
         if (layer < 0 || layer >= static_cast<int>(m_Layers.size()))
             return;
-        size_t idx = static_cast<size_t>(y * m_MapWidth + x);
+        size_t idx = FlatIndex(x, y);
         if (idx >= m_Layers[layer].animationMap.size())
             return;
 
@@ -991,7 +1007,7 @@ public:
             return -1;
         if (layer < 0 || layer >= static_cast<int>(m_Layers.size()))
             return -1;
-        size_t idx = static_cast<size_t>(y * m_MapWidth + x);
+        size_t idx = FlatIndex(x, y);
         if (idx >= m_Layers[layer].animationMap.size())
             return -1;
         return m_Layers[layer].animationMap[idx];
@@ -1017,7 +1033,7 @@ public:
         if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
             return static_cast<typename Vec::value_type>(Vec::default_value);
         return static_cast<typename Vec::value_type>(
-            (m_Layers[layer].*Field)[static_cast<size_t>(y * m_MapWidth + x)]);
+            (m_Layers[layer].*Field)[FlatIndex(x, y)]);
     }
 
     /// Set a per-tile field value with bounds checking. Silently ignores OOB.
@@ -1030,7 +1046,7 @@ public:
     {
         if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
             return;
-        (m_Layers[layer].*Field)[static_cast<size_t>(y * m_MapWidth + x)] = value;
+        (m_Layers[layer].*Field)[FlatIndex(x, y)] = value;
     }
 
     /// @}

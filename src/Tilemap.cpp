@@ -225,7 +225,7 @@ bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
 Tilemap::Tilemap()
 {
     // Allocate storage for all layers using row-major layout: size = width * height
-    const size_t mapSize = m_MapWidth * m_MapHeight;
+    const size_t mapSize = MapCellCount();
 
     // Collision and navigation maps
     m_CollisionMap.Resize(m_MapWidth, m_MapHeight);
@@ -740,7 +740,7 @@ void Tilemap::SetCornerCutBlocked(int x, int y, Corner corner, bool blocked)
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return;
-    size_t idx = static_cast<size_t>(y * m_MapWidth + x);
+    size_t idx = FlatIndex(x, y);
     if (idx >= m_CornerCutBlocked.size())
         return;
 
@@ -755,7 +755,7 @@ bool Tilemap::IsCornerCutBlocked(int x, int y, Corner corner) const
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return false;
-    size_t idx = static_cast<size_t>(y * m_MapWidth + x);
+    size_t idx = FlatIndex(x, y);
     if (idx >= m_CornerCutBlocked.size())
         return false;
 
@@ -834,8 +834,8 @@ int Tilemap::GetElevation(int x, int y) const
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return 0;
 
-    int index = y * m_MapWidth + x;
-    if (index < 0 || index >= static_cast<int>(m_Elevation.size()))
+    size_t index = FlatIndex(x, y);
+    if (index >= m_Elevation.size())
         return 0;
 
     return m_Elevation[index];
@@ -846,8 +846,8 @@ void Tilemap::SetElevation(int x, int y, int elevation)
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return;
 
-    int index = y * m_MapWidth + x;
-    if (index < 0 || index >= static_cast<int>(m_Elevation.size()))
+    size_t index = FlatIndex(x, y);
+    if (index >= m_Elevation.size())
         return;
 
     m_Elevation[index] = elevation;
@@ -876,7 +876,7 @@ bool Tilemap::GetNoProjection(int x, int y, int layer) const
     if (layerIdx >= m_Layers.size())
         return false;
 
-    size_t index = static_cast<size_t>(y * m_MapWidth + x);
+    size_t index = FlatIndex(x, y);
     return m_Layers[layerIdx].noProjection[index];
 }
 
@@ -887,7 +887,7 @@ bool Tilemap::FindNoProjectionStructureBounds(
         return false;
 
     // Check if this tile has noProjection in ANY layer
-    size_t idx = static_cast<size_t>(tileY * m_MapWidth + tileX);
+    size_t idx = FlatIndex(tileX, tileY);
     bool hasNoProj = false;
     for (size_t li = 0; li < m_Layers.size(); ++li)
     {
@@ -928,7 +928,7 @@ bool Tilemap::FindNoProjectionStructureBounds(
         if (cx < 0 || cx >= m_MapWidth || cy < 0 || cy >= m_MapHeight)
             continue;
 
-        size_t cIdx = static_cast<size_t>(cy * m_MapWidth + cx);
+        size_t cIdx = FlatIndex(cx, cy);
         if (processed[cIdx])
             continue;
 
@@ -990,7 +990,7 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
         if (tileY < 0 || tileY >= m_MapHeight)
             return best;
 
-        size_t idx = static_cast<size_t>(tileY * m_MapWidth + queryTileX);
+        size_t idx = FlatIndex(queryTileX, tileY);
         bool haveBest = false;
         int bestRenderOrder = 0;
 
@@ -1167,7 +1167,7 @@ int Tilemap::GetTileStructureId(int x, int y, int layer) const
     if (layerIdx >= m_Layers.size())
         return -1;
 
-    size_t index = static_cast<size_t>(y * m_MapWidth + x);
+    size_t index = FlatIndex(x, y);
     if (index >= m_Layers[layerIdx].structureId.size())
         return -1;
 
@@ -1183,7 +1183,7 @@ void Tilemap::SetTileStructureId(int x, int y, int layer, int structId)
     if (layerIdx >= m_Layers.size())
         return;
 
-    size_t index = static_cast<size_t>(y * m_MapWidth + x);
+    size_t index = FlatIndex(x, y);
     if (index >= m_Layers[layerIdx].structureId.size())
         return;
 
@@ -1221,7 +1221,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
             return false;
         if (layerIdx >= m_Layers.size())
             return false;
-        size_t index = static_cast<size_t>(y * m_MapWidth + x);
+        size_t index = FlatIndex(x, y);
         const TileLayer& layer = m_Layers[layerIdx];
         if (index >= layer.ySortPlus.size())
             return false;
@@ -1251,7 +1251,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
         {
             for (int x = x0; x <= x1; ++x)
             {
-                size_t index = static_cast<size_t>(y * m_MapWidth + x);
+                size_t index = FlatIndex(x, y);
                 if (index >= layer.ySortPlus.size())
                     continue;
 
@@ -1288,7 +1288,7 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
                 // Check if this tile has no-projection flag
                 tile.noProjection = layer.noProjection[index];
                 // Use bottom tile's ySortMinus flag so entire vertical stack sorts consistently
-                size_t bottomIndex = static_cast<size_t>(bottomY * m_MapWidth + x);
+                size_t bottomIndex = FlatIndex(x, bottomY);
                 tile.ySortMinus = layer.ySortMinus[bottomIndex];
                 m_YSortPlusTilesCache.push_back(tile);
             }
@@ -1308,7 +1308,7 @@ void Tilemap::RenderSingleTile(
     if (layerIdx >= m_Layers.size())
         return;
 
-    size_t index = static_cast<size_t>(y * m_MapWidth + x);
+    size_t index = FlatIndex(x, y);
     const TileLayer& tileLayer = m_Layers[layerIdx];
 
     if (index >= tileLayer.tiles.size())
@@ -1551,7 +1551,7 @@ void Tilemap::SetLayerRotation(int x, int y, size_t layer, float rotation)
     rotation = std::fmod(rotation, 360.0f);
     if (rotation < 0.0f)
         rotation += 360.0f;
-    (m_Layers[layer].rotation)[static_cast<size_t>(y * m_MapWidth + x)] = rotation;
+    (m_Layers[layer].rotation)[FlatIndex(x, y)] = rotation;
 }
 
 bool Tilemap::GetLayerNoProjection(int x, int y, size_t layer) const
@@ -1963,7 +1963,7 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     }
 
     // 3D mode: structure-based rendering with shared processed array
-    size_t mapSize = static_cast<size_t>(m_MapWidth * m_MapHeight);
+    size_t mapSize = MapCellCount();
     m_ProcessedCache.assign(mapSize, false);
     auto& processed = m_ProcessedCache;
     m_RenderedStructuresCache.assign(m_NoProjectionStructures.size(), false);
@@ -1973,7 +1973,7 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     {
         for (int x = x0; x <= x1; ++x)
         {
-            size_t idx = static_cast<size_t>(y * m_MapWidth + x);
+            size_t idx = FlatIndex(x, y);
 
             if (processed[idx])
                 continue;
@@ -2048,7 +2048,7 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                 {
                     for (int sx = scanMinX; sx <= scanMaxX; ++sx)
                     {
-                        size_t sIdx = static_cast<size_t>(sy * m_MapWidth + sx);
+                        size_t sIdx = FlatIndex(sx, sy);
                         if (processed[sIdx])
                             continue;
 
@@ -2104,7 +2104,7 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
 
                 for (const auto& [tx, ty] : structureTiles)
                 {
-                    size_t tIdx = static_cast<size_t>(ty * m_MapWidth + tx);
+                    size_t tIdx = FlatIndex(tx, ty);
 
                     for (size_t layerRank = 0; layerRank < layers.size(); ++layerRank)
                     {
@@ -2311,7 +2311,7 @@ void Tilemap::GenerateDefaultMap()
     std::mt19937 mapRng(std::random_device{}());
     std::uniform_int_distribution<int> tileDist(0, static_cast<int>(validTileIDs.size()) - 1);
 
-    std::cout << "Generating random map with " << (m_MapWidth * m_MapHeight) << " tiles..."
+    std::cout << "Generating random map with " << MapCellCount() << " tiles..."
               << std::endl;
 
     for (int y = 0; y < m_MapHeight; ++y)
@@ -2324,7 +2324,7 @@ void Tilemap::GenerateDefaultMap()
         }
     }
 
-    std::cout << "Generated random map with " << (m_MapWidth * m_MapHeight) << " tiles"
+    std::cout << "Generated random map with " << MapCellCount() << " tiles"
               << std::endl;
 }
 
@@ -2522,7 +2522,7 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
                 int elev = GetElevation(x, y);
                 if (elev != 0)
                 {
-                    int index = y * m_MapWidth + x;
+                    size_t index = FlatIndex(x, y);
                     elevObj[std::to_string(index)] = elev;
                 }
             }
@@ -2828,10 +2828,16 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
         return false;
     }
 
-    // Initialize tilemap
+    // Initialize tilemap. SetTilemapSize clears all prior layer/collision/nav
+    // state, so from this point forward any mid-load exception must leave the
+    // tilemap in a coherent (if empty) state rather than a half-populated one.
+    // The big try/catch below enforces that invariant.
     m_TileWidth = tileWidth;
     m_TileHeight = tileHeight;
     SetTilemapSize(width, height, false);
+
+    try
+    {
 
     int loadWarningCount = 0;
     constexpr int kMaxLoadWarningsToPrint = 25;
@@ -3236,7 +3242,7 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
     }
 
     // Load per-layer animation maps (new format)
-    size_t mapSize = static_cast<size_t>(m_MapWidth * m_MapHeight);
+    size_t mapSize = MapCellCount();
     if (j.contains("layerAnimationMaps") && j["layerAnimationMaps"].is_array())
     {
         const auto& layerAnimMaps = j["layerAnimationMaps"];
@@ -3366,4 +3372,22 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
     std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")"
               << std::endl;
     return true;
+
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "ERROR: Mid-load exception in LoadMapFromJSON(" << filename
+                  << "): " << e.what() << ". Resetting tilemap to a clean empty state." << std::endl;
+        SetTilemapSize(width, height, false);
+        InvalidateStructureBoundsCache();
+        return false;
+    }
+    catch (...)
+    {
+        std::cerr << "ERROR: Mid-load unknown exception in LoadMapFromJSON(" << filename
+                  << "). Resetting tilemap to a clean empty state." << std::endl;
+        SetTilemapSize(width, height, false);
+        InvalidateStructureBoundsCache();
+        return false;
+    }
 }
