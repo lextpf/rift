@@ -477,8 +477,7 @@ public:
     /// very large maps. Caller is responsible for bounds.
     inline size_t FlatIndex(int x, int y) const
     {
-        return static_cast<size_t>(y) * static_cast<size_t>(m_MapWidth) +
-               static_cast<size_t>(x);
+        return static_cast<size_t>(y) * static_cast<size_t>(m_MapWidth) + static_cast<size_t>(x);
     }
 
     /// @brief Total cell count (width * height) as size_t without intermediate
@@ -1032,8 +1031,7 @@ public:
         using Vec = std::decay_t<decltype(std::declval<TileLayer>().*Field)>;
         if (layer >= m_Layers.size() || x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
             return static_cast<typename Vec::value_type>(Vec::default_value);
-        return static_cast<typename Vec::value_type>(
-            (m_Layers[layer].*Field)[FlatIndex(x, y)]);
+        return static_cast<typename Vec::value_type>((m_Layers[layer].*Field)[FlatIndex(x, y)]);
     }
 
     /// Set a per-tile field value with bounds checking. Silently ignores OOB.

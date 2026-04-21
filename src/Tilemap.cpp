@@ -2311,8 +2311,7 @@ void Tilemap::GenerateDefaultMap()
     std::mt19937 mapRng(std::random_device{}());
     std::uniform_int_distribution<int> tileDist(0, static_cast<int>(validTileIDs.size()) - 1);
 
-    std::cout << "Generating random map with " << MapCellCount() << " tiles..."
-              << std::endl;
+    std::cout << "Generating random map with " << MapCellCount() << " tiles..." << std::endl;
 
     for (int y = 0; y < m_MapHeight; ++y)
     {
@@ -2324,8 +2323,7 @@ void Tilemap::GenerateDefaultMap()
         }
     }
 
-    std::cout << "Generated random map with " << MapCellCount() << " tiles"
-              << std::endl;
+    std::cout << "Generated random map with " << MapCellCount() << " tiles" << std::endl;
 }
 
 std::vector<int> Tilemap::GetValidTileIDs() const
@@ -2838,425 +2836,466 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
 
     try
     {
-
-    int loadWarningCount = 0;
-    constexpr int kMaxLoadWarningsToPrint = 25;
-    auto reportLoadWarning =
-        [&](const std::string& section, const std::string& key, const std::string& message)
-    {
-        if (loadWarningCount < kMaxLoadWarningsToPrint)
+        int loadWarningCount = 0;
+        constexpr int kMaxLoadWarningsToPrint = 25;
+        auto reportLoadWarning =
+            [&](const std::string& section, const std::string& key, const std::string& message)
         {
-            std::cerr << "WARN: LoadMapFromJSON[" << section << "] key '" << key << "': " << message
-                      << std::endl;
-        }
-        ++loadWarningCount;
-    };
-
-    // Helper to load sparse tile layer {"index": value}
-    auto loadTileLayer = [&](const std::string& name, std::function<void(int, int, int)> setTile)
-    {
-        if (!j.contains(name))
-            return;
-        const auto& layer = j[name];
-        if (layer.is_object())
-        {
-            for (auto& [key, value] : layer.items())
+            if (loadWarningCount < kMaxLoadWarningsToPrint)
             {
-                try
-                {
-                    int index = std::stoi(key);
-                    int tileID = value.get<int>();
-                    int x = index % width;
-                    int y = index / width;
-                    if (x >= 0 && x < width && y >= 0 && y < height)
-                        setTile(x, y, tileID);
-                }
-                catch (const std::exception& e)
-                {
-                    reportLoadWarning(name, key, e.what());
-                }
+                std::cerr << "WARN: LoadMapFromJSON[" << section << "] key '" << key
+                          << "': " << message << std::endl;
             }
-        }
-    };
+            ++loadWarningCount;
+        };
 
-    // Helper to load sparse rotation layer
-    auto loadRotationLayer =
-        [&](const std::string& name, std::function<void(int, int, float)> setRot)
-    {
-        if (!j.contains(name))
-            return;
-        const auto& layer = j[name];
-        if (layer.is_object())
+        // Helper to load sparse tile layer {"index": value}
+        auto loadTileLayer =
+            [&](const std::string& name, std::function<void(int, int, int)> setTile)
         {
-            for (auto& [key, value] : layer.items())
+            if (!j.contains(name))
+                return;
+            const auto& layer = j[name];
+            if (layer.is_object())
             {
-                try
-                {
-                    int index = std::stoi(key);
-                    float rot = value.get<float>();
-                    int x = index % width;
-                    int y = index / width;
-                    if (x >= 0 && x < width && y >= 0 && y < height)
-                        setRot(x, y, rot);
-                }
-                catch (const std::exception& e)
-                {
-                    reportLoadWarning(name, key, e.what());
-                }
-            }
-        }
-    };
-
-    // Helper to load index array [idx1, idx2, ...]
-    auto loadIndexArray = [&](const std::string& name, std::function<void(int, int, bool)> setFlag)
-    {
-        if (!j.contains(name))
-            return;
-        const auto& arr = j[name];
-        if (arr.is_array())
-        {
-            for (const auto& idx : arr)
-            {
-                try
-                {
-                    int index = idx.get<int>();
-                    int x = index % width;
-                    int y = index / width;
-                    if (x >= 0 && x < width && y >= 0 && y < height)
-                        setFlag(x, y, true);
-                }
-                catch (const std::exception& e)
-                {
-                    reportLoadWarning(name, "[array]", e.what());
-                }
-            }
-        }
-    };
-
-    // Load collision and navigation
-    loadIndexArray("collision", [this](int x, int y, bool v) { SetTileCollision(x, y, v); });
-    loadIndexArray("navigation", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
-    loadIndexArray("navmesh", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
-
-    // Load elevation
-    loadTileLayer("elevation", [this](int x, int y, int v) { SetElevation(x, y, v); });
-
-    // Load dynamic layers (new format)
-    bool sizeMismatch = false;  // Track if layer data doesn't match new map size
-    if (j.contains("dynamicLayers") && j["dynamicLayers"].is_array())
-    {
-        const auto& dynamicLayersArr = j["dynamicLayers"];
-        m_Layers.clear();
-        m_Layers.reserve(dynamicLayersArr.size());
-
-        const size_t mapSize = static_cast<size_t>(width) * static_cast<size_t>(height);
-
-        for (const auto& layerJson : dynamicLayersArr)
-        {
-            TileLayer layer;
-            layer.name = layerJson.value("name", "");
-            layer.renderOrder = layerJson.value("renderOrder", 0);
-            layer.isBackground = layerJson.value("isBackground", true);
-            layer.Resize(mapSize);
-
-            // Load tiles (sparse object)
-            if (layerJson.contains("tiles") && layerJson["tiles"].is_object())
-            {
-                for (auto& [key, value] : layerJson["tiles"].items())
+                for (auto& [key, value] : layer.items())
                 {
                     try
                     {
-                        size_t index = static_cast<size_t>(std::stoi(key));
-                        if (index < mapSize)
-                        {
-                            layer.tiles[index] = value.get<int>();
-                        }
-                        else
-                        {
-                            sizeMismatch = true;  // Index out of bounds for new size
-                        }
+                        int index = std::stoi(key);
+                        int tileID = value.get<int>();
+                        int x = index % width;
+                        int y = index / width;
+                        if (x >= 0 && x < width && y >= 0 && y < height)
+                            setTile(x, y, tileID);
                     }
                     catch (const std::exception& e)
                     {
-                        reportLoadWarning("dynamicLayers.tiles", key, e.what());
+                        reportLoadWarning(name, key, e.what());
                     }
                 }
             }
+        };
 
-            // Load rotation (sparse object)
-            if (layerJson.contains("rotation") && layerJson["rotation"].is_object())
-            {
-                for (auto& [key, value] : layerJson["rotation"].items())
-                {
-                    try
-                    {
-                        size_t index = static_cast<size_t>(std::stoi(key));
-                        if (index < mapSize)
-                        {
-                            layer.rotation[index] = value.get<float>();
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        reportLoadWarning("dynamicLayers.rotation", key, e.what());
-                    }
-                }
-            }
-
-            // Load noProjection (array of indices)
-            if (layerJson.contains("noProjection") && layerJson["noProjection"].is_array())
-            {
-                for (const auto& idx : layerJson["noProjection"])
-                {
-                    try
-                    {
-                        size_t index = static_cast<size_t>(idx.get<int>());
-                        if (index < mapSize)
-                        {
-                            layer.noProjection[index] = true;
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        reportLoadWarning("dynamicLayers.noProjection", "[array]", e.what());
-                    }
-                }
-            }
-
-            // Load ySortPlus (array of indices) - also supports legacy "ySorted" key
-            const char* ySortPlusKey = layerJson.contains("ySortPlus") ? "ySortPlus" : "ySorted";
-            if (layerJson.contains(ySortPlusKey) && layerJson[ySortPlusKey].is_array())
-            {
-                for (const auto& idx : layerJson[ySortPlusKey])
-                {
-                    try
-                    {
-                        size_t index = static_cast<size_t>(idx.get<int>());
-                        if (index < mapSize)
-                        {
-                            layer.ySortPlus[index] = true;
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        reportLoadWarning("dynamicLayers.ySortPlus", "[array]", e.what());
-                    }
-                }
-            }
-
-            // Load ySortMinus (array of indices)
-            if (layerJson.contains("ySortMinus") && layerJson["ySortMinus"].is_array())
-            {
-                for (const auto& idx : layerJson["ySortMinus"])
-                {
-                    try
-                    {
-                        size_t index = static_cast<size_t>(idx.get<int>());
-                        if (index < mapSize)
-                        {
-                            layer.ySortMinus[index] = true;
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        reportLoadWarning("dynamicLayers.ySortMinus", "[array]", e.what());
-                    }
-                }
-            }
-
-            // Load structureId (sparse object)
-            if (layerJson.contains("structureId") && layerJson["structureId"].is_object())
-            {
-                for (auto& [key, value] : layerJson["structureId"].items())
-                {
-                    try
-                    {
-                        size_t index = static_cast<size_t>(std::stoi(key));
-                        if (index < mapSize)
-                        {
-                            layer.structureId[index] = value.get<int>();
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        reportLoadWarning("dynamicLayers.structureId", key, e.what());
-                    }
-                }
-            }
-
-            m_Layers.push_back(std::move(layer));
-        }
-        std::cout << "Loaded " << m_Layers.size() << " dynamic layers" << std::endl;
-
-        // If layer data doesn't match new map size, keep valid tiles and report truncation.
-        if (sizeMismatch)
+        // Helper to load sparse rotation layer
+        auto loadRotationLayer =
+            [&](const std::string& name, std::function<void(int, int, float)> setRot)
         {
-            std::cerr << "WARN: Some dynamic layer entries were out of bounds for map size "
-                      << width << "x" << height << " and were skipped." << std::endl;
-        }
-    }
-
-    // Load Particle Zones
-    m_ParticleZones.clear();
-    if (j.contains("particleZones") && j["particleZones"].is_array())
-    {
-        for (const auto& zoneJson : j["particleZones"])
-        {
-            ParticleZone zone;
-            zone.position.x = zoneJson.value("x", 0.0f);
-            zone.position.y = zoneJson.value("y", 0.0f);
-            zone.size.x = zoneJson.value("width", 32.0f);
-            zone.size.y = zoneJson.value("height", 32.0f);
-            zone.type = static_cast<ParticleType>(zoneJson.value("type", 0));
-            zone.enabled = zoneJson.value("enabled", true);
-            zone.noProjection = zoneJson.value("noProjection", false);
-            m_ParticleZones.push_back(zone);
-        }
-        std::cout << "Loaded " << m_ParticleZones.size() << " particle zones" << std::endl;
-    }
-
-    // Load No-Projection Structures
-    m_NoProjectionStructures.clear();
-    if (j.contains("noProjectionStructures") && j["noProjectionStructures"].is_array())
-    {
-        for (const auto& structJson : j["noProjectionStructures"])
-        {
-            NoProjectionStructure s;
-            s.id = structJson.value("id", static_cast<int>(m_NoProjectionStructures.size()));
-            s.name = structJson.value("name", "");
-            if (structJson.contains("leftAnchor") && structJson["leftAnchor"].is_array() &&
-                structJson["leftAnchor"].size() >= 2)
+            if (!j.contains(name))
+                return;
+            const auto& layer = j[name];
+            if (layer.is_object())
             {
-                s.leftAnchor.x = structJson["leftAnchor"][0].get<float>();
-                s.leftAnchor.y = structJson["leftAnchor"][1].get<float>();
-            }
-            if (structJson.contains("rightAnchor") && structJson["rightAnchor"].is_array() &&
-                structJson["rightAnchor"].size() >= 2)
-            {
-                s.rightAnchor.x = structJson["rightAnchor"][0].get<float>();
-                s.rightAnchor.y = structJson["rightAnchor"][1].get<float>();
-            }
-            m_NoProjectionStructures.push_back(s);
-        }
-        std::cout << "Loaded " << m_NoProjectionStructures.size() << " no-projection structures"
-                  << std::endl;
-    }
-
-    // Load NPCs
-    if (npcs && j.contains("npcs") && j["npcs"].is_array())
-    {
-        npcs->clear();
-        for (const auto& npcJson : j["npcs"])
-        {
-            std::string type = npcJson.value("type", "");
-            int tileX = npcJson.value("tileX", 0);
-            int tileY = npcJson.value("tileY", 0);
-            std::string name = npcJson.value("name", "");
-            std::string dialogue = npcJson.value("dialogue", "");
-
-            if (!type.empty())
-            {
-                NonPlayerCharacter npc;
-                if (npc.Load("assets/non-player/" + type + ".png"))
+                for (auto& [key, value] : layer.items())
                 {
-                    npc.SetTilePosition(tileX, tileY, tileWidth);
-                    if (!name.empty())
-                        npc.SetName(name);
-                    if (!dialogue.empty())
-                        npc.SetDialogue(dialogue);
-
-                    // Load dialogue tree (simplified format)
-                    if (npcJson.contains("dialogueTree") && npcJson["dialogueTree"].is_object())
+                    try
                     {
-                        const auto& treeJson = npcJson["dialogueTree"];
-                        DialogueTree tree;
-                        tree.id = treeJson.value("id", npc.GetType());
-                        tree.startNodeId = treeJson.value("start", "start");
-                        std::string defaultSpeaker = treeJson.value("speaker", npc.GetName());
+                        int index = std::stoi(key);
+                        float rot = value.get<float>();
+                        int x = index % width;
+                        int y = index / width;
+                        if (x >= 0 && x < width && y >= 0 && y < height)
+                            setRot(x, y, rot);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        reportLoadWarning(name, key, e.what());
+                    }
+                }
+            }
+        };
 
-                        if (treeJson.contains("nodes") && treeJson["nodes"].is_object())
+        // Helper to load index array [idx1, idx2, ...]
+        auto loadIndexArray =
+            [&](const std::string& name, std::function<void(int, int, bool)> setFlag)
+        {
+            if (!j.contains(name))
+                return;
+            const auto& arr = j[name];
+            if (arr.is_array())
+            {
+                for (const auto& idx : arr)
+                {
+                    try
+                    {
+                        int index = idx.get<int>();
+                        int x = index % width;
+                        int y = index / width;
+                        if (x >= 0 && x < width && y >= 0 && y < height)
+                            setFlag(x, y, true);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        reportLoadWarning(name, "[array]", e.what());
+                    }
+                }
+            }
+        };
+
+        // Load collision and navigation
+        loadIndexArray("collision", [this](int x, int y, bool v) { SetTileCollision(x, y, v); });
+        loadIndexArray("navigation", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
+        loadIndexArray("navmesh", [this](int x, int y, bool v) { SetNavigation(x, y, v); });
+
+        // Load elevation
+        loadTileLayer("elevation", [this](int x, int y, int v) { SetElevation(x, y, v); });
+
+        // Load dynamic layers (new format)
+        bool sizeMismatch = false;  // Track if layer data doesn't match new map size
+        if (j.contains("dynamicLayers") && j["dynamicLayers"].is_array())
+        {
+            const auto& dynamicLayersArr = j["dynamicLayers"];
+            m_Layers.clear();
+            m_Layers.reserve(dynamicLayersArr.size());
+
+            const size_t mapSize = static_cast<size_t>(width) * static_cast<size_t>(height);
+
+            for (const auto& layerJson : dynamicLayersArr)
+            {
+                TileLayer layer;
+                layer.name = layerJson.value("name", "");
+                layer.renderOrder = layerJson.value("renderOrder", 0);
+                layer.isBackground = layerJson.value("isBackground", true);
+                layer.Resize(mapSize);
+
+                // Load tiles (sparse object)
+                if (layerJson.contains("tiles") && layerJson["tiles"].is_object())
+                {
+                    for (auto& [key, value] : layerJson["tiles"].items())
+                    {
+                        try
                         {
-                            for (auto& [nodeId, nodeJson] : treeJson["nodes"].items())
+                            size_t index = static_cast<size_t>(std::stoi(key));
+                            if (index < mapSize)
                             {
-                                DialogueNode node;
-                                node.id = nodeId;
-                                node.speaker = nodeJson.value("speaker", defaultSpeaker);
-                                node.text = nodeJson.value("text", "");
-
-                                if (nodeJson.contains("choices") && nodeJson["choices"].is_array())
-                                {
-                                    for (const auto& choiceJson : nodeJson["choices"])
-                                    {
-                                        DialogueOption opt;
-                                        opt.text = choiceJson.value("text", "");
-                                        opt.nextNodeId = choiceJson.value("goto", "");
-                                        opt.conditions =
-                                            ParseConditionString(choiceJson.value("when", ""));
-                                        if (choiceJson.contains("do"))
-                                            opt.consequences =
-                                                ParseConsequenceArray(choiceJson["do"]);
-                                        node.options.push_back(opt);
-                                    }
-                                }
-                                tree.nodes[node.id] = node;
+                                layer.tiles[index] = value.get<int>();
+                            }
+                            else
+                            {
+                                sizeMismatch = true;  // Index out of bounds for new size
                             }
                         }
-                        npc.SetDialogueTree(tree);
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.tiles", key, e.what());
+                        }
                     }
+                }
 
-                    npcs->emplace_back(std::move(npc));
+                // Load rotation (sparse object)
+                if (layerJson.contains("rotation") && layerJson["rotation"].is_object())
+                {
+                    for (auto& [key, value] : layerJson["rotation"].items())
+                    {
+                        try
+                        {
+                            size_t index = static_cast<size_t>(std::stoi(key));
+                            if (index < mapSize)
+                            {
+                                layer.rotation[index] = value.get<float>();
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.rotation", key, e.what());
+                        }
+                    }
+                }
+
+                // Load noProjection (array of indices)
+                if (layerJson.contains("noProjection") && layerJson["noProjection"].is_array())
+                {
+                    for (const auto& idx : layerJson["noProjection"])
+                    {
+                        try
+                        {
+                            size_t index = static_cast<size_t>(idx.get<int>());
+                            if (index < mapSize)
+                            {
+                                layer.noProjection[index] = true;
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.noProjection", "[array]", e.what());
+                        }
+                    }
+                }
+
+                // Load ySortPlus (array of indices) - also supports legacy "ySorted" key
+                const char* ySortPlusKey =
+                    layerJson.contains("ySortPlus") ? "ySortPlus" : "ySorted";
+                if (layerJson.contains(ySortPlusKey) && layerJson[ySortPlusKey].is_array())
+                {
+                    for (const auto& idx : layerJson[ySortPlusKey])
+                    {
+                        try
+                        {
+                            size_t index = static_cast<size_t>(idx.get<int>());
+                            if (index < mapSize)
+                            {
+                                layer.ySortPlus[index] = true;
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.ySortPlus", "[array]", e.what());
+                        }
+                    }
+                }
+
+                // Load ySortMinus (array of indices)
+                if (layerJson.contains("ySortMinus") && layerJson["ySortMinus"].is_array())
+                {
+                    for (const auto& idx : layerJson["ySortMinus"])
+                    {
+                        try
+                        {
+                            size_t index = static_cast<size_t>(idx.get<int>());
+                            if (index < mapSize)
+                            {
+                                layer.ySortMinus[index] = true;
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.ySortMinus", "[array]", e.what());
+                        }
+                    }
+                }
+
+                // Load structureId (sparse object)
+                if (layerJson.contains("structureId") && layerJson["structureId"].is_object())
+                {
+                    for (auto& [key, value] : layerJson["structureId"].items())
+                    {
+                        try
+                        {
+                            size_t index = static_cast<size_t>(std::stoi(key));
+                            if (index < mapSize)
+                            {
+                                layer.structureId[index] = value.get<int>();
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.structureId", key, e.what());
+                        }
+                    }
+                }
+
+                m_Layers.push_back(std::move(layer));
+            }
+            std::cout << "Loaded " << m_Layers.size() << " dynamic layers" << std::endl;
+
+            // If layer data doesn't match new map size, keep valid tiles and report truncation.
+            if (sizeMismatch)
+            {
+                std::cerr << "WARN: Some dynamic layer entries were out of bounds for map size "
+                          << width << "x" << height << " and were skipped." << std::endl;
+            }
+        }
+
+        // Load Particle Zones
+        m_ParticleZones.clear();
+        if (j.contains("particleZones") && j["particleZones"].is_array())
+        {
+            for (const auto& zoneJson : j["particleZones"])
+            {
+                ParticleZone zone;
+                zone.position.x = zoneJson.value("x", 0.0f);
+                zone.position.y = zoneJson.value("y", 0.0f);
+                zone.size.x = zoneJson.value("width", 32.0f);
+                zone.size.y = zoneJson.value("height", 32.0f);
+                zone.type = static_cast<ParticleType>(zoneJson.value("type", 0));
+                zone.enabled = zoneJson.value("enabled", true);
+                zone.noProjection = zoneJson.value("noProjection", false);
+                m_ParticleZones.push_back(zone);
+            }
+            std::cout << "Loaded " << m_ParticleZones.size() << " particle zones" << std::endl;
+        }
+
+        // Load No-Projection Structures
+        m_NoProjectionStructures.clear();
+        if (j.contains("noProjectionStructures") && j["noProjectionStructures"].is_array())
+        {
+            for (const auto& structJson : j["noProjectionStructures"])
+            {
+                NoProjectionStructure s;
+                s.id = structJson.value("id", static_cast<int>(m_NoProjectionStructures.size()));
+                s.name = structJson.value("name", "");
+                if (structJson.contains("leftAnchor") && structJson["leftAnchor"].is_array() &&
+                    structJson["leftAnchor"].size() >= 2)
+                {
+                    s.leftAnchor.x = structJson["leftAnchor"][0].get<float>();
+                    s.leftAnchor.y = structJson["leftAnchor"][1].get<float>();
+                }
+                if (structJson.contains("rightAnchor") && structJson["rightAnchor"].is_array() &&
+                    structJson["rightAnchor"].size() >= 2)
+                {
+                    s.rightAnchor.x = structJson["rightAnchor"][0].get<float>();
+                    s.rightAnchor.y = structJson["rightAnchor"][1].get<float>();
+                }
+                m_NoProjectionStructures.push_back(s);
+            }
+            std::cout << "Loaded " << m_NoProjectionStructures.size() << " no-projection structures"
+                      << std::endl;
+        }
+
+        // Load NPCs
+        if (npcs && j.contains("npcs") && j["npcs"].is_array())
+        {
+            npcs->clear();
+            for (const auto& npcJson : j["npcs"])
+            {
+                std::string type = npcJson.value("type", "");
+                int tileX = npcJson.value("tileX", 0);
+                int tileY = npcJson.value("tileY", 0);
+                std::string name = npcJson.value("name", "");
+                std::string dialogue = npcJson.value("dialogue", "");
+
+                if (!type.empty())
+                {
+                    NonPlayerCharacter npc;
+                    if (npc.Load("assets/non-player/" + type + ".png"))
+                    {
+                        npc.SetTilePosition(tileX, tileY, tileWidth);
+                        if (!name.empty())
+                            npc.SetName(name);
+                        if (!dialogue.empty())
+                            npc.SetDialogue(dialogue);
+
+                        // Load dialogue tree (simplified format)
+                        if (npcJson.contains("dialogueTree") && npcJson["dialogueTree"].is_object())
+                        {
+                            const auto& treeJson = npcJson["dialogueTree"];
+                            DialogueTree tree;
+                            tree.id = treeJson.value("id", npc.GetType());
+                            tree.startNodeId = treeJson.value("start", "start");
+                            std::string defaultSpeaker = treeJson.value("speaker", npc.GetName());
+
+                            if (treeJson.contains("nodes") && treeJson["nodes"].is_object())
+                            {
+                                for (auto& [nodeId, nodeJson] : treeJson["nodes"].items())
+                                {
+                                    DialogueNode node;
+                                    node.id = nodeId;
+                                    node.speaker = nodeJson.value("speaker", defaultSpeaker);
+                                    node.text = nodeJson.value("text", "");
+
+                                    if (nodeJson.contains("choices") &&
+                                        nodeJson["choices"].is_array())
+                                    {
+                                        for (const auto& choiceJson : nodeJson["choices"])
+                                        {
+                                            DialogueOption opt;
+                                            opt.text = choiceJson.value("text", "");
+                                            opt.nextNodeId = choiceJson.value("goto", "");
+                                            opt.conditions =
+                                                ParseConditionString(choiceJson.value("when", ""));
+                                            if (choiceJson.contains("do"))
+                                                opt.consequences =
+                                                    ParseConsequenceArray(choiceJson["do"]);
+                                            node.options.push_back(opt);
+                                        }
+                                    }
+                                    tree.nodes[node.id] = node;
+                                }
+                            }
+                            npc.SetDialogueTree(tree);
+                        }
+
+                        npcs->emplace_back(std::move(npc));
+                    }
                 }
             }
+            std::cout << "NPCs loaded: " << npcs->size() << std::endl;
         }
-        std::cout << "NPCs loaded: " << npcs->size() << std::endl;
-    }
 
-    // Load player position
-    if (j.contains("player") && !j["player"].is_null())
-    {
-        const auto& player = j["player"];
-        if (playerTileX)
-            *playerTileX = player.value("tileX", -1);
-        if (playerTileY)
-            *playerTileY = player.value("tileY", -1);
-        if (characterType)
-            *characterType = player.value("characterType", -1);
-    }
-
-    // Load animated tile definitions
-    if (j.contains("animatedTiles") && j["animatedTiles"].is_array())
-    {
-        m_AnimatedTiles.clear();
-        for (const auto& animJson : j["animatedTiles"])
+        // Load player position
+        if (j.contains("player") && !j["player"].is_null())
         {
-            AnimatedTile anim;
-            if (animJson.contains("frames") && animJson["frames"].is_array())
+            const auto& player = j["player"];
+            if (playerTileX)
+                *playerTileX = player.value("tileX", -1);
+            if (playerTileY)
+                *playerTileY = player.value("tileY", -1);
+            if (characterType)
+                *characterType = player.value("characterType", -1);
+        }
+
+        // Load animated tile definitions
+        if (j.contains("animatedTiles") && j["animatedTiles"].is_array())
+        {
+            m_AnimatedTiles.clear();
+            for (const auto& animJson : j["animatedTiles"])
             {
-                anim.frames = animJson["frames"].get<std::vector<int>>();
+                AnimatedTile anim;
+                if (animJson.contains("frames") && animJson["frames"].is_array())
+                {
+                    anim.frames = animJson["frames"].get<std::vector<int>>();
+                }
+                anim.frameDuration = animJson.value("frameDuration", 0.2f);
+                m_AnimatedTiles.push_back(anim);
             }
-            anim.frameDuration = animJson.value("frameDuration", 0.2f);
-            m_AnimatedTiles.push_back(anim);
+            std::cout << "Loaded " << m_AnimatedTiles.size() << " animated tile definitions"
+                      << std::endl;
         }
-        std::cout << "Loaded " << m_AnimatedTiles.size() << " animated tile definitions"
-                  << std::endl;
-    }
 
-    // Load per-layer animation maps (new format)
-    size_t mapSize = MapCellCount();
-    if (j.contains("layerAnimationMaps") && j["layerAnimationMaps"].is_array())
-    {
-        const auto& layerAnimMaps = j["layerAnimationMaps"];
-        for (size_t layerIdx = 0; layerIdx < layerAnimMaps.size() && layerIdx < m_Layers.size();
-             ++layerIdx)
+        // Load per-layer animation maps (new format)
+        size_t mapSize = MapCellCount();
+        if (j.contains("layerAnimationMaps") && j["layerAnimationMaps"].is_array())
         {
-            if (layerAnimMaps[layerIdx].is_object())
+            const auto& layerAnimMaps = j["layerAnimationMaps"];
+            for (size_t layerIdx = 0; layerIdx < layerAnimMaps.size() && layerIdx < m_Layers.size();
+                 ++layerIdx)
             {
-                auto& animMap = m_Layers[layerIdx].animationMap;
+                if (layerAnimMaps[layerIdx].is_object())
+                {
+                    auto& animMap = m_Layers[layerIdx].animationMap;
+                    if (animMap.size() != mapSize)
+                    {
+                        animMap.assign(mapSize, -1);
+                    }
+                    for (auto& [key, value] : layerAnimMaps[layerIdx].items())
+                    {
+                        size_t idx;
+                        try
+                        {
+                            idx = static_cast<size_t>(std::stoi(key));
+                        }
+                        catch (const std::invalid_argument& e)
+                        {
+                            std::cerr << "WARNING: Invalid animation map key '" << key
+                                      << "': " << e.what() << std::endl;
+                            continue;
+                        }
+                        catch (const std::out_of_range& e)
+                        {
+                            std::cerr << "WARNING: Out-of-range animation map key '" << key
+                                      << "': " << e.what() << std::endl;
+                            continue;
+                        }
+                        if (idx < animMap.size())
+                        {
+                            animMap[idx] = value.get<int>();
+                        }
+                    }
+                }
+            }
+            std::cout << "Loaded per-layer animation map placements" << std::endl;
+        }
+        // Backwards compatibility: load old "animationMap" format into layer 0
+        else if (j.contains("animationMap") && j["animationMap"].is_object())
+        {
+            if (!m_Layers.empty())
+            {
+                auto& animMap = m_Layers[0].animationMap;
                 if (animMap.size() != mapSize)
                 {
                     animMap.assign(mapSize, -1);
                 }
-                for (auto& [key, value] : layerAnimMaps[layerIdx].items())
+                for (auto& [key, value] : j["animationMap"].items())
                 {
                     size_t idx;
                     try
@@ -3281,103 +3320,65 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                     }
                 }
             }
+            std::cout << "Loaded animation map placements (legacy format -> layer 0)" << std::endl;
         }
-        std::cout << "Loaded per-layer animation map placements" << std::endl;
-    }
-    // Backwards compatibility: load old "animationMap" format into layer 0
-    else if (j.contains("animationMap") && j["animationMap"].is_object())
-    {
-        if (!m_Layers.empty())
+
+        // Load Corner Cut Blocked data
+        if (j.contains("cornerCutBlocked") && j["cornerCutBlocked"].is_object())
         {
-            auto& animMap = m_Layers[0].animationMap;
-            if (animMap.size() != mapSize)
+            // Ensure vector is sized correctly
+            if (m_CornerCutBlocked.size() != mapSize)
             {
-                animMap.assign(mapSize, -1);
+                m_CornerCutBlocked.assign(mapSize, 0);
             }
-            for (auto& [key, value] : j["animationMap"].items())
+            for (auto& [key, value] : j["cornerCutBlocked"].items())
             {
-                size_t idx;
-                try
+                size_t idx = static_cast<size_t>(std::stoi(key));
+                if (idx < m_CornerCutBlocked.size())
                 {
-                    idx = static_cast<size_t>(std::stoi(key));
-                }
-                catch (const std::invalid_argument& e)
-                {
-                    std::cerr << "WARNING: Invalid animation map key '" << key << "': " << e.what()
-                              << std::endl;
-                    continue;
-                }
-                catch (const std::out_of_range& e)
-                {
-                    std::cerr << "WARNING: Out-of-range animation map key '" << key
-                              << "': " << e.what() << std::endl;
-                    continue;
-                }
-                if (idx < animMap.size())
-                {
-                    animMap[idx] = value.get<int>();
+                    m_CornerCutBlocked[idx] = value.get<uint8_t>();
                 }
             }
+            std::cout << "Loaded corner cut blocked data" << std::endl;
         }
-        std::cout << "Loaded animation map placements (legacy format -> layer 0)" << std::endl;
-    }
 
-    // Load Corner Cut Blocked data
-    if (j.contains("cornerCutBlocked") && j["cornerCutBlocked"].is_object())
-    {
-        // Ensure vector is sized correctly
-        if (m_CornerCutBlocked.size() != mapSize)
+        // Debug: summarize animation state after load
+        int animatedTileCount = 0;
+        for (const auto& layer : m_Layers)
         {
-            m_CornerCutBlocked.assign(mapSize, 0);
-        }
-        for (auto& [key, value] : j["cornerCutBlocked"].items())
-        {
-            size_t idx = static_cast<size_t>(std::stoi(key));
-            if (idx < m_CornerCutBlocked.size())
+            for (int a : layer.animationMap)
             {
-                m_CornerCutBlocked[idx] = value.get<uint8_t>();
+                if (a >= 0)
+                    animatedTileCount++;
             }
         }
-        std::cout << "Loaded corner cut blocked data" << std::endl;
-    }
-
-    // Debug: summarize animation state after load
-    int animatedTileCount = 0;
-    for (const auto& layer : m_Layers)
-    {
-        for (int a : layer.animationMap)
+        std::cout << "[DEBUG] Animation state after load: " << m_AnimatedTiles.size()
+                  << " definitions, " << animatedTileCount << " placed tiles across all layers"
+                  << std::endl;
+        for (size_t i = 0; i < m_AnimatedTiles.size(); ++i)
         {
-            if (a >= 0)
-                animatedTileCount++;
+            const auto& anim = m_AnimatedTiles[i];
+            std::cout << "  Animation #" << i << ": " << anim.frames.size() << " frames, "
+                      << anim.frameDuration << "s/frame" << std::endl;
         }
-    }
-    std::cout << "[DEBUG] Animation state after load: " << m_AnimatedTiles.size()
-              << " definitions, " << animatedTileCount << " placed tiles across all layers"
-              << std::endl;
-    for (size_t i = 0; i < m_AnimatedTiles.size(); ++i)
-    {
-        const auto& anim = m_AnimatedTiles[i];
-        std::cout << "  Animation #" << i << ": " << anim.frames.size() << " frames, "
-                  << anim.frameDuration << "s/frame" << std::endl;
-    }
 
-    if (loadWarningCount > 0)
-    {
-        std::cerr << "WARN: LoadMapFromJSON skipped " << loadWarningCount
-                  << " malformed/out-of-range entries while loading " << filename << std::endl;
-    }
+        if (loadWarningCount > 0)
+        {
+            std::cerr << "WARN: LoadMapFromJSON skipped " << loadWarningCount
+                      << " malformed/out-of-range entries while loading " << filename << std::endl;
+        }
 
-    InvalidateStructureBoundsCache();
+        InvalidateStructureBoundsCache();
 
-    std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")"
-              << std::endl;
-    return true;
-
+        std::cout << "Map loaded from " << filename << " (" << width << "x" << height << ")"
+                  << std::endl;
+        return true;
     }
     catch (const std::exception& e)
     {
         std::cerr << "ERROR: Mid-load exception in LoadMapFromJSON(" << filename
-                  << "): " << e.what() << ". Resetting tilemap to a clean empty state." << std::endl;
+                  << "): " << e.what() << ". Resetting tilemap to a clean empty state."
+                  << std::endl;
         SetTilemapSize(width, height, false);
         InvalidateStructureBoundsCache();
         return false;

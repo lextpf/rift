@@ -1463,8 +1463,7 @@ void VulkanRenderer::EndFrame()
             VkFenceCreateInfo fenceInfo{};
             fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
             fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-            if (vkCreateFence(
-                    m_Device, &fenceInfo, nullptr, &m_InFlightFences[m_CurrentFrame]) !=
+            if (vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[m_CurrentFrame]) !=
                 VK_SUCCESS)
             {
                 std::cerr << "Error: Failed to recreate in-flight fence after submit failure"

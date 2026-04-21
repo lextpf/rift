@@ -369,9 +369,9 @@ private:
     /// On-screen transient message (save success/failure, load result). Drawn
     /// while m_StatusTimer > 0 and decremented by Update().
     /// @{
-    std::string m_StatusMessage;        ///< Text to display; empty = hidden.
-    float m_StatusTimer = 0.0f;         ///< Seconds remaining to display.
-    glm::vec3 m_StatusColor{1, 1, 1};   ///< Tint (e.g. green for success, red for error).
+    std::string m_StatusMessage;       ///< Text to display; empty = hidden.
+    float m_StatusTimer = 0.0f;        ///< Seconds remaining to display.
+    glm::vec3 m_StatusColor{1, 1, 1};  ///< Tint (e.g. green for success, red for error).
     /// @}
 
     /// @name Tile Selection
