@@ -151,8 +151,12 @@ public:
      * - Create render pass, pipeline
      * - Allocate command buffers
      * - Create descriptor sets
+     *
+     * @return true on success, false if any setup step failed. On false
+     * the renderer is not safe to draw with; the caller should Shutdown()
+     * and destroy it rather than ship a silently black frame.
      */
-    virtual void Init() = 0;
+    [[nodiscard]] virtual bool Init() = 0;
 
     /**
      * @brief Shutdown and release all GPU resources.

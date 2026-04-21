@@ -22,9 +22,10 @@ bool IsRendererAvailable(RendererAPI api)
 }
 
 // Creates a renderer instance for the requested API.
-// Falls back to OpenGL if the requested API is unavailable.
+// Falls back to OpenGL if the requested API is unavailable; rewrites @p api
+// to the actual backend that was constructed so callers can branch on it.
 // Returns nullptr if no renderer can be created.
-std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
+std::unique_ptr<IRenderer> CreateRenderer(RendererAPI& api, GLFWwindow* window)
 {
     std::cout << "CreateRenderer() called with API: "
               << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
@@ -33,7 +34,6 @@ std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
     if (!IsRendererAvailable(api))
     {
         std::cerr << "Requested renderer API is not available in this build!" << std::endl;
-        // Fall back to OpenGL if available
         std::cerr << "Falling back to OpenGL..." << std::endl;
         api = RendererAPI::OpenGL;
     }
@@ -60,6 +60,7 @@ std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
                 std::cerr << "Exception creating Vulkan renderer: " << e.what() << std::endl;
                 std::cerr << "Falling back to OpenGL..." << std::endl;
                 std::cerr.flush();
+                api = RendererAPI::OpenGL;
                 return std::make_unique<OpenGLRenderer>();
             }
             catch (...)
@@ -67,11 +68,13 @@ std::unique_ptr<IRenderer> CreateRenderer(RendererAPI api, GLFWwindow* window)
                 std::cerr << "Unknown exception creating Vulkan renderer" << std::endl;
                 std::cerr << "Falling back to OpenGL..." << std::endl;
                 std::cerr.flush();
+                api = RendererAPI::OpenGL;
                 return std::make_unique<OpenGLRenderer>();
             }
 
         default:
             std::cerr << "Unknown renderer API, defaulting to OpenGL" << std::endl;
+            api = RendererAPI::OpenGL;
             return std::make_unique<OpenGLRenderer>();
     }
 }

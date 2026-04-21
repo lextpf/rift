@@ -330,6 +330,12 @@ private:
     void CreateCommandBuffers();
     /// @brief Create semaphores and fences for frame synchronization.
     void CreateSyncObjects();
+    /// @brief Destroy and recreate the image-available semaphore for a given
+    /// frame slot. Used after vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR
+    /// or after an EndFrame submit-path failure, both of which leave the
+    /// semaphore in an ambiguous "signaled but never waited" state that would
+    /// trip a validation error on the next acquire.
+    void RecreateImageAvailableSemaphore(size_t frame);
     /// @brief Create vertex and index buffers with persistent mapping.
     void CreateBuffers();
     /// @brief Create the descriptor pool for texture bindings.

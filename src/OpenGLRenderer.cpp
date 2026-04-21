@@ -212,7 +212,7 @@ std::string OpenGLRenderer::LoadShaderFromFile(const std::string& filepath)
     return source;
 }
 
-void OpenGLRenderer::Init()
+bool OpenGLRenderer::Init()
 {
     // Initialize all OpenGL resources needed for rendering.
     // Order matters geometry buffers first, then textures, then shaders.
@@ -260,7 +260,7 @@ void OpenGLRenderer::Init()
     if (vertexShaderSource.empty() || fragmentShaderSource.empty())
     {
         std::cerr << "ERROR: Failed to load shader files!" << std::endl;
-        return;
+        return false;
     }
 
     // Compile vertex shader
@@ -277,7 +277,7 @@ void OpenGLRenderer::Init()
         glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
         std::cerr << "Vertex shader compilation failed: " << infoLog << std::endl;
         glDeleteShader(vertexShader);
-        return;
+        return false;
     }
 
     // Compile fragment shader
@@ -293,7 +293,7 @@ void OpenGLRenderer::Init()
         std::cerr << "Fragment shader compilation failed: " << infoLog << std::endl;
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
-        return;
+        return false;
     }
 
     // Link shader program
@@ -311,7 +311,7 @@ void OpenGLRenderer::Init()
         glDeleteShader(fragmentShader);
         glDeleteProgram(m_ShaderProgram);
         m_ShaderProgram = 0;
-        return;
+        return false;
     }
 
     glDeleteShader(vertexShader);
@@ -326,6 +326,7 @@ void OpenGLRenderer::Init()
     m_UseColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
 
     m_Initialized = true;
+    return true;
 }
 
 void OpenGLRenderer::SetAmbientColor(const glm::vec3& color)
@@ -758,6 +759,13 @@ void OpenGLRenderer::FlushBatch()
 
     glUseProgram(m_ShaderProgram);
 
+    // Every Flush* owns its GL state; set everything we need at entry rather
+    // than relying on the previous flush to have restored sensible defaults
+    // (its error-return paths may have skipped the restore).
+    if (m_UseColorOnlyLoc >= 0)
+        glUniform1i(m_UseColorOnlyLoc, 0);  // mode 0: sample from bound texture
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     // All sprites in batch share the same transform since vertices are pre-transformed
     glm::mat4 identity = glm::mat4(1.0f);
     glUniformMatrix4fv(m_ModelLoc, 1, GL_FALSE, glm::value_ptr(identity));
@@ -959,13 +967,14 @@ void OpenGLRenderer::FlushRectBatch()
 
     glUseProgram(m_ShaderProgram);
 
-    // Additive blending makes colors add together (used for glow effects)
-    // Standard alpha blending: dest = src*alpha + dest*(1-alpha)
-    // Additive blending: dest = src*alpha + dest (brighter where overlapping)
+    // Every Flush* owns its GL state; set the blend func unconditionally so
+    // an error-return in a prior flush can't leave us running with the wrong one.
+    // Additive: dest = src*alpha + dest (brighter where overlapping)
+    // Standard: dest = src*alpha + dest*(1-alpha)
     if (m_RectBatchAdditive)
-    {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-    }
+    else
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Identity transform since vertices are pre-transformed on CPU
     glm::mat4 identity = glm::mat4(1.0f);
@@ -1006,11 +1015,7 @@ void OpenGLRenderer::FlushRectBatch()
     glBindVertexArray(0);
     ++m_DrawCallCount;
 
-    // Restore shader and blend state for next batch
-    if (m_UseColorOnlyLoc >= 0)
-        glUniform1i(m_UseColorOnlyLoc, 0);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+    // No state restoration needed; the next Flush* sets what it wants at entry.
     m_RectBatchVertices.clear();
 }
 
@@ -1032,11 +1037,11 @@ void OpenGLRenderer::FlushParticleBatch()
 
     glUseProgram(m_ShaderProgram);
 
-    // Additive blend for glow particles (fire, magic, light effects)
+    // Every Flush* owns its GL state; set blend func unconditionally.
     if (m_ParticleBatchAdditive)
-    {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-    }
+    else
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glm::mat4 identity = glm::mat4(1.0f);
     glUniformMatrix4fv(m_ModelLoc, 1, GL_FALSE, glm::value_ptr(identity));
@@ -1078,11 +1083,7 @@ void OpenGLRenderer::FlushParticleBatch()
     glBindVertexArray(0);
     ++m_DrawCallCount;
 
-    // Restore state
-    if (m_UseColorOnlyLoc >= 0)
-        glUniform1i(m_UseColorOnlyLoc, 0);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+    // No state restoration needed; the next Flush* sets what it wants at entry.
     m_ParticleBatchVertices.clear();
     m_CurrentParticleTexture = 0;
 }
@@ -1485,5 +1486,11 @@ void OpenGLRenderer::DrawText(const std::string& text,
         DebugAfterDraw("TextMain", static_cast<int>(mainVertexCount));
     }
 
+    // Restore uniforms and VAO that we consumed. The next Flush* will set its
+    // own blend and useColorOnly; we reset alpha/color/VAO here so any
+    // non-Flush caller between us and the next Flush doesn't see text state.
+    glUniform1f(m_AlphaLoc, 1.0f);
+    glUniform3f(m_ColorLoc, 1.0f, 1.0f, 1.0f);
+    glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

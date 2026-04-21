@@ -124,7 +124,7 @@ VulkanRenderer::~VulkanRenderer()
     Shutdown();
 }
 
-void VulkanRenderer::Init()
+bool VulkanRenderer::Init()
 {
     try
     {
@@ -156,16 +156,17 @@ void VulkanRenderer::Init()
         CreateSyncObjects();
 
         std::cout << "Vulkan renderer initialized successfully!" << std::endl;
+        return true;
     }
     catch (const std::exception& e)
     {
         std::cerr << "Exception in VulkanRenderer::Init(): " << e.what() << std::endl;
-        throw;
+        return false;
     }
     catch (...)
     {
         std::cerr << "Unknown exception in VulkanRenderer::Init()" << std::endl;
-        throw;
+        return false;
     }
 }
 
@@ -872,8 +873,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = 192;  // 128 for vertex (2 mat4), 64 for fragment (vec3 + float + vec4
-                                   // + float + padding + vec3)
+    pushConstantRange.size = sizeof(CombinedPushConstants);
 
     // Descriptor set layout for textures
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -1109,6 +1109,28 @@ void VulkanRenderer::CreateSyncObjects()
     VK_CHECK(vkCreateFence(m_Device, &transferFenceInfo, nullptr, &m_TransferFence));
 }
 
+void VulkanRenderer::RecreateImageAvailableSemaphore(size_t frame)
+{
+    if (frame >= m_ImageAvailableSemaphores.size() || m_Device == VK_NULL_HANDLE)
+        return;
+
+    if (m_ImageAvailableSemaphores[frame] != VK_NULL_HANDLE)
+    {
+        vkDestroySemaphore(m_Device, m_ImageAvailableSemaphores[frame], nullptr);
+        m_ImageAvailableSemaphores[frame] = VK_NULL_HANDLE;
+    }
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[frame]) !=
+        VK_SUCCESS)
+    {
+        std::cerr << "Error: Failed to recreate image-available semaphore for frame " << frame
+                  << std::endl;
+        m_ImageAvailableSemaphores[frame] = VK_NULL_HANDLE;
+    }
+}
+
 bool VulkanRenderer::CheckValidationLayerSupport()
 {
     std::cout
@@ -1247,13 +1269,20 @@ void VulkanRenderer::BeginFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        // vkAcquireNextImageKHR may have signaled the semaphore before
+        // returning OUT_OF_DATE. Using a semaphore with a pending signal on
+        // the next acquire is illegal (VUID-...-semaphore-01779), so recreate
+        // it before recovering the swapchain.
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         RecreateSwapchain();
         return;
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
         std::cerr << "Error: Failed to acquire swapchain image! Result: " << result << std::endl;
-        return;  // Don't throw, just return
+        // Same concern: on error the semaphore's state is ambiguous.
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
+        return;
     }
 
     if (m_ImageIndex >= m_CommandBuffers.size())
@@ -1361,6 +1390,10 @@ void VulkanRenderer::EndFrame()
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
         std::cerr << "Error: CurrentFrame out of bounds in EndFrame!" << std::endl;
+        // BeginFrame signaled the image-available semaphore; if we bail now
+        // without submitting, that signal never gets consumed and the next
+        // acquire on the same slot is illegal.
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
@@ -1374,6 +1407,7 @@ void VulkanRenderer::EndFrame()
     if (endResult != VK_SUCCESS)
     {
         std::cerr << "Error: Failed to end command buffer! Result: " << endResult << std::endl;
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
@@ -1383,6 +1417,8 @@ void VulkanRenderer::EndFrame()
         m_CurrentFrame >= m_InFlightFences.size())
     {
         std::cerr << "Error: CurrentFrame out of bounds for sync objects!" << std::endl;
+        // Best-effort: if the semaphore slot still exists, recreate it.
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
@@ -1406,6 +1442,7 @@ void VulkanRenderer::EndFrame()
     if (resetFenceResult != VK_SUCCESS)
     {
         std::cerr << "Error: Failed to reset fence! Result: " << resetFenceResult << std::endl;
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
@@ -1416,6 +1453,26 @@ void VulkanRenderer::EndFrame()
     {
         std::cerr << "Error: Failed to submit command buffer! Result: " << submitResult
                   << std::endl;
+        // vkResetFences succeeded above but submit failed, so the fence is
+        // unsignaled with no work to signal it. Next BeginFrame would block
+        // forever on vkWaitForFences. Destroy+recreate as signaled so the
+        // next frame can proceed.
+        if (m_InFlightFences[m_CurrentFrame] != VK_NULL_HANDLE)
+        {
+            vkDestroyFence(m_Device, m_InFlightFences[m_CurrentFrame], nullptr);
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            if (vkCreateFence(
+                    m_Device, &fenceInfo, nullptr, &m_InFlightFences[m_CurrentFrame]) !=
+                VK_SUCCESS)
+            {
+                std::cerr << "Error: Failed to recreate in-flight fence after submit failure"
+                          << std::endl;
+                m_InFlightFences[m_CurrentFrame] = VK_NULL_HANDLE;
+            }
+        }
+        RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
@@ -1522,7 +1579,7 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                        m_PipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0,
-                       192,
+                       sizeof(CombinedPushConstants),
                        &pc);
 
     vkCmdBindDescriptorSets(commandBuffer,
@@ -1577,52 +1634,15 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
         return;
     }
 
-    // Get texture's Vulkan image view (or use white texture as fallback)
+    // Get texture's Vulkan image view (or use white texture as fallback).
+    // NOTE: uploads must happen outside a frame - callers are expected to call
+    // UploadTexture() at load time. A cache miss here renders white rather
+    // than stalling the graphics queue mid-render-pass.
     VkImageView imageView = m_WhiteTextureImageView;
 #ifdef USE_VULKAN
-    // Try to use texture's Vulkan resources if available
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
-    {
         imageView = texImageView;
-    }
-    else
-    {
-        // Texture not uploaded yet - try to upload it now
-        std::cout << "Texture not uploaded, uploading now... (size: " << texture.GetWidth() << "x"
-                  << texture.GetHeight() << ")" << std::endl;
-        std::cout.flush();
-        try
-        {
-            UploadTexture(texture);
-            // Try again after upload
-            texImageView = texture.GetVulkanImageView();
-            if (texImageView != VK_NULL_HANDLE)
-            {
-                std::cout << "Texture uploaded successfully!" << std::endl;
-                std::cout.flush();
-                imageView = texImageView;
-            }
-            else
-            {
-                // Still failed - use white texture fallback
-                std::cerr
-                    << "Warning: UploadTexture succeeded but GetVulkanImageView() returned NULL"
-                    << std::endl;
-                std::cerr.flush();
-            }
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "Error uploading texture: " << e.what() << std::endl;
-            std::cerr.flush();
-        }
-        catch (...)
-        {
-            std::cerr << "Unknown error uploading texture" << std::endl;
-            std::cerr.flush();
-        }
-    }
 #endif
 
     // Get or create descriptor set for this texture (cached)
@@ -1710,27 +1730,13 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     if (m_CommandBuffers.empty() || m_CurrentFrame >= m_CommandBuffers.size())
         return;
 
-    // Get texture's Vulkan image view
+    // Get texture's Vulkan image view; see DrawSprite above for the
+    // upload-at-load contract.
     VkImageView imageView = m_WhiteTextureImageView;
 #ifdef USE_VULKAN
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
-    {
         imageView = texImageView;
-    }
-    else
-    {
-        try
-        {
-            UploadTexture(texture);
-            texImageView = texture.GetVulkanImageView();
-            if (texImageView != VK_NULL_HANDLE)
-                imageView = texImageView;
-        }
-        catch (...)
-        {
-        }
-    }
 #endif
 
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
@@ -1782,22 +1788,7 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
 #ifdef USE_VULKAN
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
-    {
         imageView = texImageView;
-    }
-    else
-    {
-        try
-        {
-            UploadTexture(texture);
-            texImageView = texture.GetVulkanImageView();
-            if (texImageView != VK_NULL_HANDLE)
-                imageView = texImageView;
-        }
-        catch (...)
-        {
-        }
-    }
 #endif
 
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
@@ -1881,20 +1872,9 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
         return;
     }
 
-#ifdef USE_VULKAN
-    if (texture.GetVulkanImageView() == VK_NULL_HANDLE)
-    {
-        try
-        {
-            UploadTexture(texture);
-        }
-        catch (...)
-        {
-        }
-    }
-#endif
-
-    // Get texture resources
+    // If the texture hasn't been uploaded yet, GetOrCreateTexture returns an
+    // entry with VK_NULL_HANDLE and we bail. Callers are expected to upload
+    // at load time (see DrawSprite above).
     TextureResources& texRes = GetOrCreateTexture(texture);
     if (texRes.imageView == VK_NULL_HANDLE)
     {
@@ -2072,7 +2052,7 @@ void VulkanRenderer::FlushSpriteBatch()
                        m_PipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0,
-                       192,
+                       sizeof(CombinedPushConstants),
                        &pushConstants);
 
     // Bind descriptor set for batch texture
@@ -2282,7 +2262,7 @@ void VulkanRenderer::DrawText(const std::string& text,
                                m_PipelineLayout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0,
-                               192,
+                               sizeof(CombinedPushConstants),
                                &pushConstants);
 
             // Bind descriptor set for this glyph texture

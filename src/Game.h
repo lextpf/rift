@@ -466,6 +466,10 @@ private:
 
     CameraController m_Camera;   ///< Camera controller (position, zoom, perspective)
     bool m_IsRendering = false;  ///< Reentrancy guard for Render()
+    bool m_IsUpdating = false;   ///< True while Update() runs; prevents
+                                 ///< WindowRefreshCallback from firing Render()
+                                 ///< on mid-Update state via synchronous WM_SIZE
+                                 ///< from SnapWindowToTileBoundaries().
 
     /// @name Frame Timing
     /// @{

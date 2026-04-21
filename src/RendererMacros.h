@@ -14,7 +14,7 @@
  * @see IRenderer for documentation of each method.
  */
 #define RIFT_DECLARE_COMMON_RENDERER_METHODS                                                 \
-    void Init() override;                                                                    \
+    [[nodiscard]] bool Init() override;                                                      \
     void Shutdown() override;                                                                \
     void BeginFrame() override;                                                              \
     void EndFrame() override;                                                                \

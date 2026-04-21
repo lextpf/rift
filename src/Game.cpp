@@ -156,21 +156,16 @@ bool Game::Initialize()
 
     // Initialize renderer
     std::cout << "About to call Renderer->Init()..." << std::endl;
-    try
+    if (!m_Renderer->Init())
     {
-        m_Renderer->Init();
-        std::cout << "Renderer->Init() completed successfully" << std::endl;
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Exception during Renderer initialization: " << e.what() << std::endl;
+        std::cerr << "Renderer->Init() failed; aborting startup rather than "
+                     "shipping a black frame."
+                  << std::endl;
+        m_Renderer->Shutdown();
+        m_Renderer.reset();
         return false;
     }
-    catch (...)
-    {
-        std::cerr << "Unknown exception during Renderer initialization" << std::endl;
-        return false;
-    }
+    std::cout << "Renderer->Init() completed successfully" << std::endl;
 
     // Some drivers/middleware paths can reset swap interval during init.
     // Re-apply no-vsync after renderer initialization.
@@ -408,6 +403,11 @@ void Game::Run()
     {
         while (!glfwWindowShouldClose(m_Window))
         {
+            // Poll events first so ProcessInput sees this frame's key/mouse
+            // state rather than last frame's (GLFW only updates cached state
+            // during glfwPollEvents).
+            glfwPollEvents();
+
             double frameStartTime = glfwGetTime();
             float deltaTime = static_cast<float>(frameStartTime) - m_LastFrameTime;
             m_LastFrameTime = static_cast<float>(frameStartTime);
@@ -435,8 +435,6 @@ void Game::Run()
                 std::cerr.flush();
                 break;
             }
-
-            glfwPollEvents();
 
             // FPS limiter: busy-wait until target frame time is reached.
             // Busy-waiting is used instead of sleep() for sub-millisecond accuracy,
@@ -493,6 +491,20 @@ void Game::Run()
 
 void Game::Update(float deltaTime)
 {
+    // Guard so that if SnapWindowToTileBoundaries() (called from within Update)
+    // triggers a synchronous WindowRefreshCallback -> Render(), that Render
+    // sees mid-Update state and bails instead of rendering garbage.
+    struct UpdateGuard
+    {
+        bool& flag;
+        UpdateGuard(bool& f)
+            : flag(f)
+        {
+            flag = true;
+        }
+        ~UpdateGuard() { flag = false; }
+    } updateGuard(m_IsUpdating);
+
     // Update FPS counter
     m_Fps.frameCount++;
     m_Fps.updateTimer += deltaTime;
@@ -785,9 +797,10 @@ void Game::Update(float deltaTime)
 
 void Game::Render()
 {
-    // Guard against reentrant calls (WindowRefreshCallback can re-enter during resize)
-    // RAII guard ensures the flag is reset even if an exception is thrown.
-    if (m_IsRendering)
+    // Guard against reentrant calls: WindowRefreshCallback can re-enter during
+    // resize, and SnapWindowToTileBoundaries() called from Update() can fire
+    // the same callback synchronously. Bail in both cases.
+    if (m_IsRendering || m_IsUpdating)
     {
         return;
     }
@@ -1524,7 +1537,15 @@ bool Game::SwitchRenderer(RendererAPI api)
         }
 
         // Initialize renderer
-        m_Renderer->Init();
+        if (!m_Renderer->Init())
+        {
+            std::cerr << "Renderer->Init() failed during SwitchRenderer" << std::endl;
+            m_Renderer->Shutdown();
+            m_Renderer.reset();
+            glfwDestroyWindow(m_Window);
+            m_Window = nullptr;
+            return false;
+        }
 
         // Re-apply no-vsync after renderer initialization.
         if (m_RendererAPI == RendererAPI::OpenGL)
@@ -1560,6 +1581,10 @@ bool Game::SwitchRenderer(RendererAPI api)
     {
         std::cout << "Renderer switch complete! Now using "
                   << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        // Swap cost (texture re-upload, window recreate) is typically 100-500ms.
+        // Re-stamp so the first post-swap frame doesn't see that gap as its
+        // dt (which the clamp would truncate to MAX_DELTA_TIME anyway).
+        m_LastFrameTime = static_cast<float>(glfwGetTime());
         return true;
     }
 
@@ -1571,6 +1596,7 @@ bool Game::SwitchRenderer(RendererAPI api)
     {
         std::cerr << "Rollback successful, still using "
                   << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        m_LastFrameTime = static_cast<float>(glfwGetTime());
         return false;
     }
 
