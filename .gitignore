@@ -5,6 +5,7 @@ build_tests/
 # Assets
 assets/
 external/
+*.spv
 
 # Generated documentation
 docs/html/
