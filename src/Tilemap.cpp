@@ -1158,6 +1158,36 @@ void Tilemap::RemoveNoProjectionStructure(int id)
     InvalidateStructureBoundsCache();
 }
 
+void Tilemap::InsertNoProjectionStructureAt(size_t idx, const NoProjectionStructure& structure)
+{
+    if (idx > m_NoProjectionStructures.size())
+        return;
+
+    // Shift up tile structureId references for structures currently at idx
+    // and beyond (their indices are about to grow by one). Mirrors the
+    // shift-down logic in RemoveNoProjectionStructure.
+    for (auto& layer : m_Layers)
+    {
+        for (size_t i = 0; i < layer.structureId.size(); ++i)
+        {
+            if (layer.structureId[i] >= static_cast<int>(idx))
+                layer.structureId[i]++;
+        }
+    }
+
+    NoProjectionStructure copy = structure;
+    copy.id = static_cast<int>(idx);
+    m_NoProjectionStructures.insert(m_NoProjectionStructures.begin() + idx, copy);
+
+    // Renumber ids from idx onward to match new positions.
+    for (size_t i = idx; i < m_NoProjectionStructures.size(); ++i)
+    {
+        m_NoProjectionStructures[i].id = static_cast<int>(i);
+    }
+
+    InvalidateStructureBoundsCache();
+}
+
 int Tilemap::GetTileStructureId(int x, int y, int layer) const
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)

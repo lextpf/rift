@@ -700,6 +700,21 @@ public:
     void RemoveNoProjectionStructure(int id);
 
     /**
+     * @brief Insert a no-projection structure at a specific index, shifting
+     * existing structures with id >= idx upward by one.
+     *
+     * Inverse of RemoveNoProjectionStructure for the structure-removal-undo
+     * use case (the editor's RemoveStructureCmd needs to put the structure
+     * back at its original index so per-tile structureId references that
+     * were captured before removal still align). The shifted structures get
+     * their ids re-stamped to match their new vector positions.
+     *
+     * @param idx Insertion index. Must be <= current vector size.
+     * @param structure Structure data to insert (id field is overwritten).
+     */
+    void InsertNoProjectionStructureAt(size_t idx, const NoProjectionStructure& structure);
+
+    /**
      * @brief Get the structure ID assigned to a tile.
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
@@ -936,6 +951,19 @@ public:
         }
     }
 
+    /**
+     * @brief Insert a particle zone at a specific index, shifting existing
+     * zones at idx and beyond by one.
+     *
+     * Used by the editor's RemoveParticleZoneCmd::Revert to restore a zone
+     * to its original index (preserves index-based ParticleSystem tracking).
+     */
+    void InsertParticleZoneAt(size_t index, const ParticleZone& zone)
+    {
+        if (index <= m_ParticleZones.size())
+            m_ParticleZones.insert(m_ParticleZones.begin() + index, zone);
+    }
+
     /** @} */
 
     /** @name Animated Tiles
@@ -947,6 +975,15 @@ public:
      * @param anim The animation definition.
      * @return The animation ID (index).
      */
+    /// @brief Pop the most recently added animation. Used by AddAnimatedTileCmd::Revert
+    /// under the strict LIFO invariant (no per-tile animationMap reference survives
+    /// because the corresponding SetTileAnimationCmd::Revert ran first).
+    void PopLastAnimatedTile()
+    {
+        if (!m_AnimatedTiles.empty())
+            m_AnimatedTiles.pop_back();
+    }
+
     int AddAnimatedTile(const AnimatedTile& anim)
     {
         m_AnimatedTiles.push_back(anim);
