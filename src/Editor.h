@@ -65,6 +65,7 @@ struct EditorContext
     std::vector<NonPlayerCharacter>& npcs;  ///< NPC list for placement and debug display.
     IRenderer& renderer;                    ///< Active renderer for drawing overlays.
     ParticleSystem& particles;              ///< Particle system for zone editing.
+    std::string saveMapPath;                ///< Save/load JSON path configured by project manifest.
 };
 
 /**
