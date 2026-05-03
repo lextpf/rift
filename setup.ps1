@@ -7,7 +7,7 @@
 #   - GLAD (OpenGL loader)      -> external/glad/     (included in repo)
 #   - stb_image (image loading) -> external/stb/      (included in repo)
 #   - nlohmann/json (JSON)      -> external/nlohmann/ (downloaded)
-#   - Vulkan SDK (optional)     -> System install required
+#   - Vulkan SDK (required)     -> System install required
 #   - FreeType (optional)       -> vcpkg or system install
 # ============================================================================
 
@@ -155,19 +155,20 @@ foreach ($dep in $deps) {
 
 Write-Host ""
 Write-Host "============================================================================" -ForegroundColor Cyan
-Write-Host "                      OPTIONAL DEPENDENCIES" -ForegroundColor Cyan
+Write-Host "                      ADDITIONAL DEPENDENCIES" -ForegroundColor Cyan
 Write-Host "============================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "The following are optional but recommended:"
+Write-Host "The Vulkan SDK is required. vcpkg and Doxygen are optional but recommended:"
 Write-Host ""
 
-# Check for Vulkan SDK
+# Check for Vulkan SDK (required)
 if ($env:VULKAN_SDK) {
     Write-Host "  [OK] Vulkan SDK found at: $env:VULKAN_SDK" -ForegroundColor Green
 } else {
-    Write-Host "  [NOT INSTALLED] Vulkan SDK" -ForegroundColor Yellow
+    Write-Host "  [REQUIRED, MISSING] Vulkan SDK" -ForegroundColor Red
     Write-Host "      Download from: https://vulkan.lunarg.com/sdk/home" -ForegroundColor Gray
-    Write-Host "      Required for: Vulkan renderer, shader compilation" -ForegroundColor Gray
+    Write-Host "      Required for: Vulkan renderer, shader compilation, build to succeed" -ForegroundColor Gray
+    $allOk = $false
 }
 
 # Check for vcpkg
@@ -206,7 +207,7 @@ if ($allOk) {
     Write-Host "All required dependencies are installed!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor White
-    Write-Host "  1. [Optional] Install Vulkan SDK for Vulkan support"
+    Write-Host "  1. [Required] Install the Vulkan SDK (build will fail without it)"
     Write-Host "  2. [Optional] Install FreeType via vcpkg for text rendering:"
     Write-Host "       vcpkg install freetype:x64-windows"
     Write-Host "  3. Run build-all.bat to build the project"
