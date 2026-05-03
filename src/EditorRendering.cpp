@@ -1140,6 +1140,57 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
     }
 }
 
+void Editor::RenderMapSelectionOverlay(const EditorContext& ctx)
+{
+    // Translucent yellow for an active selection rectangle.
+    if (m_MapSelection.active)
+    {
+        int tw = ctx.tilemap.GetTileWidth();
+        int th = ctx.tilemap.GetTileHeight();
+        if (tw <= 0 || th <= 0)
+            return;
+        glm::vec2 pos(static_cast<float>(m_MapSelection.MinX() * tw) - ctx.cameraPosition.x,
+                      static_cast<float>(m_MapSelection.MinY() * th) - ctx.cameraPosition.y);
+        glm::vec2 size(static_cast<float>(m_MapSelection.Width() * tw),
+                       static_cast<float>(m_MapSelection.Height() * th));
+        glm::vec4 color = m_MapSelection.isDragging ? glm::vec4(1.0f, 1.0f, 0.0f, 0.35f)
+                                                    : glm::vec4(0.7f, 0.85f, 1.0f, 0.25f);
+        ctx.renderer.DrawColoredRect(pos, size, color);
+    }
+
+    // Translucent green ghost at the cursor when Ctrl is held with a non-
+    // empty clipboard - shows where Ctrl+V would paste. Gated on Ctrl so the
+    // ghost doesn't follow the cursor around during normal editing or after
+    // Esc has cleared the selection.
+    bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                    glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    if (ctrlHeld && !m_Clipboard.Empty())
+    {
+        double mouseX, mouseY;
+        glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
+        float baseWorldW = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
+        float baseWorldH = static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight());
+        float zoom = std::max(ctx.cameraZoom, 0.01f);
+        float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) *
+                           (baseWorldW / zoom) +
+                       ctx.cameraPosition.x;
+        float worldY = (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) *
+                           (baseWorldH / zoom) +
+                       ctx.cameraPosition.y;
+        int tw = ctx.tilemap.GetTileWidth();
+        int th = ctx.tilemap.GetTileHeight();
+        if (tw <= 0 || th <= 0)
+            return;
+        int cursorTileX = static_cast<int>(std::floor(worldX / tw));
+        int cursorTileY = static_cast<int>(std::floor(worldY / th));
+        glm::vec2 pos(static_cast<float>(cursorTileX * tw) - ctx.cameraPosition.x,
+                      static_cast<float>(cursorTileY * th) - ctx.cameraPosition.y);
+        glm::vec2 size(static_cast<float>(m_Clipboard.width * tw),
+                       static_cast<float>(m_Clipboard.height * th));
+        ctx.renderer.DrawColoredRect(pos, size, glm::vec4(0.4f, 1.0f, 0.4f, 0.2f));
+    }
+}
+
 void Editor::RenderPlacementPreview(const EditorContext& ctx)
 {
     // Draw animation mode status when not in tile picker
