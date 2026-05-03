@@ -176,7 +176,7 @@ If CMake reports missing dependencies (GLFW, GLM, GLAD, stb_image), see the [Set
 
 | Error                | Solution                                                      |
 |----------------------|---------------------------------------------------------------|
-| "Assets not found"   | Copy `assets/` folder to executable directory                 |
+| "Assets not found"   | Copy `assets/` folder and check paths in `rift.project.json`  |
 | "Shader load failed" | Copy `shaders/` folder to executable directory                |
 | "Font not found"     | Ensure FreeType is installed and fonts are in `assets/fonts/` |
 
@@ -188,9 +188,11 @@ If the build process doesn't copy assets automatically:
 :: From build directory
 xcopy /E /Y ..\assets .\Release\assets\
 xcopy /E /Y ..\shaders .\Release\shaders\
+copy ..\rift.project.json .\Release\rift.project.json
 ```
 
 ## See Also
 
 - [Setup Guide](SETUP.md) - Installing dependencies
 - [Editor Guide](EDITOR.md) - Using the level editor after building
+- [Project Manifest](PROJECT_MANIFEST.md) - Configuring startup assets
