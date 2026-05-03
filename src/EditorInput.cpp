@@ -1,9 +1,11 @@
 #include "Dialogues.h"
 #include "Editor.h"
+#include "EditorCommands.h"
 
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -276,22 +278,28 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     //   - Left-click sets Y-sort-plus flag (tile sorts with entities by Y position)
     //   - Right-click clears Y-sort-plus flag
     //   - Used for tiles that should appear in front/behind player based on Y
-    if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_Y])
+    // Skip when Ctrl is held - that's reserved for Ctrl+Y (redo).
     {
-        const bool enabling = m_EditMode != EditMode::YSortPlus;
-        ClearAllEditModes();
-        if (enabling)
+        const bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                              glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        if (m_Active && !ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS &&
+            !m_KeyPressed[GLFW_KEY_Y])
         {
-            m_EditMode = EditMode::YSortPlus;
-            std::cout << "Y-sort+1 edit mode: ON (Layer " << m_CurrentLayer
-                      << ") - Click to mark tiles for Y-sorting with entities" << std::endl;
-            std::cout << "Use 1-6 keys to change layer" << std::endl;
+            const bool enabling = m_EditMode != EditMode::YSortPlus;
+            ClearAllEditModes();
+            if (enabling)
+            {
+                m_EditMode = EditMode::YSortPlus;
+                std::cout << "Y-sort+1 edit mode: ON (Layer " << m_CurrentLayer
+                          << ") - Click to mark tiles for Y-sorting with entities" << std::endl;
+                std::cout << "Use 1-6 keys to change layer" << std::endl;
+            }
+            else
+            {
+                std::cout << "Y-sort-plus edit mode: OFF" << std::endl;
+            }
+            m_KeyPressed[GLFW_KEY_Y] = true;
         }
-        else
-        {
-            std::cout << "Y-sort-plus edit mode: OFF" << std::endl;
-        }
-        m_KeyPressed[GLFW_KEY_Y] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_RELEASE)
     {
@@ -584,7 +592,10 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             if (m_AnimationFrames.size() >= 2)
             {
                 AnimatedTile anim(m_AnimationFrames, m_AnimationFrameDuration);
-                int animId = ctx.tilemap.AddAnimatedTile(anim);
+                auto cmd = std::make_unique<AddAnimatedTileCmd>(anim);
+                AddAnimatedTileCmd* cmdPtr = cmd.get();
+                m_UndoStack.Execute(std::move(cmd), ctx.tilemap, ctx.npcs);
+                int animId = cmdPtr->AnimId();
                 m_SelectedAnimationId = animId;
                 std::cout << "Created animation #" << animId << " with " << m_AnimationFrames.size()
                           << " frames at " << m_AnimationFrameDuration << "s per frame"
@@ -698,6 +709,12 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             std::cout << "Save loaded successfully!" << std::endl;
             ShowStatus("Loaded save.json", glm::vec3(0.4f, 1.0f, 0.4f));
+
+            // Discard undo history - any captured commands reference the old
+            // tilemap state and would corrupt the loaded map if Reverted.
+            ClearUndoHistory();
+            m_MapSelection = MapRegionSelection{};
+            m_Clipboard = ClipboardRegion{};
 
             // Restore character type if saved
             if (loadedCharacterType >= 0)
@@ -830,6 +847,97 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, key) == GLFW_RELEASE)
             m_KeyPressed[key] = false;
     }
+
+    // Ctrl+Z (undo) and Ctrl+Y (redo). KeyToggle's variadic template uses OR-
+    // press semantics that fire on either key alone, so we check the Ctrl
+    // modifier inline (see GameInput.cpp:798-801 for the same pattern in
+    // ScrollCallback) and use the per-key bitset for edge-triggered debounce.
+    const bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                          glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    if (m_Active && ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_Z) == GLFW_PRESS &&
+        !m_KeyPressed[GLFW_KEY_Z])
+    {
+        const std::string label = m_UndoStack.UndoLabel();
+        if (m_UndoStack.Undo(ctx.tilemap, ctx.npcs))
+            ShowStatus("Undo: " + label, glm::vec3(0.7f, 0.85f, 1.0f));
+        else
+            ShowStatus("Nothing to undo", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        m_KeyPressed[GLFW_KEY_Z] = true;
+    }
+    if (glfwGetKey(ctx.window, GLFW_KEY_Z) == GLFW_RELEASE)
+        m_KeyPressed[GLFW_KEY_Z] = false;
+
+    if (m_Active && ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_PRESS &&
+        !m_KeyPressed[GLFW_KEY_Y])
+    {
+        const std::string label = m_UndoStack.RedoLabel();
+        if (m_UndoStack.Redo(ctx.tilemap, ctx.npcs))
+            ShowStatus("Redo: " + label, glm::vec3(0.7f, 1.0f, 0.85f));
+        else
+            ShowStatus("Nothing to redo", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        m_KeyPressed[GLFW_KEY_Y] = true;
+    }
+    if (glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_RELEASE)
+        m_KeyPressed[GLFW_KEY_Y] = false;
+
+    // Ctrl+C: copy current map-region selection into the clipboard.
+    if (m_Active && ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_C) == GLFW_PRESS &&
+        !m_KeyPressed[GLFW_KEY_C])
+    {
+        if (m_MapSelection.active)
+        {
+            int w = m_MapSelection.Width();
+            int h = m_MapSelection.Height();
+            m_Clipboard = PasteRegionCmd::SnapshotRegion(
+                ctx.tilemap, m_MapSelection.MinX(), m_MapSelection.MinY(), w, h);
+            ShowStatus("Copied " + std::to_string(w) + "x" + std::to_string(h) + " region (" +
+                           std::to_string(w * h) + " tiles)",
+                       glm::vec3(0.6f, 1.0f, 0.6f));
+        }
+        else
+        {
+            ShowStatus(
+                "No region selected (Ctrl+drag to select)", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        }
+        m_KeyPressed[GLFW_KEY_C] = true;
+    }
+    if (glfwGetKey(ctx.window, GLFW_KEY_C) == GLFW_RELEASE)
+        m_KeyPressed[GLFW_KEY_C] = false;
+
+    // Ctrl+V: paste the clipboard region at cursor (top-left tile of paste).
+    if (m_Active && ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_V) == GLFW_PRESS &&
+        !m_KeyPressed[GLFW_KEY_V])
+    {
+        if (!m_Clipboard.Empty())
+        {
+            double mouseX, mouseY;
+            glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
+            auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
+            m_UndoStack.Execute(std::make_unique<PasteRegionCmd>(st.tileX, st.tileY, m_Clipboard),
+                                ctx.tilemap,
+                                ctx.npcs);
+            ShowStatus("Pasted " + std::to_string(m_Clipboard.width) + "x" +
+                           std::to_string(m_Clipboard.height) + " at (" + std::to_string(st.tileX) +
+                           ", " + std::to_string(st.tileY) + ")",
+                       glm::vec3(0.6f, 1.0f, 0.6f));
+        }
+        else
+        {
+            ShowStatus("Clipboard empty (Ctrl+C to copy first)", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        }
+        m_KeyPressed[GLFW_KEY_V] = true;
+    }
+    if (glfwGetKey(ctx.window, GLFW_KEY_V) == GLFW_RELEASE)
+        m_KeyPressed[GLFW_KEY_V] = false;
+
+    // Escape clears any active map-region selection.
+    if (m_Active && m_MapSelection.active &&
+        glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_ESCAPE])
+    {
+        m_MapSelection = MapRegionSelection{};
+        ShowStatus("Cleared selection", glm::vec3(0.7f, 0.7f, 0.7f), 1.0f);
+        m_KeyPressed[GLFW_KEY_ESCAPE] = true;
+    }
 }
 
 void Editor::ProcessMouseInput(const EditorContext& ctx)
@@ -842,6 +950,75 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
     int rightMouseButton = glfwGetMouseButton(ctx.window, GLFW_MOUSE_BUTTON_RIGHT);
     bool leftMouseDown = (leftMouseButton == GLFW_PRESS);
     bool rightMouseDown = (rightMouseButton == GLFW_PRESS);
+
+    // Ctrl+left-drag defines a map-region selection for Ctrl+C copy. We
+    // intercept here, before mode-specific handlers, so selection works in
+    // any mode except Structure (G uses Ctrl-click for anchor placement).
+    //
+    // Once a selection drag begins, it persists until the user releases the
+    // mouse - even if they release Ctrl mid-drag. This prevents the regular
+    // tile-place handler from firing on the trailing leftMouseDown frames
+    // after Ctrl has been let go.
+    {
+        bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                        glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        bool inStructureMode = (m_EditMode == EditMode::Structure);
+        if (m_Active && !m_ShowTilePicker && !inStructureMode)
+        {
+            if (m_MapSelection.isDragging)
+            {
+                // Already dragging - keep going as long as the mouse stays
+                // pressed. Update the rect's end-corner to the current cursor
+                // tile only when ctrl is still held; if ctrl was released
+                // mid-drag, freeze the extent so an accidental release doesn't
+                // pull the corner with a still-moving cursor.
+                if (leftMouseDown)
+                {
+                    if (ctrlHeld)
+                    {
+                        auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
+                        m_MapSelection.endX = st.tileX;
+                        m_MapSelection.endY = st.tileY;
+                    }
+                    m_Mouse.lastMouseX = mouseX;
+                    m_Mouse.lastMouseY = mouseY;
+                    return;  // suppress mode-specific handlers
+                }
+                else
+                {
+                    // Mouse released - commit the selection.
+                    m_MapSelection.isDragging = false;
+                    int w = m_MapSelection.Width();
+                    int h = m_MapSelection.Height();
+                    ShowStatus("Selection: " + std::to_string(w) + "x" + std::to_string(h) +
+                                   " at (" + std::to_string(m_MapSelection.MinX()) + ", " +
+                                   std::to_string(m_MapSelection.MinY()) + ") - Ctrl+C to copy",
+                               glm::vec3(0.7f, 0.85f, 1.0f));
+                    // Suppress mode-specific handling on this release frame
+                    // so the tile-up reset code at the bottom doesn't act on
+                    // a drag that wasn't a tile-paint.
+                    m_Mouse.lastMouseX = mouseX;
+                    m_Mouse.lastMouseY = mouseY;
+                    return;
+                }
+            }
+            else if (ctrlHeld && leftMouseDown)
+            {
+                // Begin a new selection drag. Replaces any prior selection
+                // (Escape clears explicitly).
+                auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
+                m_MapSelection.active = true;
+                m_MapSelection.isDragging = true;
+                m_MapSelection.startX = st.tileX;
+                m_MapSelection.startY = st.tileY;
+                m_MapSelection.endX = st.tileX;
+                m_MapSelection.endY = st.tileY;
+                m_Mouse.lastMouseX = mouseX;
+                m_Mouse.lastMouseY = mouseY;
+                return;
+            }
+        }
+    }
 
     // Right-click toggles collision or navigation flags depending on mode.
     // Supports drag-to-draw: first click sets target state, dragging applies it.
@@ -868,17 +1045,33 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 int currentAnim = ctx.tilemap.GetTileAnimation(tileX, tileY, m_CurrentLayer);
                 if (currentAnim >= 0)
                 {
-                    ctx.tilemap.SetTileAnimation(tileX, tileY, m_CurrentLayer, -1);
+                    int oldTileId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
+                    m_UndoStack.Execute(
+                        std::make_unique<SetTileAnimationCmd>(
+                            std::vector<SetTileAnimationCmd::Entry>{
+                                {tileX, tileY, m_CurrentLayer, currentAnim, -1, oldTileId}}),
+                        ctx.tilemap,
+                        ctx.npcs);
                     std::cout << "Removed animation from tile (" << tileX << ", " << tileY
                               << ") on layer " << m_CurrentLayer << std::endl;
                 }
                 m_Mouse.rightMousePressed = true;
                 return;
             }
-            // Elevation edit mode, right-click clears elevation at tile
+            // Elevation edit mode, right-click clears elevation at tile.
+            // Right-click is a single action, not a drag, so we Execute
+            // directly rather than going through the stroke accumulator.
             else if ((m_EditMode == EditMode::Elevation))
             {
-                ctx.tilemap.SetElevation(tileX, tileY, 0);
+                int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
+                if (oldElevation != 0)
+                {
+                    m_UndoStack.Execute(
+                        std::make_unique<ElevationSetCmd>(
+                            std::vector<ElevationSetCmd::Entry>{{tileX, tileY, oldElevation, 0}}),
+                        ctx.tilemap,
+                        ctx.npcs);
+                }
                 std::cout << "Cleared elevation at (" << tileX << ", " << tileY << ")" << std::endl;
                 m_Mouse.rightMousePressed = true;
             }
@@ -889,26 +1082,40 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
+                std::vector<SetTileStructureIdsCmd::Entry> structEntries;
+                int layer = m_CurrentLayer + 1;
                 if (shiftHeld)
                 {
-                    int layer = m_CurrentLayer + 1;
                     int count = FloodFill(
                         ctx.tilemap,
                         tileX,
                         tileY,
                         [&](int cx, int cy)
                         { return ctx.tilemap.GetTileStructureId(cx, cy, layer) >= 0; },
-                        [&](int cx, int cy) { ctx.tilemap.SetTileStructureId(cx, cy, layer, -1); });
+                        [&](int cx, int cy)
+                        {
+                            int oldId = ctx.tilemap.GetTileStructureId(cx, cy, layer);
+                            structEntries.push_back({cx, cy, layer, oldId, -1});
+                            ctx.tilemap.SetTileStructureId(cx, cy, layer, -1);
+                        });
                     std::cout << "Cleared structure assignment from " << count << " tiles (layer "
                               << layer << ")" << std::endl;
                 }
                 else
                 {
                     // Single tile: clear structure assignment
-                    ctx.tilemap.SetTileStructureId(tileX, tileY, m_CurrentLayer + 1, -1);
+                    int oldId = ctx.tilemap.GetTileStructureId(tileX, tileY, layer);
+                    if (oldId >= 0)
+                    {
+                        structEntries.push_back({tileX, tileY, layer, oldId, -1});
+                        ctx.tilemap.SetTileStructureId(tileX, tileY, layer, -1);
+                    }
                     std::cout << "Cleared structure assignment at (" << tileX << ", " << tileY
                               << ")" << std::endl;
                 }
+                if (!structEntries.empty())
+                    m_UndoStack.Push(
+                        std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
                 m_Mouse.rightMousePressed = true;
             }
             // No-projection edit mode, right-click clears no-projection flag for current layer
@@ -918,6 +1125,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
+                std::vector<LayerFlagEntry> entries;
                 if (shiftHeld)
                 {
                     size_t layerCount = ctx.tilemap.GetLayerCount();
@@ -935,7 +1143,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         [&](int cx, int cy)
                         {
                             for (size_t li = 0; li < layerCount; ++li)
-                                ctx.tilemap.SetLayerNoProjection(cx, cy, li, false);
+                            {
+                                bool oldF = ctx.tilemap.GetLayerNoProjection(cx, cy, li);
+                                if (oldF)
+                                {
+                                    entries.push_back({cx, cy, li, oldF, false});
+                                    ctx.tilemap.SetLayerNoProjection(cx, cy, li, false);
+                                }
+                            }
                         });
                     std::cout << "Cleared no-projection on " << count
                               << " connected tiles (all layers)" << std::endl;
@@ -945,11 +1160,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     // Clear noProjection on ALL layers at this position
                     for (size_t li = 0; li < ctx.tilemap.GetLayerCount(); ++li)
                     {
-                        ctx.tilemap.SetLayerNoProjection(tileX, tileY, li, false);
+                        bool oldF = ctx.tilemap.GetLayerNoProjection(tileX, tileY, li);
+                        if (oldF)
+                        {
+                            entries.push_back({tileX, tileY, li, oldF, false});
+                            ctx.tilemap.SetLayerNoProjection(tileX, tileY, li, false);
+                        }
                     }
                     std::cout << "Cleared no-projection at (" << tileX << ", " << tileY
                               << ") all layers" << std::endl;
                 }
+                if (!entries.empty())
+                    m_UndoStack.Push(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
                 m_Mouse.rightMousePressed = true;
             }
             // Y-sort-plus / Y-sort-minus edit modes share the same clear logic.
@@ -957,39 +1179,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             else if (m_EditMode == EditMode::YSortPlus || m_EditMode == EditMode::YSortMinus)
             {
                 bool isPlus = (m_EditMode == EditMode::YSortPlus);
-                auto getter = [&](int cx, int cy)
-                {
-                    return isPlus ? ctx.tilemap.GetLayerYSortPlus(cx, cy, m_CurrentLayer)
-                                  : ctx.tilemap.GetLayerYSortMinus(cx, cy, m_CurrentLayer);
-                };
-                auto setter = [&](int cx, int cy)
-                {
-                    if (isPlus)
-                    {
-                        ctx.tilemap.SetLayerYSortPlus(cx, cy, m_CurrentLayer, false);
-                    }
-                    else
-                    {
-                        ctx.tilemap.SetLayerYSortMinus(cx, cy, m_CurrentLayer, false);
-                    }
-                };
+                auto getter = isPlus ? &Tilemap::GetLayerYSortPlus : &Tilemap::GetLayerYSortMinus;
+                auto setter = isPlus ? &Tilemap::SetLayerYSortPlus : &Tilemap::SetLayerYSortMinus;
                 const char* label = isPlus ? "Y-sort-plus" : "Y-sort-minus";
 
-                bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                                  glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
-
-                if (shiftHeld)
+                auto entries = CollectYSortFlagToggle(
+                    ctx, tileX, tileY, getter, setter, /*newValue=*/false, label);
+                if (!entries.empty())
                 {
-                    int count = FloodFill(ctx.tilemap, tileX, tileY, getter, setter);
-                    std::cout << "Cleared " << label << " on " << count
-                              << " connected tiles (layer " << (m_CurrentLayer + 1) << ")"
-                              << std::endl;
-                }
-                else
-                {
-                    setter(tileX, tileY);
-                    std::cout << "Cleared " << label << " at (" << tileX << ", " << tileY
-                              << ") layer " << (m_CurrentLayer + 1) << std::endl;
+                    if (isPlus)
+                        m_UndoStack.Push(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
+                    else
+                        m_UndoStack.Push(std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
                 }
                 m_Mouse.rightMousePressed = true;
             }
@@ -1008,7 +1209,8 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                   << " zone at (" << zone.position.x << ", " << zone.position.y
                                   << ")" << std::endl;
                         ctx.particles.OnZoneRemoved(static_cast<int>(i));
-                        ctx.tilemap.RemoveParticleZone(i);
+                        m_UndoStack.Execute(
+                            std::make_unique<RemoveParticleZoneCmd>(i), ctx.tilemap, ctx.npcs);
                         break;
                     }
                 }
@@ -1016,15 +1218,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             }
             else if ((m_EditMode == EditMode::Navigation))
             {
-                // Navigation editing mode, support drag-to-draw
-                bool navigationChanged = false;
+                // Navigation editing mode, support drag-to-draw. The patrol-
+                // route recalc and NPC erase are deferred to mouse-up so the
+                // stroke commit can capture displaced NPCs in one snapshot.
                 if (!m_Mouse.rightMousePressed)
                 {
                     // Initial click determines target state
                     bool walkable = ctx.tilemap.GetNavigation(tileX, tileY);
-                    m_Mouse.navigationDragState = !walkable;  // Set to opposite of current state
+                    m_Mouse.navigationDragState = !walkable;
+                    if (!m_NavigationStroke.IsActive())
+                        m_NavigationStroke.Begin();
+                    m_NavigationStroke.Touch(tileX, tileY, walkable, m_Mouse.navigationDragState);
                     ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
-                    navigationChanged = true;
                     std::cout << "=== NAVIGATION DRAG START ===" << std::endl;
                     std::cout << "Tile (" << tileX << ", " << tileY
                               << "): " << (walkable ? "ON" : "OFF") << " -> "
@@ -1039,30 +1244,30 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     bool currentWalkable = ctx.tilemap.GetNavigation(tileX, tileY);
                     if (currentWalkable != m_Mouse.navigationDragState)
                     {
+                        m_NavigationStroke.Touch(
+                            tileX, tileY, currentWalkable, m_Mouse.navigationDragState);
                         ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
-                        navigationChanged = true;
                         std::cout << "Navigation drag: Tile (" << tileX << ", " << tileY << ") -> "
                                   << (m_Mouse.navigationDragState ? "ON" : "OFF") << std::endl;
                     }
                     m_Mouse.lastNavigationTileX = tileX;
                     m_Mouse.lastNavigationTileY = tileY;
                 }
-
-                // Recalculate patrol routes when navigation changes
-                if (navigationChanged)
-                {
-                    RecalculateNPCPatrolRoutes(ctx);
-                }
+                // NPC erase + patrol rebuild deferred to NavigationStrokeAccum::Commit
             }
             else
             {
-                // Collision editing mode, support drag-to-draw
+                // Collision editing mode, support drag-to-draw. Stroke
+                // accumulator collapses the drag into one composite cmd.
                 if (!m_Mouse.rightMousePressed)
                 {
                     // Initial click determines target state
                     bool currentCollision = ctx.tilemap.GetTileCollision(tileX, tileY);
-                    m_Mouse.collisionDragState =
-                        !currentCollision;  // Set to opposite of current state
+                    m_Mouse.collisionDragState = !currentCollision;
+                    if (!m_CollisionStroke.IsActive())
+                        m_CollisionStroke.Begin();
+                    m_CollisionStroke.Touch(
+                        tileX, tileY, currentCollision, m_Mouse.collisionDragState);
                     ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
                     std::cout << "=== COLLISION DRAG START ===" << std::endl;
                     std::cout << "Tile (" << tileX << ", " << tileY
@@ -1078,6 +1283,8 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     bool currentCollision = ctx.tilemap.GetTileCollision(tileX, tileY);
                     if (currentCollision != m_Mouse.collisionDragState)
                     {
+                        m_CollisionStroke.Touch(
+                            tileX, tileY, currentCollision, m_Mouse.collisionDragState);
                         ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
                         std::cout << "Collision drag: Tile (" << tileX << ", " << tileY << ") -> "
                                   << (m_Mouse.collisionDragState ? "ON" : "OFF") << std::endl;
@@ -1105,6 +1312,16 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         m_Mouse.lastNavigationTileY = -1;
         m_Mouse.lastCollisionTileX = -1;
         m_Mouse.lastCollisionTileY = -1;
+
+        // Commit any in-progress collision-drag stroke as a single cmd.
+        if (m_CollisionStroke.IsActive())
+            m_CollisionStroke.Commit(m_UndoStack);
+        // Commit any in-progress navigation-drag stroke. NavigationStrokeCmd
+        // performs snapshot-and-erase of NPCs displaced by tiles becoming
+        // non-walkable, plus patrol-route rebuild. Deferred from per-frame so
+        // a single drag captures all displaced NPCs in one undo entry.
+        if (m_NavigationStroke.IsActive())
+            m_NavigationStroke.Commit(m_UndoStack, ctx.tilemap, ctx.npcs);
     }
 
     // Handle tile picker selection
@@ -1273,16 +1490,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
                 // First, try to remove any NPC at this tile (works on any tile)
                 bool removed = false;
-                for (auto it = ctx.npcs.begin(); it != ctx.npcs.end(); ++it)
+                bool hasNPCHere =
+                    std::any_of(ctx.npcs.begin(),
+                                ctx.npcs.end(),
+                                [&](const NonPlayerCharacter& n)
+                                { return n.GetTileX() == tileX && n.GetTileY() == tileY; });
+                if (hasNPCHere)
                 {
-                    if (it->GetTileX() == tileX && it->GetTileY() == tileY)
-                    {
-                        ctx.npcs.erase(it);
-                        removed = true;
-                        std::cout << "Removed NPC at tile (" << tileX << ", " << tileY << ")"
-                                  << std::endl;
-                        break;
-                    }
+                    m_UndoStack.Execute(
+                        std::make_unique<RemoveNPCCmd>(tileX, tileY), ctx.tilemap, ctx.npcs);
+                    removed = true;
+                    std::cout << "Removed NPC at tile (" << tileX << ", " << tileY << ")"
+                              << std::endl;
                 }
 
                 // Only place new NPCs on navigation tiles
@@ -1323,7 +1542,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             npc.SetDialogueTree(tree);
                             npc.SetName(npcName);
 
-                            ctx.npcs.emplace_back(std::move(npc));
+                            m_UndoStack.Execute(std::make_unique<PlaceNPCCmd>(std::move(npc)),
+                                                ctx.tilemap,
+                                                ctx.npcs);
                             std::cout << "Placed NPC " << npcType << " at tile (" << tileX << ", "
                                       << tileY << ") with dialogue tree" << std::endl;
                         }
@@ -1363,20 +1584,42 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
             {
-                ctx.tilemap.SetTileAnimation(tileX, tileY, m_CurrentLayer, m_SelectedAnimationId);
+                int oldAnimId = ctx.tilemap.GetTileAnimation(tileX, tileY, m_CurrentLayer);
+                int oldTileId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
+                if (oldAnimId != m_SelectedAnimationId)
+                {
+                    m_UndoStack.Execute(
+                        std::make_unique<SetTileAnimationCmd>(
+                            std::vector<SetTileAnimationCmd::Entry>{{tileX,
+                                                                     tileY,
+                                                                     m_CurrentLayer,
+                                                                     oldAnimId,
+                                                                     m_SelectedAnimationId,
+                                                                     oldTileId}}),
+                        ctx.tilemap,
+                        ctx.npcs);
+                }
                 std::cout << "Applied animation #" << m_SelectedAnimationId << " to tile (" << tileX
                           << ", " << tileY << ") layer " << m_CurrentLayer << std::endl;
             }
             return;
         }
 
-        // Elevation editing mode, paint elevation values
+        // Elevation editing mode, paint elevation values via stroke
+        // accumulator (left-click drag commits one composite cmd at mouse-up).
         if (m_Active && (m_EditMode == EditMode::Elevation))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
             {
-                ctx.tilemap.SetElevation(tileX, tileY, m_CurrentElevation);
+                int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
+                if (oldElevation != m_CurrentElevation)
+                {
+                    if (!m_ElevationStroke.IsActive())
+                        m_ElevationStroke.Begin();
+                    m_ElevationStroke.Touch(tileX, tileY, oldElevation, m_CurrentElevation);
+                    ctx.tilemap.SetElevation(tileX, tileY, m_CurrentElevation);
+                }
                 std::cout << "Set elevation at (" << tileX << ", " << tileY << ") to "
                           << m_CurrentElevation << std::endl;
             }
@@ -1431,8 +1674,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_PlacingAnchor = 0;
                         m_Mouse.mousePressed = true;
 
-                        int id = ctx.tilemap.AddNoProjectionStructure(m_TempLeftAnchor,
-                                                                      m_TempRightAnchor);
+                        auto cmd =
+                            std::make_unique<AddStructureCmd>(m_TempLeftAnchor, m_TempRightAnchor);
+                        AddStructureCmd* cmdPtr = cmd.get();
+                        m_UndoStack.Execute(std::move(cmd), ctx.tilemap, ctx.npcs);
+                        int id = cmdPtr->StructureId();
                         m_CurrentStructureId = id;
                         std::cout << "Right anchor: " << cornerNames[cornerIdx] << " of tile ("
                                   << tileX << ", " << tileY << ")" << std::endl;
@@ -1448,6 +1694,8 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     m_Mouse.mousePressed = true;
                     int layer = m_CurrentLayer;
                     int structId = m_CurrentStructureId;
+                    std::vector<LayerFlagEntry> noProjEntries;
+                    std::vector<SetTileStructureIdsCmd::Entry> structEntries;
                     int count = FloodFill(
                         ctx.tilemap,
                         tileX,
@@ -1459,9 +1707,22 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         },
                         [&](int cx, int cy)
                         {
-                            ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
+                            bool oldNP = ctx.tilemap.GetLayerNoProjection(cx, cy, layer);
+                            if (!oldNP)
+                            {
+                                noProjEntries.push_back(
+                                    {cx, cy, static_cast<std::size_t>(layer), oldNP, true});
+                                ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
+                            }
                             if (structId >= 0)
-                                ctx.tilemap.SetTileStructureId(cx, cy, layer + 1, structId);
+                            {
+                                int oldSid = ctx.tilemap.GetTileStructureId(cx, cy, layer + 1);
+                                if (oldSid != structId)
+                                {
+                                    structEntries.push_back({cx, cy, layer + 1, oldSid, structId});
+                                    ctx.tilemap.SetTileStructureId(cx, cy, layer + 1, structId);
+                                }
+                            }
                         });
                     if (structId >= 0)
                         std::cout << "Set no-projection on " << count
@@ -1469,20 +1730,59 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     else
                         std::cout << "Set no-projection on " << count << " tiles (no structure)"
                                   << std::endl;
+
+                    std::vector<std::unique_ptr<EditorCommand>> children;
+                    if (!noProjEntries.empty())
+                        children.push_back(
+                            std::make_unique<NoProjectionToggleCmd>(std::move(noProjEntries)));
+                    if (!structEntries.empty())
+                        children.push_back(
+                            std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
+                    if (children.size() == 1)
+                        m_UndoStack.Push(std::move(children[0]));
+                    else if (!children.empty())
+                        m_UndoStack.Push(std::make_unique<CompositeCmd>(
+                            "Structure flood-fill assign", std::move(children)));
                 }
                 else if (!ctrlHeld && !shiftHeld && !m_Mouse.mousePressed)
                 {
                     // Normal click: toggle no-projection on single tile
                     m_Mouse.mousePressed = true;
                     bool current = ctx.tilemap.GetLayerNoProjection(tileX, tileY, m_CurrentLayer);
+                    std::vector<LayerFlagEntry> noProjEntries;
+                    std::vector<SetTileStructureIdsCmd::Entry> structEntries;
+                    noProjEntries.push_back({tileX,
+                                             tileY,
+                                             static_cast<std::size_t>(m_CurrentLayer),
+                                             current,
+                                             !current});
                     ctx.tilemap.SetLayerNoProjection(tileX, tileY, m_CurrentLayer, !current);
                     if (m_CurrentStructureId >= 0 && !current)
                     {
-                        ctx.tilemap.SetTileStructureId(
-                            tileX, tileY, m_CurrentLayer + 1, m_CurrentStructureId);
+                        int oldSid =
+                            ctx.tilemap.GetTileStructureId(tileX, tileY, m_CurrentLayer + 1);
+                        if (oldSid != m_CurrentStructureId)
+                        {
+                            structEntries.push_back(
+                                {tileX, tileY, m_CurrentLayer + 1, oldSid, m_CurrentStructureId});
+                            ctx.tilemap.SetTileStructureId(
+                                tileX, tileY, m_CurrentLayer + 1, m_CurrentStructureId);
+                        }
                     }
                     std::cout << (current ? "Cleared" : "Set") << " no-projection at (" << tileX
                               << ", " << tileY << ")" << std::endl;
+
+                    std::vector<std::unique_ptr<EditorCommand>> children;
+                    children.push_back(
+                        std::make_unique<NoProjectionToggleCmd>(std::move(noProjEntries)));
+                    if (!structEntries.empty())
+                        children.push_back(
+                            std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
+                    if (children.size() == 1)
+                        m_UndoStack.Push(std::move(children[0]));
+                    else
+                        m_UndoStack.Push(std::make_unique<CompositeCmd>(
+                            "Structure single-tile assign", std::move(children)));
                 }
             }
             return;
@@ -1498,9 +1798,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
+                std::vector<LayerFlagEntry> entries;
+                std::size_t layer = static_cast<std::size_t>(m_CurrentLayer);
+
                 if (shiftHeld)
                 {
-                    int layer = m_CurrentLayer;
                     int count = FloodFill(
                         ctx.tilemap,
                         tileX,
@@ -1508,20 +1810,36 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         [&](int cx, int cy)
                         {
                             return ctx.tilemap.GetLayerTile(cx, cy, layer) >= 0 ||
-                                   ctx.tilemap.GetTileAnimation(cx, cy, layer) >= 0;
+                                   ctx.tilemap.GetTileAnimation(cx, cy, static_cast<int>(layer)) >=
+                                       0;
                         },
                         [&](int cx, int cy)
-                        { ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true); });
+                        {
+                            bool oldF = ctx.tilemap.GetLayerNoProjection(cx, cy, layer);
+                            if (!oldF)
+                            {
+                                entries.push_back({cx, cy, layer, oldF, true});
+                                ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
+                            }
+                        });
                     std::cout << "Set no-projection on " << count << " connected tiles (layer "
                               << (layer + 1) << ")" << std::endl;
                 }
                 else
                 {
                     // Single tile: set noProjection on current layer only
-                    ctx.tilemap.SetLayerNoProjection(tileX, tileY, m_CurrentLayer, true);
+                    bool oldF = ctx.tilemap.GetLayerNoProjection(tileX, tileY, layer);
+                    if (!oldF)
+                    {
+                        entries.push_back({tileX, tileY, layer, oldF, true});
+                        ctx.tilemap.SetLayerNoProjection(tileX, tileY, layer, true);
+                    }
                     std::cout << "Set no-projection at (" << tileX << ", " << tileY << ") on layer "
                               << (m_CurrentLayer + 1) << std::endl;
                 }
+
+                if (!entries.empty())
+                    m_UndoStack.Push(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
             }
             return;
         }
@@ -1530,7 +1848,15 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         // Shift+click, flood-fill to mark all connected tiles in the shape
         if (m_Active && (m_EditMode == EditMode::YSortPlus))
         {
-            SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortPlus, "Y-sort-plus");
+            auto entries = CollectYSortFlagToggle(ctx,
+                                                  tileX,
+                                                  tileY,
+                                                  &Tilemap::GetLayerYSortPlus,
+                                                  &Tilemap::SetLayerYSortPlus,
+                                                  /*newValue=*/true,
+                                                  "Y-sort-plus");
+            if (!entries.empty())
+                m_UndoStack.Push(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
             return;
         }
 
@@ -1538,7 +1864,15 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         // Shift+click, flood-fill to mark all connected tiles in the shape
         if (m_Active && (m_EditMode == EditMode::YSortMinus))
         {
-            SetLayerFlagAtTile(ctx, tileX, tileY, &Tilemap::SetLayerYSortMinus, "Y-sort-minus");
+            auto entries = CollectYSortFlagToggle(ctx,
+                                                  tileX,
+                                                  tileY,
+                                                  &Tilemap::GetLayerYSortMinus,
+                                                  &Tilemap::SetLayerYSortMinus,
+                                                  /*newValue=*/true,
+                                                  "Y-sort-minus");
+            if (!entries.empty())
+                m_UndoStack.Push(std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
             // Warn if Y-sort-plus isn't set on this tile (only relevant for single-tile placement)
             bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                               glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -1572,6 +1906,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                         : m_MultiTile.height;
                 float tileRotation = GetCompensatedTileRotation();
 
+                std::vector<PlaceTilesCmd::Entry> entries;
+                entries.reserve(static_cast<size_t>(rotatedWidth) *
+                                static_cast<size_t>(rotatedHeight));
                 for (int dy = 0; dy < rotatedHeight; ++dy)
                 {
                     for (int dx = 0; dx < rotatedWidth; ++dx)
@@ -1587,11 +1924,21 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         if (placeX >= 0 && placeX < ctx.tilemap.GetMapWidth() && placeY >= 0 &&
                             placeY < ctx.tilemap.GetMapHeight())
                         {
-                            ctx.tilemap.SetLayerTile(placeX, placeY, m_CurrentLayer, sourceTileID);
-                            ctx.tilemap.SetLayerRotation(
-                                placeX, placeY, m_CurrentLayer, tileRotation);
+                            entries.push_back(PlaceTilesCmd::Entry{
+                                placeX,
+                                placeY,
+                                static_cast<size_t>(m_CurrentLayer),
+                                ctx.tilemap.GetLayerTile(placeX, placeY, m_CurrentLayer),
+                                ctx.tilemap.GetLayerRotation(placeX, placeY, m_CurrentLayer),
+                                sourceTileID,
+                                tileRotation});
                         }
                     }
+                }
+                if (!entries.empty())
+                {
+                    m_UndoStack.Execute(
+                        std::make_unique<PlaceTilesCmd>(std::move(entries)), ctx.tilemap, ctx.npcs);
                 }
                 std::cout << "Placed " << m_MultiTile.width << "x" << m_MultiTile.height
                           << " tiles starting at (" << tileX << ", " << tileY << ") on layer "
@@ -1605,13 +1952,27 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         }
         else
         {
-            // Single tile placement, support drag-to-place with rotation
+            // Single tile placement, support drag-to-place with rotation.
+            // Stroke accumulator batches the per-frame mutations into a single
+            // composite cmd that lands on the undo stack at mouse-up.
             if (isNewTilePosition || !m_Mouse.mousePressed)
             {
                 if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                     tileY < ctx.tilemap.GetMapHeight())
                 {
                     float tileRotation = GetCompensatedTileRotation();
+                    if (!m_TileStroke.IsActive())
+                        m_TileStroke.Begin();
+
+                    int oldId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
+                    float oldRot = ctx.tilemap.GetLayerRotation(tileX, tileY, m_CurrentLayer);
+                    m_TileStroke.Touch(tileX,
+                                       tileY,
+                                       static_cast<size_t>(m_CurrentLayer),
+                                       oldId,
+                                       oldRot,
+                                       m_MultiTile.selectedStartID,
+                                       tileRotation);
                     ctx.tilemap.SetLayerTile(
                         tileX, tileY, m_CurrentLayer, m_MultiTile.selectedStartID);
                     ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, tileRotation);
@@ -1669,7 +2030,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
             }
             zone.noProjection = hasNoProjection;
-            ctx.tilemap.AddParticleZone(zone);
+            m_UndoStack.Execute(std::make_unique<AddParticleZoneCmd>(zone), ctx.tilemap, ctx.npcs);
 
             std::cout << "Created " << EnumTraits<ParticleType>::ToString(m_CurrentParticleType)
                       << " zone at (" << zr.x << ", " << zr.y << ") size " << zr.w << "x" << zr.h;
@@ -1685,6 +2046,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         m_Mouse.lastPlacedTileY = -1;
         m_Mouse.lastNPCPlacementTileX = -1;
         m_Mouse.lastNPCPlacementTileY = -1;
+
+        // Commit any in-progress drag-paint strokes as single composite cmds.
+        if (m_TileStroke.IsActive())
+            m_TileStroke.Commit(m_UndoStack);
+        if (m_ElevationStroke.IsActive())
+            m_ElevationStroke.Commit(m_UndoStack);
     }
 
     // Update mouse position for preview
@@ -1825,22 +2192,27 @@ float Editor::GetCompensatedTileRotation() const
     return tileRotation;
 }
 
-void Editor::SetLayerFlagAtTile(const EditorContext& ctx,
-                                int tileX,
-                                int tileY,
-                                void (Tilemap::*setter)(int, int, size_t, bool),
-                                const std::string& flagName)
+std::vector<LayerFlagEntry> Editor::CollectYSortFlagToggle(
+    const EditorContext& ctx,
+    int tileX,
+    int tileY,
+    bool (Tilemap::*getter)(int, int, size_t) const,
+    void (Tilemap::*setter)(int, int, size_t, bool),
+    bool newValue,
+    const std::string& flagName)
 {
+    std::vector<LayerFlagEntry> entries;
     if (tileX < 0 || tileX >= ctx.tilemap.GetMapWidth() || tileY < 0 ||
         tileY >= ctx.tilemap.GetMapHeight())
-        return;
+        return entries;
 
     bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                       glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
+    std::size_t layer = static_cast<std::size_t>(m_CurrentLayer);
+
     if (shiftHeld)
     {
-        int layer = m_CurrentLayer;
         int count = FloodFill(
             ctx.tilemap,
             tileX,
@@ -1848,18 +2220,33 @@ void Editor::SetLayerFlagAtTile(const EditorContext& ctx,
             [&](int cx, int cy)
             {
                 return ctx.tilemap.GetLayerTile(cx, cy, layer) >= 0 ||
-                       ctx.tilemap.GetTileAnimation(cx, cy, layer) >= 0;
+                       ctx.tilemap.GetTileAnimation(cx, cy, static_cast<int>(layer)) >= 0;
             },
-            [&](int cx, int cy) { (ctx.tilemap.*setter)(cx, cy, layer, true); });
-        std::cout << "Set " << flagName << " on " << count << " connected tiles (layer "
-                  << (layer + 1) << ")" << std::endl;
+            [&](int cx, int cy)
+            {
+                bool oldF = (ctx.tilemap.*getter)(cx, cy, layer);
+                if (oldF != newValue)
+                {
+                    entries.push_back({cx, cy, layer, oldF, newValue});
+                    (ctx.tilemap.*setter)(cx, cy, layer, newValue);
+                }
+            });
+        std::cout << (newValue ? "Set " : "Cleared ") << flagName << " on " << count
+                  << " connected tiles (layer " << (layer + 1) << ")" << std::endl;
     }
     else
     {
-        (ctx.tilemap.*setter)(tileX, tileY, m_CurrentLayer, true);
-        std::cout << "Set " << flagName << " at (" << tileX << ", " << tileY << ") layer "
-                  << (m_CurrentLayer + 1) << std::endl;
+        bool oldF = (ctx.tilemap.*getter)(tileX, tileY, layer);
+        if (oldF != newValue)
+        {
+            entries.push_back({tileX, tileY, layer, oldF, newValue});
+            (ctx.tilemap.*setter)(tileX, tileY, layer, newValue);
+        }
+        std::cout << (newValue ? "Set " : "Cleared ") << flagName << " at (" << tileX << ", "
+                  << tileY << ") layer " << (m_CurrentLayer + 1) << std::endl;
     }
+
+    return entries;
 }
 
 Editor::TileZoneRect Editor::CalculateParticleZoneRect(float worldX,
