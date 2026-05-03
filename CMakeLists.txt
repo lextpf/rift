@@ -44,16 +44,9 @@ message(STATUS "Building with both OpenGL and Vulkan support (runtime switchable
 find_package(OpenGL REQUIRED)
 add_definitions(-DUSE_OPENGL)
 
-# Find Vulkan (optional - if not found, Vulkan renderer won't be available)
-find_package(Vulkan QUIET)
-if(Vulkan_FOUND)
-    add_definitions(-DUSE_VULKAN)
-    message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
-    message(STATUS "-> Vulkan renderer will be available at runtime")
-else()
-    message(STATUS "Vulkan SDK not found - Vulkan renderer will NOT be available")
-    message(STATUS "-> To enable Vulkan, install the Vulkan SDK from https://vulkan.lunarg.com/sdk/home")
-endif()
+# Find Vulkan (required - the Vulkan renderer is always built and linked)
+find_package(Vulkan REQUIRED)
+message(STATUS "Vulkan SDK found: ${Vulkan_INCLUDE_DIRS}")
 
 # GLM - try vcpkg first, otherwise use bundled
 find_package(glm CONFIG QUIET)
@@ -170,16 +163,6 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 # #define STB_IMAGE_IMPLEMENTATION, so we don't compile external/stb/*.c separately
 set(STB_SOURCES "")
 
-# Exclude Vulkan files only if Vulkan SDK is not available
-if(NOT Vulkan_FOUND)
-    list(REMOVE_ITEM SOURCES
-        "${CMAKE_SOURCE_DIR}/src/VulkanRenderer.cpp"
-        "${CMAKE_SOURCE_DIR}/src/VulkanRendererBuffers.cpp"
-        "${CMAKE_SOURCE_DIR}/src/VulkanRendererHelpers.cpp"
-        "${CMAKE_SOURCE_DIR}/src/VulkanShader.cpp"
-    )
-endif()
-
 # Executable
 add_executable(${PROJECT_NAME} ${SOURCES} ${STB_SOURCES})
 
@@ -211,11 +194,9 @@ if(STB_FROM_VCPKG)
     target_include_directories(${PROJECT_NAME} PRIVATE ${Stb_INCLUDE_DIR})
 endif()
 
-# Link Vulkan if available
-if(Vulkan_FOUND)
-    target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES})
-    target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
-endif()
+# Link Vulkan (always required)
+target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES})
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
 # Link FreeType if available
 if(Freetype_FOUND)
@@ -256,7 +237,7 @@ set(SHADER_SOURCES
     "${SHADERS_DIR}/sprite.frag"
 )
 
-if(GLSLANG_VALIDATOR AND Vulkan_FOUND)
+if(GLSLANG_VALIDATOR)
     message(STATUS "glslangValidator found: ${GLSLANG_VALIDATOR}")
     message(STATUS "-> Shaders will be compiled to SPIR-V during build")
 
@@ -277,10 +258,8 @@ if(GLSLANG_VALIDATOR AND Vulkan_FOUND)
 
     add_custom_target(compile_shaders DEPENDS ${SHADER_OUTPUTS})
 else()
-    if(Vulkan_FOUND AND NOT GLSLANG_VALIDATOR)
-        message(STATUS "glslangValidator not found - shader compilation skipped")
-        message(STATUS "  Pre-compiled .spv files will be copied if present")
-    endif()
+    message(STATUS "glslangValidator not found - shader compilation skipped")
+    message(STATUS "  Pre-compiled .spv files will be copied if present")
     # No-op target so add_dependencies below always works
     add_custom_target(compile_shaders)
 endif()
@@ -362,6 +341,8 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/Tilemap.cpp"
         "${CMAKE_SOURCE_DIR}/src/Texture.cpp"
         "${CMAKE_SOURCE_DIR}/src/IRenderer.cpp"
+        "${CMAKE_SOURCE_DIR}/src/EditorCommands.cpp"
+        "${CMAKE_SOURCE_DIR}/src/NavigationRecalc.cpp"
     )
 
     # Create test executable
@@ -400,10 +381,8 @@ if(BUILD_TESTS)
         target_include_directories(rift_tests PRIVATE ${Stb_INCLUDE_DIR})
     endif()
 
-    if(Vulkan_FOUND)
-        target_link_libraries(rift_tests PRIVATE ${Vulkan_LIBRARIES})
-        target_include_directories(rift_tests PRIVATE ${Vulkan_INCLUDE_DIRS})
-    endif()
+    target_link_libraries(rift_tests PRIVATE ${Vulkan_LIBRARIES})
+    target_include_directories(rift_tests PRIVATE ${Vulkan_INCLUDE_DIRS})
 
     if(Freetype_FOUND)
         target_link_libraries(rift_tests PRIVATE ${FREETYPE_LIBRARIES})
