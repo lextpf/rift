@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <string>
+#include <vector>
 
 /**
  * @class IRenderer
@@ -134,6 +135,19 @@ public:
      * @brief Virtual destructor for proper polymorphic cleanup.
      */
     virtual ~IRenderer() = default;
+
+    /**
+     * @brief Configure preferred font paths before Init().
+     *
+     * Renderers try
+     * these project-specific candidates before their built-in
+     * fallback fonts. Passing an
+     * empty vector restores backend defaults.
+     *
+     * @param fontCandidates Ordered list of
+     * TTF font paths.
+     */
+    virtual void SetFontCandidates(const std::vector<std::string>& fontCandidates) = 0;
 
     /**
      * @brief Initialize the renderer.
