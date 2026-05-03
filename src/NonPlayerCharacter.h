@@ -9,6 +9,7 @@
 
 #include <glm/glm.hpp>
 #include <string>
+#include <unordered_map>
 
 /**
  * @class NonPlayerCharacter
@@ -68,6 +69,27 @@ public:
      * @return `true` if loaded successfully.
      */
     bool Load(const std::string& relativePath);
+
+    /**
+     * @brief Register an NPC sprite path for a type identifier.
+     * @param type NPC type identifier, usually the sprite filename without extension.
+     * @param path Sprite sheet path.
+     */
+    static void SetNpcAsset(const std::string& type, const std::string& path);
+
+    /**
+     * @brief Resolve an NPC sprite path from a type identifier.
+     * @param type NPC type identifier.
+     * @return Registered path, or the legacy assets/non-player fallback path.
+     */
+    static std::string ResolveAssetPath(const std::string& type);
+
+    /**
+     * @brief Extract the NPC type identifier from a sprite path.
+     * @param path Sprite sheet path.
+     * @return Filename without .png when present.
+     */
+    static std::string TypeFromSpritePath(const std::string& path);
 
     /**
      * @brief Upload sprite texture to the renderer.
@@ -133,7 +155,7 @@ public:
     /// @brief Get NPC type identifier (used for sprite path lookup).
     const std::string& GetType() const { return m_Type; }
     /// @brief Get path to NPC's sprite sheet asset.
-    std::string GetSpritePath() const { return "assets/non-player/" + m_Type + ".png"; }
+    std::string GetSpritePath() const { return ResolveAssetPath(m_Type); }
 
     /// @brief Check if NPC movement is halted.
     bool IsStopped() const { return m_IsStopped; }
@@ -203,6 +225,8 @@ private:
     std::string m_Name;           ///< Display name shown during dialogue
     std::string m_Dialogue;       ///< Simple dialogue text (fallback when no tree)
     DialogueTree m_DialogueTree;  ///< Branching dialogue tree (may be empty)
+
+    static std::unordered_map<std::string, std::string> s_NpcAssets;
 
     int m_TileX{0};  ///< Current tile column
     int m_TileY{0};  ///< Current tile row

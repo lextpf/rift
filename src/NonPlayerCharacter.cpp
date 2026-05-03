@@ -1,6 +1,7 @@
 #include "NonPlayerCharacter.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -60,6 +61,8 @@ bool TestHitboxOverlap(
 }
 }  // namespace
 
+std::unordered_map<std::string, std::string> NonPlayerCharacter::s_NpcAssets;
+
 NonPlayerCharacter::NonPlayerCharacter()
     : GameCharacter(),
       m_TileX(0),
@@ -77,14 +80,29 @@ NonPlayerCharacter::NonPlayerCharacter()
     m_Speed = 25.0f;
 }
 
-bool NonPlayerCharacter::Load(const std::string& relativePath)
+void NonPlayerCharacter::SetNpcAsset(const std::string& type, const std::string& path)
 {
-    // Extract NPC type from filename
-    size_t lastSlash = relativePath.find_last_of("/\\");
-    std::string filename =
-        (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
+    if (!type.empty())
+    {
+        s_NpcAssets[type] = path;
+    }
+}
 
-    // Remove .png extension if present (case-insensitive)
+std::string NonPlayerCharacter::ResolveAssetPath(const std::string& type)
+{
+    auto it = s_NpcAssets.find(type);
+    if (it != s_NpcAssets.end())
+    {
+        return it->second;
+    }
+    return "assets/non-player/" + type + ".png";
+}
+
+std::string NonPlayerCharacter::TypeFromSpritePath(const std::string& path)
+{
+    size_t lastSlash = path.find_last_of("/\\");
+    std::string filename = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+
     if (filename.size() > 4)
     {
         std::string ext = filename.substr(filename.size() - 4);
@@ -92,12 +110,18 @@ bool NonPlayerCharacter::Load(const std::string& relativePath)
                        ext.end(),
                        ext.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        m_Type = (ext == ".png") ? filename.substr(0, filename.size() - 4) : filename;
+        if (ext == ".png")
+        {
+            return filename.substr(0, filename.size() - 4);
+        }
     }
-    else
-    {
-        m_Type = filename;
-    }
+
+    return filename;
+}
+
+bool NonPlayerCharacter::Load(const std::string& relativePath)
+{
+    m_Type = TypeFromSpritePath(relativePath);
 
     // Try loading from given path
     std::string path = relativePath;
