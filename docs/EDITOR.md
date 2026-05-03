@@ -76,10 +76,11 @@ NPCs, particle zones, and structures are not included in the clipboard. NPC copy
 
 | Key   | Action |
 |-------|--------|
-| `S`   | Save the current map to `save.json` in the working directory. |
-| `L`   | Reload `save.json`. Discards the undo stack and current selection. |
+| `S`   | Save the current map to the `defaultMap` path from `rift.project.json`. |
+| `L`   | Reload the configured `defaultMap`. Discards the undo stack and current selection. |
 
 The save file is human-readable JSON; manual edits work but the editor is the supported entry point.
+If no manifest is found, the default path remains `save.json`.
 
 ## Other Hotkeys
 
