@@ -124,6 +124,11 @@ VulkanRenderer::~VulkanRenderer()
     Shutdown();
 }
 
+void VulkanRenderer::SetFontCandidates(const std::vector<std::string>& fontCandidates)
+{
+    m_FontCandidates = fontCandidates;
+}
+
 bool VulkanRenderer::Init()
 {
     try
@@ -2388,13 +2393,15 @@ void VulkanRenderer::LoadFont()
         return;
     }
 
-    const std::vector<std::string> fontCandidates = {
-        "assets/fonts/c8ab67e0-519a-49b5-b693-e8fc86d08efa.ttf",
+    std::vector<std::string> fontCandidates = m_FontCandidates;
+    if (fontCandidates.empty())
+    {
+        fontCandidates.push_back("assets/fonts/c8ab67e0-519a-49b5-b693-e8fc86d08efa.ttf");
+    }
 #ifdef _WIN32
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/arial.ttf",
+    fontCandidates.push_back("C:/Windows/Fonts/segoeui.ttf");
+    fontCandidates.push_back("C:/Windows/Fonts/arial.ttf");
 #endif
-    };
 
     bool loaded = false;
     for (const auto& fontPath : fontCandidates)

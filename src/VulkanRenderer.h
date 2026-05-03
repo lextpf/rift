@@ -98,6 +98,8 @@ public:
 
     RIFT_DECLARE_COMMON_RENDERER_METHODS;
 
+    void SetFontCandidates(const std::vector<std::string>& fontCandidates) override;
+
     /// @brief Vulkan uses same Y-flip convention as OpenGL for UV compatibility.
     bool RequiresYFlip() const override { return true; }
 
@@ -179,7 +181,8 @@ private:
                             const std::vector<unsigned char>& rgbaData,
                             Glyph& outGlyph);
 
-    std::map<char, Glyph> m_Glyphs;  ///< Cached glyph textures.
+    std::map<char, Glyph> m_Glyphs;             ///< Cached glyph textures.
+    std::vector<std::string> m_FontCandidates;  ///< Project-specific font candidates.
 
 #ifdef USE_FREETYPE
     FT_Library m_FreeType{nullptr};
