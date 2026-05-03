@@ -384,6 +384,8 @@ private:
     bool m_IsMoving;                    ///< True if currently in motion
     int m_LastInputX = 0;               ///< Last non-zero A/D sign: -1 left, +1 right
     int m_LastInputY = 0;               ///< Last non-zero W/S sign: -1 up, +1 down
+    bool m_PrevAxisXActive = false;     ///< Was X axis (A/D) input non-zero last frame?
+    bool m_PrevAxisYActive = false;     ///< Was Y axis (W/S) input non-zero last frame?
     /** @} */
 
     /**
