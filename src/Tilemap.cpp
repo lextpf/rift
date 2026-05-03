@@ -3187,7 +3187,7 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                 if (!type.empty())
                 {
                     NonPlayerCharacter npc;
-                    if (npc.Load("assets/non-player/" + type + ".png"))
+                    if (npc.Load(NonPlayerCharacter::ResolveAssetPath(type)))
                     {
                         npc.SetTilePosition(tileX, tileY, tileWidth);
                         if (!name.empty())
