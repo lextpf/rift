@@ -241,15 +241,20 @@ void Game::ProcessInput(float deltaTime)
     }
     // Cycles through available player character sprites.
     // Each character type has its own sprite sheet loaded from assets.
-    if (m_KeyC.JustPressed(m_Window))
+    // Skip when Ctrl is held in editor mode - that's reserved for Ctrl+C (copy).
     {
-        CharacterType newType = NextEnum(m_Player.GetCharacterType());
-
-        // Attempt to load and switch to new character
-        if (m_Player.SwitchCharacter(newType))
+        const bool ctrlHeld = glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                              glfwGetKey(m_Window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        if (m_KeyC.JustPressed(m_Window) && !(m_Editor.IsActive() && ctrlHeld))
         {
-            std::cout << "Character switched to: " << EnumTraits<CharacterType>::ToString(newType)
-                      << std::endl;
+            CharacterType newType = NextEnum(m_Player.GetCharacterType());
+
+            // Attempt to load and switch to new character
+            if (m_Player.SwitchCharacter(newType))
+            {
+                std::cout << "Character switched to: "
+                          << EnumTraits<CharacterType>::ToString(newType) << std::endl;
+            }
         }
     }
 
