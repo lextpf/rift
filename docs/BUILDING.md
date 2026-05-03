@@ -27,12 +27,12 @@ flowchart LR
 
 ## Auto-Detected Features
 
-The build automatically detects and includes all available features:
+Both rendering backends are always built into the binary:
 - **OpenGL** - Always included (required)
-- **Vulkan** - Included if Vulkan SDK is installed
-- **FreeType** - Included if FreeType library is found
+- **Vulkan** - Always included (required); CMake fails configuration if the Vulkan SDK is missing
+- **FreeType** - Included if FreeType library is found (optional; text rendering disabled when missing)
 
-The graphics backend (OpenGL/Vulkan) is selected at runtime, not build time.
+The graphics backend (OpenGL/Vulkan) is selected at runtime via F1, not build time.
 
 ## Windows
 
@@ -46,7 +46,7 @@ We provide a batch script for one-click building:
 
 This script automatically:
 1. Builds both Debug and Release configurations
-2. Compiles shaders to SPIR-V (if Vulkan SDK is installed)
+2. Compiles shaders to SPIR-V (the Vulkan SDK is required for the build)
 3. Copies assets to build directories
 4. Copies save files from project root to build directories
 5. Generates Doxygen documentation (if Doxygen is installed)
@@ -104,7 +104,7 @@ flowchart LR
 </pre>
 \endhtmlonly
 
-The `build.bat` script automatically compiles shaders if `glslangValidator` is in your PATH (installed with Vulkan SDK).
+The `build.bat` script compiles shaders via `glslangValidator` (installed with the Vulkan SDK, which is required).
 
 **Manual compilation:**
 ```cmd

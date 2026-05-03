@@ -23,8 +23,11 @@ graph LR
         STB["stb_image"]:::required
     end
 
+    subgraph RequiredSDK["Required SDK"]
+        Vulkan["Vulkan SDK"]:::required
+    end
+
     subgraph Optional["Optional"]
-        Vulkan["Vulkan SDK"]:::optional
         FreeType["FreeType 2"]:::optional
     end
 </pre>
@@ -64,7 +67,7 @@ The project requires C++23 support.
 | GLAD       | OpenGL function loading         | Yes (for OpenGL) |
 | stb_image  | Image file loading              | Yes              |
 | FreeType   | Font rendering                  | Optional         |
-| Vulkan SDK | Vulkan graphics API             | Optional         |
+| Vulkan SDK | Vulkan graphics API             | Yes              |
 
 ### Automatic Setup (Windows)
 
@@ -165,9 +168,9 @@ mkdir external\stb -Force
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" -OutFile "external\stb\stb_image.h"
 ```
 
-## Optional: Vulkan SDK
+## Required: Vulkan SDK
 
-For Vulkan rendering support:
+The Vulkan SDK is required to build the project. CMake configuration will fail without it because both rendering backends are linked into a single binary and selected at runtime.
 
 ### Windows
 
@@ -200,10 +203,10 @@ cmake --version
 :: Check compiler
 cl
 
-:: Check Vulkan (optional)
+:: Check Vulkan (required)
 vulkaninfo
 
-:: Check GLSL compiler (optional)
+:: Check GLSL compiler (required, ships with the Vulkan SDK)
 glslangValidator --version
 ```
 
