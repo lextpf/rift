@@ -38,7 +38,7 @@
 > This engine ships without game assets (sprites, tilesets, fonts, maps). To run the engine, you will need to provide your own:
 > - Source free/open-licensed sprites and tilesets (e.g., from [OpenGameArt](https://opengameart.org/), [itch.io](https://itch.io/game-assets/free))
 > - Place them in the `assets/` directory following the structure in [Project Structure](#project-structure)
-> - Wire them into the engine by adjusting the loading paths (e.g., Game.cpp L233, L273)
+> - Wire them into the engine by editing `rift.project.json`; do not edit `Game.cpp` just to change asset paths
 >
 > **The engine will not run without valid assets in place.**
 
@@ -244,10 +244,13 @@ cd rift
 # 2. Run setup script to download dependencies
 .\setup.ps1
 
-# 3. Build the project
+# 3. Configure your assets in rift.project.json
+#    The sample manifest documents tilesets, player sprites, NPC sprites, fonts, and the save file.
+
+# 4. Build the project
 .\build.bat
 
-# 4. Run the game
+# 5. Run the game
 .\build\Release\rift.exe
 ```
 
@@ -373,6 +376,7 @@ graph LR
 | **[Time System](docs/TIME_SYSTEM.md)**           | Day/night cycle, celestial mechanics, lighting      |
 | **[Collision & Pathfinding](docs/COLLISION.md)** | AABB collision, navigation, NPC AI                  |
 | **[Editor Guide](docs/EDITOR.md)**               | Level editor usage and tools                        |
+| **[Project Manifest](docs/PROJECT_MANIFEST.md)** | Configure startup assets and map defaults           |
 
 ### Generating API Docs
 
