@@ -56,13 +56,10 @@ struct TileOverlapContext
  * It accesses PlayerCharacter internals via friend access and is stored
  * as a member (`m_Collision`) on the player.
  *
- * @par Collision Modes
- * The resolver supports two collision styles selected by movement speed:
- *
- * | Mode   | Method                  | When Used               | Behavior                 |
- * |--------|-------------------------|-------------------------|--------------------------|
- * | Strict | CollidesWithTilesStrict | Walking                 | Full 16x16 hitbox AABB   |
- * | Center | CollidesWithTilesCenter | Running / Bicycle       | Single center-point test |
+ * @par Collision Model
+ * All movement modes (walk, run, bicycle) use the same full-AABB collision via
+ * CollidesWithTilesStrict(). Speed differs between modes; collision geometry
+ * and corner-cutting tolerances do not.
  *
  * @par Wall Sliding
  * When a direct move is blocked, TrySlideMovement() decomposes the movement
@@ -165,27 +162,14 @@ public:
                                  bool diagonalInput) const;
 
     /**
-     * @brief Center-point collision check (running/bicycle mode).
-     *
-     * Tests only the single tile under the player's center point,
-     * allowing more aggressive corner cutting at higher speeds.
-     *
-     * @param feetPos Player feet position to test.
-     * @param tilemap Tilemap for collision queries.
-     * @return True if the center tile is blocked.
-     */
-    bool CollidesWithTilesCenter(const glm::vec2& feetPos, const Tilemap* tilemap) const;
-
-    /**
-     * @brief Unified collision check dispatching to strict or center mode.
+     * @brief Unified collision check against tiles and NPCs.
      *
      * Entry point for all collision testing. Checks both tile collision
-     * and NPC collision, selecting the appropriate tile-check mode.
+     * (via CollidesWithTilesStrict) and NPC collision.
      *
      * @param feetPos Player feet position to test.
      * @param tilemap Tilemap for collision queries.
      * @param npcPositions List of NPC feet positions (nullable).
-     * @param sprintMode True to use center-point collision (running/bicycle).
      * @param moveDx Movement direction X sign.
      * @param moveDy Movement direction Y sign.
      * @param diagonalInput True if pressing two direction keys.
@@ -194,33 +178,9 @@ public:
     bool CollidesAt(const glm::vec2& feetPos,
                     const Tilemap* tilemap,
                     const std::vector<glm::vec2>* npcPositions,
-                    bool sprintMode,
                     int moveDx = 0,
                     int moveDy = 0,
                     bool diagonalInput = false) const;
-
-    /**
-     * @brief Check if the player hitbox is penetrating a tile corner diagonally.
-     * @param feetPos Player feet position to test.
-     * @param tilemap Tilemap for collision queries.
-     * @return True if a diagonal corner penetration is detected.
-     */
-    bool IsCornerPenetration(const glm::vec2& feetPos, const Tilemap* tilemap) const;
-
-    /**
-     * @brief Compute ejection vector when sprinting into a tile corner.
-     *
-     * Finds the nearest safe position by testing small offsets perpendicular
-     * to the movement direction.
-     *
-     * @param tilemap Tilemap for collision queries.
-     * @param npcPositions List of NPC feet positions (nullable).
-     * @param normalizedDir Normalized movement direction.
-     * @return Ejection offset vector to apply to the player position.
-     */
-    glm::vec2 ComputeSprintCornerEject(const Tilemap* tilemap,
-                                       const std::vector<glm::vec2>* npcPositions,
-                                       glm::vec2 normalizedDir) const;
 
     /**
      * @brief Find the nearest non-colliding tile center for stuck recovery.
@@ -267,7 +227,6 @@ public:
      * @param currentSpeed Current movement speed (pixels/second).
      * @param tilemap Tilemap for collision queries.
      * @param npcPositions NPC feet positions (nullable).
-     * @param sprintMode Whether center-point collision is used.
      * @param moveDx Movement direction X sign.
      * @param moveDy Movement direction Y sign.
      * @param diagonalInput True if pressing two direction keys.
@@ -279,7 +238,6 @@ public:
                                float currentSpeed,
                                const Tilemap* tilemap,
                                const std::vector<glm::vec2>* npcPositions,
-                               bool sprintMode,
                                int moveDx,
                                int moveDy,
                                bool diagonalInput);
@@ -296,7 +254,6 @@ public:
      * @param deltaTime Frame time in seconds.
      * @param tilemap Tilemap for collision queries.
      * @param npcPositions NPC feet positions (nullable).
-     * @param sprintMode Whether center-point collision is used.
      * @param moveDx Movement direction X sign.
      * @param moveDy Movement direction Y sign.
      * @return Movement vector adjusted with lane-snapping correction.
@@ -306,7 +263,6 @@ public:
                                 float deltaTime,
                                 const Tilemap* tilemap,
                                 const std::vector<glm::vec2>* npcPositions,
-                                bool sprintMode,
                                 int moveDx,
                                 int moveDy);
 
