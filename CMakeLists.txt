@@ -207,6 +207,7 @@ endif()
 # Directories for runtime assets
 set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 set(SHADERS_DIR "${CMAKE_SOURCE_DIR}/shaders")
+set(PROJECT_MANIFEST_FILE "${CMAKE_SOURCE_DIR}/rift.project.json")
 
 # Copy entire assets and shaders folders to build root + Debug + Release
 foreach(subdir "" "Debug" "Release")
@@ -224,6 +225,9 @@ foreach(subdir "" "Debug" "Release")
     endif()
     if(EXISTS "${SHADERS_DIR}")
         file(COPY "${SHADERS_DIR}" DESTINATION "${OUT_DIR}")
+    endif()
+    if(EXISTS "${PROJECT_MANIFEST_FILE}")
+        file(COPY "${PROJECT_MANIFEST_FILE}" DESTINATION "${OUT_DIR}")
     endif()
 endforeach()
 
@@ -280,6 +284,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${ASSETS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SHADERS_DIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PROJECT_MANIFEST_FILE}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rift.project.json"
     COMMENT "Copying assets and shaders to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
@@ -343,6 +348,7 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/IRenderer.cpp"
         "${CMAKE_SOURCE_DIR}/src/EditorCommands.cpp"
         "${CMAKE_SOURCE_DIR}/src/NavigationRecalc.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ProjectManifest.cpp"
     )
 
     # Create test executable
