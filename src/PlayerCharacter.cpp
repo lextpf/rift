@@ -426,6 +426,10 @@ void PlayerCharacter::Move(glm::vec2 direction,
     // === No input: handle idle state ===
     if (glm::length(direction) < 0.1f)
     {
+        // Clear axis-active tracking so the next key-down is a rising edge
+        // (latest-pressed-axis facing rule depends on this).
+        m_PrevAxisXActive = false;
+        m_PrevAxisYActive = false;
         m_Collision.HandleIdleSnap(deltaTime, tilemap, npcPositions);
         return;
     }
@@ -460,11 +464,56 @@ void PlayerCharacter::Move(glm::vec2 direction,
     if (moveDy != 0)
         m_LastInputY = moveDy;
 
-    // Update facing direction
-    if (std::abs(normalizedDir.x) > std::abs(normalizedDir.y))
-        m_Direction = (normalizedDir.x > 0) ? Direction::RIGHT : Direction::LEFT;
-    else
-        m_Direction = (normalizedDir.y > 0) ? Direction::DOWN : Direction::UP;
+    // Update facing direction. Latest-pressed axis wins so adding a key on the
+    // opposite axis flips facing in either direction (W then A faces LEFT,
+    // matching the existing A then W -> UP behavior). When neither axis just
+    // became active, preserve the current facing axis as long as it's still
+    // held; otherwise fall back to whichever axis is active.
+    bool xActive = (moveDx != 0);
+    bool yActive = (moveDy != 0);
+    bool xRising = xActive && !m_PrevAxisXActive;
+    bool yRising = yActive && !m_PrevAxisYActive;
+    bool facingX = (m_Direction == Direction::LEFT || m_Direction == Direction::RIGHT);
+
+    if (xRising && !yRising)
+    {
+        m_Direction = (moveDx > 0) ? Direction::RIGHT : Direction::LEFT;
+    }
+    else if (yRising && !xRising)
+    {
+        m_Direction = (moveDy > 0) ? Direction::DOWN : Direction::UP;
+    }
+    else if (xRising && yRising)
+    {
+        // Both axes pressed in the same frame - fall back to the magnitude
+        // rule (effectively prefers Y on a perfect diagonal).
+        if (std::abs(normalizedDir.x) > std::abs(normalizedDir.y))
+            m_Direction = (moveDx > 0) ? Direction::RIGHT : Direction::LEFT;
+        else
+            m_Direction = (moveDy > 0) ? Direction::DOWN : Direction::UP;
+    }
+    else if (facingX && xActive)
+    {
+        // Preserve X-axis facing while still holding A/D (sign may flip).
+        m_Direction = (moveDx > 0) ? Direction::RIGHT : Direction::LEFT;
+    }
+    else if (!facingX && yActive)
+    {
+        // Preserve Y-axis facing while still holding W/S.
+        m_Direction = (moveDy > 0) ? Direction::DOWN : Direction::UP;
+    }
+    else if (xActive)
+    {
+        // Current facing axis dropped; switch to the remaining axis.
+        m_Direction = (moveDx > 0) ? Direction::RIGHT : Direction::LEFT;
+    }
+    else if (yActive)
+    {
+        m_Direction = (moveDy > 0) ? Direction::DOWN : Direction::UP;
+    }
+
+    m_PrevAxisXActive = xActive;
+    m_PrevAxisYActive = yActive;
 
     // Start or update animation
     AnimationType targetAnim =
@@ -489,7 +538,6 @@ void PlayerCharacter::Move(glm::vec2 direction,
     else if (m_IsRunning)
         currentSpeed *= 1.9f;
 
-    bool sprintMode = (m_IsRunning || m_IsBicycling);
     glm::vec2 desiredMovement = normalizedDir * currentSpeed * deltaTime;
     const float requestedMoveLen = glm::length(desiredMovement);
 
@@ -503,9 +551,8 @@ void PlayerCharacter::Move(glm::vec2 direction,
         // Try full movement first
         glm::vec2 testPos = m_Position + desiredMovement;
         bool npcBlocked = m_Collision.CollidesWithNPC(testPos, npcPositions);
-        bool tileBlocked = sprintMode ? m_Collision.CollidesWithTilesCenter(testPos, tilemap)
-                                      : m_Collision.CollidesWithTilesStrict(
-                                            testPos, tilemap, moveDx, moveDy, diagonalInput);
+        bool tileBlocked =
+            m_Collision.CollidesWithTilesStrict(testPos, tilemap, moveDx, moveDy, diagonalInput);
         bool initiallyTileBlocked = tileBlocked;
 
         bool didCornerSlide = false;
@@ -524,7 +571,6 @@ void PlayerCharacter::Move(glm::vec2 direction,
                                                                    currentSpeed,
                                                                    tilemap,
                                                                    npcPositions,
-                                                                   sprintMode,
                                                                    moveDx,
                                                                    moveDy,
                                                                    diagonalInput);
@@ -545,9 +591,9 @@ void PlayerCharacter::Move(glm::vec2 direction,
                     glm::vec2 moveY(0.0f, desiredMovement.y);
 
                     bool okX = !m_Collision.CollidesAt(
-                        m_Position + moveX, tilemap, npcPositions, sprintMode, moveDx, 0, false);
+                        m_Position + moveX, tilemap, npcPositions, moveDx, 0, false);
                     bool okY = !m_Collision.CollidesAt(
-                        m_Position + moveY, tilemap, npcPositions, sprintMode, 0, moveDy, false);
+                        m_Position + moveY, tilemap, npcPositions, 0, moveDy, false);
 
                     if (okX && !okY)
                     {
@@ -577,33 +623,20 @@ void PlayerCharacter::Move(glm::vec2 direction,
         bool effDiagonal = (effDx != 0 && effDy != 0);
         if (!effDiagonal && !didCornerSlide && !initiallyTileBlocked)
         {
-            desiredMovement = m_Collision.ApplyLaneSnapping(desiredMovement,
-                                                            normalizedDir,
-                                                            deltaTime,
-                                                            tilemap,
-                                                            npcPositions,
-                                                            sprintMode,
-                                                            effDx,
-                                                            effDy);
+            desiredMovement = m_Collision.ApplyLaneSnapping(
+                desiredMovement, normalizedDir, deltaTime, tilemap, npcPositions, effDx, effDy);
         }
 
         // Final collision check
-        if (m_Collision.CollidesAt(m_Position + desiredMovement,
-                                   tilemap,
-                                   npcPositions,
-                                   sprintMode,
-                                   effDx,
-                                   effDy,
-                                   effDiagonal))
+        if (m_Collision.CollidesAt(
+                m_Position + desiredMovement, tilemap, npcPositions, effDx, effDy, effDiagonal))
         {
             // Try axis-separated movement
             glm::vec2 tryX = m_Position + glm::vec2(desiredMovement.x, 0.0f);
             glm::vec2 tryY = m_Position + glm::vec2(0.0f, desiredMovement.y);
 
-            bool okX =
-                !m_Collision.CollidesAt(tryX, tilemap, npcPositions, sprintMode, moveDx, 0, false);
-            bool okY =
-                !m_Collision.CollidesAt(tryY, tilemap, npcPositions, sprintMode, 0, moveDy, false);
+            bool okX = !m_Collision.CollidesAt(tryX, tilemap, npcPositions, moveDx, 0, false);
+            bool okY = !m_Collision.CollidesAt(tryY, tilemap, npcPositions, 0, moveDy, false);
 
             if (okX && okY)
             {
@@ -667,35 +700,13 @@ void PlayerCharacter::Move(glm::vec2 direction,
                     float mid = (lo + hi) * 0.5f;
                     glm::vec2 tryPos = m_Position + dir * mid;
                     if (!m_Collision.CollidesAt(
-                            tryPos, tilemap, npcPositions, sprintMode, finalDx, finalDy, finalDiag))
+                            tryPos, tilemap, npcPositions, finalDx, finalDy, finalDiag))
                         lo = mid;
                     else
                         hi = mid;
                 }
 
                 desiredMovement = dir * lo;
-            }
-        }
-
-        // If sprint center-collision left us wedged in a corner pocket, shove out using strict
-        // collision. High FPS fix: Also check when current position OR target position has corner
-        // penetration, not just when movement is zero. At high FPS, small movements pass center
-        // collision repeatedly, letting the player creep into corner pockets where hitbox edges
-        // overlap tiles but center doesn't.
-        if (sprintMode && diagonalInput)
-        {
-            glm::vec2 targetPos = m_Position + desiredMovement;
-            bool currentlyStuck =
-                m_Collision.IsCornerPenetration(m_Position, tilemap) ||
-                m_Collision.CollidesWithTilesStrict(m_Position, tilemap, 0, 0, false);
-            bool wouldBeStuck = m_Collision.IsCornerPenetration(targetPos, tilemap);
-
-            if (glm::length(desiredMovement) < 0.001f || currentlyStuck || wouldBeStuck)
-            {
-                glm::vec2 cornerEject =
-                    m_Collision.ComputeSprintCornerEject(tilemap, npcPositions, normalizedDir);
-                if (glm::length(cornerEject) > 0.001f)
-                    desiredMovement = cornerEject;
             }
         }
 
