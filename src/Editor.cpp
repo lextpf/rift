@@ -1,5 +1,6 @@
 #include "Editor.h"
 #include "MathUtils.h"
+#include "NavigationRecalc.h"
 
 #include <algorithm>
 #include <cmath>
@@ -167,6 +168,11 @@ void Editor::ShowStatus(std::string message, glm::vec3 color, float durationSeco
     m_StatusTimer = durationSeconds;
 }
 
+void Editor::ClearUndoHistory()
+{
+    m_UndoStack.Clear();
+}
+
 void Editor::ClearAllEditModes()
 {
     // Reset every transient per-mode flag. Must be called before entering or
@@ -191,6 +197,15 @@ void Editor::ClearAllEditModes()
     // Drag state (a mid-drag mode switch invalidates the drag)
     m_Mouse.mousePressed = false;
     m_Mouse.rightMousePressed = false;
+
+    // Drop any in-progress stroke accumulators. Tiles already painted during
+    // the discarded drag stay (consistent with prior behavior - the drag
+    // mutated the tilemap frame-by-frame); they just don't produce an
+    // undoable command. Documented in EDITOR.md.
+    m_TileStroke.Drop();
+    m_CollisionStroke.Drop();
+    m_ElevationStroke.Drop();
+    m_NavigationStroke.Drop();
 }
 
 void Editor::Render(const EditorContext& ctx)
@@ -233,6 +248,7 @@ void Editor::Render(const EditorContext& ctx)
         }
 
         RenderPlacementPreview(ctx);
+        RenderMapSelectionOverlay(ctx);
     }
 
     // Debug-only overlays: extra visualizations not shown in normal editor mode
@@ -257,24 +273,9 @@ void Editor::RenderNoProjectionAnchors(const EditorContext& ctx)
 
 void Editor::RecalculateNPCPatrolRoutes(const EditorContext& ctx)
 {
-    std::erase_if(ctx.npcs,
-                  [&](const NonPlayerCharacter& npc)
-                  {
-                      bool remove = !ctx.tilemap.GetNavigation(npc.GetTileX(), npc.GetTileY());
-                      if (remove)
-                      {
-                          std::cout << "Removing NPC at tile (" << npc.GetTileX() << ", "
-                                    << npc.GetTileY() << ") - no longer on navigation" << std::endl;
-                      }
-                      return remove;
-                  });
-
-    for (auto& npc : ctx.npcs)
-    {
-        if (!npc.ReinitializePatrolRoute(&ctx.tilemap))
-        {
-            std::cout << "Warning: NPC at (" << npc.GetTileX() << ", " << npc.GetTileY()
-                      << ") could not find valid patrol route" << std::endl;
-        }
-    }
+    // Thin wrapper - the body lives in NavigationRecalc.{h,cpp} so editor
+    // commands can invoke the same logic without coupling to Editor itself.
+    auto displaced = SnapshotAndEraseNPCsOnNonWalkable(ctx.tilemap, ctx.npcs);
+    (void)displaced;  // intentionally discarded - this code path is non-undoable
+    RebuildPatrolRoutes(ctx.tilemap, ctx.npcs);
 }

@@ -1,10 +1,13 @@
 #pragma once
 
+#include "EditorCommands.h"
+#include "EditorStrokeAccumulators.h"
 #include "IRenderer.h"
 #include "NonPlayerCharacter.h"
 #include "ParticleSystem.h"
 #include "PlayerCharacter.h"
 #include "Tilemap.h"
+#include "UndoRedoStack.h"
 
 #include <GLFW/glfw3.h>
 #include <bitset>
@@ -216,6 +219,10 @@ public:
      */
     void ResetTilePickerState();
 
+    /// @brief Drop all undo/redo history. Call on level load before mutating
+    /// the new tilemap so stale commands cannot revert against the wrong map.
+    void ClearUndoHistory();
+
 private:
     /// @name Render Methods
     /// @brief Private overlay and UI rendering routines.
@@ -255,6 +262,9 @@ private:
     /// @brief Render tile placement preview at cursor position.
     void RenderPlacementPreview(const EditorContext& ctx);
 
+    /// @brief Render the active Ctrl+drag selection rectangle overlay.
+    void RenderMapSelectionOverlay(const EditorContext& ctx);
+
     /// @}
 
     /// @brief Clear all mutually exclusive edit sub-modes.
@@ -276,17 +286,30 @@ private:
     /// @brief Get tile rotation compensated for current editor rotation.
     float GetCompensatedTileRotation() const;
 
-    /// @brief Toggle a per-tile layer flag using the provided setter.
+    /// @brief Toggle a per-tile layer flag using the provided setter, with
+    /// single-tile or Shift+flood-fill behavior. Captures pre-mutation old
+    /// values so the caller can wrap the entries in the appropriate cmd
+    /// class (NoProjection / YSortPlus / YSortMinus all share the entry shape).
+    ///
+    /// Mutates the tilemap in place. Returns the entries the caller should
+    /// push onto the undo stack as a per-mode cmd. Skips no-op entries (where
+    /// old == new) so the cmd only carries actual deltas.
+    ///
     /// @param ctx Editor context.
     /// @param tileX Tile column.
     /// @param tileY Tile row.
+    /// @param getter Tilemap method pointer for reading the flag.
     /// @param setter Tilemap method pointer for setting the flag.
+    /// @param newValue Target flag value (true to set, false to clear).
     /// @param flagName Name of the flag (for debug display).
-    void SetLayerFlagAtTile(const EditorContext& ctx,
-                            int tileX,
-                            int tileY,
-                            void (Tilemap::*setter)(int, int, size_t, bool),
-                            const std::string& flagName);
+    [[nodiscard]] std::vector<LayerFlagEntry> CollectYSortFlagToggle(
+        const EditorContext& ctx,
+        int tileX,
+        int tileY,
+        bool (Tilemap::*getter)(int, int, size_t) const,
+        void (Tilemap::*setter)(int, int, size_t, bool),
+        bool newValue,
+        const std::string& flagName);
 
     /**
      * @struct TileZoneRect
@@ -469,5 +492,42 @@ private:
     };
     std::vector<NoProjGroupBounds> m_CachedNoProjBounds;
     bool m_NoProjBoundsCached = false;  ///< Reset at the start of each Render() call.
+    /// @}
+
+    /// @name Undo / Redo
+    /// Bounded command-pattern history for editor mutations. Default capacity
+    /// is UndoRedoStack::DEFAULT_CAPACITY. Cleared on level load.
+    /// Stroke accumulators batch per-tile mutations during a drag-paint and
+    /// commit a single composite cmd at mouse-up; Drop() in ClearAllEditModes
+    /// discards an in-progress stroke when the mode changes mid-drag.
+    /// @{
+    UndoRedoStack m_UndoStack;
+    TilePlaceStrokeAccum m_TileStroke;
+    CollisionStrokeAccum m_CollisionStroke;
+    ElevationStrokeAccum m_ElevationStroke;
+    NavigationStrokeAccum m_NavigationStroke;
+    /// @}
+
+    /// @name Region Copy/Paste (Ctrl+drag, Ctrl+C, Ctrl+V)
+    /// MapRegionSelection tracks the current rectangular tile-region the user
+    /// has selected on the map (Ctrl+left-drag to define). m_Clipboard holds
+    /// the most recently copied region; PasteRegionCmd writes from there.
+    /// @{
+    struct MapRegionSelection
+    {
+        bool active = false;
+        bool isDragging = false;
+        int startX = 0;
+        int startY = 0;
+        int endX = 0;
+        int endY = 0;
+
+        [[nodiscard]] int MinX() const { return std::min(startX, endX); }
+        [[nodiscard]] int MinY() const { return std::min(startY, endY); }
+        [[nodiscard]] int Width() const { return std::abs(endX - startX) + 1; }
+        [[nodiscard]] int Height() const { return std::abs(endY - startY) + 1; }
+    };
+    MapRegionSelection m_MapSelection;
+    ClipboardRegion m_Clipboard;
     /// @}
 };
