@@ -1,10 +1,9 @@
-// Tests for CollisionResolver, the corner-cut / slide / penetration logic that
-// lives on PlayerCharacter via friend access. The collision math is where a
-// regression is most painful (player can walk through walls, gets stuck on
-// corners, etc.), so these tests focus on the public entry points:
+// Tests for CollisionResolver, the corner-cut / slide logic that lives on
+// PlayerCharacter via friend access. The collision math is where a regression
+// is most painful (player can walk through walls, gets stuck on corners,
+// etc.), so these tests focus on the public entry points:
 //
-//   - CollidesAt / CollidesWithTilesStrict / CollidesWithTilesCenter
-//   - IsCornerPenetration
+//   - CollidesAt / CollidesWithTilesStrict
 //   - CalculateFollowAlpha (pure static)
 //
 // We stand up a real `Tilemap` + default-constructed `PlayerCharacter` and
@@ -137,47 +136,13 @@ TEST_F(CollisionResolverTest, Strict_StandingInClearedAdjacentTile_NotBlocked)
     EXPECT_FALSE(Resolver().CollidesWithTilesStrict(pos, &tilemap, 1, 0, false));
 }
 
-// --- CollidesWithTilesCenter (sprint mode) -----------------------------------
-
-TEST_F(CollisionResolverTest, Center_Empty_NoCollision)
-{
-    glm::vec2 pos = FeetAtTile(5, 5);
-    EXPECT_FALSE(Resolver().CollidesWithTilesCenter(pos, &tilemap));
-}
-
-TEST_F(CollisionResolverTest, Center_Solid_IsBlocked)
-{
-    PaintSolid(5, 5);
-    glm::vec2 pos = FeetAtTile(5, 5);
-    EXPECT_TRUE(Resolver().CollidesWithTilesCenter(pos, &tilemap));
-}
-
-TEST_F(CollisionResolverTest, Center_WithAdjacentWall_ClearCenterNotBlocked)
-{
-    // Sprint mode only samples the center point. Place a wall tile adjacent
-    // to the player's tile; the center point is inside an empty tile.
-    PaintSolid(6, 5);
-    glm::vec2 pos = FeetAtTile(4, 5);  // clear tile, wall two tiles away
-    EXPECT_FALSE(Resolver().CollidesWithTilesCenter(pos, &tilemap));
-}
-
 // --- CollidesAt: unified dispatch --------------------------------------------
 
-TEST_F(CollisionResolverTest, CollidesAt_ForwardsToStrict_WhenWalking)
+TEST_F(CollisionResolverTest, CollidesAt_ForwardsToStrict)
 {
     PaintSolid(5, 5);
     glm::vec2 pos = FeetAtTile(5, 5);
-    EXPECT_TRUE(
-        Resolver().CollidesAt(pos, &tilemap, nullptr, /*sprintMode=*/false, 0, 0, false));
-}
-
-TEST_F(CollisionResolverTest, CollidesAt_Sprint_ClearTileNotBlocked)
-{
-    // Wall two tiles away; sprint mode samples only the center, center is clear.
-    PaintSolid(6, 5);
-    glm::vec2 pos = FeetAtTile(4, 5);
-    EXPECT_FALSE(
-        Resolver().CollidesAt(pos, &tilemap, nullptr, /*sprintMode=*/true, 1, 0, false));
+    EXPECT_TRUE(Resolver().CollidesAt(pos, &tilemap, nullptr, 0, 0, false));
 }
 
 TEST_F(CollisionResolverTest, CollidesAt_NpcOverlap_IsBlocked)
@@ -185,26 +150,5 @@ TEST_F(CollisionResolverTest, CollidesAt_NpcOverlap_IsBlocked)
     // An NPC at the player's tile should block, even if tiles are empty.
     std::vector<glm::vec2> npcs = {FeetAtTile(5, 5)};
     glm::vec2 pos = FeetAtTile(5, 5);
-    EXPECT_TRUE(Resolver().CollidesAt(pos, &tilemap, &npcs, false, 0, 0, false));
-}
-
-// --- IsCornerPenetration -----------------------------------------------------
-
-TEST_F(CollisionResolverTest, CornerPenetration_ClearTile_IsFalse)
-{
-    glm::vec2 pos = FeetAtTile(5, 5);
-    EXPECT_FALSE(Resolver().IsCornerPenetration(pos, &tilemap));
-}
-
-TEST_F(CollisionResolverTest, CornerPenetration_DeepOverlapDoesNotCrash)
-{
-    // Smoke test: exercising the corner-penetration path with a solid tile
-    // overlapping the player's hitbox must not crash or assert. Exact
-    // true/false depends on tunable thresholds, so we only assert the call
-    // returns a well-formed bool.
-    PaintSolid(6, 4);
-    glm::vec2 pos(6 * TILE - 2.0f, 5 * TILE);
-    const bool result = Resolver().IsCornerPenetration(pos, &tilemap);
-    (void)result;
-    SUCCEED();
+    EXPECT_TRUE(Resolver().CollidesAt(pos, &tilemap, &npcs, 0, 0, false));
 }
