@@ -658,7 +658,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
     }
 
-    // Saves the current game to save.json including:
+    // Saves the current game to the configured map JSON including:
     //   - All tile layers with rotations
     //   - Collision map
     //   - Navigation map
@@ -673,18 +673,18 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             static_cast<int>(std::floor((playerPos.y - 0.1f) / ctx.tilemap.GetTileHeight()));
         int characterType = static_cast<int>(ctx.player.GetCharacterType());
 
-        if (ctx.tilemap.SaveMapToJSON(
-                "save.json", &ctx.npcs, playerTileX, playerTileY, characterType))
+        const std::string savePath = ctx.saveMapPath.empty() ? "save.json" : ctx.saveMapPath;
+        if (ctx.tilemap.SaveMapToJSON(savePath, &ctx.npcs, playerTileX, playerTileY, characterType))
         {
             std::cout << "Save successful! Player at tile (" << playerTileX << ", " << playerTileY
                       << "), character type: " << characterType << std::endl;
-            ShowStatus("Saved to save.json", glm::vec3(0.4f, 1.0f, 0.4f));
+            ShowStatus("Saved map", glm::vec3(0.4f, 1.0f, 0.4f));
         }
         else
         {
             // Surfaces the failure. Previously the error only went to stderr,
             // so the user could keep editing a map they thought was saved.
-            std::cerr << "Save FAILED to write save.json" << std::endl;
+            std::cerr << "Save FAILED to write " << savePath << std::endl;
             ShowStatus("SAVE FAILED - check console", glm::vec3(1.0f, 0.3f, 0.3f), 5.0f);
         }
         m_KeyPressed[GLFW_KEY_S] = true;
@@ -694,21 +694,19 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_S] = false;
     }
 
-    // Reloads the game state from save.json, replacing all current state.
+    // Reloads the game state from the configured map JSON, replacing all current state.
     // Also restores player position, character type, and recenters camera.
     if (glfwGetKey(ctx.window, GLFW_KEY_L) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_L] && m_Active)
     {
         int loadedPlayerTileX = -1;
         int loadedPlayerTileY = -1;
         int loadedCharacterType = -1;
-        if (ctx.tilemap.LoadMapFromJSON("save.json",
-                                        &ctx.npcs,
-                                        &loadedPlayerTileX,
-                                        &loadedPlayerTileY,
-                                        &loadedCharacterType))
+        const std::string savePath = ctx.saveMapPath.empty() ? "save.json" : ctx.saveMapPath;
+        if (ctx.tilemap.LoadMapFromJSON(
+                savePath, &ctx.npcs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType))
         {
             std::cout << "Save loaded successfully!" << std::endl;
-            ShowStatus("Loaded save.json", glm::vec3(0.4f, 1.0f, 0.4f));
+            ShowStatus("Loaded map", glm::vec3(0.4f, 1.0f, 0.4f));
 
             // Discard undo history - any captured commands reference the old
             // tilemap state and would corrupt the loaded map if Reverted.
