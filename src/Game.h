@@ -462,6 +462,8 @@ private:
     SkyRenderer m_SkyRenderer;               ///< Sky rendering (sun, moon, stars)
     std::unique_ptr<IRenderer> m_Renderer;   ///< Graphics renderer
     RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type
+    std::vector<std::string> m_FontCandidates;  ///< Project-configured renderer font candidates.
+    std::string m_SaveMapPath = "save.json";    ///< Project-configured save/load JSON path.
     /** @} */
 
     CameraController m_Camera;   ///< Camera controller (position, zoom, perspective)

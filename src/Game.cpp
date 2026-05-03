@@ -8,6 +8,7 @@
 #include "NonPlayerCharacter.h"
 #include "OpenGLRenderer.h"
 #include "PlayerCharacter.h"
+#include "ProjectManifest.h"
 #include "RendererFactory.h"
 #include "Version.h"
 
@@ -21,6 +22,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -41,6 +43,41 @@ constexpr float HORIZON_SCALE_TILT_RANGE = 0.15f;
 constexpr float DEBUG_TEXT_MARGIN = 12.0f;
 constexpr float DEBUG_CHAR_WIDTH = 12.0f;
 constexpr float SEAM_FIX_OVERLAP = 0.1f;
+
+std::string ToLowerCopy(std::string value)
+{
+    std::transform(value.begin(),
+                   value.end(),
+                   value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+RendererAPI RendererApiFromManifestName(const std::string& name)
+{
+    return ToLowerCopy(name) == "vulkan" ? RendererAPI::Vulkan : RendererAPI::OpenGL;
+}
+
+const char* RendererApiName(RendererAPI api)
+{
+    return api == RendererAPI::Vulkan ? "Vulkan" : "OpenGL";
+}
+
+void PrintManifestDiagnostics(const ManifestValidationResult& result)
+{
+    for (const ManifestDiagnostic& diagnostic : result.diagnostics)
+    {
+        std::ostream& out =
+            diagnostic.severity == ManifestDiagnosticSeverity::Error ? std::cerr : std::cout;
+        out << (diagnostic.severity == ManifestDiagnosticSeverity::Error ? "ERROR" : "WARN")
+            << ": project manifest";
+        if (!diagnostic.fieldPath.empty())
+        {
+            out << " [" << diagnostic.fieldPath << "]";
+        }
+        out << ": " << diagnostic.message << std::endl;
+    }
+}
 }  // namespace
 
 Game::Game() = default;
@@ -62,14 +99,33 @@ bool Game::Initialize()
     }
     m_GlfwInitialized = true;
 
-    std::cout << "Initialize() step 2: Selecting Renderer API..." << std::endl;
+    std::cout << "Initialize() step 2: Loading project manifest..." << std::endl;
 
-    // Default to OpenGL
-    m_RendererAPI = RendererAPI::OpenGL;
-    std::cout << "Renderer API: OpenGL (press F1 to switch)" << std::endl;
+    ManifestValidationResult manifestResult;
+    ProjectManifest manifest = ProjectManifest::LoadDefaultOrFallback(manifestResult);
+    PrintManifestDiagnostics(manifestResult);
+    if (manifestResult.HasErrors())
+    {
+        std::cerr << "Project manifest validation failed; aborting startup." << std::endl;
+        return false;
+    }
+
+    std::cout << "Project manifest: "
+              << (manifest.loadedFromFile ? manifest.sourcePath.string() : "built-in defaults")
+              << std::endl;
+
+    std::cout << "Initialize() step 3: Selecting Renderer API..." << std::endl;
+
+    m_RendererAPI = RendererApiFromManifestName(manifest.startupRenderer);
+    m_FontCandidates = manifest.ResolvePathStrings(manifest.fonts);
+    m_SaveMapPath =
+        manifest.defaultMap.empty() ? "save.json" : manifest.ResolvePathString(manifest.defaultMap);
+
+    std::cout << "Renderer API: " << RendererApiName(m_RendererAPI) << " (press F1 to switch)"
+              << std::endl;
     std::cout << "Available renderers: OpenGL, Vulkan" << std::endl;
 
-    std::cout << "Initialize() step 3: Setting window hints..." << std::endl;
+    std::cout << "Initialize() step 4: Setting window hints..." << std::endl;
 
     // Set window hints based on selected renderer API
     if (m_RendererAPI == RendererAPI::OpenGL)
@@ -83,7 +139,7 @@ bool Game::Initialize()
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     }
 
-    std::cout << "Initialize() step 4: Creating GLFW window..." << std::endl;
+    std::cout << "Initialize() step 5: Creating GLFW window..." << std::endl;
 
     m_Window =
         glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift " RIFT_VERSION, nullptr, nullptr);
@@ -94,7 +150,7 @@ bool Game::Initialize()
         return false;
     }
 
-    std::cout << "Initialize() step 5: Setting window callbacks..." << std::endl;
+    std::cout << "Initialize() step 6: Setting window callbacks..." << std::endl;
 
     // Store Game instance pointer in window for callbacks
     glfwSetWindowUserPointer(m_Window, this);
@@ -107,7 +163,7 @@ bool Game::Initialize()
     // Sleep 2 seconds after each draw call, set to true to enable
     SetDebugDrawSleep(m_Window, false);
 
-    std::cout << "Initialize() step 6: Creating Renderer..." << std::endl;
+    std::cout << "Initialize() step 7: Creating Renderer..." << std::endl;
 
     // Create renderer based on selected API
     m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
@@ -117,8 +173,9 @@ bool Game::Initialize()
         glfwTerminate();
         return false;
     }
+    m_Renderer->SetFontCandidates(m_FontCandidates);
 
-    std::cout << "Initialize() step 7: Renderer created successfully" << std::endl;
+    std::cout << "Initialize() step 8: Renderer created successfully" << std::endl;
 
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
@@ -184,59 +241,26 @@ bool Game::Initialize()
     glm::mat4 projection = CameraController::GetOrthoProjection(initWorldWidth, initWorldHeight);
     m_Renderer->SetProjection(projection);
 
-    // Load combined tilemap from a list of tileset files
-    std::vector<std::string> tilesetPaths = {
-        "assets/overworld/cb5fa6a6-f88d-47ca-95d6-c73cc79f879d.png",
-        "assets/overworld/5ee53950-ea54-41c5-93d3-991e1407cb8b.png",
-        "assets/overworld/fd3ff88b-f533-4d40-947c-2c7e5e90839c.png",
-        "assets/overworld/11941f71-5703-4a5b-b167-9cd53f88e10e.png",
-        "assets/overworld/2b0922a6-66f8-4137-89af-45aaabc5434f.png",
-        "assets/overworld/40954708-5e64-4179-8faa-3bd3068de66c.png",
-        "assets/overworld/1bc8e647-5e22-4456-839a-845991ba4255.png",
-        "assets/overworld/145bb27c-c01d-44fd-b820-2f36f37673f2.png",
-        "assets/overworld/6a913092-f773-4d2f-a5d7-09a8d9fbb401.png",
-    };
-
-    // Load tilesets from current directory first, then try parent directory.
-    // This handles both running from build/ subdirectory and project root.
-    bool loaded = m_Tilemap.LoadCombinedTilesets(
-        tilesetPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
+    std::vector<std::string> tilesetPaths = manifest.ResolvePathStrings(manifest.tilesets);
+    bool loaded =
+        m_Tilemap.LoadCombinedTilesets(tilesetPaths, manifest.tileWidth, manifest.tileHeight);
     if (!loaded)
     {
-        std::vector<std::string> parentPaths = tilesetPaths;
-        for (auto& path : parentPaths)
+        std::cerr << "Failed to load combined tileset from project manifest. Tried:" << std::endl;
+        for (const auto& path : tilesetPaths)
         {
-            path = "../" + path;
+            std::cerr << "    " << path << std::endl;
         }
-        loaded = m_Tilemap.LoadCombinedTilesets(
-            parentPaths, m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
-
-        if (!loaded)
-        {
-            std::cerr << "Failed to load combined tileset. Tried:" << std::endl;
-            std::cerr << "  Current directory:" << std::endl;
-            for (const auto& path : tilesetPaths)
-            {
-                std::cerr << "    " << path << std::endl;
-            }
-            std::cerr << "  Parent directory:" << std::endl;
-            for (const auto& path : parentPaths)
-            {
-                std::cerr << "    " << path << std::endl;
-            }
-            return false;
-        }
+        return false;
     }
 
-    // Initialize editor with available NPC types
-    m_Editor.Initialize({"assets/non-player/f8cb6fd1-b8a5-44df-b017-c6cc9834353f.png",
-                         "assets/non-player/ccdc6c30-ecf8-4d08-b5ef-1307d84eecf0.png",
-                         "assets/non-player/8eb301d1-1dd4-4044-8718-72de1e7b981b.png",
-                         "assets/non-player/5a5f49f1-32be-4645-b5ca-6c0817461253.png",
-                         "assets/non-player/d06a4775-e373-4c7a-acfb-6b8fe5f01ca1.png",
-                         "assets/non-player/908fc99d-b456-45a2-937c-074413e8f664.png",
-                         "assets/non-player/f7e4604c-a458-4096-bbba-59149419c650.png",
-                         "assets/non-player/94c6b5b9-99fa-4f3d-bab5-b93684c934e5.png"});
+    std::vector<std::string> npcSpritePaths = manifest.ResolvePathStrings(manifest.npcSprites);
+    for (const std::string& npcSpritePath : npcSpritePaths)
+    {
+        NonPlayerCharacter::SetNpcAsset(NonPlayerCharacter::TypeFromSpritePath(npcSpritePath),
+                                        npcSpritePath);
+    }
+    m_Editor.Initialize(npcSpritePaths);
 
     // Try to load save from JSON first, if it exists
     // If loading fails, generate a default map
@@ -244,11 +268,11 @@ bool Game::Initialize()
     int loadedPlayerTileY = -1;
     int loadedCharacterType = -1;
     bool mapLoaded = m_Tilemap.LoadMapFromJSON(
-        "save.json", &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
+        m_SaveMapPath, &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
     if (!mapLoaded)
     {
         std::cout << "No existing save found, generating default map" << std::endl;
-        m_Tilemap.SetTilemapSize(125, 125);  // This will generate the default map
+        m_Tilemap.SetTilemapSize(manifest.defaultMapWidth, manifest.defaultMapHeight);
     }
 
     // Upload tileset texture to Vulkan renderer
@@ -258,64 +282,37 @@ bool Game::Initialize()
         std::cout << "Tileset texture uploaded to Vulkan" << std::endl;
     }
 
-    // Configure player asset paths
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
-                                       "Walking",
-                                       "assets/player/1135c14b-d3cb-414e-8b87-8dca516ba610.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
-                                       "Running",
-                                       "assets/player/2444a0be-9d2a-4b12-9921-4ca1956e7107.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_MALE,
-                                       "Bicycle",
-                                       "assets/player/e6b68c46-ab34-4dbb-bca0-93710e3a433c.png");
+    std::vector<CharacterType> configuredCharacters;
+    for (const auto& [characterName, character] : manifest.playerCharacters)
+    {
+        std::optional<CharacterType> characterType =
+            EnumTraits<CharacterType>::FromString(characterName);
+        if (!characterType.has_value())
+        {
+            continue;
+        }
 
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
-                                       "Walking",
-                                       "assets/player/5f3431e3-4835-4266-af9c-505b771122ee.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
-                                       "Running",
-                                       "assets/player/e2216c65-fef8-41c9-a5b8-911a962d7ae2.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW1_FEMALE,
-                                       "Bicycle",
-                                       "assets/player/9ba37d2a-fe59-4fee-86d5-ca1e17bca11f.png");
-
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
-                                       "Walking",
-                                       "assets/player/f3a3f051-382e-4653-8449-131d2a75548e.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
-                                       "Running",
-                                       "assets/player/b67d0c3e-b2d1-48bc-b0a9-2ea5a42037c8.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_MALE,
-                                       "Bicycle",
-                                       "assets/player/1023c322-8f93-4f73-8772-7543bf832569.png");
-
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
-                                       "Walking",
-                                       "assets/player/1ce93276-4959-476f-adeb-508c86802567.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
-                                       "Running",
-                                       "assets/player/2f1d4723-c682-4d21-9991-af4f3513bdc1.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::BW2_FEMALE,
-                                       "Bicycle",
-                                       "assets/player/980d60d7-3bbc-4c1f-9681-5b7f371d4605.png");
-
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
-                                       "Walking",
-                                       "assets/player/17d3da80-9b85-42e5-adf8-fd5823962f20.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
-                                       "Running",
-                                       "assets/player/2f079f34-3ea2-4c6a-a054-de5ba9c44e2f.png");
-    PlayerCharacter::SetCharacterAsset(CharacterType::CC_FEMALE,
-                                       "Bicycle",
-                                       "assets/player/e23ea083-b992-42dd-8dd2-690f246bc164.png");
+        configuredCharacters.push_back(*characterType);
+        for (const auto& [spriteType, path] : character.sprites)
+        {
+            PlayerCharacter::SetCharacterAsset(
+                *characterType, spriteType, manifest.ResolvePathString(path));
+        }
+    }
 
     // After tilemap is loaded, instead of manual sprite loads:
-    // Use saved character type or default to BW1_MALE
+    // Use saved character type or the first character configured in the manifest.
     CharacterType initialCharacter =
         (loadedCharacterType >= 0 &&
          loadedCharacterType < static_cast<int>(EnumTraits<CharacterType>::Count))
             ? static_cast<CharacterType>(loadedCharacterType)
-            : CharacterType::BW1_MALE;
+            : (configuredCharacters.empty() ? CharacterType::BW1_MALE
+                                            : configuredCharacters.front());
+    if (!configuredCharacters.empty() &&
+        std::ranges::find(configuredCharacters, initialCharacter) == configuredCharacters.end())
+    {
+        initialCharacter = configuredCharacters.front();
+    }
     if (!m_Player.SwitchCharacter(initialCharacter))
     {
         std::cerr << "Failed to initialize player sprites!" << std::endl;
@@ -1508,6 +1505,7 @@ bool Game::SwitchRenderer(RendererAPI api)
             m_Window = nullptr;
             return false;
         }
+        m_Renderer->SetFontCandidates(m_FontCandidates);
 
         // Initialize OpenGL-specific stuff
         if (m_RendererAPI == RendererAPI::OpenGL)
@@ -1714,5 +1712,6 @@ EditorContext Game::MakeEditorContext()
                          m_Player,
                          m_NPCs,
                          *m_Renderer,
-                         m_Particles};
+                         m_Particles,
+                         m_SaveMapPath};
 }
