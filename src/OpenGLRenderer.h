@@ -6,6 +6,7 @@
 #include <glad/glad.h>
 #include <map>
 #include <string>
+#include <vector>
 
 #ifdef USE_FREETYPE
 #include <ft2build.h>
@@ -141,6 +142,8 @@ public:
 
     RIFT_DECLARE_COMMON_RENDERER_METHODS;
 
+    void SetFontCandidates(const std::vector<std::string>& fontCandidates) override;
+
     void SetVanishingPointPerspective(bool enabled,
                                       float horizonY,
                                       float horizonScale,
@@ -201,9 +204,10 @@ private:
         float u0, v0, u1, v1;  ///< UV coordinates in the font atlas.
     };
 
-    std::map<char, Character> m_Characters;   ///< Glyph lookup table.
-    unsigned int m_FontAtlasTexture;          ///< OpenGL texture ID for font atlas.
-    int m_FontAtlasWidth, m_FontAtlasHeight;  ///< Atlas dimensions.
+    std::map<char, Character> m_Characters;     ///< Glyph lookup table.
+    unsigned int m_FontAtlasTexture;            ///< OpenGL texture ID for font atlas.
+    int m_FontAtlasWidth, m_FontAtlasHeight;    ///< Atlas dimensions.
+    std::vector<std::string> m_FontCandidates;  ///< Project-specific font candidates.
 
 #ifdef USE_FREETYPE
     FT_Library m_FreeType;  ///< FreeType library handle.

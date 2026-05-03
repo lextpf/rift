@@ -106,6 +106,11 @@ OpenGLRenderer::~OpenGLRenderer()
     Shutdown();
 }
 
+void OpenGLRenderer::SetFontCandidates(const std::vector<std::string>& fontCandidates)
+{
+    m_FontCandidates = fontCandidates;
+}
+
 void OpenGLRenderer::Shutdown()
 {
     // Delete font atlas texture
@@ -220,14 +225,16 @@ bool OpenGLRenderer::Init()
     CreateWhiteTexture();
 
 #ifdef USE_FREETYPE
-    // Try to load font from project assets, fall back to system fonts if needed
-    const std::vector<std::string> fontCandidates = {
-        "assets/fonts/c8ab67e0-519a-49b5-b693-e8fc86d08efa.ttf",
+    // Try project-configured fonts first, then fall back to defaults.
+    std::vector<std::string> fontCandidates = m_FontCandidates;
+    if (fontCandidates.empty())
+    {
+        fontCandidates.push_back("assets/fonts/c8ab67e0-519a-49b5-b693-e8fc86d08efa.ttf");
+    }
 #ifdef _WIN32
-        "C:/Windows/Fonts/segoeui.ttf",  // Fallback
-        "C:/Windows/Fonts/arial.ttf",    // Fallback
+    fontCandidates.push_back("C:/Windows/Fonts/segoeui.ttf");  // Fallback
+    fontCandidates.push_back("C:/Windows/Fonts/arial.ttf");    // Fallback
 #endif
-    };
 
     bool fontLoaded = false;
     for (const auto& fontPath : fontCandidates)
