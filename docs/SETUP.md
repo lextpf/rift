@@ -248,8 +248,9 @@ If you see validation layer warnings:
 After setting up dependencies:
 
 1. [Build the project](BUILDING.md)
-2. [Learn the editor](EDITOR.md)
-3. [Understand the architecture](ARCHITECTURE.md)
+2. [Configure project assets](PROJECT_MANIFEST.md)
+3. [Learn the editor](EDITOR.md)
+4. [Understand the architecture](ARCHITECTURE.md)
 
 ## Platform-Specific Notes
 
@@ -265,4 +266,5 @@ After setting up dependencies:
 ## See Also
 
 - [Building Guide](BUILDING.md) - Compiling the project
+- [Project Manifest](PROJECT_MANIFEST.md) - Configuring startup assets
 - [Architecture](ARCHITECTURE.md) - Understanding the codebase
