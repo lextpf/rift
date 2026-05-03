@@ -1638,11 +1638,9 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     // UploadTexture() at load time. A cache miss here renders white rather
     // than stalling the graphics queue mid-render-pass.
     VkImageView imageView = m_WhiteTextureImageView;
-#ifdef USE_VULKAN
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
         imageView = texImageView;
-#endif
 
     // Get or create descriptor set for this texture (cached)
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
@@ -1732,11 +1730,9 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     // Get texture's Vulkan image view; see DrawSprite above for the
     // upload-at-load contract.
     VkImageView imageView = m_WhiteTextureImageView;
-#ifdef USE_VULKAN
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
         imageView = texImageView;
-#endif
 
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
     if (descriptorSet == VK_NULL_HANDLE)
@@ -1784,11 +1780,9 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
         return;
 
     VkImageView imageView = m_WhiteTextureImageView;
-#ifdef USE_VULKAN
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
         imageView = texImageView;
-#endif
 
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
     if (descriptorSet == VK_NULL_HANDLE)
