@@ -76,7 +76,7 @@ struct ProjectManifest
     std::filesystem::path baseDirectory;
 
     std::string startupRenderer = "OpenGL";
-    std::string defaultMap = "save.json";
+    std::string defaultMap = "rift.save.json";
     int tileWidth = 16;
     int tileHeight = 16;
     int defaultMapWidth = 125;
