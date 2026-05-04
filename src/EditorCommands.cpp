@@ -5,7 +5,57 @@
 #include "Tilemap.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
+#include <utility>
+
+// --- ReflectClipboardRegion -------------------------------------------------
+
+void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
+{
+    const int W = region.width;
+    const int H = region.height;
+    if (W <= 0 || H <= 0)
+        return;
+
+    if (flipXAxis)
+    {
+        for (int y = 0; y < H; ++y)
+        {
+            for (int x = 0; x < W / 2; ++x)
+            {
+                std::swap(region.cells[static_cast<std::size_t>(y * W + x)],
+                          region.cells[static_cast<std::size_t>(y * W + (W - 1 - x))]);
+            }
+        }
+    }
+    else
+    {
+        for (int y = 0; y < H / 2; ++y)
+        {
+            for (int x = 0; x < W; ++x)
+            {
+                std::swap(region.cells[static_cast<std::size_t>(y * W + x)],
+                          region.cells[static_cast<std::size_t>((H - 1 - y) * W + x)]);
+            }
+        }
+    }
+
+    for (auto& cell : region.cells)
+    {
+        for (auto& layer : cell.layers)
+        {
+            if (flipXAxis)
+                layer.flipX = !layer.flipX;
+            else
+                layer.flipY = !layer.flipY;
+            float r = std::fmod(360.0f - layer.rotation, 360.0f);
+            if (r < 0.0f)
+                r += 360.0f;
+            layer.rotation = r;
+        }
+    }
+}
 
 // --- PlaceTilesCmd ----------------------------------------------------------
 
@@ -15,6 +65,8 @@ void PlaceTilesCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*n
     {
         tilemap.SetLayerTile(e.tileX, e.tileY, e.layer, e.newTileId);
         tilemap.SetLayerRotation(e.tileX, e.tileY, e.layer, e.newRotation);
+        tilemap.SetLayerFlipX(e.tileX, e.tileY, e.layer, e.newFlipX);
+        tilemap.SetLayerFlipY(e.tileX, e.tileY, e.layer, e.newFlipY);
     }
 }
 
@@ -24,6 +76,8 @@ void PlaceTilesCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*
     {
         tilemap.SetLayerTile(e.tileX, e.tileY, e.layer, e.oldTileId);
         tilemap.SetLayerRotation(e.tileX, e.tileY, e.layer, e.oldRotation);
+        tilemap.SetLayerFlipX(e.tileX, e.tileY, e.layer, e.oldFlipX);
+        tilemap.SetLayerFlipY(e.tileX, e.tileY, e.layer, e.oldFlipY);
     }
 }
 
@@ -435,6 +489,8 @@ ClipboardCell PasteRegionCmd::ReadCellFrom(const Tilemap& tm, int x, int y)
         cell.layers[layer].tileId = tm.GetLayerTile(x, y, layer);
         cell.layers[layer].rotation = tm.GetLayerRotation(x, y, layer);
         cell.layers[layer].noProjection = tm.GetLayerNoProjection(x, y, layer);
+        cell.layers[layer].flipX = tm.GetLayerFlipX(x, y, layer);
+        cell.layers[layer].flipY = tm.GetLayerFlipY(x, y, layer);
         cell.layers[layer].structureId = tm.GetTileStructureId(x, y, static_cast<int>(layer));
         cell.layers[layer].ySortPlus = tm.GetLayerYSortPlus(x, y, layer);
         cell.layers[layer].ySortMinus = tm.GetLayerYSortMinus(x, y, layer);
@@ -453,6 +509,8 @@ void PasteRegionCmd::WriteCellInto(Tilemap& tm, int destX, int destY, const Clip
         tm.SetLayerTile(destX, destY, layer, cell.layers[layer].tileId);
         tm.SetLayerRotation(destX, destY, layer, cell.layers[layer].rotation);
         tm.SetLayerNoProjection(destX, destY, layer, cell.layers[layer].noProjection);
+        tm.SetLayerFlipX(destX, destY, layer, cell.layers[layer].flipX);
+        tm.SetLayerFlipY(destX, destY, layer, cell.layers[layer].flipY);
         tm.SetTileStructureId(
             destX, destY, static_cast<int>(layer), cell.layers[layer].structureId);
         tm.SetLayerYSortPlus(destX, destY, layer, cell.layers[layer].ySortPlus);
