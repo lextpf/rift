@@ -30,7 +30,9 @@
                           glm::vec2 texSize,                                                 \
                           float rotation,                                                    \
                           glm::vec3 color,                                                   \
-                          bool flipY) override;                                              \
+                          bool flipY,                                                        \
+                          bool tileFlipX,                                                    \
+                          bool tileFlipY) override;                                          \
     void DrawSpriteAlpha(const Texture& texture,                                             \
                          glm::vec2 position,                                                 \
                          glm::vec2 size,                                                     \
@@ -52,7 +54,9 @@
                         glm::vec2 texCoord,                                                  \
                         glm::vec2 texSize,                                                   \
                         glm::vec3 color,                                                     \
-                        bool flipY) override;                                                \
+                        bool flipY,                                                          \
+                        bool tileFlipX,                                                      \
+                        bool tileFlipY) override;                                            \
     void SetProjection(const glm::mat4& projection) override;                                \
     void SetViewport(int x, int y, int width, int height) override;                          \
     void Clear(float r, float g, float b, float a) override;                                 \

@@ -265,14 +265,17 @@ public:
      * Renders a rectangular portion of the texture, useful for sprite
      * sheets and tile atlases. The region is specified in **pixel coordinates**.
      *
-     * @param texture  Texture containing the sprite sheet.
-     * @param position World position (top-left corner).
-     * @param size     Output size in pixels.
-     * @param texCoord Top-left corner of region in **pixels**.
-     * @param texSize  Size of region in **pixels**.
-     * @param rotation Rotation in degrees (default: 0).
-     * @param color    Color tint (default: white).
-     * @param flipY    Flip vertical UV coordinates (default: true for OpenGL).
+     * @param texture   Texture containing the sprite sheet.
+     * @param position  World position (top-left corner).
+     * @param size      Output size in pixels.
+     * @param texCoord  Top-left corner of region in **pixels**.
+     * @param texSize   Size of region in **pixels**.
+     * @param rotation  Rotation in degrees (default: 0).
+     * @param color     Color tint (default: white).
+     * @param flipY     Flip vertical UV for renderer-origin convention
+     *                  (default: true for OpenGL). Distinct from per-tile mirroring.
+     * @param tileFlipX Mirror the sampled source region horizontally before rotation.
+     * @param tileFlipY Mirror the sampled source region vertically before rotation.
      */
     virtual void DrawSpriteRegion(const Texture& texture,
                                   glm::vec2 position,
@@ -281,7 +284,9 @@ public:
                                   glm::vec2 texSize,
                                   float rotation = 0.0f,
                                   glm::vec3 color = glm::vec3(1.0f),
-                                  bool flipY = true) = 0;
+                                  bool flipY = true,
+                                  bool tileFlipX = false,
+                                  bool tileFlipY = false) = 0;
 
     /**
      * @brief Draw a sprite from a texture atlas with per-vertex alpha.
@@ -375,7 +380,9 @@ public:
                                 glm::vec2 texCoord,
                                 glm::vec2 texSize,
                                 glm::vec3 color = glm::vec3(1.0f),
-                                bool flipY = true) = 0;
+                                bool flipY = true,
+                                bool tileFlipX = false,
+                                bool tileFlipY = false) = 0;
 
     /**
      * @brief Set the projection matrix.
