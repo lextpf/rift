@@ -1,6 +1,6 @@
 # Building the Project
 
-The Rift Game Engine uses CMake as its build system. This guide covers building for Windows.
+Rift uses CMake as its build system. This guide covers building for Windows.
 
 ## Build Process Overview
 
