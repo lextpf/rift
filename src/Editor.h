@@ -231,6 +231,8 @@ private:
 
     /// @brief Render editor UI elements (cursor, tile info, status text).
     void RenderEditorUI(const EditorContext& ctx);
+    /// @brief Render persistent editor state HUD.
+    void RenderEditorHUD(const EditorContext& ctx);
     /// @brief Render collision flag overlay.
     void RenderCollisionOverlays(const EditorContext& ctx);
     /// @brief Render navigation walkability overlay.
@@ -286,6 +288,36 @@ private:
 
     /// @brief Get tile rotation compensated for current editor rotation.
     float GetCompensatedTileRotation() const;
+
+    /**
+     * @struct ScreenToTile
+     * @brief Mouse position converted from screen pixels into
+     * world/tile coordinates.
+     */
+    struct ScreenToTile
+    {
+        float worldX = 0.0f;
+        float worldY = 0.0f;
+        int tileX = -1;
+        int tileY = -1;
+    };
+
+    /// @brief Convert screen-space mouse coordinates to world and tile coordinates.
+    [[nodiscard]] ScreenToTile ScreenToTileCoords(const EditorContext& ctx,
+                                                  double mouseX,
+                                                  double mouseY) const;
+
+    /// @brief Track a map-changing edit for the HUD unsaved indicator.
+    void MarkDirty() { m_HasUnsavedChanges = true; }
+    /// @brief Clear the HUD unsaved indicator after successful save/load.
+    void MarkClean() { m_HasUnsavedChanges = false; }
+
+    /// @brief Execute an undoable command and mark the map dirty.
+    void ExecuteEditorCommand(std::unique_ptr<EditorCommand> cmd,
+                              Tilemap& tilemap,
+                              std::vector<NonPlayerCharacter>& npcs);
+    /// @brief Push an already-applied undoable command and mark the map dirty.
+    void PushEditorCommand(std::unique_ptr<EditorCommand> cmd);
 
     /// @brief Toggle a per-tile layer flag using the provided setter, with
     /// single-tile or Shift+flood-fill behavior. Captures pre-mutation old
@@ -387,7 +419,10 @@ private:
     bool m_DebugMode;                ///< Enables all debug overlays (F3).
     bool m_ShowDebugInfo;            ///< Shows text debug info (FPS, tile coords, etc.).
     bool m_ShowNoProjectionAnchors;  ///< Renders no-projection anchor markers on top of UI.
+    bool m_HasUnsavedChanges;        ///< True after edits since the last successful save/load.
     /// @}
+
+    static constexpr float EDITOR_HUD_HEIGHT = 40.0f;
 
     /// @name Status toast
     /// On-screen transient message (save success/failure, load result). Drawn
