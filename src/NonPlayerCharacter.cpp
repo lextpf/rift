@@ -1,14 +1,17 @@
 #include "NonPlayerCharacter.h"
 
+#include "Logger.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
-#include <iostream>
 #include <random>
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "NPC";
+
 std::mt19937& GetNpcRng()
 {
     static std::mt19937 rng(std::random_device{}());
@@ -131,8 +134,8 @@ bool NonPlayerCharacter::Load(const std::string& relativePath)
         std::string altPath = "../" + path;
         if (!m_SpriteSheet.LoadFromFile(altPath))
         {
-            std::cerr << "Failed to load NPC sprite sheet: " << path << " or " << altPath
-                      << std::endl;
+            Logger::ErrorF(
+                LOG_SUBSYSTEM, "Failed to load NPC sprite sheet: {} or {}", path, altPath);
             return false;
         }
     }
