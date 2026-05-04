@@ -1,10 +1,11 @@
 #include "VulkanShader.h"
 
+#include "Logger.h"
+
 #include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <limits>
 
 #ifdef _WIN32
@@ -13,6 +14,11 @@
 #endif
 #include <windows.h>
 #endif
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Render";
+}  // namespace
 
 VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vector<uint32_t>& code)
 {
@@ -91,24 +97,24 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
     const std::streamoff streamSize = file.tellg();
     if (streamSize == static_cast<std::streamoff>(-1))
     {
-        std::cerr << "Failed to read SPIR-V file size: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Failed to read SPIR-V file size: {}", path.string());
         return {};
     }
     if (streamSize <= 0)
     {
-        std::cerr << "Invalid SPIR-V file size: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Invalid SPIR-V file size: {}", path.string());
         return {};
     }
     if ((streamSize % static_cast<std::streamoff>(sizeof(uint32_t))) != 0)
     {
-        std::cerr << "SPIR-V file size is not 4-byte aligned: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "SPIR-V file size is not 4-byte aligned: {}", path.string());
         return {};
     }
     // Sprite shaders should be tiny; very large files usually indicate a wrong file/path.
     static constexpr std::streamoff kMaxSPIRVBytes = 16 * 1024 * 1024;
     if (streamSize > kMaxSPIRVBytes)
     {
-        std::cerr << "SPIR-V file is too large: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "SPIR-V file is too large: {}", path.string());
         return {};
     }
     const size_t wordCount =
@@ -119,7 +125,7 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
     file.read(reinterpret_cast<char*>(buffer.data()), streamSize);
     if (!file)
     {
-        std::cerr << "Failed to read full SPIR-V file: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Failed to read full SPIR-V file: {}", path.string());
         return {};
     }
     file.close();
@@ -127,7 +133,7 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
     static constexpr uint32_t kSpirvMagic = 0x07230203u;
     if (buffer.empty() || buffer[0] != kSpirvMagic)
     {
-        std::cerr << "Invalid SPIR-V magic in file: " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Invalid SPIR-V magic in file: {}", path.string());
         return {};
     }
 
@@ -148,11 +154,11 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
         }
     }
 
-    std::cerr << "Failed to load SPIR-V file: " << filename << std::endl;
-    std::cerr << "Checked paths:" << std::endl;
+    Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load SPIR-V file: {}", filename);
+    Logger::Error(LOG_SUBSYSTEM, "Checked paths:");
     for (const auto& path : attemptedPaths)
     {
-        std::cerr << "  - " << path.string() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "  - {}", path.string());
     }
     return {};
 }
@@ -164,10 +170,10 @@ std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/sprite.vert.spv");
     if (code.empty())
     {
-        std::cerr << "Warning: Could not load shaders/sprite.vert.spv" << std::endl;
-        std::cerr << "Please compile shaders/sprite.vert to SPIR-V using:" << std::endl;
-        std::cerr << "  glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv"
-                  << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/sprite.vert.spv");
+        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/sprite.vert to SPIR-V using:");
+        Logger::Warn(LOG_SUBSYSTEM,
+                     "  glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv");
     }
     return code;
 }
@@ -178,10 +184,10 @@ std::vector<uint32_t> VulkanShader::GetFragmentShaderSPIRV()
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/sprite.frag.spv");
     if (code.empty())
     {
-        std::cerr << "Warning: Could not load shaders/sprite.frag.spv" << std::endl;
-        std::cerr << "Please compile shaders/sprite.frag to SPIR-V using:" << std::endl;
-        std::cerr << "  glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv"
-                  << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/sprite.frag.spv");
+        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/sprite.frag to SPIR-V using:");
+        Logger::Warn(LOG_SUBSYSTEM,
+                     "  glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv");
     }
     return code;
 }
