@@ -34,6 +34,10 @@ public:
         float oldRotation;
         int newTileId;
         float newRotation;
+        bool oldFlipX = false;
+        bool newFlipX = false;
+        bool oldFlipY = false;
+        bool newFlipY = false;
     };
 
     explicit PlaceTilesCmd(std::vector<Entry> entries)
@@ -457,6 +461,8 @@ struct ClipboardCellLayer
     int tileId = -1;
     float rotation = 0.0f;
     bool noProjection = false;
+    bool flipX = false;
+    bool flipY = false;
     int structureId = -1;
     bool ySortPlus = false;
     bool ySortMinus = false;
@@ -494,6 +500,18 @@ struct ClipboardRegion
 
     [[nodiscard]] bool Empty() const { return width <= 0 || height <= 0 || cells.empty(); }
 };
+
+/// @brief Reflect a region in place around its geometric center.
+///
+/// Cell positions swap (columns for X-axis, rows for Y-axis), and per-tile
+/// each layer's flip flag on the chosen axis is toggled while rotation is
+/// negated (rot -> fmod(360 - rot, 360)). The transform is an involution,
+/// so applying it twice reproduces the original.
+///
+/// @param region    Region to mutate in place.
+/// @param flipXAxis True for X-reflection (mirror around vertical axis,
+///                  toggles flipX), false for Y-reflection (toggles flipY).
+void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis);
 
 /**
  * @brief Paste a clipboard region at a destination tile, capturing the
