@@ -1,15 +1,17 @@
 #include "Game.h"
 #include "KeyToggle.h"
+#include "Logger.h"
 
 #include <glad/glad.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <iostream>
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Game";
+
 constexpr float INTERACTION_RANGE = 32.0f;      ///< NPC interaction range in pixels (2 tiles)
 constexpr float COLLISION_DISTANCE = 20.0f;     ///< Very close = colliding with NPC
 constexpr float DIRECTION_LENIENCY = 8.0f;      ///< Pixels of directional leniency when very close
@@ -57,10 +59,10 @@ void Game::ProcessInput(float deltaTime)
     if (m_KeyE.JustPressed(m_Window))
     {
         m_Editor.SetActive(!m_Editor.IsActive());
-        std::cout << "Editor mode: " << (m_Editor.IsActive() ? "ON" : "OFF") << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Editor mode: {}", m_Editor.IsActive() ? "ON" : "OFF");
         if (m_Editor.IsActive())
         {
-            std::cout << "Press T to toggle tile picker visibility" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Press T to toggle tile picker visibility");
         }
     }
 
@@ -103,7 +105,7 @@ void Game::ProcessInput(float deltaTime)
         else
         {
             m_Camera.GetState().zoom = 1.0f;
-            std::cout << "Camera zoom reset to 1.0x" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Camera zoom reset to 1.0x");
         }
 
         // Reset tile picker state in editor mode
@@ -179,7 +181,7 @@ void Game::ProcessInput(float deltaTime)
                 periodName = "Late Night (04:30)";
                 break;
         }
-        std::cout << "Time of day: " << periodName << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Time of day: {}", periodName);
     }
 
     // Toggles the 3D globe effect for an isometric-like view
@@ -194,12 +196,12 @@ void Game::ProcessInput(float deltaTime)
         if (m_Fps.targetFps <= 0.0f)
         {
             m_Fps.targetFps = 500.0f;
-            std::cout << "FPS capped at 500" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "FPS capped at 500");
         }
         else
         {
             m_Fps.targetFps = 0.0f;
-            std::cout << "FPS uncapped" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "FPS uncapped");
         }
     }
 
@@ -211,8 +213,8 @@ void Game::ProcessInput(float deltaTime)
         if (m_KeySpaceFreeCamera.JustPressed(m_Window))
         {
             m_Camera.GetState().freeMode = !m_Camera.GetState().freeMode;
-            std::cout << "Free Camera Mode: " << (m_Camera.GetState().freeMode ? "ON" : "OFF")
-                      << std::endl;
+            Logger::InfoF(
+                LOG_SUBSYSTEM, "Free Camera Mode: {}", m_Camera.GetState().freeMode ? "ON" : "OFF");
         }
     }
 
@@ -226,8 +228,10 @@ void Game::ProcessInput(float deltaTime)
             m_Camera.GetState().globeSphereRadius =
                 std::min(500.0f, m_Camera.GetState().globeSphereRadius + 10.0f);
             m_Camera.GetState().tilt = std::max(0.0f, m_Camera.GetState().tilt - 0.05f);
-            std::cout << "3D Effect - Radius: " << m_Camera.GetState().globeSphereRadius
-                      << ", Tilt: " << m_Camera.GetState().tilt << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "3D Effect - Radius: {}, Tilt: {}",
+                          m_Camera.GetState().globeSphereRadius,
+                          m_Camera.GetState().tilt);
         }
 
         if (m_KeyPageDown.JustPressed(m_Window))
@@ -235,8 +239,10 @@ void Game::ProcessInput(float deltaTime)
             m_Camera.GetState().globeSphereRadius =
                 std::max(50.0f, m_Camera.GetState().globeSphereRadius - 10.0f);
             m_Camera.GetState().tilt = std::min(1.0f, m_Camera.GetState().tilt + 0.05f);
-            std::cout << "3D Effect - Radius: " << m_Camera.GetState().globeSphereRadius
-                      << ", Tilt: " << m_Camera.GetState().tilt << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "3D Effect - Radius: {}, Tilt: {}",
+                          m_Camera.GetState().globeSphereRadius,
+                          m_Camera.GetState().tilt);
         }
     }
     // Cycles through available player character sprites.
@@ -252,8 +258,9 @@ void Game::ProcessInput(float deltaTime)
             // Attempt to load and switch to new character
             if (m_Player.SwitchCharacter(newType))
             {
-                std::cout << "Character switched to: "
-                          << EnumTraits<CharacterType>::ToString(newType) << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Character switched to: {}",
+                              EnumTraits<CharacterType>::ToString(newType));
             }
         }
     }
@@ -275,7 +282,7 @@ void Game::ProcessInput(float deltaTime)
         }
 
         m_Player.SetBicycling(newBicycling);
-        std::cout << "Bicycle: " << (newBicycling ? "ON" : "OFF") << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Bicycle: {}", newBicycling ? "ON" : "OFF");
     }
 
     // Copies the appearance of a nearby NPC, transforming the player.
@@ -290,7 +297,7 @@ void Game::ProcessInput(float deltaTime)
             // Restore original appearance
             m_Player.RestoreOriginalAppearance();
             m_Player.UploadTextures(*m_Renderer);
-            std::cout << "Restored original appearance (X)" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Restored original appearance (X)");
         }
         else
         {
@@ -317,13 +324,13 @@ void Game::ProcessInput(float deltaTime)
                 if (m_Player.CopyAppearanceFrom(spritePath))
                 {
                     m_Player.UploadTextures(*m_Renderer);
-                    std::cout << "Copied appearance from: " << nearestNPC->GetType() << " (X)"
-                              << std::endl;
+                    Logger::InfoF(
+                        LOG_SUBSYSTEM, "Copied appearance from: {} (X)", nearestNPC->GetType());
                 }
             }
             else
             {
-                std::cout << "No NPC nearby to copy (X)" << std::endl;
+                Logger::Info(LOG_SUBSYSTEM, "No NPC nearby to copy (X)");
             }
         }
     }
@@ -388,13 +395,19 @@ void Game::ProcessInput(float deltaTime)
 
                 bool currentlyBlocked = m_Tilemap.IsCornerCutBlocked(tileX, tileY, corner);
                 m_Tilemap.SetCornerCutBlocked(tileX, tileY, corner, !currentlyBlocked);
-                std::cout << "Corner cutting " << cornerName << " at (" << tileX << ", " << tileY
-                          << "): " << (!currentlyBlocked ? "BLOCKED" : "ALLOWED") << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Corner cutting {} at ({}, {}): {}",
+                              cornerName,
+                              tileX,
+                              tileY,
+                              !currentlyBlocked ? "BLOCKED" : "ALLOWED");
             }
             else
             {
-                std::cout << "Tile (" << tileX << ", " << tileY
-                          << ") has no collision - corner cutting N/A" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Tile ({}, {}) has no collision - corner cutting N/A",
+                              tileX,
+                              tileY);
             }
         }
     }
@@ -695,11 +708,14 @@ void Game::ProcessInput(float deltaTime)
                     m_DialogueSnap.playerFacing = playerFacing;
                     m_DialogueSnap.npcFacing = npcFacing;
 
-                    std::cout << "Starting dialogue snap with NPC: " << npc.GetType()
-                              << " target NPC tile (" << m_DialogueSnap.npcTileX << ", "
-                              << m_DialogueSnap.npcTileY << ")"
-                              << ", target player tile (" << m_DialogueSnap.playerTileX << ", "
-                              << m_DialogueSnap.playerTileY << ")" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Starting dialogue snap with NPC: {} target NPC tile ({}, "
+                                  "{}), target player tile ({}, {})",
+                                  npc.GetType(),
+                                  m_DialogueSnap.npcTileX,
+                                  m_DialogueSnap.npcTileY,
+                                  m_DialogueSnap.playerTileX,
+                                  m_DialogueSnap.playerTileY);
                     break;
                 }
             }
