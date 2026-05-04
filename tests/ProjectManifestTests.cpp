@@ -73,7 +73,7 @@ void CreateValidAssetFixture(const TempProject& project)
     project.Touch("assets/player/bike.png");
     project.Touch("assets/non-player/npc.png");
     project.Touch("assets/fonts/ui.ttf");
-    project.Touch("save.json");
+    project.Touch("rift.save.json");
 }
 
 std::string ValidManifestJson()
@@ -81,7 +81,7 @@ std::string ValidManifestJson()
     return R"json({
         "formatVersion": 1,
         "startupRenderer": "OpenGL",
-        "defaultMap": "save.json",
+        "defaultMap": "rift.save.json",
         "tileWidth": 16,
         "tileHeight": 16,
         "defaultMapSize": { "width": 32, "height": 24 },
@@ -143,7 +143,7 @@ TEST(ProjectManifestTests, MissingRequiredTilesetIsAnError)
     std::filesystem::path path = project.WriteManifest(R"json({
         "formatVersion": 1,
         "startupRenderer": "OpenGL",
-        "defaultMap": "save.json",
+        "defaultMap": "rift.save.json",
         "tileWidth": 16,
         "tileHeight": 16,
         "defaultMapSize": { "width": 32, "height": 24 },
@@ -170,7 +170,7 @@ TEST(ProjectManifestTests, MissingDefaultMapWarnsButDoesNotError)
 {
     TempProject project;
     CreateValidAssetFixture(project);
-    std::filesystem::remove(project.root / "save.json");
+    std::filesystem::remove(project.root / "rift.save.json");
     std::filesystem::path path = project.WriteManifest(ValidManifestJson());
 
     ManifestValidationResult result;
@@ -189,7 +189,7 @@ TEST(ProjectManifestTests, UnknownCharacterNameIsAnError)
     std::filesystem::path path = project.WriteManifest(R"json({
         "formatVersion": 1,
         "startupRenderer": "OpenGL",
-        "defaultMap": "save.json",
+        "defaultMap": "rift.save.json",
         "tileWidth": 16,
         "tileHeight": 16,
         "defaultMapSize": { "width": 32, "height": 24 },
@@ -237,7 +237,7 @@ TEST(ProjectManifestTests, MissingManifestUsesBuiltInFallbackWithWarning)
             project.Touch(path);
         }
     }
-    project.Touch("save.json");
+    project.Touch("rift.save.json");
 
     CurrentPathGuard guard(project.root);
     ManifestValidationResult result;
