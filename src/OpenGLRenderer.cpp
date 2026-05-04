@@ -1,5 +1,7 @@
 #include "OpenGLRenderer.h"
 
+#include "Logger.h"
+
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -7,12 +9,14 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Render";
+
 // Debug state for per-draw-call visualization
 bool s_DebugDrawSleep = false;
 GLFWwindow* s_DebugWindow = nullptr;
@@ -39,8 +43,8 @@ static void DebugAfterDraw(const char* label, int count)
 {
     if (s_DebugDrawSleep && s_DebugWindow)
     {
-        std::cout << "[DRAW " << s_DebugDrawCallIndex++ << "] " << label << " (" << count
-                  << " vertices)" << std::endl;
+        Logger::DebugF(
+            LOG_SUBSYSTEM, "[DRAW {}] {} ({} vertices)", s_DebugDrawCallIndex++, label, count);
         glFinish();
         glfwSwapBuffers(s_DebugWindow);
         std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -206,8 +210,8 @@ std::string OpenGLRenderer::LoadShaderFromFile(const std::string& filepath)
         file.open(parentPath);
         if (!file.is_open())
         {
-            std::cerr << "ERROR: Could not open shader file: " << filepath << " or " << parentPath
-                      << std::endl;
+            Logger::ErrorF(
+                LOG_SUBSYSTEM, "Could not open shader file: {} or {}", filepath, parentPath);
             return "";
         }
     }
@@ -255,10 +259,10 @@ bool OpenGLRenderer::Init()
 
     if (!fontLoaded)
     {
-        std::cerr << "WARNING: No font could be loaded. Text rendering disabled." << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM, "No font could be loaded. Text rendering disabled.");
     }
 #else
-    std::cerr << "WARNING: FreeType not available. Text rendering disabled." << std::endl;
+    Logger::Warn(LOG_SUBSYSTEM, "FreeType not available. Text rendering disabled.");
 #endif
     // Load and compile shaders from files
     std::string vertexShaderSource = LoadShaderFromFile("shaders/sprite.vert");
@@ -266,7 +270,7 @@ bool OpenGLRenderer::Init()
 
     if (vertexShaderSource.empty() || fragmentShaderSource.empty())
     {
-        std::cerr << "ERROR: Failed to load shader files!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to load shader files!");
         return false;
     }
 
@@ -282,7 +286,7 @@ bool OpenGLRenderer::Init()
     if (!success)
     {
         glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
-        std::cerr << "Vertex shader compilation failed: " << infoLog << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Vertex shader compilation failed: {}", infoLog);
         glDeleteShader(vertexShader);
         return false;
     }
@@ -297,7 +301,7 @@ bool OpenGLRenderer::Init()
     if (!success)
     {
         glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
-        std::cerr << "Fragment shader compilation failed: " << infoLog << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Fragment shader compilation failed: {}", infoLog);
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
         return false;
@@ -313,7 +317,7 @@ bool OpenGLRenderer::Init()
     if (!success)
     {
         glGetProgramInfoLog(m_ShaderProgram, 512, nullptr, infoLog);
-        std::cerr << "Shader program linking failed: " << infoLog << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Shader program linking failed: {}", infoLog);
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
         glDeleteProgram(m_ShaderProgram);
@@ -554,8 +558,16 @@ void OpenGLRenderer::SetupQuad()
 void OpenGLRenderer::DrawSprite(
     const Texture& texture, glm::vec2 position, glm::vec2 size, float rotation, glm::vec3 color)
 {
-    DrawSpriteRegion(
-        texture, position, size, glm::vec2(0.0f), glm::vec2(1.0f), rotation, color, true);
+    DrawSpriteRegion(texture,
+                     position,
+                     size,
+                     glm::vec2(0.0f),
+                     glm::vec2(1.0f),
+                     rotation,
+                     color,
+                     true,
+                     false,
+                     false);
 }
 
 void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
@@ -565,7 +577,9 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
                                       glm::vec2 texSize,
                                       float rotation,
                                       glm::vec3 color,
-                                      bool flipY)
+                                      bool flipY,
+                                      bool tileFlipX,
+                                      bool tileFlipY)
 {
     // Batching requires all sprites in a batch to share the same texture.
     // When switching between batch types (rect vs sprite) or textures, flush first.
@@ -623,6 +637,17 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
     float u1 = texX + texW;
     float vTop = finalTexYTop;
     float vBottom = finalTexYBottom;
+
+    // Per-tile content mirror: swap source UV before rotation so flip composes
+    // as flip-then-rotate (the geometrically correct order for reflections).
+    if (tileFlipX)
+    {
+        std::swap(u0, u1);
+    }
+    if (tileFlipY)
+    {
+        std::swap(vTop, vBottom);
+    }
 
     // Build quad corners in local space, origin at top-left of sprite
     // Vertices are pre-transformed on CPU to allow batching sprites with different transforms
@@ -795,8 +820,10 @@ void OpenGLRenderer::FlushBatch()
     }
     else
     {
-        std::cerr << "ERROR: glMapBufferRange returned null in FlushBatch ("
-                  << m_BatchVertices.size() << " vertices, " << dataSize << " bytes)" << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "glMapBufferRange returned null in FlushBatch ({} vertices, {} bytes)",
+                       m_BatchVertices.size(),
+                       dataSize);
         m_BatchVertices.clear();
         m_CurrentBatchTexture = 0;
         return;
@@ -888,7 +915,9 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
                                     glm::vec2 texCoord,
                                     glm::vec2 texSize,
                                     glm::vec3 color,
-                                    bool flipY)
+                                    bool flipY,
+                                    bool tileFlipX,
+                                    bool tileFlipY)
 {
     // Warped quads are pre-transformed by the caller (sphere projection already applied)
     // We add them directly to the sprite batch without additional perspective transformation
@@ -938,6 +967,16 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
     {
         v0 = texCoord.y / texH;
         v1 = (texCoord.y + texSize.y) / texH;
+    }
+
+    // Per-tile content mirror via UV swap (the warped corners[] geometry stays put).
+    if (tileFlipX)
+    {
+        std::swap(u0, u1);
+    }
+    if (tileFlipY)
+    {
+        std::swap(v0, v1);
     }
 
     // Map UV coordinates to corners: [TL, TR, BR, BL]
@@ -1005,9 +1044,10 @@ void OpenGLRenderer::FlushRectBatch()
     }
     else
     {
-        std::cerr << "ERROR: glMapBufferRange returned null in FlushRectBatch ("
-                  << m_RectBatchVertices.size() << " vertices, " << dataSize << " bytes)"
-                  << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "glMapBufferRange returned null in FlushRectBatch ({} vertices, {} bytes)",
+                       m_RectBatchVertices.size(),
+                       dataSize);
         m_RectBatchVertices.clear();
         return;
     }
@@ -1071,9 +1111,11 @@ void OpenGLRenderer::FlushParticleBatch()
     }
     else
     {
-        std::cerr << "ERROR: glMapBufferRange returned null in FlushParticleBatch ("
-                  << m_ParticleBatchVertices.size() << " vertices, " << dataSize << " bytes)"
-                  << std::endl;
+        Logger::ErrorF(
+            LOG_SUBSYSTEM,
+            "glMapBufferRange returned null in FlushParticleBatch ({} vertices, {} bytes)",
+            m_ParticleBatchVertices.size(),
+            dataSize);
         m_ParticleBatchVertices.clear();
         m_CurrentParticleTexture = 0;
         return;
@@ -1102,14 +1144,14 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     // We use it to generate a texture atlas containing all ASCII glyphs.
     if (FT_Init_FreeType(&m_FreeType))
     {
-        std::cerr << "ERROR::FREETYPE: Could not init FreeType Library" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "FREETYPE: Could not init FreeType Library");
         return;
     }
 
     // Load the font file (TTF/OTF) and select the first face (index 0)
     if (FT_New_Face(m_FreeType, fontPath.c_str(), 0, &m_Face))
     {
-        std::cerr << "ERROR::FREETYPE: Failed to load font: " << fontPath << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "FREETYPE: Failed to load font: {}", fontPath);
         FT_Done_FreeType(m_FreeType);
         m_FreeType = nullptr;
         return;
@@ -1287,10 +1329,14 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     // Restore default alignment for other texture uploads
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
-    std::cout << "Loaded font: " << fontPath << " (atlas " << atlasWidth << "x" << atlasHeight
-              << ", " << m_Characters.size() << " characters)" << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Loaded font: {} (atlas {}x{}, {} characters)",
+                  fontPath,
+                  atlasWidth,
+                  atlasHeight,
+                  m_Characters.size());
 #else
-    std::cerr << "ERROR: LoadFont called but FreeType is not available!" << std::endl;
+    Logger::Error(LOG_SUBSYSTEM, "LoadFont called but FreeType is not available!");
 #endif
 }
 
@@ -1346,7 +1392,7 @@ void OpenGLRenderer::DrawText(const std::string& text,
 
     if (m_Characters.empty() || m_FontAtlasTexture == 0)
     {
-        std::cerr << "DrawText: No font atlas loaded!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "DrawText: No font atlas loaded!");
         return;
     }
 
