@@ -26,7 +26,7 @@ Debug runs use the same configuration.
 {
     "formatVersion": 1,
     "startupRenderer": "OpenGL",
-    "defaultMap": "save.json",
+    "defaultMap": "rift.save.json",
     "tileWidth": 16,
     "tileHeight": 16,
     "defaultMapSize": {
