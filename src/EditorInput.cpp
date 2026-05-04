@@ -1,16 +1,17 @@
 #include "Dialogues.h"
 #include "Editor.h"
 #include "EditorCommands.h"
+#include "Logger.h"
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <memory>
 #include <random>
 #include <vector>
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Editor";
 
 template <typename ConditionFn, typename ActionFn>
 int FloodFill(
@@ -45,33 +46,6 @@ int FloodFill(
     return count;
 }
 
-struct ScreenToTile
-{
-    float worldX, worldY;
-    int tileX, tileY;
-};
-
-ScreenToTile ScreenToTileCoords(const EditorContext& ctx, double mouseX, double mouseY)
-{
-    // Convert screen pixels to world coordinates:
-    // 1. Compute the world-space viewport size (base tile area divided by zoom)
-    // 2. Map mouse pixel position [0, screenSize] -> [0, worldSize] via ratio
-    // 3. Add camera offset to get absolute world position
-    // 4. Floor-divide by tile size to get the tile index
-    float worldW =
-        static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth()) / ctx.cameraZoom;
-    float worldH =
-        static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight()) / ctx.cameraZoom;
-    float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldW +
-                   ctx.cameraPosition.x;
-    float worldY = (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) * worldH +
-                   ctx.cameraPosition.y;
-    return {worldX,
-            worldY,
-            static_cast<int>(std::floor(worldX / ctx.tilemap.GetTileWidth())),
-            static_cast<int>(std::floor(worldY / ctx.tilemap.GetTileHeight()))};
-}
-
 }  // anonymous namespace
 
 void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
@@ -80,7 +54,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     {
         m_ShowTilePicker = !m_ShowTilePicker;
         m_KeyPressed[GLFW_KEY_T] = true;
-        std::cout << "Tile picker: " << (m_ShowTilePicker ? "SHOWN" : "HIDDEN") << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Tile picker: {}", m_ShowTilePicker ? "SHOWN" : "HIDDEN");
 
         if (m_ShowTilePicker)
         {
@@ -88,8 +62,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             m_TilePicker.targetOffsetX = m_TilePicker.offsetX;
             m_TilePicker.targetOffsetY = m_TilePicker.offsetY;
             std::vector<int> validTiles = ctx.tilemap.GetValidTileIDs();
-            std::cout << "Total valid tiles available: " << validTiles.size() << std::endl;
-            std::cout << "Currently selected tile ID: " << m_SelectedTileID << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM, "Total valid tiles available: {}", validTiles.size());
+            Logger::InfoF(LOG_SUBSYSTEM, "Currently selected tile ID: {}", m_SelectedTileID);
         }
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_T) == GLFW_RELEASE)
@@ -104,7 +78,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     {
         m_MultiTile.rotation = (m_MultiTile.rotation + 90) % 360;
         m_KeyPressed[GLFW_KEY_R] = true;
-        std::cout << "Tile rotation: " << m_MultiTile.rotation << " degrees" << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Tile rotation: {} degrees", m_MultiTile.rotation);
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_RELEASE)
     {
@@ -180,7 +154,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         ClearAllEditModes();
         if (enabling)
             m_EditMode = EditMode::Navigation;
-        std::cout << "Navigation edit mode: " << (enabling ? "ON" : "OFF") << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Navigation edit mode: {}", enabling ? "ON" : "OFF");
         m_KeyPressed[GLFW_KEY_M] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_RELEASE)
@@ -205,15 +179,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             ClampNPCTypeIndex();
             if (!m_AvailableNPCTypes.empty())
             {
-                std::cout << "NPC placement mode: ON - Selected NPC: "
-                          << m_AvailableNPCTypes[m_SelectedNPCTypeIndex] << std::endl;
-                std::cout << "Press , (comma) and . (period) to cycle through NPC types"
-                          << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "NPC placement mode: ON - Selected NPC: {}",
+                              m_AvailableNPCTypes[m_SelectedNPCTypeIndex]);
+                Logger::Info(LOG_SUBSYSTEM,
+                             "Press , (comma) and . (period) to cycle through NPC types");
             }
         }
         else
         {
-            std::cout << "NPC placement mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "NPC placement mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_N] = true;
     }
@@ -233,13 +208,14 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::Elevation;
-            std::cout << "Elevation edit mode: ON - Current elevation: " << m_CurrentElevation
-                      << " pixels" << std::endl;
-            std::cout << "Use scroll wheel to adjust elevation value" << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Elevation edit mode: ON - Current elevation: {} pixels",
+                          m_CurrentElevation);
+            Logger::Info(LOG_SUBSYSTEM, "Use scroll wheel to adjust elevation value");
         }
         else
         {
-            std::cout << "Elevation edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Elevation edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_H] = true;
     }
@@ -259,13 +235,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::NoProjection;
-            std::cout << "No-projection edit mode: ON (Layer " << m_CurrentLayer
-                      << ") - Click to mark tiles that bypass 3D projection" << std::endl;
-            std::cout << "Use 1-6 keys to change layer" << std::endl;
+            Logger::InfoF(
+                LOG_SUBSYSTEM,
+                "No-projection edit mode: ON (Layer {}) - Click to mark tiles that bypass 3D "
+                "projection",
+                m_CurrentLayer);
+            Logger::Info(LOG_SUBSYSTEM, "Use 1-6 keys to change layer");
         }
         else
         {
-            std::cout << "No-projection edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "No-projection edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_B] = true;
     }
@@ -290,13 +269,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             if (enabling)
             {
                 m_EditMode = EditMode::YSortPlus;
-                std::cout << "Y-sort+1 edit mode: ON (Layer " << m_CurrentLayer
-                          << ") - Click to mark tiles for Y-sorting with entities" << std::endl;
-                std::cout << "Use 1-6 keys to change layer" << std::endl;
+                Logger::InfoF(
+                    LOG_SUBSYSTEM,
+                    "Y-sort+1 edit mode: ON (Layer {}) - Click to mark tiles for Y-sorting "
+                    "with entities",
+                    m_CurrentLayer);
+                Logger::Info(LOG_SUBSYSTEM, "Use 1-6 keys to change layer");
             }
             else
             {
-                std::cout << "Y-sort-plus edit mode: OFF" << std::endl;
+                Logger::Info(LOG_SUBSYSTEM, "Y-sort-plus edit mode: OFF");
             }
             m_KeyPressed[GLFW_KEY_Y] = true;
         }
@@ -317,15 +299,15 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::YSortMinus;
-            std::cout << "========================================" << std::endl;
-            std::cout << "Y-SORT-1 EDIT MODE: ON (Layer " << m_CurrentLayer << ")" << std::endl;
-            std::cout << "Click the BOTTOM tile of a structure to mark it" << std::endl;
-            std::cout << "(All tiles above will inherit the setting)" << std::endl;
-            std::cout << "========================================" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "========================================");
+            Logger::InfoF(LOG_SUBSYSTEM, "Y-SORT-1 EDIT MODE: ON (Layer {})", m_CurrentLayer);
+            Logger::Info(LOG_SUBSYSTEM, "Click the BOTTOM tile of a structure to mark it");
+            Logger::Info(LOG_SUBSYSTEM, "(All tiles above will inherit the setting)");
+            Logger::Info(LOG_SUBSYSTEM, "========================================");
         }
         else
         {
-            std::cout << "Y-sort-minus edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Y-sort-minus edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_O] = true;
     }
@@ -345,15 +327,16 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::ParticleZone;
-            std::cout << "Particle zone edit mode: ON - Type: "
-                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
-            std::cout << "Click and drag to place zones, use , and . to change type, F to toggle "
-                         "noProjection override"
-                      << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Particle zone edit mode: ON - Type: {}",
+                          EnumTraits<ParticleType>::ToString(m_CurrentParticleType));
+            Logger::Info(LOG_SUBSYSTEM,
+                         "Click and drag to place zones, use , and . to change type, F to "
+                         "toggle noProjection override");
         }
         else
         {
-            std::cout << "Particle zone edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Particle zone edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_J] = true;
     }
@@ -370,8 +353,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             constexpr int N = static_cast<int>(EnumTraits<ParticleType>::Count);
             int type = (static_cast<int>(m_CurrentParticleType) + N - 1) % N;
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            std::cout << "Particle type: "
-                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Particle type: {}",
+                          EnumTraits<ParticleType>::ToString(m_CurrentParticleType));
             m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
@@ -382,8 +366,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             constexpr int N = static_cast<int>(EnumTraits<ParticleType>::Count);
             int type = (static_cast<int>(m_CurrentParticleType) + 1) % N;
             m_CurrentParticleType = static_cast<ParticleType>(type);
-            std::cout << "Particle type: "
-                      << EnumTraits<ParticleType>::ToString(m_CurrentParticleType) << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Particle type: {}",
+                          EnumTraits<ParticleType>::ToString(m_CurrentParticleType));
             m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
@@ -396,9 +381,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_F])
         {
             m_ParticleNoProjection = !m_ParticleNoProjection;
-            std::cout << "Particle noProjection override: "
-                      << (m_ParticleNoProjection ? "ON (forced)" : "OFF (auto-detect)")
-                      << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Particle noProjection override: {}",
+                          m_ParticleNoProjection ? "ON (forced)" : "OFF (auto-detect)");
             m_KeyPressed[GLFW_KEY_F] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_RELEASE)
@@ -419,20 +404,20 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::Structure;
-            std::cout << "========================================" << std::endl;
-            std::cout << "STRUCTURE EDIT MODE: ON (Layer " << (m_CurrentLayer + 1) << ")"
-                      << std::endl;
-            std::cout << "Click = toggle no-projection" << std::endl;
-            std::cout << "Shift+click = flood-fill no-projection" << std::endl;
-            std::cout << "Ctrl+click = place anchors (left, then right)" << std::endl;
-            std::cout << ", . = select existing structures" << std::endl;
-            std::cout << "Delete = remove selected structure" << std::endl;
-            std::cout << "Structures: " << ctx.tilemap.GetNoProjectionStructureCount() << std::endl;
-            std::cout << "========================================" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "========================================");
+            Logger::InfoF(LOG_SUBSYSTEM, "STRUCTURE EDIT MODE: ON (Layer {})", m_CurrentLayer + 1);
+            Logger::Info(LOG_SUBSYSTEM, "Click = toggle no-projection");
+            Logger::Info(LOG_SUBSYSTEM, "Shift+click = flood-fill no-projection");
+            Logger::Info(LOG_SUBSYSTEM, "Ctrl+click = place anchors (left, then right)");
+            Logger::Info(LOG_SUBSYSTEM, ", . = select existing structures");
+            Logger::Info(LOG_SUBSYSTEM, "Delete = remove selected structure");
+            Logger::InfoF(
+                LOG_SUBSYSTEM, "Structures: {}", ctx.tilemap.GetNoProjectionStructureCount());
+            Logger::Info(LOG_SUBSYSTEM, "========================================");
         }
         else
         {
-            std::cout << "Structure edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Structure edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_G] = true;
     }
@@ -460,10 +445,14 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                     ctx.tilemap.GetNoProjectionStructure(m_CurrentStructureId);
                 if (s)
                 {
-                    std::cout << "Selected structure " << m_CurrentStructureId << ": \"" << s->name
-                              << "\" anchors: (" << s->leftAnchor.x << "," << s->leftAnchor.y
-                              << ") - (" << s->rightAnchor.x << "," << s->rightAnchor.y << ")"
-                              << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Selected structure {}: \"{}\" anchors: ({},{}) - ({},{})",
+                                  m_CurrentStructureId,
+                                  s->name,
+                                  s->leftAnchor.x,
+                                  s->leftAnchor.y,
+                                  s->rightAnchor.x,
+                                  s->rightAnchor.y);
                 }
             }
             m_KeyPressed[GLFW_KEY_COMMA] = true;
@@ -482,10 +471,14 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                     ctx.tilemap.GetNoProjectionStructure(m_CurrentStructureId);
                 if (s)
                 {
-                    std::cout << "Selected structure " << m_CurrentStructureId << ": \"" << s->name
-                              << "\" anchors: (" << s->leftAnchor.x << "," << s->leftAnchor.y
-                              << ") - (" << s->rightAnchor.x << "," << s->rightAnchor.y << ")"
-                              << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Selected structure {}: \"{}\" anchors: ({},{}) - ({},{})",
+                                  m_CurrentStructureId,
+                                  s->name,
+                                  s->leftAnchor.x,
+                                  s->leftAnchor.y,
+                                  s->rightAnchor.x,
+                                  s->rightAnchor.y);
                 }
             }
             m_KeyPressed[GLFW_KEY_PERIOD] = true;
@@ -500,7 +493,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             m_PlacingAnchor = 0;
             m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
             m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
-            std::cout << "Anchor placement cancelled" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Anchor placement cancelled");
             m_KeyPressed[GLFW_KEY_ESCAPE] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -511,8 +504,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             if (m_CurrentStructureId >= 0)
             {
-                std::cout << "Removed structure " << m_CurrentStructureId << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM, "Removed structure {}", m_CurrentStructureId);
                 ctx.tilemap.RemoveNoProjectionStructure(m_CurrentStructureId);
+                MarkDirty();
                 m_CurrentStructureId = -1;
             }
             m_KeyPressed[GLFW_KEY_DELETE] = true;
@@ -533,17 +527,18 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::Animation;
-            std::cout << "Animation edit mode: ON" << std::endl;
-            std::cout << "Click tiles in picker to add frames, Enter to create, Esc to cancel"
-                      << std::endl;
-            std::cout << "Left-click map to apply animation, Right-click to remove animation"
-                      << std::endl;
-            std::cout << "Use , and . to adjust frame duration (current: "
-                      << m_AnimationFrameDuration << "s)" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Animation edit mode: ON");
+            Logger::Info(LOG_SUBSYSTEM,
+                         "Click tiles in picker to add frames, Enter to create, Esc to cancel");
+            Logger::Info(LOG_SUBSYSTEM,
+                         "Left-click map to apply animation, Right-click to remove animation");
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Use , and . to adjust frame duration (current: {}s)",
+                          m_AnimationFrameDuration);
         }
         else
         {
-            std::cout << "Animation edit mode: OFF" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Animation edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_K] = true;
     }
@@ -558,8 +553,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
         {
             m_AnimationFrameDuration = std::max(0.05f, m_AnimationFrameDuration - 0.05f);
-            std::cout << "Animation frame duration: " << m_AnimationFrameDuration << "s"
-                      << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM, "Animation frame duration: {}s", m_AnimationFrameDuration);
             m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
@@ -568,8 +562,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
         {
             m_AnimationFrameDuration = std::min(2.0f, m_AnimationFrameDuration + 0.05f);
-            std::cout << "Animation frame duration: " << m_AnimationFrameDuration << "s"
-                      << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM, "Animation frame duration: {}s", m_AnimationFrameDuration);
             m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
@@ -580,7 +573,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             m_AnimationFrames.clear();
             m_SelectedAnimationId = -1;
-            std::cout << "Animation frames/selection cleared" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Animation frames/selection cleared");
             m_KeyPressed[GLFW_KEY_ESCAPE] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -594,20 +587,22 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                 AnimatedTile anim(m_AnimationFrames, m_AnimationFrameDuration);
                 auto cmd = std::make_unique<AddAnimatedTileCmd>(anim);
                 AddAnimatedTileCmd* cmdPtr = cmd.get();
-                m_UndoStack.Execute(std::move(cmd), ctx.tilemap, ctx.npcs);
+                ExecuteEditorCommand(std::move(cmd), ctx.tilemap, ctx.npcs);
                 int animId = cmdPtr->AnimId();
                 m_SelectedAnimationId = animId;
-                std::cout << "Created animation #" << animId << " with " << m_AnimationFrames.size()
-                          << " frames at " << m_AnimationFrameDuration << "s per frame"
-                          << std::endl;
-                std::cout << "Click on map tiles to apply this animation (Esc to cancel)"
-                          << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Created animation #{} with {} frames at {}s per frame",
+                              animId,
+                              m_AnimationFrames.size(),
+                              m_AnimationFrameDuration);
+                Logger::Info(LOG_SUBSYSTEM,
+                             "Click on map tiles to apply this animation (Esc to cancel)");
                 m_AnimationFrames.clear();
                 m_ShowTilePicker = false;  // Close tile picker to allow map clicking
             }
             else
             {
-                std::cout << "Need at least 2 frames to create animation" << std::endl;
+                Logger::Info(LOG_SUBSYSTEM, "Need at least 2 frames to create animation");
             }
             m_KeyPressed[GLFW_KEY_ENTER] = true;
         }
@@ -632,9 +627,11 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             {
                 m_SelectedNPCTypeIndex = m_AvailableNPCTypes.size() - 1;  // Wrap to end
             }
-            std::cout << "Selected NPC type: " << m_AvailableNPCTypes[m_SelectedNPCTypeIndex]
-                      << " (" << (m_SelectedNPCTypeIndex + 1) << "/" << m_AvailableNPCTypes.size()
-                      << ")" << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Selected NPC type: {} ({}/{})",
+                          m_AvailableNPCTypes[m_SelectedNPCTypeIndex],
+                          m_SelectedNPCTypeIndex + 1,
+                          m_AvailableNPCTypes.size());
             m_KeyPressed[GLFW_KEY_COMMA] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
@@ -647,9 +644,11 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             m_SelectedNPCTypeIndex =
                 (m_SelectedNPCTypeIndex + 1) % m_AvailableNPCTypes.size();  // Wrap to start
-            std::cout << "Selected NPC type: " << m_AvailableNPCTypes[m_SelectedNPCTypeIndex]
-                      << " (" << (m_SelectedNPCTypeIndex + 1) << "/" << m_AvailableNPCTypes.size()
-                      << ")" << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Selected NPC type: {} ({}/{})",
+                          m_AvailableNPCTypes[m_SelectedNPCTypeIndex],
+                          m_SelectedNPCTypeIndex + 1,
+                          m_AvailableNPCTypes.size());
             m_KeyPressed[GLFW_KEY_PERIOD] = true;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
@@ -673,18 +672,20 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             static_cast<int>(std::floor((playerPos.y - 0.1f) / ctx.tilemap.GetTileHeight()));
         int characterType = static_cast<int>(ctx.player.GetCharacterType());
 
-        const std::string savePath = ctx.saveMapPath.empty() ? "save.json" : ctx.saveMapPath;
+        const std::string savePath = ctx.saveMapPath.empty() ? "rift.save.json" : ctx.saveMapPath;
         if (ctx.tilemap.SaveMapToJSON(savePath, &ctx.npcs, playerTileX, playerTileY, characterType))
         {
-            std::cout << "Save successful! Player at tile (" << playerTileX << ", " << playerTileY
-                      << "), character type: " << characterType << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Save successful! Player at tile ({}, {}), character type: {}",
+                          playerTileX,
+                          playerTileY,
+                          characterType);
+            MarkClean();
             ShowStatus("Saved map", glm::vec3(0.4f, 1.0f, 0.4f));
         }
         else
         {
-            // Surfaces the failure. Previously the error only went to stderr,
-            // so the user could keep editing a map they thought was saved.
-            std::cerr << "Save FAILED to write " << savePath << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM, "Save FAILED to write {}", savePath);
             ShowStatus("SAVE FAILED - check console", glm::vec3(1.0f, 0.3f, 0.3f), 5.0f);
         }
         m_KeyPressed[GLFW_KEY_S] = true;
@@ -701,11 +702,12 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         int loadedPlayerTileX = -1;
         int loadedPlayerTileY = -1;
         int loadedCharacterType = -1;
-        const std::string savePath = ctx.saveMapPath.empty() ? "save.json" : ctx.saveMapPath;
+        const std::string savePath = ctx.saveMapPath.empty() ? "rift.save.json" : ctx.saveMapPath;
         if (ctx.tilemap.LoadMapFromJSON(
                 savePath, &ctx.npcs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType))
         {
-            std::cout << "Save loaded successfully!" << std::endl;
+            Logger::Info(LOG_SUBSYSTEM, "Save loaded successfully!");
+            MarkClean();
             ShowStatus("Loaded map", glm::vec3(0.4f, 1.0f, 0.4f));
 
             // Discard undo history - any captured commands reference the old
@@ -718,8 +720,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             if (loadedCharacterType >= 0)
             {
                 ctx.player.SwitchCharacter(static_cast<CharacterType>(loadedCharacterType));
-                std::cout << "Player character restored to type " << loadedCharacterType
-                          << std::endl;
+                Logger::InfoF(
+                    LOG_SUBSYSTEM, "Player character restored to type {}", loadedCharacterType);
             }
 
             // Restore player position if spawn point was saved
@@ -738,13 +740,15 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                     playerVisualCenter - glm::vec2(camWorldWidth / 2.0f, camWorldHeight / 2.0f);
                 ctx.cameraFollowTarget = ctx.cameraPosition;
                 ctx.hasCameraFollowTarget = false;
-                std::cout << "Player position restored to tile (" << loadedPlayerTileX << ", "
-                          << loadedPlayerTileY << ")" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Player position restored to tile ({}, {})",
+                              loadedPlayerTileX,
+                              loadedPlayerTileY);
             }
         }
         else
         {
-            std::cout << "Failed to reload map!" << std::endl;
+            Logger::Error(LOG_SUBSYSTEM, "Failed to reload map!");
             ShowStatus("LOAD FAILED - check console", glm::vec3(1.0f, 0.3f, 0.3f), 5.0f);
         }
         m_KeyPressed[GLFW_KEY_L] = true;
@@ -774,6 +778,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             // Delete tile on selected layer (set to -1 = empty) and clear animation
             ctx.tilemap.SetLayerTile(tileX, tileY, m_CurrentLayer, -1);
             ctx.tilemap.SetTileAnimation(tileX, tileY, static_cast<int>(m_CurrentLayer), -1);
+            MarkDirty();
             m_LastDeletedTileX = tileX;
             m_LastDeletedTileY = tileY;
         }
@@ -805,8 +810,13 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             float currentRotation = ctx.tilemap.GetLayerRotation(tileX, tileY, m_CurrentLayer);
             float newRotation = currentRotation + 90.0f;
             ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, newRotation);
-            std::cout << "Rotated Layer " << (m_CurrentLayer + 1) << " tile at (" << tileX << ", "
-                      << tileY << ") to " << newRotation << " degrees" << std::endl;
+            MarkDirty();
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Rotated Layer {} tile at ({}, {}) to {} degrees",
+                          m_CurrentLayer + 1,
+                          tileX,
+                          tileY,
+                          newRotation);
         }
         m_KeyPressed[GLFW_KEY_R] = true;
     }
@@ -814,6 +824,78 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     {
         m_KeyPressed[GLFW_KEY_R] = false;
     }
+
+    // F (X-reflect) / Shift+F (Y-reflect): mirror the current selection
+    // around its center. Mirrors the R-rotate selection contract: rectangle
+    // selection acts on all 10 layers; otherwise the tile under the cursor
+    // is flipped on m_CurrentLayer. Gated outside ParticleZone mode where F
+    // is reserved for the per-zone noProjection toggle.
+    if (m_Active && !m_ShowTilePicker && m_EditMode != EditMode::ParticleZone &&
+        glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_F])
+    {
+        const bool shiftHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                               glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+        const bool flipXAxis = !shiftHeld;
+        const char axisName = flipXAxis ? 'X' : 'Y';
+
+        if (m_MapSelection.active)
+        {
+            const int w = m_MapSelection.Width();
+            const int h = m_MapSelection.Height();
+            ClipboardRegion region = PasteRegionCmd::SnapshotRegion(
+                ctx.tilemap, m_MapSelection.MinX(), m_MapSelection.MinY(), w, h);
+            ReflectClipboardRegion(region, flipXAxis);
+            ExecuteEditorCommand(std::make_unique<PasteRegionCmd>(
+                                     m_MapSelection.MinX(), m_MapSelection.MinY(), region),
+                                 ctx.tilemap,
+                                 ctx.npcs);
+            ShowStatus(std::string("Reflected ") + std::to_string(w) + "x" + std::to_string(h) +
+                           " (" + axisName + "-axis)",
+                       glm::vec3(0.6f, 1.0f, 0.6f));
+        }
+        else
+        {
+            double mouseX, mouseY;
+            glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
+            auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
+            if (st.tileX >= 0 && st.tileX < ctx.tilemap.GetMapWidth() && st.tileY >= 0 &&
+                st.tileY < ctx.tilemap.GetMapHeight())
+            {
+                PlaceTilesCmd::Entry entry{};
+                entry.tileX = st.tileX;
+                entry.tileY = st.tileY;
+                entry.layer = m_CurrentLayer;
+                entry.oldTileId = ctx.tilemap.GetLayerTile(st.tileX, st.tileY, m_CurrentLayer);
+                entry.newTileId = entry.oldTileId;
+                entry.oldRotation =
+                    ctx.tilemap.GetLayerRotation(st.tileX, st.tileY, m_CurrentLayer);
+                float newRot = std::fmod(360.0f - entry.oldRotation, 360.0f);
+                if (newRot < 0.0f)
+                    newRot += 360.0f;
+                entry.newRotation = newRot;
+                entry.oldFlipX = ctx.tilemap.GetLayerFlipX(st.tileX, st.tileY, m_CurrentLayer);
+                entry.oldFlipY = ctx.tilemap.GetLayerFlipY(st.tileX, st.tileY, m_CurrentLayer);
+                entry.newFlipX = flipXAxis ? !entry.oldFlipX : entry.oldFlipX;
+                entry.newFlipY = flipXAxis ? entry.oldFlipY : !entry.oldFlipY;
+
+                std::vector<PlaceTilesCmd::Entry> entries;
+                entries.push_back(entry);
+                ExecuteEditorCommand(
+                    std::make_unique<PlaceTilesCmd>(std::move(entries)), ctx.tilemap, ctx.npcs);
+                ShowStatus(std::string("Flipped tile (") + axisName + "-axis)",
+                           glm::vec3(0.6f, 1.0f, 0.6f));
+            }
+            else
+            {
+                ShowStatus("No selection (Ctrl+drag a region or hover a tile)",
+                           glm::vec3(0.7f, 0.7f, 0.7f),
+                           1.5f);
+            }
+        }
+        m_KeyPressed[GLFW_KEY_F] = true;
+    }
+    if (glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_RELEASE)
+        m_KeyPressed[GLFW_KEY_F] = false;
 
     // Selects which tile layer to edit.
     // Layer switching: Keys 1-9,0 map to dynamic layers 0-9
@@ -839,7 +921,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, key) == GLFW_PRESS && !m_KeyPressed[key] && m_Active)
         {
             m_CurrentLayer = layerIndex;
-            std::cout << "Switched to " << name << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM, "Switched to {}", name);
             m_KeyPressed[key] = true;
         }
         if (glfwGetKey(ctx.window, key) == GLFW_RELEASE)
@@ -857,9 +939,14 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     {
         const std::string label = m_UndoStack.UndoLabel();
         if (m_UndoStack.Undo(ctx.tilemap, ctx.npcs))
+        {
+            MarkDirty();
             ShowStatus("Undo: " + label, glm::vec3(0.7f, 0.85f, 1.0f));
+        }
         else
+        {
             ShowStatus("Nothing to undo", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        }
         m_KeyPressed[GLFW_KEY_Z] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_Z) == GLFW_RELEASE)
@@ -870,9 +957,14 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     {
         const std::string label = m_UndoStack.RedoLabel();
         if (m_UndoStack.Redo(ctx.tilemap, ctx.npcs))
+        {
+            MarkDirty();
             ShowStatus("Redo: " + label, glm::vec3(0.7f, 1.0f, 0.85f));
+        }
         else
+        {
             ShowStatus("Nothing to redo", glm::vec3(0.7f, 0.7f, 0.7f), 1.5f);
+        }
         m_KeyPressed[GLFW_KEY_Y] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_Y) == GLFW_RELEASE)
@@ -911,9 +1003,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             double mouseX, mouseY;
             glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
             auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
-            m_UndoStack.Execute(std::make_unique<PasteRegionCmd>(st.tileX, st.tileY, m_Clipboard),
-                                ctx.tilemap,
-                                ctx.npcs);
+            ExecuteEditorCommand(std::make_unique<PasteRegionCmd>(st.tileX, st.tileY, m_Clipboard),
+                                 ctx.tilemap,
+                                 ctx.npcs);
             ShowStatus("Pasted " + std::to_string(m_Clipboard.width) + "x" +
                            std::to_string(m_Clipboard.height) + " at (" + std::to_string(st.tileX) +
                            ", " + std::to_string(st.tileY) + ")",
@@ -1044,14 +1136,17 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 if (currentAnim >= 0)
                 {
                     int oldTileId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
-                    m_UndoStack.Execute(
+                    ExecuteEditorCommand(
                         std::make_unique<SetTileAnimationCmd>(
                             std::vector<SetTileAnimationCmd::Entry>{
                                 {tileX, tileY, m_CurrentLayer, currentAnim, -1, oldTileId}}),
                         ctx.tilemap,
                         ctx.npcs);
-                    std::cout << "Removed animation from tile (" << tileX << ", " << tileY
-                              << ") on layer " << m_CurrentLayer << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Removed animation from tile ({}, {}) on layer {}",
+                                  tileX,
+                                  tileY,
+                                  m_CurrentLayer);
                 }
                 m_Mouse.rightMousePressed = true;
                 return;
@@ -1064,13 +1159,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
                 if (oldElevation != 0)
                 {
-                    m_UndoStack.Execute(
+                    ExecuteEditorCommand(
                         std::make_unique<ElevationSetCmd>(
                             std::vector<ElevationSetCmd::Entry>{{tileX, tileY, oldElevation, 0}}),
                         ctx.tilemap,
                         ctx.npcs);
                 }
-                std::cout << "Cleared elevation at (" << tileX << ", " << tileY << ")" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM, "Cleared elevation at ({}, {})", tileX, tileY);
                 m_Mouse.rightMousePressed = true;
             }
             // Structure edit mode, right-click clears structure assignment from tiles
@@ -1096,8 +1191,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             structEntries.push_back({cx, cy, layer, oldId, -1});
                             ctx.tilemap.SetTileStructureId(cx, cy, layer, -1);
                         });
-                    std::cout << "Cleared structure assignment from " << count << " tiles (layer "
-                              << layer << ")" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Cleared structure assignment from {} tiles (layer {})",
+                                  count,
+                                  layer);
                 }
                 else
                 {
@@ -1108,11 +1205,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         structEntries.push_back({tileX, tileY, layer, oldId, -1});
                         ctx.tilemap.SetTileStructureId(tileX, tileY, layer, -1);
                     }
-                    std::cout << "Cleared structure assignment at (" << tileX << ", " << tileY
-                              << ")" << std::endl;
+                    Logger::InfoF(
+                        LOG_SUBSYSTEM, "Cleared structure assignment at ({}, {})", tileX, tileY);
                 }
                 if (!structEntries.empty())
-                    m_UndoStack.Push(
+                    PushEditorCommand(
                         std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
                 m_Mouse.rightMousePressed = true;
             }
@@ -1150,8 +1247,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                 }
                             }
                         });
-                    std::cout << "Cleared no-projection on " << count
-                              << " connected tiles (all layers)" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Cleared no-projection on {} connected tiles (all layers)",
+                                  count);
                 }
                 else
                 {
@@ -1165,11 +1263,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             ctx.tilemap.SetLayerNoProjection(tileX, tileY, li, false);
                         }
                     }
-                    std::cout << "Cleared no-projection at (" << tileX << ", " << tileY
-                              << ") all layers" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Cleared no-projection at ({}, {}) all layers",
+                                  tileX,
+                                  tileY);
                 }
                 if (!entries.empty())
-                    m_UndoStack.Push(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
+                    PushEditorCommand(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
                 m_Mouse.rightMousePressed = true;
             }
             // Y-sort-plus / Y-sort-minus edit modes share the same clear logic.
@@ -1186,9 +1286,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 if (!entries.empty())
                 {
                     if (isPlus)
-                        m_UndoStack.Push(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
+                        PushEditorCommand(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
                     else
-                        m_UndoStack.Push(std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
+                        PushEditorCommand(
+                            std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
                 }
                 m_Mouse.rightMousePressed = true;
             }
@@ -1203,11 +1304,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     if (worldX >= zone.position.x && worldX < zone.position.x + zone.size.x &&
                         worldY >= zone.position.y && worldY < zone.position.y + zone.size.y)
                     {
-                        std::cout << "Removed " << EnumTraits<ParticleType>::ToString(zone.type)
-                                  << " zone at (" << zone.position.x << ", " << zone.position.y
-                                  << ")" << std::endl;
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Removed {} zone at ({}, {})",
+                                      EnumTraits<ParticleType>::ToString(zone.type),
+                                      zone.position.x,
+                                      zone.position.y);
                         ctx.particles.OnZoneRemoved(static_cast<int>(i));
-                        m_UndoStack.Execute(
+                        ExecuteEditorCommand(
                             std::make_unique<RemoveParticleZoneCmd>(i), ctx.tilemap, ctx.npcs);
                         break;
                     }
@@ -1228,10 +1331,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_NavigationStroke.Begin();
                     m_NavigationStroke.Touch(tileX, tileY, walkable, m_Mouse.navigationDragState);
                     ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
-                    std::cout << "=== NAVIGATION DRAG START ===" << std::endl;
-                    std::cout << "Tile (" << tileX << ", " << tileY
-                              << "): " << (walkable ? "ON" : "OFF") << " -> "
-                              << (m_Mouse.navigationDragState ? "ON" : "OFF") << std::endl;
+                    MarkDirty();
+                    Logger::Info(LOG_SUBSYSTEM, "=== NAVIGATION DRAG START ===");
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Tile ({}, {}): {} -> {}",
+                                  tileX,
+                                  tileY,
+                                  walkable ? "ON" : "OFF",
+                                  m_Mouse.navigationDragState ? "ON" : "OFF");
                     m_Mouse.lastNavigationTileX = tileX;
                     m_Mouse.lastNavigationTileY = tileY;
                     m_Mouse.rightMousePressed = true;
@@ -1245,8 +1352,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_NavigationStroke.Touch(
                             tileX, tileY, currentWalkable, m_Mouse.navigationDragState);
                         ctx.tilemap.SetNavigation(tileX, tileY, m_Mouse.navigationDragState);
-                        std::cout << "Navigation drag: Tile (" << tileX << ", " << tileY << ") -> "
-                                  << (m_Mouse.navigationDragState ? "ON" : "OFF") << std::endl;
+                        MarkDirty();
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Navigation drag: Tile ({}, {}) -> {}",
+                                      tileX,
+                                      tileY,
+                                      m_Mouse.navigationDragState ? "ON" : "OFF");
                     }
                     m_Mouse.lastNavigationTileX = tileX;
                     m_Mouse.lastNavigationTileY = tileY;
@@ -1267,10 +1378,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     m_CollisionStroke.Touch(
                         tileX, tileY, currentCollision, m_Mouse.collisionDragState);
                     ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
-                    std::cout << "=== COLLISION DRAG START ===" << std::endl;
-                    std::cout << "Tile (" << tileX << ", " << tileY
-                              << "): " << (currentCollision ? "ON" : "OFF") << " -> "
-                              << (m_Mouse.collisionDragState ? "ON" : "OFF") << std::endl;
+                    MarkDirty();
+                    Logger::Info(LOG_SUBSYSTEM, "=== COLLISION DRAG START ===");
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Tile ({}, {}): {} -> {}",
+                                  tileX,
+                                  tileY,
+                                  currentCollision ? "ON" : "OFF",
+                                  m_Mouse.collisionDragState ? "ON" : "OFF");
                     m_Mouse.lastCollisionTileX = tileX;
                     m_Mouse.lastCollisionTileY = tileY;
                     m_Mouse.rightMousePressed = true;
@@ -1284,8 +1399,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_CollisionStroke.Touch(
                             tileX, tileY, currentCollision, m_Mouse.collisionDragState);
                         ctx.tilemap.SetTileCollision(tileX, tileY, m_Mouse.collisionDragState);
-                        std::cout << "Collision drag: Tile (" << tileX << ", " << tileY << ") -> "
-                                  << (m_Mouse.collisionDragState ? "ON" : "OFF") << std::endl;
+                        MarkDirty();
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Collision drag: Tile ({}, {}) -> {}",
+                                      tileX,
+                                      tileY,
+                                      m_Mouse.collisionDragState ? "ON" : "OFF");
                     }
                     m_Mouse.lastCollisionTileX = tileX;
                     m_Mouse.lastCollisionTileY = tileY;
@@ -1296,9 +1415,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         {
             if (!m_Mouse.rightMousePressed)
             {
-                std::cout << "Right-click outside map bounds (tileX=" << tileX << " tileY=" << tileY
-                          << " map size=" << ctx.tilemap.GetMapWidth() << "x"
-                          << ctx.tilemap.GetMapHeight() << ")" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Right-click outside map bounds (tileX={} tileY={} map size={}x{})",
+                              tileX,
+                              tileY,
+                              ctx.tilemap.GetMapWidth(),
+                              ctx.tilemap.GetMapHeight());
             }
         }
     }
@@ -1354,9 +1476,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         // Add frame to animation
                         m_AnimationFrames.push_back(clickedTileID);
                         m_Mouse.mousePressed = true;
-                        std::cout << "Added animation frame: " << clickedTileID
-                                  << " (total frames: " << m_AnimationFrames.size() << ")"
-                                  << std::endl;
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Added animation frame: {} (total frames: {})",
+                                      clickedTileID,
+                                      m_AnimationFrames.size());
                     }
                     else
                     {
@@ -1364,11 +1487,17 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_MultiTile.selectionStartTileID = clickedTileID;
                         m_SelectedTileID = clickedTileID;
                         m_Mouse.mousePressed = true;  // Prevent other click handlers from firing
-                        std::cout << "Started selection at tile ID: " << clickedTileID
-                                  << " (mouse: " << mouseX << ", " << mouseY
-                                  << ", adjusted: " << adjustedMouseX << ", " << adjustedMouseY
-                                  << ", offset: " << m_TilePicker.offsetX << ", "
-                                  << m_TilePicker.offsetY << ")" << std::endl;
+                        Logger::InfoF(
+                            LOG_SUBSYSTEM,
+                            "Started selection at tile ID: {} (mouse: {}, {}, adjusted: {}, "
+                            "{}, offset: {}, {})",
+                            clickedTileID,
+                            mouseX,
+                            mouseY,
+                            adjustedMouseX,
+                            adjustedMouseY,
+                            m_TilePicker.offsetX,
+                            m_TilePicker.offsetY);
                     }
                 }
             }
@@ -1429,18 +1558,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     m_MultiTile.selectionMode = true;
                     m_MultiTile.isPlacing = true;
                     m_MultiTile.rotation = 0;  // Reset rotation for new selection
-                    std::cout << "=== MULTI-TILE SELECTION ===" << std::endl;
-                    std::cout << "Start tile ID: " << m_MultiTile.selectedStartID << std::endl;
-                    std::cout << "Size: " << m_MultiTile.width << "x" << m_MultiTile.height
-                              << std::endl;
+                    Logger::Info(LOG_SUBSYSTEM, "=== MULTI-TILE SELECTION ===");
+                    Logger::InfoF(LOG_SUBSYSTEM, "Start tile ID: {}", m_MultiTile.selectedStartID);
+                    Logger::InfoF(
+                        LOG_SUBSYSTEM, "Size: {}x{}", m_MultiTile.width, m_MultiTile.height);
                 }
                 else
                 {
                     m_MultiTile.selectionMode = false;
                     m_MultiTile.isPlacing = false;
                     m_MultiTile.rotation = 0;  // Reset rotation
-                    std::cout << "=== SINGLE TILE SELECTION ===" << std::endl;
-                    std::cout << "Tile ID: " << m_MultiTile.selectedStartID << std::endl;
+                    Logger::Info(LOG_SUBSYSTEM, "=== SINGLE TILE SELECTION ===");
+                    Logger::InfoF(LOG_SUBSYSTEM, "Tile ID: {}", m_MultiTile.selectedStartID);
                 }
 
                 m_ShowTilePicker = false;
@@ -1495,11 +1624,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                 { return n.GetTileX() == tileX && n.GetTileY() == tileY; });
                 if (hasNPCHere)
                 {
-                    m_UndoStack.Execute(
+                    ExecuteEditorCommand(
                         std::make_unique<RemoveNPCCmd>(tileX, tileY), ctx.tilemap, ctx.npcs);
                     removed = true;
-                    std::cout << "Removed NPC at tile (" << tileX << ", " << tileY << ")"
-                              << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM, "Removed NPC at tile ({}, {})", tileX, tileY);
                 }
 
                 // Only place new NPCs on navigation tiles
@@ -1515,7 +1643,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             npc.SetTilePosition(tileX, tileY, tileSize);
 
                             // Randomly assign a dialogue tree from the pool
-                            // TODO: Load from save.json only and create dialogues via editor
+                            // TODO: Load from rift.save.json only and create dialogues via editor
                             DialogueTree tree;
                             std::string npcName;
                             static std::mt19937 rng(std::random_device{}());
@@ -1540,20 +1668,23 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             npc.SetDialogueTree(tree);
                             npc.SetName(npcName);
 
-                            m_UndoStack.Execute(std::make_unique<PlaceNPCCmd>(std::move(npc)),
-                                                ctx.tilemap,
-                                                ctx.npcs);
-                            std::cout << "Placed NPC " << npcType << " at tile (" << tileX << ", "
-                                      << tileY << ") with dialogue tree" << std::endl;
+                            ExecuteEditorCommand(std::make_unique<PlaceNPCCmd>(std::move(npc)),
+                                                 ctx.tilemap,
+                                                 ctx.npcs);
+                            Logger::InfoF(LOG_SUBSYSTEM,
+                                          "Placed NPC {} at tile ({}, {}) with dialogue tree",
+                                          npcType,
+                                          tileX,
+                                          tileY);
                         }
                         else
                         {
-                            std::cerr << "Failed to load NPC type: " << npcType << std::endl;
+                            Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load NPC type: {}", npcType);
                         }
                     }
                     else
                     {
-                        std::cerr << "No NPC types available!" << std::endl;
+                        Logger::Error(LOG_SUBSYSTEM, "No NPC types available!");
                     }
                 }
             }
@@ -1586,7 +1717,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 int oldTileId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
                 if (oldAnimId != m_SelectedAnimationId)
                 {
-                    m_UndoStack.Execute(
+                    ExecuteEditorCommand(
                         std::make_unique<SetTileAnimationCmd>(
                             std::vector<SetTileAnimationCmd::Entry>{{tileX,
                                                                      tileY,
@@ -1597,8 +1728,12 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         ctx.tilemap,
                         ctx.npcs);
                 }
-                std::cout << "Applied animation #" << m_SelectedAnimationId << " to tile (" << tileX
-                          << ", " << tileY << ") layer " << m_CurrentLayer << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Applied animation #{} to tile ({}, {}) layer {}",
+                              m_SelectedAnimationId,
+                              tileX,
+                              tileY,
+                              m_CurrentLayer);
             }
             return;
         }
@@ -1617,9 +1752,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_ElevationStroke.Begin();
                     m_ElevationStroke.Touch(tileX, tileY, oldElevation, m_CurrentElevation);
                     ctx.tilemap.SetElevation(tileX, tileY, m_CurrentElevation);
+                    MarkDirty();
                 }
-                std::cout << "Set elevation at (" << tileX << ", " << tileY << ") to "
-                          << m_CurrentElevation << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Set elevation at ({}, {}) to {}",
+                              tileX,
+                              tileY,
+                              m_CurrentElevation);
             }
             return;
         }
@@ -1662,8 +1801,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         m_TempLeftAnchor = glm::vec2(cornerX, cornerY);
                         m_PlacingAnchor = 2;
                         m_Mouse.mousePressed = true;
-                        std::cout << "Left anchor: " << cornerNames[cornerIdx] << " of tile ("
-                                  << tileX << ", " << tileY << ")" << std::endl;
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Left anchor: {} of tile ({}, {})",
+                                      cornerNames[cornerIdx],
+                                      tileX,
+                                      tileY);
                     }
                     else if (m_PlacingAnchor == 2)
                     {
@@ -1675,12 +1817,15 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         auto cmd =
                             std::make_unique<AddStructureCmd>(m_TempLeftAnchor, m_TempRightAnchor);
                         AddStructureCmd* cmdPtr = cmd.get();
-                        m_UndoStack.Execute(std::move(cmd), ctx.tilemap, ctx.npcs);
+                        ExecuteEditorCommand(std::move(cmd), ctx.tilemap, ctx.npcs);
                         int id = cmdPtr->StructureId();
                         m_CurrentStructureId = id;
-                        std::cout << "Right anchor: " << cornerNames[cornerIdx] << " of tile ("
-                                  << tileX << ", " << tileY << ")" << std::endl;
-                        std::cout << "Created structure " << id << std::endl;
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Right anchor: {} of tile ({}, {})",
+                                      cornerNames[cornerIdx],
+                                      tileX,
+                                      tileY);
+                        Logger::InfoF(LOG_SUBSYSTEM, "Created structure {}", id);
                         m_TempLeftAnchor = glm::vec2(-1.0f, -1.0f);
                         m_TempRightAnchor = glm::vec2(-1.0f, -1.0f);
                     }
@@ -1723,11 +1868,13 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             }
                         });
                     if (structId >= 0)
-                        std::cout << "Set no-projection on " << count
-                                  << " tiles, assigned to structure " << structId << std::endl;
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Set no-projection on {} tiles, assigned to structure {}",
+                                      count,
+                                      structId);
                     else
-                        std::cout << "Set no-projection on " << count << " tiles (no structure)"
-                                  << std::endl;
+                        Logger::InfoF(
+                            LOG_SUBSYSTEM, "Set no-projection on {} tiles (no structure)", count);
 
                     std::vector<std::unique_ptr<EditorCommand>> children;
                     if (!noProjEntries.empty())
@@ -1737,9 +1884,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         children.push_back(
                             std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
                     if (children.size() == 1)
-                        m_UndoStack.Push(std::move(children[0]));
+                        PushEditorCommand(std::move(children[0]));
                     else if (!children.empty())
-                        m_UndoStack.Push(std::make_unique<CompositeCmd>(
+                        PushEditorCommand(std::make_unique<CompositeCmd>(
                             "Structure flood-fill assign", std::move(children)));
                 }
                 else if (!ctrlHeld && !shiftHeld && !m_Mouse.mousePressed)
@@ -1767,8 +1914,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                 tileX, tileY, m_CurrentLayer + 1, m_CurrentStructureId);
                         }
                     }
-                    std::cout << (current ? "Cleared" : "Set") << " no-projection at (" << tileX
-                              << ", " << tileY << ")" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "{} no-projection at ({}, {})",
+                                  current ? "Cleared" : "Set",
+                                  tileX,
+                                  tileY);
 
                     std::vector<std::unique_ptr<EditorCommand>> children;
                     children.push_back(
@@ -1777,9 +1927,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         children.push_back(
                             std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
                     if (children.size() == 1)
-                        m_UndoStack.Push(std::move(children[0]));
+                        PushEditorCommand(std::move(children[0]));
                     else
-                        m_UndoStack.Push(std::make_unique<CompositeCmd>(
+                        PushEditorCommand(std::make_unique<CompositeCmd>(
                             "Structure single-tile assign", std::move(children)));
                 }
             }
@@ -1820,8 +1970,10 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                 ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
                             }
                         });
-                    std::cout << "Set no-projection on " << count << " connected tiles (layer "
-                              << (layer + 1) << ")" << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Set no-projection on {} connected tiles (layer {})",
+                                  count,
+                                  layer + 1);
                 }
                 else
                 {
@@ -1832,12 +1984,15 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         entries.push_back({tileX, tileY, layer, oldF, true});
                         ctx.tilemap.SetLayerNoProjection(tileX, tileY, layer, true);
                     }
-                    std::cout << "Set no-projection at (" << tileX << ", " << tileY << ") on layer "
-                              << (m_CurrentLayer + 1) << std::endl;
+                    Logger::InfoF(LOG_SUBSYSTEM,
+                                  "Set no-projection at ({}, {}) on layer {}",
+                                  tileX,
+                                  tileY,
+                                  m_CurrentLayer + 1);
                 }
 
                 if (!entries.empty())
-                    m_UndoStack.Push(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
+                    PushEditorCommand(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
             }
             return;
         }
@@ -1854,7 +2009,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                                   /*newValue=*/true,
                                                   "Y-sort-plus");
             if (!entries.empty())
-                m_UndoStack.Push(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
+                PushEditorCommand(std::make_unique<YSortPlusToggleCmd>(std::move(entries)));
             return;
         }
 
@@ -1870,7 +2025,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                                   /*newValue=*/true,
                                                   "Y-sort-minus");
             if (!entries.empty())
-                m_UndoStack.Push(std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
+                PushEditorCommand(std::make_unique<YSortMinusToggleCmd>(std::move(entries)));
             // Warn if Y-sort-plus isn't set on this tile (only relevant for single-tile placement)
             bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                               glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
@@ -1879,7 +2034,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             {
                 bool isYSortPlus = ctx.tilemap.GetLayerYSortPlus(tileX, tileY, m_CurrentLayer);
                 if (!isYSortPlus)
-                    std::cout << "  Warning: tile must also be Y-sort-plus!" << std::endl;
+                    Logger::Warn(LOG_SUBSYSTEM, "  tile must also be Y-sort-plus!");
             }
             return;
         }
@@ -1922,25 +2077,41 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         if (placeX >= 0 && placeX < ctx.tilemap.GetMapWidth() && placeY >= 0 &&
                             placeY < ctx.tilemap.GetMapHeight())
                         {
-                            entries.push_back(PlaceTilesCmd::Entry{
-                                placeX,
-                                placeY,
-                                static_cast<size_t>(m_CurrentLayer),
-                                ctx.tilemap.GetLayerTile(placeX, placeY, m_CurrentLayer),
-                                ctx.tilemap.GetLayerRotation(placeX, placeY, m_CurrentLayer),
-                                sourceTileID,
-                                tileRotation});
+                            // Multi-tile place preserves any existing flip state at
+                            // each destination cell; place-stamps do not flip.
+                            const bool oldFlipX =
+                                ctx.tilemap.GetLayerFlipX(placeX, placeY, m_CurrentLayer);
+                            const bool oldFlipY =
+                                ctx.tilemap.GetLayerFlipY(placeX, placeY, m_CurrentLayer);
+                            PlaceTilesCmd::Entry e{};
+                            e.tileX = placeX;
+                            e.tileY = placeY;
+                            e.layer = static_cast<size_t>(m_CurrentLayer);
+                            e.oldTileId = ctx.tilemap.GetLayerTile(placeX, placeY, m_CurrentLayer);
+                            e.oldRotation =
+                                ctx.tilemap.GetLayerRotation(placeX, placeY, m_CurrentLayer);
+                            e.newTileId = sourceTileID;
+                            e.newRotation = tileRotation;
+                            e.oldFlipX = oldFlipX;
+                            e.newFlipX = oldFlipX;
+                            e.oldFlipY = oldFlipY;
+                            e.newFlipY = oldFlipY;
+                            entries.push_back(e);
                         }
                     }
                 }
                 if (!entries.empty())
                 {
-                    m_UndoStack.Execute(
+                    ExecuteEditorCommand(
                         std::make_unique<PlaceTilesCmd>(std::move(entries)), ctx.tilemap, ctx.npcs);
                 }
-                std::cout << "Placed " << m_MultiTile.width << "x" << m_MultiTile.height
-                          << " tiles starting at (" << tileX << ", " << tileY << ") on layer "
-                          << (m_CurrentLayer + 1) << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Placed {}x{} tiles starting at ({}, {}) on layer {}",
+                              m_MultiTile.width,
+                              m_MultiTile.height,
+                              tileX,
+                              tileY,
+                              m_CurrentLayer + 1);
 
                 // Keep multi-tile selection active for multiple placements
                 m_Mouse.lastPlacedTileX = tileX;
@@ -1964,16 +2135,21 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
                     int oldId = ctx.tilemap.GetLayerTile(tileX, tileY, m_CurrentLayer);
                     float oldRot = ctx.tilemap.GetLayerRotation(tileX, tileY, m_CurrentLayer);
+                    bool oldFlipX = ctx.tilemap.GetLayerFlipX(tileX, tileY, m_CurrentLayer);
+                    bool oldFlipY = ctx.tilemap.GetLayerFlipY(tileX, tileY, m_CurrentLayer);
                     m_TileStroke.Touch(tileX,
                                        tileY,
                                        static_cast<size_t>(m_CurrentLayer),
                                        oldId,
                                        oldRot,
                                        m_MultiTile.selectedStartID,
-                                       tileRotation);
+                                       tileRotation,
+                                       oldFlipX,
+                                       oldFlipY);
                     ctx.tilemap.SetLayerTile(
                         tileX, tileY, m_CurrentLayer, m_MultiTile.selectedStartID);
                     ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, tileRotation);
+                    MarkDirty();
 
                     m_Mouse.lastPlacedTileX = tileX;
                     m_Mouse.lastPlacedTileY = tileY;
@@ -2028,13 +2204,16 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
             }
             zone.noProjection = hasNoProjection;
-            m_UndoStack.Execute(std::make_unique<AddParticleZoneCmd>(zone), ctx.tilemap, ctx.npcs);
+            ExecuteEditorCommand(std::make_unique<AddParticleZoneCmd>(zone), ctx.tilemap, ctx.npcs);
 
-            std::cout << "Created " << EnumTraits<ParticleType>::ToString(m_CurrentParticleType)
-                      << " zone at (" << zr.x << ", " << zr.y << ") size " << zr.w << "x" << zr.h;
-            if (hasNoProjection)
-                std::cout << " [noProjection]";
-            std::cout << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Created {} zone at ({}, {}) size {}x{}{}",
+                          EnumTraits<ParticleType>::ToString(m_CurrentParticleType),
+                          zr.x,
+                          zr.y,
+                          zr.w,
+                          zr.h,
+                          hasNoProjection ? " [noProjection]" : "");
 
             m_PlacingParticleZone = false;
         }
@@ -2078,7 +2257,7 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
             if (m_CurrentElevation < -32)
                 m_CurrentElevation = -32;
         }
-        std::cout << "Elevation value: " << m_CurrentElevation << " pixels" << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM, "Elevation value: {} pixels", m_CurrentElevation);
         return;
     }
 
@@ -2132,9 +2311,11 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
             m_TilePicker.targetOffsetX = newOffsetX;
             m_TilePicker.targetOffsetY = newOffsetY;
 
-            std::cout << "Tile picker zoom: " << m_TilePicker.zoom
-                      << "x (offset: " << m_TilePicker.offsetX << ", " << m_TilePicker.offsetY
-                      << ")" << std::endl;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Tile picker zoom: {}x (offset: {}, {})",
+                          m_TilePicker.zoom,
+                          m_TilePicker.offsetX,
+                          m_TilePicker.offsetY);
         }
         else
         {
@@ -2229,8 +2410,12 @@ std::vector<LayerFlagEntry> Editor::CollectYSortFlagToggle(
                     (ctx.tilemap.*setter)(cx, cy, layer, newValue);
                 }
             });
-        std::cout << (newValue ? "Set " : "Cleared ") << flagName << " on " << count
-                  << " connected tiles (layer " << (layer + 1) << ")" << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "{}{} on {} connected tiles (layer {})",
+                      newValue ? "Set " : "Cleared ",
+                      flagName,
+                      count,
+                      layer + 1);
     }
     else
     {
@@ -2240,8 +2425,13 @@ std::vector<LayerFlagEntry> Editor::CollectYSortFlagToggle(
             entries.push_back({tileX, tileY, layer, oldF, newValue});
             (ctx.tilemap.*setter)(tileX, tileY, layer, newValue);
         }
-        std::cout << (newValue ? "Set " : "Cleared ") << flagName << " at (" << tileX << ", "
-                  << tileY << ") layer " << (m_CurrentLayer + 1) << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "{}{} at ({}, {}) layer {}",
+                      newValue ? "Set " : "Cleared ",
+                      flagName,
+                      tileX,
+                      tileY,
+                      m_CurrentLayer + 1);
     }
 
     return entries;
