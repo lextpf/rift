@@ -1,10 +1,18 @@
 #include "Editor.h"
+
+#include "Logger.h"
 #include "MathUtils.h"
 #include "NavigationRecalc.h"
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
+#include <glm/gtc/matrix_transform.hpp>
+#include <sstream>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Editor";
+}  // namespace
 
 static constexpr glm::vec4 LAYER_COLORS[] = {
     {0.0f, 0.0f, 0.0f, 0.0f},  // layer 0 - transparent (Ground, unused)
@@ -46,6 +54,7 @@ Editor::Editor()
       m_DebugMode(false),
       m_ShowDebugInfo(false),
       m_ShowNoProjectionAnchors(false),
+      m_HasUnsavedChanges(false),
 
       // -- Tile selection: layer 0, elevation 4 is the default ground level --
       m_SelectedTileID(0),
@@ -73,16 +82,21 @@ void Editor::Initialize(const std::vector<std::string>& npcTypes)
 
     if (!m_AvailableNPCTypes.empty())
     {
-        std::cout << "Available NPC types: ";
+        std::ostringstream line;
+        line << "Available NPC types: ";
         for (size_t i = 0; i < m_AvailableNPCTypes.size(); ++i)
         {
-            std::cout << m_AvailableNPCTypes[i];
+            line << m_AvailableNPCTypes[i];
             if (i == m_SelectedNPCTypeIndex)
-                std::cout << " (selected)";
+            {
+                line << " (selected)";
+            }
             if (i < m_AvailableNPCTypes.size() - 1)
-                std::cout << ", ";
+            {
+                line << ", ";
+            }
         }
-        std::cout << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, line.str());
     }
 }
 
@@ -105,13 +119,13 @@ void Editor::ToggleDebugMode()
 {
     m_DebugMode = !m_DebugMode;
     m_ShowNoProjectionAnchors = m_DebugMode;
-    std::cout << "Debug mode: " << (m_DebugMode ? "ON" : "OFF") << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Debug mode: {}", m_DebugMode ? "ON" : "OFF");
 }
 
 void Editor::ToggleShowDebugInfo()
 {
     m_ShowDebugInfo = !m_ShowDebugInfo;
-    std::cout << "Debug info display: " << (m_ShowDebugInfo ? "ON" : "OFF") << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Debug info display: {}", m_ShowDebugInfo ? "ON" : "OFF");
 }
 
 void Editor::ResetTilePickerState()
@@ -121,7 +135,7 @@ void Editor::ResetTilePickerState()
     m_TilePicker.offsetY = 0.0f;
     m_TilePicker.targetOffsetX = 0.0f;
     m_TilePicker.targetOffsetY = 0.0f;
-    std::cout << "Tile picker zoom and offset reset to defaults" << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Tile picker zoom and offset reset to defaults");
 }
 
 void Editor::Update(float deltaTime, const EditorContext& ctx)
@@ -171,6 +185,50 @@ void Editor::ShowStatus(std::string message, glm::vec3 color, float durationSeco
 void Editor::ClearUndoHistory()
 {
     m_UndoStack.Clear();
+}
+
+Editor::ScreenToTile Editor::ScreenToTileCoords(const EditorContext& ctx,
+                                                double mouseX,
+                                                double mouseY) const
+{
+    if (ctx.screenWidth <= 0 || ctx.screenHeight <= 0 || ctx.tilemap.GetTileWidth() <= 0 ||
+        ctx.tilemap.GetTileHeight() <= 0)
+    {
+        return {};
+    }
+
+    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float worldW = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth()) / zoom;
+    float worldH = static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight()) / zoom;
+    float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldW +
+                   ctx.cameraPosition.x;
+    float worldY = (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) * worldH +
+                   ctx.cameraPosition.y;
+
+    return {worldX,
+            worldY,
+            static_cast<int>(std::floor(worldX / ctx.tilemap.GetTileWidth())),
+            static_cast<int>(std::floor(worldY / ctx.tilemap.GetTileHeight()))};
+}
+
+void Editor::ExecuteEditorCommand(std::unique_ptr<EditorCommand> cmd,
+                                  Tilemap& tilemap,
+                                  std::vector<NonPlayerCharacter>& npcs)
+{
+    if (!cmd)
+        return;
+
+    m_UndoStack.Execute(std::move(cmd), tilemap, npcs);
+    MarkDirty();
+}
+
+void Editor::PushEditorCommand(std::unique_ptr<EditorCommand> cmd)
+{
+    if (!cmd)
+        return;
+
+    m_UndoStack.Push(std::move(cmd));
+    MarkDirty();
 }
 
 void Editor::ClearAllEditModes()
@@ -224,7 +282,15 @@ void Editor::Render(const EditorContext& ctx)
     if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
     {
         IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
-        const glm::vec2 pos(20.0f, static_cast<float>(ctx.screenHeight) - 40.0f);
+        glm::mat4 uiProjection = glm::ortho(0.0f,
+                                            static_cast<float>(ctx.screenWidth),
+                                            static_cast<float>(ctx.screenHeight),
+                                            0.0f,
+                                            -1.0f,
+                                            1.0f);
+        ctx.renderer.SetProjection(uiProjection);
+        const glm::vec2 pos(20.0f,
+                            static_cast<float>(ctx.screenHeight) - EDITOR_HUD_HEIGHT - 24.0f);
         ctx.renderer.DrawText(m_StatusMessage, pos, 0.5f, m_StatusColor);
     }
 
@@ -263,6 +329,12 @@ void Editor::Render(const EditorContext& ctx)
         {
             RenderLayerOverlay(ctx, i, LAYER_COLORS[i]);
         }
+    }
+
+    if (m_Active)
+    {
+        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
+        RenderEditorHUD(ctx);
     }
 }
 
