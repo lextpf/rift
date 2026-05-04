@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
+#include <utility>
 
 namespace
 {
@@ -189,6 +191,68 @@ glm::vec4 GetParticleTypeColor(ParticleType type, float alpha)
             return glm::vec4(1.0f, 0.95f, 0.6f, alpha);
     }
     return glm::vec4(1.0f, 1.0f, 1.0f, alpha);
+}
+
+std::string FitText(IRenderer& renderer, const std::string& text, float scale, float maxWidth)
+{
+    if (maxWidth <= 0.0f)
+        return {};
+    if (renderer.GetTextWidth(text, scale) <= maxWidth)
+        return text;
+
+    constexpr const char* ELLIPSIS = "...";
+    if (renderer.GetTextWidth(ELLIPSIS, scale) > maxWidth)
+        return {};
+
+    std::string fitted = text;
+    while (!fitted.empty() && renderer.GetTextWidth(fitted + ELLIPSIS, scale) > maxWidth)
+    {
+        fitted.pop_back();
+    }
+    return fitted + ELLIPSIS;
+}
+
+std::string BasenameWithoutExtension(const std::string& path)
+{
+    if (path.empty())
+        return "none";
+
+    std::filesystem::path fsPath(path);
+    std::string stem = fsPath.stem().string();
+    if (!stem.empty())
+        return stem;
+
+    std::string filename = fsPath.filename().string();
+    return filename.empty() ? path : filename;
+}
+
+std::string TileLabel(const Tilemap& tilemap, int tileID)
+{
+    if (tileID < 0)
+        return "None";
+
+    int tileWidth = tilemap.GetTileWidth();
+    int dataWidth = tilemap.GetTilesetDataWidth();
+    int tilesPerRow = (tileWidth > 0) ? dataWidth / tileWidth : 0;
+    if (tilesPerRow <= 0)
+        return "Tile " + std::to_string(tileID);
+
+    return "Tile " + std::to_string(tileID) + " (" + std::to_string(tileID % tilesPerRow) + "," +
+           std::to_string(tileID / tilesPerRow) + ")";
+}
+
+std::string LayerLabel(const Tilemap& tilemap, int currentLayer)
+{
+    size_t layerCount = tilemap.GetLayerCount();
+    if (layerCount == 0)
+        return "none";
+    if (currentLayer < 0 || static_cast<size_t>(currentLayer) >= layerCount)
+        return std::to_string(currentLayer + 1) + "/" + std::to_string(layerCount) + " invalid";
+
+    const TileLayer& layer = tilemap.GetLayer(static_cast<size_t>(currentLayer));
+    std::string label =
+        std::to_string(currentLayer + 1) + "/" + std::to_string(layerCount) + " " + layer.name;
+    return label;
 }
 
 }  // anonymous namespace
@@ -776,7 +840,7 @@ void Editor::RenderCornerCuttingOverlays(const EditorContext& ctx)
     // Player hitbox 16x16 pixels
     const float HITBOX_SIZE = PlayerCharacter::HITBOX_WIDTH;
     const float HITBOX_HALF = HITBOX_SIZE * 0.5f;  // 8 pixels from center
-    const float TILE_SIZE = ctx.tilemap.GetTileWidth();
+    const float TILE_SIZE = static_cast<float>(ctx.tilemap.GetTileWidth());
 
     // Walking allows 20% overlap threshold on diagonal corners only
     const float CORNER_OVERLAP_THRESHOLD = 0.20f;
@@ -1137,6 +1201,252 @@ void Editor::RenderEditorUI(const EditorContext& ctx)
         }
         ctx.renderer.DrawText(
             animStatus, glm::vec2(20.0f, 20.0f), 0.4f, glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+}
+
+void Editor::RenderEditorHUD(const EditorContext& ctx)
+{
+    if (ctx.screenWidth <= 0 || ctx.screenHeight <= 0)
+        return;
+
+    glm::mat4 uiProjection = glm::ortho(0.0f,
+                                        static_cast<float>(ctx.screenWidth),
+                                        static_cast<float>(ctx.screenHeight),
+                                        0.0f,
+                                        -1.0f,
+                                        1.0f);
+    ctx.renderer.SetProjection(uiProjection);
+
+    const float screenW = static_cast<float>(ctx.screenWidth);
+    const float screenH = static_cast<float>(ctx.screenHeight);
+    const float hudY = screenH - EDITOR_HUD_HEIGHT;
+    const float margin = 12.0f;
+    const float scale = 0.55f;
+    const float textY = hudY + 26.0f;
+
+    ctx.renderer.DrawColoredRect(glm::vec2(0.0f, hudY),
+                                 glm::vec2(screenW, EDITOR_HUD_HEIGHT),
+                                 glm::vec4(0.02f, 0.025f, 0.03f, 0.88f));
+    ctx.renderer.DrawColoredRect(
+        glm::vec2(0.0f, hudY), glm::vec2(screenW, 1.0f), glm::vec4(0.55f, 0.7f, 0.75f, 0.65f));
+
+    auto toolLabel = [this]() -> std::string
+    {
+        if (m_ShowTilePicker)
+            return "Tile Picker";
+
+        switch (m_EditMode)
+        {
+            case EditMode::None:
+                return "Tile Paint";
+            case EditMode::Navigation:
+                return "Navigation";
+            case EditMode::Elevation:
+                return "Elevation";
+            case EditMode::NPCPlacement:
+                return "NPC";
+            case EditMode::NoProjection:
+                return "No Projection";
+            case EditMode::YSortPlus:
+                return "Y-Sort +";
+            case EditMode::YSortMinus:
+                return "Y-Sort -";
+            case EditMode::ParticleZone:
+                return "Particle Zone";
+            case EditMode::Structure:
+                return "Structure";
+            case EditMode::Animation:
+                return "Animation";
+        }
+        return "Editor";
+    };
+
+    auto clickActions = [this, &ctx]() -> std::pair<std::string, std::string>
+    {
+        const bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                              glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        const bool shiftHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                               glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+
+        if (m_ShowTilePicker)
+        {
+            if (m_EditMode == EditMode::Animation)
+                return {"add frame", ""};
+            return {"", ""};
+        }
+
+        const bool selectionOverride = ctrlHeld && m_EditMode != EditMode::Structure;
+        auto leftOrSelection = [selectionOverride](const std::string& action)
+        { return selectionOverride ? std::string("select map region") : action; };
+
+        switch (m_EditMode)
+        {
+            case EditMode::None:
+                return {leftOrSelection(m_MultiTile.selectionMode ? "place stamp" : "paint tile"),
+                        "toggle collision"};
+            case EditMode::Navigation:
+                return {leftOrSelection("none"), "paint walkability"};
+            case EditMode::Elevation:
+                return {leftOrSelection("paint elevation"), "clear elevation"};
+            case EditMode::NPCPlacement:
+                return {leftOrSelection("place/remove NPC"), "none"};
+            case EditMode::NoProjection:
+                return {leftOrSelection(shiftHeld ? "flood set no-proj" : "set no-proj"),
+                        shiftHeld ? "flood clear no-proj" : "clear no-proj"};
+            case EditMode::YSortPlus:
+                return {leftOrSelection(shiftHeld ? "flood set Y+" : "set Y+"),
+                        shiftHeld ? "flood clear Y+" : "clear Y+"};
+            case EditMode::YSortMinus:
+                return {leftOrSelection(shiftHeld ? "flood set Y-" : "set Y-"),
+                        shiftHeld ? "flood clear Y-" : "clear Y-"};
+            case EditMode::ParticleZone:
+                return {leftOrSelection("drag create zone"), "remove zone"};
+            case EditMode::Structure:
+                if (ctrlHeld)
+                    return {m_PlacingAnchor == 2 ? "set right anchor" : "set left anchor", "none"};
+                return {shiftHeld ? "flood assign" : "toggle no-proj",
+                        shiftHeld ? "flood clear structure" : "clear structure"};
+            case EditMode::Animation:
+                if (m_SelectedAnimationId >= 0)
+                    return {leftOrSelection("apply animation #" +
+                                            std::to_string(m_SelectedAnimationId)),
+                            "remove animation"};
+                return {leftOrSelection("select/create animation"), "remove animation"};
+        }
+
+        return {"none", "none"};
+    };
+
+    int selectedTileID = m_MultiTile.isSelecting ? m_SelectedTileID : m_MultiTile.selectedStartID;
+    int stampWidth = m_MultiTile.selectionMode ? m_MultiTile.width : 1;
+    int stampHeight = m_MultiTile.selectionMode ? m_MultiTile.height : 1;
+    if (m_MultiTile.rotation == 90 || m_MultiTile.rotation == 270)
+        std::swap(stampWidth, stampHeight);
+
+    std::string selectionText =
+        "Stamp " + std::to_string(stampWidth) + "x" + std::to_string(stampHeight);
+    if (m_MapSelection.active)
+    {
+        selectionText = "Map " + std::to_string(m_MapSelection.Width()) + "x" +
+                        std::to_string(m_MapSelection.Height());
+    }
+
+    std::string npcText = "none";
+    if (!m_AvailableNPCTypes.empty())
+    {
+        size_t idx = std::min(m_SelectedNPCTypeIndex, m_AvailableNPCTypes.size() - 1);
+        npcText = std::to_string(idx + 1) + "/" + std::to_string(m_AvailableNPCTypes.size()) + " " +
+                  BasenameWithoutExtension(m_AvailableNPCTypes[idx]);
+    }
+
+    std::string particleText =
+        std::string(EnumTraits<ParticleType>::ToString(m_CurrentParticleType));
+    particleText += m_ParticleNoProjection ? " forced" : " auto";
+
+    std::string structureText = "none";
+    if (m_CurrentStructureId >= 0)
+    {
+        structureText = "#" + std::to_string(m_CurrentStructureId);
+        if (const NoProjectionStructure* structure =
+                ctx.tilemap.GetNoProjectionStructure(m_CurrentStructureId))
+        {
+            if (!structure->name.empty())
+                structureText += " " + structure->name;
+        }
+    }
+    else if (ctx.tilemap.GetNoProjectionStructureCount() > 0)
+    {
+        structureText = "none/" + std::to_string(ctx.tilemap.GetNoProjectionStructureCount());
+    }
+
+    std::string cursorText = "out";
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
+    if (m_ShowTilePicker)
+    {
+        int tileWidth = ctx.tilemap.GetTileWidth();
+        int tileHeight = ctx.tilemap.GetTileHeight();
+        int dataWidth = ctx.tilemap.GetTilesetDataWidth();
+        int dataHeight = ctx.tilemap.GetTilesetDataHeight();
+        int dataTilesPerRow = (tileWidth > 0) ? dataWidth / tileWidth : 0;
+        int dataTilesPerCol = (tileHeight > 0) ? dataHeight / tileHeight : 0;
+        if (dataTilesPerRow > 0 && dataTilesPerCol > 0 && mouseX >= 0.0 &&
+            mouseX < ctx.screenWidth && mouseY >= 0.0 && mouseY < ctx.screenHeight)
+        {
+            float baseTileSize =
+                (static_cast<float>(ctx.screenWidth) / static_cast<float>(dataTilesPerRow)) * 1.5f;
+            float tileSize = baseTileSize * m_TilePicker.zoom;
+            int pickerX = static_cast<int>(std::floor((mouseX - m_TilePicker.offsetX) / tileSize));
+            int pickerY = static_cast<int>(std::floor((mouseY - m_TilePicker.offsetY) / tileSize));
+            int pickerID = pickerY * dataTilesPerRow + pickerX;
+            int totalTiles = dataTilesPerRow * dataTilesPerCol;
+            if (pickerX >= 0 && pickerX < dataTilesPerRow && pickerY >= 0 &&
+                pickerY < dataTilesPerCol && pickerID >= 0 && pickerID < totalTiles)
+            {
+                cursorText = "picker " + std::to_string(pickerID);
+            }
+        }
+    }
+    else if (ctx.tilemap.GetTileWidth() > 0 && ctx.tilemap.GetTileHeight() > 0)
+    {
+        ScreenToTile st = ScreenToTileCoords(ctx, mouseX, mouseY);
+        if (st.tileX >= 0 && st.tileX < ctx.tilemap.GetMapWidth() && st.tileY >= 0 &&
+            st.tileY < ctx.tilemap.GetMapHeight())
+        {
+            int tileID = ctx.tilemap.GetLayerTile(st.tileX, st.tileY, m_CurrentLayer);
+            int elevation = ctx.tilemap.GetElevation(st.tileX, st.tileY);
+            cursorText = std::to_string(st.tileX) + "," + std::to_string(st.tileY) + " tile " +
+                         std::to_string(tileID) + " elev " + std::to_string(elevation);
+        }
+    }
+
+    const auto [leftAction, rightAction] = clickActions();
+    const std::string statusText = m_HasUnsavedChanges ? "Unsaved" : "Saved";
+    const glm::vec3 statusColor =
+        m_HasUnsavedChanges ? glm::vec3(1.0f, 0.72f, 0.28f) : glm::vec3(0.55f, 1.0f, 0.65f);
+
+    float x = margin;
+    ctx.renderer.DrawText(statusText, glm::vec2(x, textY), scale, statusColor, 1.0f, 0.95f);
+    x += ctx.renderer.GetTextWidth(statusText, scale) + 18.0f;
+
+    std::string actionText;
+    if (!leftAction.empty() && leftAction != "none")
+        actionText += "L: " + leftAction;
+    if (!rightAction.empty() && rightAction != "none")
+    {
+        if (!actionText.empty())
+            actionText += "   ";
+        actionText += "R: " + rightAction;
+    }
+
+    actionText = FitText(ctx.renderer, actionText, scale, screenW * 0.38f);
+    float actionWidth = ctx.renderer.GetTextWidth(actionText, scale);
+    float actionX =
+        actionText.empty() ? screenW - margin : std::max(x, screenW - margin - actionWidth);
+
+    std::string rowText =
+        "Tool: " + toolLabel() + " | Lyr: " + LayerLabel(ctx.tilemap, m_CurrentLayer) +
+        " | Tile: " + TileLabel(ctx.tilemap, selectedTileID) +
+        " | Rot: " + std::to_string(m_MultiTile.rotation) +
+        " | Elev: " + std::to_string(m_CurrentElevation) + " | Cur: " + cursorText +
+        " | Sel: " + selectionText + " | NPC: " + npcText + " | FX: " + particleText +
+        " | Struct: " + structureText;
+    ctx.renderer.DrawText(FitText(ctx.renderer, rowText, scale, actionX - x - 16.0f),
+                          glm::vec2(x, textY),
+                          scale,
+                          glm::vec3(0.9f, 0.94f, 0.94f),
+                          1.0f,
+                          0.95f);
+
+    if (!actionText.empty())
+    {
+        ctx.renderer.DrawText(actionText,
+                              glm::vec2(actionX, textY),
+                              scale,
+                              glm::vec3(1.0f, 0.94f, 0.64f),
+                              1.0f,
+                              0.95f);
     }
 }
 
