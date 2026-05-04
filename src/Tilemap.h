@@ -78,6 +78,8 @@ struct TileLayer
     defaulted_vector<int, -1> tiles;             ///< Tile IDs in row-major order (-1 = empty)
     defaulted_vector<float, 0.0f> rotation;      ///< Rotation in degrees per tile
     defaulted_vector<bool, false> noProjection;  ///< Tiles that bypass 3D projection
+    defaulted_vector<bool, false> flipX;         ///< Mirror tile sprite around vertical axis
+    defaulted_vector<bool, false> flipY;         ///< Mirror tile sprite around horizontal axis
     defaulted_vector<int, -1>
         structureId;  ///< Per-tile structure ID (-1 = auto flood-fill, 0+ = belongs to structure)
     defaulted_vector<bool, false> ySortPlus;  ///< Tiles that sort with entities by Y position
@@ -104,14 +106,30 @@ struct TileLayer
     /// @param size Total number of tiles (mapWidth * mapHeight).
     void Resize(size_t size)
     {
-        resize_all(
-            size, tiles, rotation, noProjection, structureId, ySortPlus, ySortMinus, animationMap);
+        resize_all(size,
+                   tiles,
+                   rotation,
+                   noProjection,
+                   flipX,
+                   flipY,
+                   structureId,
+                   ySortPlus,
+                   ySortMinus,
+                   animationMap);
     }
 
     /// @brief Reset all per-tile data to default values without changing size.
     void Clear()
     {
-        reset_all(tiles, rotation, noProjection, structureId, ySortPlus, ySortMinus, animationMap);
+        reset_all(tiles,
+                  rotation,
+                  noProjection,
+                  flipX,
+                  flipY,
+                  structureId,
+                  ySortPlus,
+                  ySortMinus,
+                  animationMap);
     }
 };
 
@@ -522,6 +540,14 @@ public:
     /// Get/set no-projection flag for any layer
     bool GetLayerNoProjection(int x, int y, size_t layer) const;
     void SetLayerNoProjection(int x, int y, size_t layer, bool noProjection);
+
+    /// Get/set per-tile horizontal flip (mirror around vertical axis)
+    bool GetLayerFlipX(int x, int y, size_t layer) const;
+    void SetLayerFlipX(int x, int y, size_t layer, bool flipX);
+
+    /// Get/set per-tile vertical flip (mirror around horizontal axis)
+    bool GetLayerFlipY(int x, int y, size_t layer) const;
+    void SetLayerFlipY(int x, int y, size_t layer, bool flipY);
 
     /// Get/set Y-sort-plus flag for any layer
     bool GetLayerYSortPlus(int x, int y, size_t layer) const;
