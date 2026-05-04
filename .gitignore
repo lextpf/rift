@@ -9,3 +9,9 @@ external/
 
 # Generated documentation
 docs/html/
+
+# Runtime log file (written by Logger and crash handlers)
+rift.project.log
+
+# Legacy log file (pre-rename, may exist from old builds)
+rift.txt
