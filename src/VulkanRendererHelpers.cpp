@@ -1,8 +1,14 @@
+#include "Logger.h"
 #include "Texture.h"
 #include "VulkanCommon.h"
 #include "VulkanRenderer.h"
 
 #include <cstring>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Render";
+}  // namespace
 
 namespace
 {
@@ -214,9 +220,12 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
     // Texture doesn't have Vulkan resources yet - need to create them
     // But we can't call CreateVulkanTexture from here because we don't have access to the Texture's
     // private methods So we'll return white texture for now and log a warning
-    std::cerr << "Warning: Texture " << static_cast<const void*>(textureKey) << " (size " << width
-              << "x" << height << ") not uploaded to Vulkan yet. Using white texture fallback."
-              << std::endl;
+    Logger::WarnF(LOG_SUBSYSTEM,
+                  "Texture {} (size {}x{}) not uploaded to Vulkan yet. Using white texture "
+                  "fallback.",
+                  static_cast<const void*>(textureKey),
+                  width,
+                  height);
 
     // Use white texture as fallback. Cached entries are refreshed above when
     // a real image view becomes available on the Texture object.
