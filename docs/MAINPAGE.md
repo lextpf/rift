@@ -1,10 +1,10 @@
-@mainpage Rift Game Engine
+@mainpage Rift
 
 @tableofcontents
 
 ## Overview
 
-Rift is a 2D game engine written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.4), a complete day/night cycle with atmospheric effects, tile-based collision, NPC pathfinding, and a built-in level editor.
+Rift is a 2.5D RPG game written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.4), a complete day/night cycle with atmospheric effects, tile-based collision, NPC pathfinding, and a built-in level editor.
 
 \htmlonly
 <pre class="mermaid">
@@ -17,7 +17,7 @@ flowchart LR
         Game((Game)):::core
     end
 
-    subgraph Systems["Engine Systems"]
+    subgraph Systems["Game Systems"]
         Input[Input]:::system
         Renderer[IRenderer]:::system
         World[World]:::system
@@ -50,7 +50,7 @@ flowchart LR
 
 ## Rendering
 
-The engine uses a **top-left origin, Y-down** coordinate system. Press **F1** to switch between OpenGL and Vulkan at runtime.
+Rift uses a **top-left origin, Y-down** coordinate system. Press **F1** to switch between OpenGL and Vulkan at runtime.
 
 @see [Rendering Pipeline](RENDERING.md) for coordinate transforms, sprite batching, and shader architecture.
 
