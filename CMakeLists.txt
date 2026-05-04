@@ -290,7 +290,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 )
 
 # Copy save files from project root to build directories
-file(GLOB SAVE_FILES "${CMAKE_SOURCE_DIR}/save*.json")
+file(GLOB SAVE_FILES "${CMAKE_SOURCE_DIR}/rift.save*.json")
 if(SAVE_FILES)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Copying save files to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
@@ -337,6 +337,7 @@ if(BUILD_TESTS)
     # never creates a GL/VK context, so rendering methods are not called at
     # runtime. Tests should not invoke render paths.
     set(TEST_LIB_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/Logger.cpp"
         "${CMAKE_SOURCE_DIR}/src/TimeManager.cpp"
         "${CMAKE_SOURCE_DIR}/src/CollisionResolver.cpp"
         "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
