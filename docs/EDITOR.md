@@ -33,6 +33,12 @@ Mode-specific notes:
 - **Y-Sort-Plus (Y) / Y-Sort-Minus (O)** — Per-layer flags. Single click for one tile, Shift+click for flood-fill, right-click to clear.
 - **Default** — Tile placement (left-click drag) and collision toggle (right-click drag).
 
+## Persistent HUD
+
+When the editor is active, a bottom HUD shows the current tool, layer, selected tile, rotation, elevation, selected NPC/particle/structure, cursor tile, active selection size, saved/unsaved state, and valid left/right click actions. Tile names are generated from the tile ID and atlas coordinate because the project does not currently define tile-name metadata.
+
+The unsaved indicator means the map has changed since the last successful save or load. It does not perform a full content-hash comparison.
+
 ## Undo / Redo
 
 Every editor mutation is wrapped in an `EditorCommand` and pushed onto a bounded undo stack (capacity 100, FIFO eviction). Hotkeys:
@@ -60,7 +66,7 @@ What's tracked:
 What's *not* tracked:
 
 - Mid-drag mode switches strand the in-progress drag without committing. Tiles already painted during the dropped drag stay (no crash, but no undo entry for them). Press the desired mode key cleanly between drags.
-- Loading a map (`save.json`) clears the undo stack — captured commands cannot be safely Reverted against a different map.
+- Loading a map (`rift.save.json`) clears the undo stack — captured commands cannot be safely Reverted against a different map.
 
 ## Region Copy-Paste
 
@@ -80,7 +86,7 @@ NPCs, particle zones, and structures are not included in the clipboard. NPC copy
 | `L`   | Reload the configured `defaultMap`. Discards the undo stack and current selection. |
 
 The save file is human-readable JSON; manual edits work but the editor is the supported entry point.
-If no manifest is found, the default path remains `save.json`.
+If no manifest is found, the default path remains `rift.save.json`.
 
 ## Other Hotkeys
 
@@ -88,11 +94,15 @@ If no manifest is found, the default path remains `save.json`.
 |----------------|--------|
 | `1`–`0`        | Switch to layer 1–10 for tile placement, no-projection, y-sort, etc. |
 | `R`            | Rotate the selected tile (or multi-tile selection) by 90°. |
+| `F`            | Reflect selection along X (mirror around vertical axis). Acts on the Ctrl+drag rectangle if one is active, else on the tile under the cursor on the current layer. Toggles per-tile `flipX` and negates rotation. Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
+| `Shift+F`      | Reflect selection along Y (mirror around horizontal axis). Same selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
 | Arrow keys     | Pan the camera (or the tile picker when it's open). |
 | `Shift+arrows` | Fast-pan (2.5× speed). |
 | `Esc`          | Cancel the current operation (anchor placement, selection, animation frames). |
 | `Del` (drag)   | Delete tiles under the cursor on the current layer. |
 | `Ctrl+scroll`  | Zoom (camera, or tile picker when it's open). |
+
+Reflection caveat: when reflecting a region that overlaps a no-projection structure, individual tile content is flipped but the structure's `leftAnchor`/`rightAnchor` (world coords on `NoProjectionStructure`) stay put. This matches `R`-rotate semantics — reposition the anchors manually if needed.
 
 ## Architecture Notes
 
