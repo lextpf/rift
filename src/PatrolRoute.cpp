@@ -1,9 +1,15 @@
 #include "PatrolRoute.h"
+
+#include "Logger.h"
 #include "Tilemap.h"
 
 #include <algorithm>
 #include <deque>
-#include <iostream>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "NPC";
+}  // namespace
 
 bool PatrolRoute::Initialize(int startTileX,
                              int startTileY,
@@ -12,14 +18,16 @@ bool PatrolRoute::Initialize(int startTileX,
 {
     if (!tilemap)
     {
-        std::cerr << "PatrolRoute::Initialize: tilemap is null" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "PatrolRoute::Initialize: tilemap is null");
         return false;
     }
 
     if (!IsValidTile(startTileX, startTileY, tilemap))
     {
-        std::cerr << "PatrolRoute::Initialize: Starting tile (" << startTileX << ", " << startTileY
-                  << ") is not walkable" << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "PatrolRoute::Initialize: Starting tile ({}, {}) is not walkable",
+                       startTileX,
+                       startTileY);
         return false;
     }
 
@@ -173,15 +181,19 @@ bool PatrolRoute::Initialize(int startTileX,
 
     if (m_Waypoints.size() < 2)
     {
-        std::cerr << "PatrolRoute::Initialize: Route too short (" << m_Waypoints.size()
-                  << " waypoints)" << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "PatrolRoute::Initialize: Route too short ({} waypoints)",
+                       m_Waypoints.size());
         m_Waypoints.clear();
         return false;
     }
 
-    std::cout << "Created patrol route: " << m_Waypoints.size()
-              << " waypoints, mode=" << (m_IsClosed ? "loop" : "ping-pong") << ", start=("
-              << startTileX << ", " << startTileY << ")" << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Created patrol route: {} waypoints, mode={}, start=({}, {})",
+                  m_Waypoints.size(),
+                  m_IsClosed ? "loop" : "ping-pong",
+                  startTileX,
+                  startTileY);
 
     return true;
 }
