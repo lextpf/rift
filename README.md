@@ -1,11 +1,11 @@
 <div align="center">
 
 # rift
-**A modern 2.5D game engine built with C++23.**
+**A modern 2.5D RPG game built with C++23.**
 
 🏠 [Mainpage](./docs/MAINPAGE.md) | 🧱 [Building](./docs/BUILDING.md) | 🏛️ [Architecture](./docs/ARCHITECTURE.md) | 🤝 [Contributing](./CONTRIBUTING.md)
 
-![Engine](https://img.shields.io/badge/2.5D-Engine-7C3AED.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjIwMHB4IiB3aWR0aD0iMjAwcHgiIHZlcnNpb249IjEuMSIgaWQ9Il94MzJfIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHN0eWxlIHR5cGU9InRleHQvY3NzIj4gLnN0MHtmaWxsOiNmZmZmZmY7fSA8L3N0eWxlPiA8Zz4gPHBhdGggY2xhc3M9InN0MCIgZD0iTTUxMC40NDEsMzIyLjg5NGwtMjkuNzYtMTI2LjU2Yy0xNS4wNzMtNTYuMjUyLTY2LjA0Ny05NS4zNjMtMTI0LjI4Ni05NS4zNjNIMTU1LjYwNCBjLTU4LjIzOSwwLTEwOS4yMTIsMzkuMTEtMTI0LjI4NSw5NS4zNjNsLTI5Ljc2LDEyNi41NmMtNy42MTgsMzYuMzAzLDEzLjM0LDcyLjUyNCw0OC42MjYsODQuMDAxbDEuNzQsMC41NTggYzMyLjY1OCwxMC42MzIsNjguMjg4LTMuMDcsODUuNDI5LTMyLjgzMWwyNS44OTQtMzguMjg5YzYuNTAyLTExLjI4OCwxOC41MzgtMTguMjUsMzEuNTUtMTguMjVoMTIyLjQwNiBjMTMuMDEyLDAsMjUuMDQ4LDYuOTYyLDMxLjU0OSwxOC4yNWwyNS44OTQsMzguMjg5YzE3LjE0MiwyOS43NjEsNTIuNzc5LDQzLjQ2Myw4NS40MzgsMzIuODMxbDEuNzMyLTAuNTU4IEM0OTcuMSwzOTUuNDE4LDUxOC4wNiwzNTkuMTk3LDUxMC40NDEsMzIyLjg5NHogTTE5MS4wNDYsMjM4LjA4MWgtNDEuNjg5djQxLjY5NmgtMzYuMjk1di00MS42OTZINzEuMzczdi0zNi4yNzloNDEuNjg5di00MS42OCBoMzYuMjk1djQxLjY4aDQxLjY4OVYyMzguMDgxeiBNMzc0LjcyOCwxNTEuNDM2YzEyLjYyNiwwLDIyLjg0NywxMC4yMjEsMjIuODQ3LDIyLjg0OGMwLDEyLjYxLTEwLjIyMSwyMi44MzEtMjIuODQ3LDIyLjgzMSBjLTEyLjYxLDAtMjIuODMxLTEwLjIyMS0yMi44MzEtMjIuODMxQzM1MS44OTcsMTYxLjY1NiwzNjIuMTE4LDE1MS40MzYsMzc0LjcyOCwxNTEuNDM2eiBNMzI5LjA0OSwyNDIuODAxIGMtMTIuNjEsMC0yMi44MzktMTAuMjMtMjIuODM5LTIyLjg1NmMwLTEyLjYwMiwxMC4yMjktMjIuODMxLDIyLjgzOS0yMi44MzFjMTIuNjE4LDAsMjIuODM5LDEwLjIyOSwyMi44MzksMjIuODMxIEMzNTEuODg5LDIzMi41NzIsMzQxLjY2OCwyNDIuODAxLDMyOS4wNDksMjQyLjgwMXogTTM3NC43MjgsMjg4LjQ3MWMtMTIuNjEsMC0yMi44MzEtMTAuMjIxLTIyLjgzMS0yMi44MzEgYzAtMTIuNjI3LDEwLjIyMS0yMi44NDgsMjIuODMxLTIyLjg0OGMxMi42MjYsMCwyMi44NDcsMTAuMjIxLDIyLjg0NywyMi44NDhDMzk3LjU3NSwyNzguMjUsMzg3LjM1NCwyODguNDcxLDM3NC43MjgsMjg4LjQ3MXogTTQyMC40MDYsMjQyLjgwMWMtMTIuNjEsMC0yMi44MzItMTAuMjMtMjIuODMyLTIyLjg1NmMwLTEyLjYwMiwxMC4yMjItMjIuODMxLDIyLjgzMi0yMi44MzEgYzEyLjYxOCwwLDIyLjg0NywxMC4yMjksMjIuODQ3LDIyLjgzMUM0NDMuMjUzLDIzMi41NzIsNDMzLjAyNCwyNDIuODAxLDQyMC40MDYsMjQyLjgwMXoiPjwvcGF0aD4gPC9nPiA8L2c+PC9zdmc+)
+![Game](https://img.shields.io/badge/2.5D-RPG-7C3AED.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjIwMHB4IiB3aWR0aD0iMjAwcHgiIHZlcnNpb249IjEuMSIgaWQ9Il94MzJfIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHN0eWxlIHR5cGU9InRleHQvY3NzIj4gLnN0MHtmaWxsOiNmZmZmZmY7fSA8L3N0eWxlPiA8Zz4gPHBhdGggY2xhc3M9InN0MCIgZD0iTTUxMC40NDEsMzIyLjg5NGwtMjkuNzYtMTI2LjU2Yy0xNS4wNzMtNTYuMjUyLTY2LjA0Ny05NS4zNjMtMTI0LjI4Ni05NS4zNjNIMTU1LjYwNCBjLTU4LjIzOSwwLTEwOS4yMTIsMzkuMTEtMTI0LjI4NSw5NS4zNjNsLTI5Ljc2LDEyNi41NmMtNy42MTgsMzYuMzAzLDEzLjM0LDcyLjUyNCw0OC42MjYsODQuMDAxbDEuNzQsMC41NTggYzMyLjY1OCwxMC42MzIsNjguMjg4LTMuMDcsODUuNDI5LTMyLjgzMWwyNS44OTQtMzguMjg5YzYuNTAyLTExLjI4OCwxOC41MzgtMTguMjUsMzEuNTUtMTguMjVoMTIyLjQwNiBjMTMuMDEyLDAsMjUuMDQ4LDYuOTYyLDMxLjU0OSwxOC4yNWwyNS44OTQsMzguMjg5YzE3LjE0MiwyOS43NjEsNTIuNzc5LDQzLjQ2Myw4NS40MzgsMzIuODMxbDEuNzMyLTAuNTU4IEM0OTcuMSwzOTUuNDE4LDUxOC4wNiwzNTkuMTk3LDUxMC40NDEsMzIyLjg5NHogTTE5MS4wNDYsMjM4LjA4MWgtNDEuNjg5djQxLjY5NmgtMzYuMjk1di00MS42OTZINzEuMzczdi0zNi4yNzloNDEuNjg5di00MS42OCBoMzYuMjk1djQxLjY4aDQxLjY4OVYyMzguMDgxeiBNMzc0LjcyOCwxNTEuNDM2YzEyLjYyNiwwLDIyLjg0NywxMC4yMjEsMjIuODQ3LDIyLjg0OGMwLDEyLjYxLTEwLjIyMSwyMi44MzEtMjIuODQ3LDIyLjgzMSBjLTEyLjYxLDAtMjIuODMxLTEwLjIyMS0yMi44MzEtMjIuODMxQzM1MS44OTcsMTYxLjY1NiwzNjIuMTE4LDE1MS40MzYsMzc0LjcyOCwxNTEuNDM2eiBNMzI5LjA0OSwyNDIuODAxIGMtMTIuNjEsMC0yMi44MzktMTAuMjMtMjIuODM5LTIyLjg1NmMwLTEyLjYwMiwxMC4yMjktMjIuODMxLDIyLjgzOS0yMi44MzFjMTIuNjE4LDAsMjIuODM5LDEwLjIyOSwyMi44MzksMjIuODMxIEMzNTEuODg5LDIzMi41NzIsMzQxLjY2OCwyNDIuODAxLDMyOS4wNDksMjQyLjgwMXogTTM3NC43MjgsMjg4LjQ3MWMtMTIuNjEsMC0yMi44MzEtMTAuMjIxLTIyLjgzMS0yMi44MzEgYzAtMTIuNjI3LDEwLjIyMS0yMi44NDgsMjIuODMxLTIyLjg0OGMxMi42MjYsMCwyMi44NDcsMTAuMjIxLDIyLjg0NywyMi44NDhDMzk3LjU3NSwyNzguMjUsMzg3LjM1NCwyODguNDcxLDM3NC43MjgsMjg4LjQ3MXogTTQyMC40MDYsMjQyLjgwMWMtMTIuNjEsMC0yMi44MzItMTAuMjMtMjIuODMyLTIyLjg1NmMwLTEyLjYwMiwxMC4yMjItMjIuODMxLDIyLjgzMi0yMi44MzEgYzEyLjYxOCwwLDIyLjg0NywxMC4yMjksMjIuODQ3LDIyLjgzMUM0NDMuMjUzLDIzMi41NzIsNDMzLjAyNCwyNDIuODAxLDQyMC40MDYsMjQyLjgwMXoiPjwvcGF0aD4gPC9nPiA8L2c+PC9zdmc+)
 ![Genre](https://img.shields.io/badge/Genre-RPG-0891B2.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yIDVDMiAzLjM0MzE1IDMuMzQzMTUgMiA1IDJIMTlDMjAuNjU2OSAyIDIyIDMuMzQzMTUgMjIgNVYxOUMyMiAyMC42NTY5IDIwLjY1NjkgMjIgMTkgMjJINUMzLjM0MzE1IDIyIDIgMjAuNjU2OSAyIDE5VjVaTTQgMTlWMTJIMTJWMjBINUM0LjQ0NzcyIDIwIDQgMTkuNTUyMyA0IDE5Wk0yMCAxMkgxMlY0SDE5QzE5LjU1MjMgNCAyMCA0LjQ0NzcyIDIwIDVWMTJaIiBmaWxsPSIjZmZmZmZmIj48L3BhdGg+IDwvZz48L3N2Zz4=)
 ![Windows](https://img.shields.io/badge/Platform-Win-0078D6.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjAgMjAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHRpdGxlPndpbmRvd3MgWyNmZmZmZmZdPC90aXRsZT4gPGRlc2M+Q3JlYXRlZCB3aXRoIFNrZXRjaC48L2Rlc2M+IDxkZWZzPiA8L2RlZnM+IDxnIGlkPSJQYWdlLTEiIHN0cm9rZT0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIxIiBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPiA8ZyBpZD0iRHJpYmJibGUtTGlnaHQtUHJldmlldyIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTYwLjAwMDAwMCwgLTc0MzkuMDAwMDAwKSIgZmlsbD0iI2ZmZmZmZiI+IDxnIGlkPSJpY29ucyIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNTYuMDAwMDAwLCAxNjAuMDAwMDAwKSI+IDxwYXRoIGQ9Ik0xMy4xNDU4NjQ3LDcyODkuNDM0MjYgQzEzLjE1MDg3NzIsNzI5MS40MzMxNiAxMy4xNTY4OTIyLDcyOTQuODI5MjkgMTMuMTYxOTA0OCw3Mjk3LjQ2ODg0IEMxNi43NzU5Mzk4LDcyOTcuOTU3NTcgMjAuMzg5OTc0OSw3Mjk4LjQ2MTMgMjMuOTk3OTk1LDcyOTkgQzIzLjk5Nzk5NSw3Mjk1Ljg0ODczIDI0LjAwMjAwNSw3MjkyLjcxMTQ2IDIzLjk5Nzk5NSw3Mjg5LjcxMzExIEMyMC4zODA5NTI0LDcyODkuNzEzMTEgMTYuNzY0OTEyMyw3Mjg5LjQzNDI2IDEzLjE0NTg2NDcsNzI4OS40MzQyNiBNNCw3Mjg5LjQzNTI2IEw0LDcyOTYuMjIxNTMgQzYuNzI1ODE0NTQsNzI5Ni41ODkzMyA5LjQ1MTYyOTA3LDcyOTYuOTQxMTMgMTIuMTcyNDMxMSw3Mjk3LjM0MjkxIEMxMi4xNzc0NDM2LDcyOTQuNzE3MzYgMTIuMTcwNDI2MSw3MjkyLjA5MDggMTIuMTcwNDI2MSw3Mjg5LjQ2NTI0IEM5LjQ0NjYxNjU0LDcyODkuNDcwMjQgNi43MjM4MDk1Miw3Mjg5LjQyNjI3IDQsNzI4OS40MzUyNiBNNCw3MjgxLjg0MzQ0IEw0LDcyODguNjEwNzEgQzYuNzI1ODE0NTQsNzI4OC42MTc3MSA5LjQ1MTYyOTA3LDcyODguNTc2NzMgMTIuMTc3NDQzNiw3Mjg4LjU3OTczIEMxMi4xNzU0Mzg2LDcyODUuOTYwMTcgMTIuMTc1NDM4Niw3MjgzLjM0MzYxIDEyLjE3MjQzMTEsNzI4MC43MjQwNSBDOS40NDQ2MTE1Myw3MjgxLjA2NDg2IDYuNzE2NzkxOTgsNzI4MS40MjU2NyA0LDcyODEuODQzNDQgTTI0LDcyODguNDcxNzkgQzIwLjM4Nzk2OTksNzI4OC40ODU3OCAxNi43NzU5Mzk4LDcyODguNTQwNzUgMTMuMTYxOTA0OCw3Mjg4LjU1MTc1IEMxMy4xNTk4OTk3LDcyODUuODg5MjEgMTMuMTU5ODk5Nyw3MjgzLjIyOTY3IDEzLjE2MTkwNDgsNzI4MC41NjkxNCBDMTYuNzY4OTIyMyw3MjgwLjAxODQ0IDIwLjM4Mzk1OTksNzI3OS41MDA3MiAyMy45OTc5OTUsNzI3OSBDMjQsNzI4Mi4xNTgyNiAyMy45OTc5OTUsNzI4NS4zMTM1MyAyNCw3Mjg4LjQ3MTc5IiBpZD0id2luZG93cy1bI2ZmZmZmZl0iPiA8L3BhdGg+IDwvZz4gPC9nPiA8L2c+IDwvZz48L3N2Zz4=)
 ![CMake](https://img.shields.io/badge/CMake-3.10%2B-c0392b?style=flat&logo=cmake&logoColor=white)
@@ -23,7 +23,7 @@
 ![Sponsor](https://img.shields.io/static/v1?label=sponsor&message=%E2%9D%A4&color=ff69b4&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NDAgNjQwIj48IS0tIUZvbnQgQXdlc29tZSBQcm8gdjcuMi4wIGJ5IEBmb250YXdlc29tZSAtIGh0dHBzOi8vZm9udGF3ZXNvbWUuY29tIExpY2Vuc2UgLSBodHRwczovL2ZvbnRhd2Vzb21lLmNvbS9saWNlbnNlIChDb21tZXJjaWFsIExpY2Vuc2UpIENvcHlyaWdodCAyMDI2IEZvbnRpY29ucywgSW5jLi0tPjxwYXRoIG9wYWNpdHk9IjEiIGZpbGw9IiNmZjY5YjRmZiIgZD0iTTMyIDQ4MEwzMiA1NDRDMzIgNTYxLjcgNDYuMyA1NzYgNjQgNTc2TDM4NC41IDU3NkM0MTMuNSA1NzYgNDQxLjggNTY2LjcgNDY1LjIgNTQ5LjVMNTkxLjggNDU2LjJDNjA5LjYgNDQzLjEgNjEzLjQgNDE4LjEgNjAwLjMgNDAwLjNDNTg3LjIgMzgyLjUgNTYyLjIgMzc4LjcgNTQ0LjQgMzkxLjhMNDI0LjYgNDgwTDMxMiA0ODBDMjk4LjcgNDgwIDI4OCA0NjkuMyAyODggNDU2QzI4OCA0NDIuNyAyOTguNyA0MzIgMzEyIDQzMkwzODQgNDMyQzQwMS43IDQzMiA0MTYgNDE3LjcgNDE2IDQwMEM0MTYgMzgyLjMgNDAxLjcgMzY4IDM4NCAzNjhMMjMxLjggMzY4QzE5Ny45IDM2OCAxNjUuMyAzODEuNSAxNDEuMyA0MDUuNUw5OC43IDQ0OEw2NCA0NDhDNDYuMyA0NDggMzIgNDYyLjMgMzIgNDgweiIvPjxwYXRoIGZpbGw9InJnYmEoMjU1LCAyNTUsIDI1NSwgMS4wMCkiIGQ9Ik0yNTAuOSA2NEMyNzQuOSA2NCAyOTcuNSA3NS41IDMxMS42IDk1TDMyMCAxMDYuN0wzMjguNCA5NUMzNDIuNSA3NS41IDM2NS4xIDY0IDM4OS4xIDY0QzQzMC41IDY0IDQ2NCA5Ny41IDQ2NCAxMzguOUw0NjQgMTQxLjNDNDY0IDIwNS43IDM4MiAyNzQuNyAzNDEuOCAzMDQuNkMzMjguOCAzMTQuMyAzMTEuMyAzMTQuMyAyOTguMyAzMDQuNkMyNTguMSAyNzQuNiAxNzYgMjA1LjcgMTc2LjEgMTQxLjNMMTc2LjEgMTM4LjlDMTc2IDk3LjUgMjA5LjUgNjQgMjUwLjkgNjR6Ii8+PC9zdmc+)
 </div>
 
-**A modern 2.5D game engine** built with **C++23**, featuring dual *OpenGL 4.6* and *Vulkan 1.4* rendering backends that can be switched at runtime. It includes *dynamic world simulation* with a full day/night cycle, weather effects, and *NPC interactions*, alongside a **built-in level editor** for rapid content creation. Designed for **tile-based RPGs** with a focus on *performance*, *flexibility*, and **visual polish**.
+**A modern 2.5D RPG game** built with **C++23**, featuring dual *OpenGL 4.6* and *Vulkan 1.4* rendering backends that can be switched at runtime. It includes *dynamic world simulation* with a full day/night cycle, weather effects, and *NPC interactions*, alongside a **built-in level editor** for rapid content creation. Rift is focused on tile-based RPG gameplay, performance, and **visual polish**.
 
 <div align="center">
 <br>
@@ -35,16 +35,16 @@
 > [!IMPORTANT]
 > **Assets Not Included**
 >
-> This engine ships without game assets (sprites, tilesets, fonts, maps). To run the engine, you will need to provide your own:
+> Rift does not include game assets (sprites, tilesets, fonts, maps). To run it, you will need to provide your own:
 > - Source free/open-licensed sprites and tilesets (e.g., from [OpenGameArt](https://opengameart.org/), [itch.io](https://itch.io/game-assets/free))
 > - Place them in the `assets/` directory following the structure in [Project Structure](#project-structure)
-> - Wire them into the engine by editing `rift.project.json`; do not edit `Game.cpp` just to change asset paths
+> - Wire them into Rift by editing `rift.project.json`; do not edit `Game.cpp` just to change asset paths
 >
-> **The engine will not run without valid assets in place.**
+> **Rift will not run without valid assets in place.**
 
 ```
 /* ============================================================================================== *
- *                                                                                                
+ *
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠳⣶⡤
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⣾⣦⡀
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣈⣻⡧⢀
@@ -57,8 +57,8 @@
  *           ###    ### ########### ###            ###        ⠀⠀⠀⠀⢸⡏⣾⡿⠁⠀⠀⠀⢿⣼⣷⠁
  *                                                            ⠀⠀⠀⠀⠘⠷⢿⣧⡀⠀⠀⠀⠈⠛⢿⣆
  *                                                            ⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠈
- *                                  << G A M E   E N G I N E >>                        
- *                                                                                                  
+ *                                      << 2 . 5 D   R P G >>
+ *
  * ============================================================================================== */
 ```
 
@@ -113,9 +113,9 @@ flowchart LR
   classDef ob fill:#4a3520,stroke:#f59e0b,stroke-width:2.5px,color:#e2e8f0,font-weight:800
   classDef gr fill:#1e3a5f,stroke:#3b82f6,stroke-width:2.5px,color:#e2e8f0,font-weight:800
 
-  O["7–6 Overlay 🌦️✨<br/>UI - Weather 🧭"]:::ov
-  F["5–4 Foreground 🧍‍♂️⚔️<br/>Front of Entities 👑"]:::fg
-  B["3–2 Objects 🏠🪨🌲<br/>Buildings - Rocks - Trees 🧱"]:::ob
+  O["7-6 Overlay 🌦️✨<br/>UI - Weather 🧭"]:::ov
+  F["5-4 Foreground 🧍‍♂️⚔️<br/>Front of Entities 👑"]:::fg
+  B["3-2 Objects 🏠🪨🌲<br/>Buildings - Rocks - Trees 🧱"]:::ob
   G["1 Detail 🍃🛤️🪴<br/>Grass - Paths - Deco 🎨"]:::gr
   T["0 Ground 🗺️🟫<br/>Base Terrain 🌍"]:::gr
 
@@ -371,7 +371,7 @@ graph LR
 |--------------------------------------------------|-----------------------------------------------------|
 | **[Setup Guide](docs/SETUP.md)**                 | Install dependencies and configure your environment |
 | **[Building Guide](docs/BUILDING.md)**           | Compile on Windows                                  |
-| **[Architecture](docs/ARCHITECTURE.md)**         | Engine design, game loop, system relationships      |
+| **[Architecture](docs/ARCHITECTURE.md)**         | Game architecture, loop, system relationships       |
 | **[Rendering Pipeline](docs/RENDERING.md)**      | Coordinate systems, transformations, batching       |
 | **[Time System](docs/TIME_SYSTEM.md)**           | Day/night cycle, celestial mechanics, lighting      |
 | **[Collision & Pathfinding](docs/COLLISION.md)** | AABB collision, navigation, NPC AI                  |
