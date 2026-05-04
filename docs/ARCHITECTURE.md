@@ -1,6 +1,6 @@
 # Architecture Overview
 
-The Rift Game Engine follows a **layered architecture** with clear separation of concerns. At its core is the `Game` class which orchestrates all subsystems through a traditional game loop pattern.
+Rift uses a **layered architecture** with clear separation of concerns. At its core is the `Game` class which orchestrates all subsystems through a traditional game loop pattern.
 
 ## System Overview
 
@@ -25,7 +25,7 @@ flowchart LR
         Render["Render()"]:::core
     end
 
-    subgraph Systems["Engine Systems"]
+    subgraph Systems["Game Systems"]
         direction LR
         Time["TimeManager"]:::system
         Sky["SkyRenderer"]:::system
@@ -121,7 +121,7 @@ flowchart LR
 
 ## The Game Loop
 
-The engine uses a **variable timestep** game loop where delta time is computed each frame:
+Rift uses a **variable timestep** game loop where delta time is computed each frame:
 
 \htmlonly
 <pre class="mermaid">
@@ -166,7 +166,7 @@ $$
 position_{new} = position_{old} + velocity \times \Delta t
 $$
 
-For smooth camera following, the engine uses exponential smoothing:
+For smooth camera following, Rift uses exponential smoothing:
 
 $$
 camera_{new} = camera_{old} + (target - camera_{old}) \times \alpha
@@ -417,7 +417,7 @@ graph LR
 
 ### Data Layout
 
-The engine favors **Structure of Arrays (SoA)** for frequently iterated data:
+Rift favors **Structure of Arrays (SoA)** for frequently iterated data:
 
 ```cpp
 // Tilemap stores each layer as a flat array
