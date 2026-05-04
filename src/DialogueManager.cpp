@@ -1,8 +1,13 @@
 #include "DialogueManager.h"
+
 #include "GameStateManager.h"
+#include "Logger.h"
 #include "NonPlayerCharacter.h"
 
-#include <iostream>
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Dialogue";
+}  // namespace
 
 namespace
 {
@@ -61,8 +66,7 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
     // Respect contract do not start if a conversation is already active
     if (m_Active)
     {
-        std::cerr << "DialogueManager: Dialogue already active; refusing to start a new one"
-                  << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Dialogue already active; refusing to start a new one");
         return false;
     }
 
@@ -83,7 +87,7 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
     const DialogueNode* startNode = tree.GetStartNode();
     if (!startNode)
     {
-        std::cerr << "DialogueManager: Start node not found in NPC tree" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Start node not found in NPC tree");
         return false;
     }
 
@@ -92,7 +96,7 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
     startNode = m_ActiveTree.GetStartNode();
     if (!startNode)
     {
-        std::cerr << "DialogueManager: Start node missing after tree copy" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Start node missing after tree copy");
         return false;
     }
 
@@ -105,10 +109,7 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
     // Build the list of currently available options
     RefreshVisibleOptions();
 
-    // TODO: surface start failures and logging through the game's logger instead of
-    // std::cout/std::cerr.
-    std::cout << "DialogueManager: Started dialogue with NPC '" << npc->GetType() << "'"
-              << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Started dialogue with NPC '{}'", npc->GetType());
     return true;
 }
 
@@ -121,7 +122,7 @@ void DialogueManager::EndDialogue()
     m_VisibleOptions.clear();
     m_SelectedOption = 0;
 
-    std::cout << "DialogueManager: Dialogue ended" << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Dialogue ended");
 }
 
 void DialogueManager::SelectOption(int optionIndex)
@@ -158,7 +159,7 @@ void DialogueManager::TransitionToNode(const std::string& nodeId)
     const DialogueNode* nextNode = m_CurrentTree->GetNode(nodeId);
     if (!nextNode)
     {
-        std::cerr << "DialogueManager: Node not found: " << nodeId << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Node not found: {}", nodeId);
         EndDialogue();
         return;
     }
@@ -228,25 +229,24 @@ void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>
             case DialogueConsequence::Type::SET_FLAG:
                 // Mark a boolean flag as true (e.g., "quest_accepted")
                 m_StateManager->SetFlag(cons.key, true);
-                std::cout << "DialogueManager: Set flag '" << cons.key << "' = true" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM, "Set flag '{}' = true", cons.key);
                 break;
 
             case DialogueConsequence::Type::CLEAR_FLAG:
                 // Remove/unset a flag key entirely (e.g., "has_item")
                 m_StateManager->ClearFlag(cons.key);
-                std::cout << "DialogueManager: Cleared flag '" << cons.key << "'" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM, "Cleared flag '{}'", cons.key);
                 break;
 
             case DialogueConsequence::Type::SET_FLAG_VALUE:
                 // Set a flag to a specific string value (e.g., "reputation" = "friendly")
                 m_StateManager->SetFlagValue(cons.key, cons.value);
-                std::cout << "DialogueManager: Set flag '" << cons.key << "' = '" << cons.value
-                          << "'" << std::endl;
+                Logger::InfoF(LOG_SUBSYSTEM, "Set flag '{}' = '{}'", cons.key, cons.value);
                 break;
 
             default:
-                std::cerr << "DialogueManager: Unhandled consequence type "
-                          << static_cast<int>(cons.type) << std::endl;
+                Logger::ErrorF(
+                    LOG_SUBSYSTEM, "Unhandled consequence type {}", static_cast<int>(cons.type));
                 break;
         }
         // TODO: extend consequences to support scripted actions or item grants; log unhandled types
