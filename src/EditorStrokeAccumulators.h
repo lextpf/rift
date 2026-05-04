@@ -62,7 +62,15 @@ struct TilePlaceStrokeAccum
         indexOf.clear();
     }
 
-    void Touch(int x, int y, std::size_t layer, int oldId, float oldRot, int newId, float newRot)
+    void Touch(int x,
+               int y,
+               std::size_t layer,
+               int oldId,
+               float oldRot,
+               int newId,
+               float newRot,
+               bool oldFlipX = false,
+               bool oldFlipY = false)
     {
         if (!active)
             return;
@@ -70,8 +78,22 @@ struct TilePlaceStrokeAccum
         auto it = indexOf.find(key);
         if (it == indexOf.end())
         {
+            // A place-stroke does not modify flip flags; preserve them so undo/redo
+            // restores the user's existing flip state intact.
             indexOf.emplace(key, entries.size());
-            entries.push_back(PlaceTilesCmd::Entry{x, y, layer, oldId, oldRot, newId, newRot});
+            PlaceTilesCmd::Entry e{};
+            e.tileX = x;
+            e.tileY = y;
+            e.layer = layer;
+            e.oldTileId = oldId;
+            e.oldRotation = oldRot;
+            e.newTileId = newId;
+            e.newRotation = newRot;
+            e.oldFlipX = oldFlipX;
+            e.newFlipX = oldFlipX;
+            e.oldFlipY = oldFlipY;
+            e.newFlipY = oldFlipY;
+            entries.push_back(e);
         }
         else
         {
