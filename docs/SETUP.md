@@ -1,6 +1,6 @@
 # Setting Up the Development Environment
 
-This guide covers installing dependencies and configuring your environment for developing with the Rift Game Engine.
+This guide covers installing dependencies and configuring your environment for developing Rift.
 
 ## Prerequisites Overview
 
