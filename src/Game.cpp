@@ -3,6 +3,7 @@
 #endif
 
 #include "Game.h"
+#include "Logger.h"
 #include "MathConstants.h"
 #include "MathUtils.h"
 #include "NonPlayerCharacter.h"
@@ -21,7 +22,6 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip>
-#include <iostream>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -38,6 +38,7 @@
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Game";
 constexpr float HORIZON_SCALE_BASE = 0.6f;
 constexpr float HORIZON_SCALE_TILT_RANGE = 0.15f;
 constexpr float DEBUG_TEXT_MARGIN = 12.0f;
@@ -67,15 +68,17 @@ void PrintManifestDiagnostics(const ManifestValidationResult& result)
 {
     for (const ManifestDiagnostic& diagnostic : result.diagnostics)
     {
-        std::ostream& out =
-            diagnostic.severity == ManifestDiagnosticSeverity::Error ? std::cerr : std::cout;
-        out << (diagnostic.severity == ManifestDiagnosticSeverity::Error ? "ERROR" : "WARN")
-            << ": project manifest";
-        if (!diagnostic.fieldPath.empty())
+        std::string fieldSuffix =
+            diagnostic.fieldPath.empty() ? std::string() : " [" + diagnostic.fieldPath + "]";
+        if (diagnostic.severity == ManifestDiagnosticSeverity::Error)
         {
-            out << " [" << diagnostic.fieldPath << "]";
+            Logger::ErrorF(
+                LOG_SUBSYSTEM, "project manifest{}: {}", fieldSuffix, diagnostic.message);
         }
-        out << ": " << diagnostic.message << std::endl;
+        else
+        {
+            Logger::WarnF(LOG_SUBSYSTEM, "project manifest{}: {}", fieldSuffix, diagnostic.message);
+        }
     }
 }
 }  // namespace
@@ -89,43 +92,44 @@ Game::~Game()
 
 bool Game::Initialize()
 {
-    std::cout << "Initialize() step 1: Initializing GLFW..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 1: Initializing GLFW...");
 
     // Initialize GLFW
     if (!glfwInit())
     {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to initialize GLFW");
         return false;
     }
     m_GlfwInitialized = true;
 
-    std::cout << "Initialize() step 2: Loading project manifest..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 2: Loading project manifest...");
 
     ManifestValidationResult manifestResult;
     ProjectManifest manifest = ProjectManifest::LoadDefaultOrFallback(manifestResult);
     PrintManifestDiagnostics(manifestResult);
     if (manifestResult.HasErrors())
     {
-        std::cerr << "Project manifest validation failed; aborting startup." << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Project manifest validation failed; aborting startup.");
         return false;
     }
 
-    std::cout << "Project manifest: "
-              << (manifest.loadedFromFile ? manifest.sourcePath.string() : "built-in defaults")
-              << std::endl;
+    Logger::InfoF(
+        LOG_SUBSYSTEM,
+        "Project manifest: {}",
+        manifest.loadedFromFile ? manifest.sourcePath.string() : std::string("built-in defaults"));
 
-    std::cout << "Initialize() step 3: Selecting Renderer API..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 3: Selecting Renderer API...");
 
     m_RendererAPI = RendererApiFromManifestName(manifest.startupRenderer);
     m_FontCandidates = manifest.ResolvePathStrings(manifest.fonts);
-    m_SaveMapPath =
-        manifest.defaultMap.empty() ? "save.json" : manifest.ResolvePathString(manifest.defaultMap);
+    m_SaveMapPath = manifest.defaultMap.empty() ? "rift.save.json"
+                                                : manifest.ResolvePathString(manifest.defaultMap);
 
-    std::cout << "Renderer API: " << RendererApiName(m_RendererAPI) << " (press F1 to switch)"
-              << std::endl;
-    std::cout << "Available renderers: OpenGL, Vulkan" << std::endl;
+    Logger::InfoF(
+        LOG_SUBSYSTEM, "Renderer API: {} (press F1 to switch)", RendererApiName(m_RendererAPI));
+    Logger::Info(LOG_SUBSYSTEM, "Available renderers: OpenGL, Vulkan");
 
-    std::cout << "Initialize() step 4: Setting window hints..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 4: Setting window hints...");
 
     // Set window hints based on selected renderer API
     if (m_RendererAPI == RendererAPI::OpenGL)
@@ -139,18 +143,18 @@ bool Game::Initialize()
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     }
 
-    std::cout << "Initialize() step 5: Creating GLFW window..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 5: Creating GLFW window...");
 
     m_Window =
         glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift " RIFT_VERSION, nullptr, nullptr);
     if (!m_Window)
     {
-        std::cerr << "Failed to create GLFW window" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to create GLFW window");
         glfwTerminate();
         return false;
     }
 
-    std::cout << "Initialize() step 6: Setting window callbacks..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 6: Setting window callbacks...");
 
     // Store Game instance pointer in window for callbacks
     glfwSetWindowUserPointer(m_Window, this);
@@ -163,19 +167,19 @@ bool Game::Initialize()
     // Sleep 2 seconds after each draw call, set to true to enable
     SetDebugDrawSleep(m_Window, false);
 
-    std::cout << "Initialize() step 7: Creating Renderer..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 7: Creating Renderer...");
 
     // Create renderer based on selected API
     m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
     if (!m_Renderer)
     {
-        std::cerr << "Failed to create Renderer" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to create Renderer");
         glfwTerminate();
         return false;
     }
     m_Renderer->SetFontCandidates(m_FontCandidates);
 
-    std::cout << "Initialize() step 8: Renderer created successfully" << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Initialize() step 8: Renderer created successfully");
 
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
@@ -183,7 +187,7 @@ bool Game::Initialize()
         glfwMakeContextCurrent(m_Window);
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
-            std::cerr << "Failed to initialize GLAD" << std::endl;
+            Logger::Error(LOG_SUBSYSTEM, "Failed to initialize GLAD");
             m_Renderer->Shutdown();
             m_Renderer.reset();
             glfwDestroyWindow(m_Window);
@@ -203,8 +207,11 @@ bool Game::Initialize()
 
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
-        std::cout << "OpenGL: " << glGetString(GL_VERSION) << std::endl;
-        std::cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+        Logger::InfoF(
+            LOG_SUBSYSTEM, "OpenGL: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "GLSL: {}",
+                      reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
     }
     else
     {
@@ -212,17 +219,17 @@ bool Game::Initialize()
     }
 
     // Initialize renderer
-    std::cout << "About to call Renderer->Init()..." << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "About to call Renderer->Init()...");
     if (!m_Renderer->Init())
     {
-        std::cerr << "Renderer->Init() failed; aborting startup rather than "
-                     "shipping a black frame."
-                  << std::endl;
+        Logger::Error(LOG_SUBSYSTEM,
+                      "Renderer->Init() failed; aborting startup rather than shipping a black "
+                      "frame.");
         m_Renderer->Shutdown();
         m_Renderer.reset();
         return false;
     }
-    std::cout << "Renderer->Init() completed successfully" << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Renderer->Init() completed successfully");
 
     // Some drivers/middleware paths can reset swap interval during init.
     // Re-apply no-vsync after renderer initialization.
@@ -246,10 +253,11 @@ bool Game::Initialize()
         m_Tilemap.LoadCombinedTilesets(tilesetPaths, manifest.tileWidth, manifest.tileHeight);
     if (!loaded)
     {
-        std::cerr << "Failed to load combined tileset from project manifest. Tried:" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM,
+                      "Failed to load combined tileset from project manifest. Tried:");
         for (const auto& path : tilesetPaths)
         {
-            std::cerr << "    " << path << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM, "    {}", path);
         }
         return false;
     }
@@ -271,7 +279,7 @@ bool Game::Initialize()
         m_SaveMapPath, &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
     if (!mapLoaded)
     {
-        std::cout << "No existing save found, generating default map" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "No existing save found, generating default map");
         m_Tilemap.SetTilemapSize(manifest.defaultMapWidth, manifest.defaultMapHeight);
     }
 
@@ -279,7 +287,7 @@ bool Game::Initialize()
     if (m_RendererAPI == RendererAPI::Vulkan)
     {
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
-        std::cout << "Tileset texture uploaded to Vulkan" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Tileset texture uploaded to Vulkan");
     }
 
     std::vector<CharacterType> configuredCharacters;
@@ -315,7 +323,7 @@ bool Game::Initialize()
     }
     if (!m_Player.SwitchCharacter(initialCharacter))
     {
-        std::cerr << "Failed to initialize player sprites!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to initialize player sprites!");
         return false;
     }
 
@@ -324,8 +332,8 @@ bool Game::Initialize()
     {
         // For now, the textures will be uploaded when first used in DrawSpriteRegion
         // But we can add a public method to PlayerCharacter to upload textures if needed
-        std::cout << "PlayerCharacter sprites loaded, textures will be uploaded on first use"
-                  << std::endl;
+        Logger::Info(LOG_SUBSYSTEM,
+                     "PlayerCharacter sprites loaded, textures will be uploaded on first use");
     }
 
     // Camera viewport size
@@ -347,17 +355,32 @@ bool Game::Initialize()
 
     float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
     float mapHeight = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
-    std::cout << "Map size: " << m_Tilemap.GetMapWidth() << "x" << m_Tilemap.GetMapHeight()
-              << " tiles = " << mapWidth << "x" << mapHeight << " pixels" << std::endl;
-    std::cout << "Camera view: " << camWorldWidth << "x" << camWorldHeight << " pixels ("
-              << m_TilesVisibleWidth << " tiles wide, " << m_TilesVisibleHeight << " tiles tall)"
-              << std::endl;
-    std::cout << "Player position: (" << playerPos.x << ", " << playerPos.y << ") - Tile ("
-              << playerTileX << ", " << playerTileY << ")" << std::endl;
-    std::cout << "Camera position: (" << m_Camera.GetState().position.x << ", "
-              << m_Camera.GetState().position.y << ")" << std::endl;
-    std::cout << "PlayerCharacter size: " << PlayerCharacter::RENDER_WIDTH << "x"
-              << PlayerCharacter::RENDER_HEIGHT << " pixels (ONE TILE)" << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Map size: {}x{} tiles = {}x{} pixels",
+                  m_Tilemap.GetMapWidth(),
+                  m_Tilemap.GetMapHeight(),
+                  mapWidth,
+                  mapHeight);
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Camera view: {}x{} pixels ({} tiles wide, {} tiles tall)",
+                  camWorldWidth,
+                  camWorldHeight,
+                  m_TilesVisibleWidth,
+                  m_TilesVisibleHeight);
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Player position: ({}, {}) - Tile ({}, {})",
+                  playerPos.x,
+                  playerPos.y,
+                  playerTileX,
+                  playerTileY);
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Camera position: ({}, {})",
+                  m_Camera.GetState().position.x,
+                  m_Camera.GetState().position.y);
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "PlayerCharacter size: {}x{} pixels (ONE TILE)",
+                  PlayerCharacter::RENDER_WIDTH,
+                  PlayerCharacter::RENDER_HEIGHT);
 
     m_LastFrameTime = static_cast<float>(glfwGetTime());
 
@@ -422,14 +445,12 @@ void Game::Run()
             }
             catch (const std::exception& e)
             {
-                std::cerr << "Exception in game loop: " << e.what() << std::endl;
-                std::cerr.flush();
+                Logger::ErrorF(LOG_SUBSYSTEM, "Exception in game loop: {}", e.what());
                 break;  // Exit loop on error
             }
             catch (...)
             {
-                std::cerr << "Unknown exception in game loop" << std::endl;
-                std::cerr.flush();
+                Logger::Error(LOG_SUBSYSTEM, "Unknown exception in game loop");
                 break;
             }
 
@@ -476,13 +497,11 @@ void Game::Run()
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Exception in Run(): " << e.what() << std::endl;
-        std::cerr.flush();
+        Logger::ErrorF(LOG_SUBSYSTEM, "Exception in Run(): {}", e.what());
     }
     catch (...)
     {
-        std::cerr << "Unknown exception in Run()" << std::endl;
-        std::cerr.flush();
+        Logger::Error(LOG_SUBSYSTEM, "Unknown exception in Run()");
     }
 }
 
@@ -828,7 +847,7 @@ void Game::Render()
     if (IsDebugDrawSleepEnabled())
     {
         ResetDebugDrawCallIndex();
-        std::cout << "===== FRAME START =====" << std::endl;
+        Logger::Debug(LOG_SUBSYSTEM, "===== FRAME START =====");
     }
 
     m_Renderer->BeginFrame();
@@ -1380,7 +1399,7 @@ void Game::Render()
         // DEBUG: Print frame end marker
         if (IsDebugDrawSleepEnabled())
         {
-            std::cout << "===== FRAME END =====" << std::endl;
+            Logger::Debug(LOG_SUBSYSTEM, "===== FRAME END =====");
         }
         glfwSwapBuffers(m_Window);
     }
@@ -1422,21 +1441,23 @@ bool Game::SwitchRenderer(RendererAPI api)
 
     if (api == m_RendererAPI)
     {
-        std::cout << "Already using " << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan")
-                  << std::endl;
+        Logger::InfoF(
+            LOG_SUBSYSTEM, "Already using {}", api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
         return true;
     }
 
     if (!IsRendererAvailable(api))
     {
-        std::cerr << "Renderer API not available: "
-                  << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "Renderer API not available: {}",
+                       api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
         return false;
     }
 
-    std::cout << "Switching renderer from "
-              << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << " to "
-              << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << "..." << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Switching renderer from {} to {}...",
+                  m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan",
+                  api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
 
     RendererAPI oldAPI = m_RendererAPI;
 
@@ -1483,8 +1504,9 @@ bool Game::SwitchRenderer(RendererAPI api)
             glfwCreateWindow(m_ScreenWidth, m_ScreenHeight, "rift " RIFT_VERSION, nullptr, nullptr);
         if (!m_Window)
         {
-            std::cerr << "Failed to create GLFW window for "
-                      << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM,
+                           "Failed to create GLFW window for {}",
+                           targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
             return false;
         }
         glfwSetWindowPos(m_Window, windowX, windowY);
@@ -1499,8 +1521,9 @@ bool Game::SwitchRenderer(RendererAPI api)
         m_Renderer = CreateRenderer(m_RendererAPI, m_Window);
         if (!m_Renderer)
         {
-            std::cerr << "Failed to create renderer for "
-                      << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM,
+                           "Failed to create renderer for {}",
+                           targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
             glfwDestroyWindow(m_Window);
             m_Window = nullptr;
             return false;
@@ -1515,8 +1538,9 @@ bool Game::SwitchRenderer(RendererAPI api)
             // Load OpenGL function pointers via GLAD.
             if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
             {
-                std::cerr << "Failed to initialize GLAD for "
-                          << (targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+                Logger::ErrorF(LOG_SUBSYSTEM,
+                               "Failed to initialize GLAD for {}",
+                               targetAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
                 m_Renderer->Shutdown();
                 m_Renderer.reset();
                 glfwDestroyWindow(m_Window);
@@ -1537,7 +1561,7 @@ bool Game::SwitchRenderer(RendererAPI api)
         // Initialize renderer
         if (!m_Renderer->Init())
         {
-            std::cerr << "Renderer->Init() failed during SwitchRenderer" << std::endl;
+            Logger::Error(LOG_SUBSYSTEM, "Renderer->Init() failed during SwitchRenderer");
             m_Renderer->Shutdown();
             m_Renderer.reset();
             glfwDestroyWindow(m_Window);
@@ -1577,8 +1601,9 @@ bool Game::SwitchRenderer(RendererAPI api)
     // Try to set up the new renderer
     if (setupRendererForAPI(api))
     {
-        std::cout << "Renderer switch complete! Now using "
-                  << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "Renderer switch complete! Now using {}",
+                      m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
         // Swap cost (texture re-upload, window recreate) is typically 100-500ms.
         // Re-stamp so the first post-swap frame doesn't see that gap as its
         // dt (which the clamp would truncate to MAX_DELTA_TIME anyway).
@@ -1587,19 +1612,21 @@ bool Game::SwitchRenderer(RendererAPI api)
     }
 
     // New renderer failed - attempt rollback to the old renderer
-    std::cerr << "New renderer failed, attempting rollback to "
-              << (oldAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << "..." << std::endl;
+    Logger::WarnF(LOG_SUBSYSTEM,
+                  "New renderer failed, attempting rollback to {}...",
+                  oldAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
 
     if (setupRendererForAPI(oldAPI))
     {
-        std::cerr << "Rollback successful, still using "
-                  << (m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
+        Logger::WarnF(LOG_SUBSYSTEM,
+                      "Rollback successful, still using {}",
+                      m_RendererAPI == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
         m_LastFrameTime = static_cast<float>(glfwGetTime());
         return false;
     }
 
     // Both renderers failed - fatal, shut down to avoid crash on next frame
-    std::cerr << "Rollback also failed, shutting down" << std::endl;
+    Logger::Fatal(LOG_SUBSYSTEM, "Rollback also failed, shutting down");
     Shutdown();
     return false;
 }
@@ -1663,9 +1690,12 @@ void Game::SnapWindowToTileBoundaries()
     if (snappedWidth != m_ScreenWidth || snappedHeight != m_ScreenHeight)
     {
         glfwSetWindowSize(m_Window, snappedWidth, snappedHeight);
-        std::cout << "Window snapped to " << snappedWidth << "x" << snappedHeight << " ("
-                  << (snappedWidth / tileScreenSize) << "x" << (snappedHeight / tileScreenSize)
-                  << " tiles)" << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "Window snapped to {}x{} ({}x{} tiles)",
+                      snappedWidth,
+                      snappedHeight,
+                      snappedWidth / tileScreenSize,
+                      snappedHeight / tileScreenSize);
     }
 
     m_PendingWindowSnap = false;
