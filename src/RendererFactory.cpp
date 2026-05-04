@@ -1,9 +1,14 @@
 #include "RendererFactory.h"
+#include "Logger.h"
 #include "OpenGLRenderer.h"
 #include "VulkanRenderer.h"
 
-#include <iostream>
 #include <memory>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Render";
+}  // namespace
 
 // Checks if a renderer API was compiled into this build.
 bool IsRendererAvailable(RendererAPI api)
@@ -27,53 +32,48 @@ bool IsRendererAvailable(RendererAPI api)
 // Returns nullptr if no renderer can be created.
 std::unique_ptr<IRenderer> CreateRenderer(RendererAPI& api, GLFWwindow* window)
 {
-    std::cout << "CreateRenderer() called with API: "
-              << (api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan") << std::endl;
-    std::cout.flush();
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "CreateRenderer() called with API: {}",
+                  api == RendererAPI::OpenGL ? "OpenGL" : "Vulkan");
 
     if (!IsRendererAvailable(api))
     {
-        std::cerr << "Requested renderer API is not available in this build!" << std::endl;
-        std::cerr << "Falling back to OpenGL..." << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM, "Requested renderer API is not available in this build!");
+        Logger::Warn(LOG_SUBSYSTEM, "Falling back to OpenGL...");
         api = RendererAPI::OpenGL;
     }
 
     switch (api)
     {
         case RendererAPI::OpenGL:
-            std::cout << "Creating OpenGL renderer..." << std::endl;
-            std::cout.flush();
+            Logger::Info(LOG_SUBSYSTEM, "Creating OpenGL renderer...");
             return std::make_unique<OpenGLRenderer>();
 
         case RendererAPI::Vulkan:
-            std::cout << "Creating Vulkan renderer..." << std::endl;
-            std::cout.flush();
+            Logger::Info(LOG_SUBSYSTEM, "Creating Vulkan renderer...");
             try
             {
                 auto renderer = std::make_unique<VulkanRenderer>(window);
-                std::cout << "Vulkan renderer created successfully" << std::endl;
-                std::cout.flush();
+                Logger::Info(LOG_SUBSYSTEM, "Vulkan renderer created successfully");
                 return renderer;
             }
             catch (const std::exception& e)
             {
-                std::cerr << "Exception creating Vulkan renderer: " << e.what() << std::endl;
-                std::cerr << "Falling back to OpenGL..." << std::endl;
-                std::cerr.flush();
+                Logger::ErrorF(LOG_SUBSYSTEM, "Exception creating Vulkan renderer: {}", e.what());
+                Logger::Warn(LOG_SUBSYSTEM, "Falling back to OpenGL...");
                 api = RendererAPI::OpenGL;
                 return std::make_unique<OpenGLRenderer>();
             }
             catch (...)
             {
-                std::cerr << "Unknown exception creating Vulkan renderer" << std::endl;
-                std::cerr << "Falling back to OpenGL..." << std::endl;
-                std::cerr.flush();
+                Logger::Error(LOG_SUBSYSTEM, "Unknown exception creating Vulkan renderer");
+                Logger::Warn(LOG_SUBSYSTEM, "Falling back to OpenGL...");
                 api = RendererAPI::OpenGL;
                 return std::make_unique<OpenGLRenderer>();
             }
 
         default:
-            std::cerr << "Unknown renderer API, defaulting to OpenGL" << std::endl;
+            Logger::Error(LOG_SUBSYSTEM, "Unknown renderer API, defaulting to OpenGL");
             api = RendererAPI::OpenGL;
             return std::make_unique<OpenGLRenderer>();
     }
