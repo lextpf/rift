@@ -1,14 +1,17 @@
 #include "PlayerCharacter.h"
+
 #include "IRenderer.h"
+#include "Logger.h"
 #include "Tilemap.h"
 
 #include <algorithm>
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
-#include <iostream>
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Player";
+
 // Width of each player sprite frame in pixels.
 constexpr float SPRITE_WIDTH_F = 32.0f;
 
@@ -155,7 +158,7 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
             return it->second;
 
         // Asset not registered
-        std::cerr << "No asset registered for " << typeName << " " << spriteType << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "No asset registered for {} {}", typeName, spriteType);
         return "";
     };
 
@@ -182,12 +185,12 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
     // Validate required sprites loaded
     if (!walkingLoaded || !runningLoaded)
     {
-        std::cerr << "Failed to load character sprites for " << typeName << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load character sprites for {}", typeName);
         return false;
     }
 
     if (!bicycleLoaded)
-        std::cout << "Warning: Bicycle sprite not found for " << typeName << std::endl;
+        Logger::WarnF(LOG_SUBSYSTEM, "Bicycle sprite not found for {}", typeName);
 
     m_SpriteSheet = std::move(newWalking);
     m_RunningSpriteSheet = std::move(newRunning);
@@ -197,7 +200,7 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
     }
     m_CharacterType = characterType;
 
-    std::cout << "Switched to " << typeName << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Switched to {}", typeName);
     return true;
 }
 
@@ -219,7 +222,7 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
 
     if (!tryLoad(newWalk, spritePath))
     {
-        std::cerr << "Failed to copy appearance from: " << spritePath << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Failed to copy appearance from: {}", spritePath);
         return false;
     }
 
@@ -230,7 +233,7 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
     // Commit the change -- only the walking sheet is replaced.
     m_SpriteSheet = std::move(newWalk);
     m_IsUsingCopiedAppearance = true;
-    std::cout << "Copied appearance from: " << spritePath << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Copied appearance from: {}", spritePath);
     return true;
 }
 
@@ -243,11 +246,11 @@ void PlayerCharacter::RestoreOriginalAppearance()
     if (SwitchCharacter(m_CharacterType))
     {
         m_IsUsingCopiedAppearance = false;
-        std::cout << "Restored original appearance" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Restored original appearance");
     }
     else
     {
-        std::cerr << "Failed to restore original appearance" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Failed to restore original appearance");
     }
 }
 
