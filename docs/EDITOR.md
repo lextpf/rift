@@ -1,6 +1,6 @@
 # Using the Level Editor
 
-The Rift Engine ships a built-in level editor that mutates the active `Tilemap` in real time. Open it with `E` while in-game; the tile picker opens automatically and editor input takes over from gameplay (player movement, dialogue, etc. are suppressed while the editor is active).
+Rift includes a built-in level editor that mutates the active `Tilemap` in real time. Open it with `E` while in-game; the tile picker opens automatically and editor input takes over from gameplay (player movement, dialogue, etc. are suppressed while the editor is active).
 
 ## Mode Table
 
@@ -22,16 +22,16 @@ Only one sub-mode is active at a time. Each mode is selected by hotkey:
 
 Mode-specific notes:
 
-- **Tile Picker (T)** — Drag to select a multi-tile region; placement stamps the whole region per click.
-- **Navigation (M)** — Drag-paint walkability. Clearing a tile that an NPC is standing on removes that NPC; the snapshot is captured by the undo stack so `Ctrl+Z` brings the NPC back.
-- **NPC Placement (N)** — Single-click toggles. Placement only succeeds on walkable (navmesh) tiles. The NPC's dialogue tree is randomly assigned at placement time.
-- **No-Projection (B)** — Single click sets the flag on the current layer. Shift+click flood-fills the connected component. Right-click clears the flag on **all 10 layers** for the clicked tile (or flood across one layer).
-- **Structure (G)** — Two-step workflow: Ctrl+click for left anchor, Ctrl+click again for right anchor (creates the structure). Then Shift+click flood-fills the connected component, stamping `noProjection` and assigning the new structure id. Right-click clears the structure assignment.
-- **Elevation (H)** — Drag-paints the current elevation value. Right-click clears to 0.
-- **Particle Zone (J)** — Drag-release defines a rectangular zone. Right-click removes the zone under the cursor.
-- **Animation (K)** — In the tile picker, click to add frames to the active sequence; press Enter to finalize the animation definition. Then click on map tiles to apply. Right-click removes the animation from a tile.
-- **Y-Sort-Plus (Y) / Y-Sort-Minus (O)** — Per-layer flags. Single click for one tile, Shift+click for flood-fill, right-click to clear.
-- **Default** — Tile placement (left-click drag) and collision toggle (right-click drag).
+- **Tile Picker (T)** - Drag to select a multi-tile region; placement stamps the whole region per click.
+- **Navigation (M)** - Drag-paint walkability. Clearing a tile that an NPC is standing on removes that NPC; the snapshot is captured by the undo stack so `Ctrl+Z` brings the NPC back.
+- **NPC Placement (N)** - Single-click toggles. Placement only succeeds on walkable (navmesh) tiles. The NPC's dialogue tree is randomly assigned at placement time.
+- **No-Projection (B)** - Single click sets the flag on the current layer. Shift+click flood-fills the connected component. Right-click clears the flag on **all 10 layers** for the clicked tile (or flood across one layer).
+- **Structure (G)** - Two-step workflow: Ctrl+click for left anchor, Ctrl+click again for right anchor (creates the structure). Then Shift+click flood-fills the connected component, stamping `noProjection` and assigning the new structure id. Right-click clears the structure assignment.
+- **Elevation (H)** - Drag-paints the current elevation value. Right-click clears to 0.
+- **Particle Zone (J)** - Drag-release defines a rectangular zone. Right-click removes the zone under the cursor.
+- **Animation (K)** - In the tile picker, click to add frames to the active sequence; press Enter to finalize the animation definition. Then click on map tiles to apply. Right-click removes the animation from a tile.
+- **Y-Sort-Plus (Y) / Y-Sort-Minus (O)** - Per-layer flags. Single click for one tile, Shift+click for flood-fill, right-click to clear.
+- **Default** - Tile placement (left-click drag) and collision toggle (right-click drag).
 
 ## Persistent HUD
 
@@ -61,12 +61,12 @@ What's tracked:
 - Structure: add (anchor placement), remove (right-click clear, captures per-tile reference snapshot)
 - Particle zones: add (drag-release), remove (right-click)
 - Animation definitions (Enter on collected frames) and per-tile animation apply / remove
-- Region paste (Ctrl+V — see below)
+- Region paste (Ctrl+V - see below)
 
 What's *not* tracked:
 
 - Mid-drag mode switches strand the in-progress drag without committing. Tiles already painted during the dropped drag stay (no crash, but no undo entry for them). Press the desired mode key cleanly between drags.
-- Loading a map (`rift.save.json`) clears the undo stack — captured commands cannot be safely Reverted against a different map.
+- Loading a map (`rift.save.json`) clears the undo stack - captured commands cannot be safely Reverted against a different map.
 
 ## Region Copy-Paste
 
@@ -92,20 +92,20 @@ If no manifest is found, the default path remains `rift.save.json`.
 
 | Key            | Action |
 |----------------|--------|
-| `1`–`0`        | Switch to layer 1–10 for tile placement, no-projection, y-sort, etc. |
-| `R`            | Rotate the selected tile (or multi-tile selection) by 90°. |
+| `1`-`0`        | Switch to layer 1-10 for tile placement, no-projection, y-sort, etc. |
+| `R`            | Rotate the selected tile (or multi-tile selection) by 90 degrees. |
 | `F`            | Reflect selection along X (mirror around vertical axis). Acts on the Ctrl+drag rectangle if one is active, else on the tile under the cursor on the current layer. Toggles per-tile `flipX` and negates rotation. Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
 | `Shift+F`      | Reflect selection along Y (mirror around horizontal axis). Same selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
 | Arrow keys     | Pan the camera (or the tile picker when it's open). |
-| `Shift+arrows` | Fast-pan (2.5× speed). |
+| `Shift+arrows` | Fast-pan (2.5x speed). |
 | `Esc`          | Cancel the current operation (anchor placement, selection, animation frames). |
 | `Del` (drag)   | Delete tiles under the cursor on the current layer. |
 | `Ctrl+scroll`  | Zoom (camera, or tile picker when it's open). |
 
-Reflection caveat: when reflecting a region that overlaps a no-projection structure, individual tile content is flipped but the structure's `leftAnchor`/`rightAnchor` (world coords on `NoProjectionStructure`) stay put. This matches `R`-rotate semantics — reposition the anchors manually if needed.
+Reflection caveat: when reflecting a region that overlaps a no-projection structure, individual tile content is flipped but the structure's `leftAnchor`/`rightAnchor` (world coords on `NoProjectionStructure`) stay put. This matches `R`-rotate semantics - reposition the anchors manually if needed.
 
 ## Architecture Notes
 
-`Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.h:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.h` and never stores the context — reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
+`Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.h:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.h` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
 
 `UndoRedoStack` (`src/UndoRedoStack.h`) holds two deques of `std::unique_ptr<EditorCommand>`. New commands push to the undo stack and clear the redo stack; capacity overflow drops the oldest entry from the front. Stroke accumulators in `src/EditorStrokeAccumulators.h` batch per-frame mutations during a drag-paint into a single composite command at mouse-up.
