@@ -26,9 +26,9 @@
  *      License:      MIT
  */
 #include "Game.h"
+#include "Logger.h"
 
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 
 #ifdef _WIN32
@@ -39,7 +39,7 @@
 #include <windows.h>
 
 // Signal-based crash handler for fatal errors.
-// Logs the signal number to rift.txt before terminating.
+// Logs the signal number to rift.project.log before terminating.
 // Handles SIGABRT, SIGTERM, and SIGINT signals.
 // @param sig  The signal number that triggered the crash.
 void CrashHandler(int sig)
@@ -47,7 +47,7 @@ void CrashHandler(int sig)
     static const char prefix[] = "CRASH HANDLER: Signal ";
     static const char newline[] = "\n";
 
-    int fd = _open("rift.txt", _O_WRONLY | _O_APPEND | _O_CREAT, 0644);
+    int fd = _open("rift.project.log", _O_WRONLY | _O_APPEND | _O_CREAT, 0644);
     if (fd != -1)
     {
         _write(fd, prefix, sizeof(prefix) - 1);
@@ -87,11 +87,12 @@ void CrashHandler(int sig)
 
 namespace
 {
-void LogToFile(const std::string& msg)
+constexpr const char* LOG_SUBSYSTEM = "Boot";
+
+struct LoggerScope
 {
-    std::ofstream logFile("rift.txt", std::ios::app);
-    logFile << msg << std::endl;
-}
+    ~LoggerScope() { Logger::Shutdown(); }
+};
 }  // namespace
 
 int main()
@@ -103,7 +104,7 @@ int main()
 
     // Handle Win32 structured exceptions (access violations, stack
     // overflows, division by zero, etc.) by logging the exception code
-    // to rift.txt and terminating immediately via _exit(1).
+    // to rift.project.log and terminating immediately via _exit(1).
     //
     // Only async-signal-safe operations are used here: low-level _open/_write/_close
     // and manual integer-to-string conversion. Heap allocation (std::ofstream,
@@ -117,7 +118,7 @@ int main()
             static const char prefix[] = "SEH EXCEPTION: Code ";
             static const char newline[] = "\n";
 
-            int fd = _open("rift.txt", _O_WRONLY | _O_APPEND | _O_CREAT, 0644);
+            int fd = _open("rift.project.log", _O_WRONLY | _O_APPEND | _O_CREAT, 0644);
             if (fd != -1)
             {
                 _write(fd, prefix, sizeof(prefix) - 1);
@@ -138,10 +139,6 @@ int main()
         });
 #endif
 
-    // Log startup then close immediately so the file isn't locked during
-    // the entire process lifetime. Catch blocks reopen as needed.
-    LogToFile("=== Program Starting ===");
-
 #ifdef _WIN32
     if (AllocConsole())
     {
@@ -161,23 +158,26 @@ int main()
     }
 #endif
 
-    std::cout << "=== Game Starting ===" << std::endl;
+    Logger::Initialize();
+    LoggerScope loggerScope;
+
+    Logger::Info(LOG_SUBSYSTEM, "=== Program Starting ===");
+    Logger::Info(LOG_SUBSYSTEM, "=== Game Starting ===");
+
     Game game;
     try
     {
         // Initialize game subsystems (window, renderer, assets)
         if (!game.Initialize())
         {
-            std::cerr << "Failed to initialize game" << std::endl;
-            std::cerr << "Check rift.txt for details" << std::endl;
-
-            LogToFile("ERROR: Initialize() returned false");
+            Logger::Error(LOG_SUBSYSTEM, "Failed to initialize game");
+            Logger::Error(LOG_SUBSYSTEM, "Check rift.project.log for details");
 
             std::cin.get();
             return -1;
         }
 
-        std::cout << "Game initialized successfully!" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Game initialized successfully");
 
         // Run the main game loop
         try
@@ -188,41 +188,35 @@ int main()
         }
         catch (const std::exception& e)
         {
-            std::cerr << "Exception during game loop: " << e.what() << std::endl;
-            LogToFile(std::string("EXCEPTION in game loop: ") + e.what());
+            Logger::ErrorF(LOG_SUBSYSTEM, "Exception during game loop: {}", e.what());
         }
         catch (...)
         {
-            std::cerr << "Unknown exception during game loop" << std::endl;
-            LogToFile("UNKNOWN EXCEPTION in game loop");
+            Logger::Error(LOG_SUBSYSTEM, "Unknown exception during game loop");
         }
 
         // Clean shutdown
         game.Shutdown();
-        std::cout << "Game shutdown complete" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Game shutdown complete");
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Exception in main: " << e.what() << std::endl;
-        std::cerr << "Press Enter to exit..." << std::endl;
-
-        LogToFile(std::string("EXCEPTION in main: ") + e.what());
+        Logger::FatalF(LOG_SUBSYSTEM, "Exception in main: {}", e.what());
+        Logger::Info(LOG_SUBSYSTEM, "Press Enter to exit...");
 
         std::cin.get();
         return -1;
     }
     catch (...)
     {
-        std::cerr << "Unknown exception in main" << std::endl;
-        std::cerr << "Press Enter to exit..." << std::endl;
-
-        LogToFile("UNKNOWN EXCEPTION in main");
+        Logger::Fatal(LOG_SUBSYSTEM, "Unknown exception in main");
+        Logger::Info(LOG_SUBSYSTEM, "Press Enter to exit...");
 
         std::cin.get();
         return -1;
     }
 
-    LogToFile("=== Program Exiting Normally ===");
+    Logger::Info(LOG_SUBSYSTEM, "=== Program Exiting Normally ===");
 
     return 0;
 }
