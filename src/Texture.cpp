@@ -1,7 +1,8 @@
 #include "Texture.h"
 
+#include "Logger.h"
+
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <utility>
 
@@ -17,6 +18,8 @@ std::uint64_t Texture::s_CurrentOpenGLContextGeneration = 0;
 
 namespace
 {
+constexpr const char* LOG_SUBSYSTEM = "Texture";
+
 bool TryComputeImageByteSize(int width, int height, int channels, size_t& outSize)
 {
     if (width <= 0 || height <= 0 || channels <= 0)
@@ -230,9 +233,9 @@ Texture::~Texture()
         // Vulkan resources should have been explicitly destroyed before the
         // destructor runs. If we reach here, the renderer's Shutdown() missed
         // this texture. Destroy now to avoid leaking, but log a warning.
-        std::cerr << "Warning: Texture destructor destroying Vulkan resources - "
-                  << "DestroyVulkanTexture should have been called before device destruction"
-                  << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM,
+                     "Texture destructor destroying Vulkan resources - DestroyVulkanTexture "
+                     "should have been called before device destruction");
         DestroyVulkanTexture(m_VulkanDevice);
     }
 
@@ -254,7 +257,7 @@ bool Texture::LoadFromFile(const std::string& path)
     unsigned char* data = stbi_load(path.c_str(), &m_Width, &m_Height, &m_Channels, 0);
     if (!data)
     {
-        std::cerr << "Failed to load texture: " << path << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load texture: {}", path);
         return false;
     }
 
@@ -262,8 +265,8 @@ bool Texture::LoadFromFile(const std::string& path)
 
     if (m_Channels < 1 || m_Channels > 4)
     {
-        std::cerr << "Unsupported channel count (" << m_Channels << ") for texture: " << path
-                  << std::endl;
+        Logger::ErrorF(
+            LOG_SUBSYSTEM, "Unsupported channel count ({}) for texture: {}", m_Channels, path);
         stbi_image_free(data);
         return false;
     }
@@ -285,7 +288,7 @@ bool Texture::LoadFromFile(const std::string& path)
                                static_cast<size_t>(sourceChannels);
         if (!ExpandToRgba(data, srcSize, m_Width, m_Height, sourceChannels, normalizedData))
         {
-            std::cerr << "Failed to expand texture to RGBA: " << path << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM, "Failed to expand texture to RGBA: {}", path);
             stbi_image_free(data);
             return false;
         }
@@ -296,7 +299,7 @@ bool Texture::LoadFromFile(const std::string& path)
     size_t dataSize = 0;
     if (!TryComputeImageByteSize(m_Width, m_Height, sourceChannels, dataSize))
     {
-        std::cerr << "Texture is too large to load safely: " << path << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Texture is too large to load safely: {}", path);
         stbi_image_free(data);
         return false;
     }
@@ -331,7 +334,7 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
     // Validate input - GPU textures with zero or negative dimensions will crash
     if (!data || width <= 0 || height <= 0 || channels <= 0 || channels > 4)
     {
-        std::cerr << "Invalid data for texture loading" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Invalid data for texture loading");
         return false;
     }
 
@@ -349,7 +352,7 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
                                static_cast<size_t>(channels);
         if (!ExpandToRgba(data, srcSize, width, height, channels, normalizedData))
         {
-            std::cerr << "Failed to expand texture data to RGBA" << std::endl;
+            Logger::Error(LOG_SUBSYSTEM, "Failed to expand texture data to RGBA");
             return false;
         }
         sourceData = normalizedData.data();
@@ -359,7 +362,7 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
     size_t dataSize = 0;
     if (!TryComputeImageByteSize(width, height, m_Channels, dataSize))
     {
-        std::cerr << "Texture data size overflow" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Texture data size overflow");
         return false;
     }
     m_ImageData.resize(dataSize);
@@ -485,14 +488,14 @@ void Texture::RecreateOpenGLTexture() const
 
     if (m_ImageData.empty())
     {
-        std::cerr << "Cannot recreate OpenGL texture: no image data" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Cannot recreate OpenGL texture: no image data");
         return;
     }
 
     GLFWwindow* currentContext = glfwGetCurrentContext();
     if (currentContext == nullptr)
     {
-        std::cerr << "Cannot recreate OpenGL texture: no active OpenGL context" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Cannot recreate OpenGL texture: no active OpenGL context");
         m_OpenGLID = 0;
         m_OpenGLContextTag = nullptr;
         m_OpenGLContextGeneration = 0;
@@ -544,7 +547,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     if (m_ImageData.empty())
     {
-        std::cerr << "Cannot create Vulkan texture: no image data" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Cannot create Vulkan texture: no image data");
         return;
     }
     if (m_Channels != 4)
