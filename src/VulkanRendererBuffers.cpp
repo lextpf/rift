@@ -3,6 +3,11 @@
 
 #include <cstring>
 
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Render";
+}  // namespace
+
 uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
