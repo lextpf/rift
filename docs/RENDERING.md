@@ -1,10 +1,10 @@
 # Rendering Pipeline
 
-This document describes the coordinate systems, transformations, and rendering techniques used in the Rift Game Engine.
+This document describes the coordinate systems, transformations, and rendering techniques used by Rift.
 
 ## Coordinate System
 
-The engine uses a **top-left origin, Y-down** coordinate system measured in pixels
+Rift uses a **top-left origin, Y-down** coordinate system measured in pixels
 
 This matches typical 2D game and UI conventions where:
 - Origin $ (0, 0) $ is at the **top-left** corner
@@ -377,7 +377,7 @@ This is applied during UV calculation so sprite sheets work correctly regardless
 | OpenGL | Bottom-left    | Bottom-left        |
 | Vulkan | Top-left       | Top-left           |
 
-The engine abstracts this via `IRenderer::RequiresYFlip()`.
+Rift abstracts this via `IRenderer::RequiresYFlip()`.
 
 ## Sprite Batching
 
@@ -434,7 +434,7 @@ The batch is flushed when:
 
 ## Perspective Effects
 
-The engine supports pseudo-3D projection modes that transform the flat orthographic view into curved, depth-aware scenes.
+Rift supports pseudo-3D projection modes that transform the flat orthographic view into curved, depth-aware scenes.
 
 \htmlonly
 <pre class="mermaid">
@@ -589,7 +589,7 @@ Enabled via `DrawSpriteAlpha(..., additive=true)`.
 
 ## Render Order
 
-The engine renders in a specific order for correct depth:
+Rift renders in a specific order for correct depth:
 
 \htmlonly
 <pre class="mermaid">
