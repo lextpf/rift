@@ -1,15 +1,20 @@
 #include "ParticleSystem.h"
-#include "Tilemap.h"
 
+#include "Logger.h"
 #include "MathConstants.h"
 #include "ProceduralTexture.h"
+#include "Tilemap.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 #include <utility>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Particle";
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Particle behavior dispatch
@@ -757,9 +762,14 @@ void ParticleSystem::BuildAtlas()
         // Guard against atlas overflow -- skip textures that don't fit.
         if (currentY + h > atlasHeight)
         {
-            std::cerr << "Particle atlas overflow: texture " << i << " (" << w << "x" << h
-                      << ") does not fit at row " << currentY << " (atlas height=" << atlasHeight
-                      << ")" << std::endl;
+            Logger::ErrorF(LOG_SUBSYSTEM,
+                           "Atlas overflow: texture {} ({}x{}) does not fit at row {} (atlas "
+                           "height={})",
+                           i,
+                           w,
+                           h,
+                           currentY,
+                           atlasHeight);
             // Store degenerate UV region so this type renders as a small corner pixel.
             m_AtlasRegions[i].uvMin = glm::vec2(0.0f);
             m_AtlasRegions[i].uvMax = glm::vec2(1.0f / atlasWidth, 1.0f / atlasHeight);
@@ -806,7 +816,7 @@ void ParticleSystem::BuildAtlas()
     // Create the atlas texture
     m_AtlasTexture.LoadFromData(atlasPixels.data(), atlasWidth, atlasHeight, 4, false);
 
-    std::cout << "Particle atlas built: " << atlasWidth << "x" << atlasHeight << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Atlas built: {}x{}", atlasWidth, atlasHeight);
 }
 
 void ParticleSystem::GenerateLanternPixels(std::vector<unsigned char>& pixels,
