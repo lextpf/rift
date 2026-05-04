@@ -4,13 +4,13 @@ Rift loads startup assets from `rift.project.json`. This keeps project-specific
 paths out of `Game.cpp` and lets a new project replace sprites, tilesets, fonts,
 and the default save file with data-only edits.
 
-If `rift.project.json` is missing, the engine falls back to the built-in legacy
+If `rift.project.json` is missing, Rift falls back to the built-in legacy
 paths. If a manifest exists but is malformed or references missing required
 assets, startup fails with diagnostics in the console.
 
 ## Lookup
 
-At startup the engine searches for `rift.project.json` in:
+At startup Rift searches for `rift.project.json` in:
 
 1. The current working directory.
 2. The current working directory's parent.
