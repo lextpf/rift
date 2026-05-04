@@ -1,11 +1,16 @@
 #include "NavigationRecalc.h"
 
+#include "Logger.h"
 #include "NonPlayerCharacter.h"
 #include "Tilemap.h"
 
 #include <algorithm>
-#include <iostream>
 #include <utility>
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Nav";
+}  // namespace
 
 std::vector<NonPlayerCharacter> SnapshotAndEraseNPCsOnNonWalkable(
     const Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
@@ -17,9 +22,11 @@ std::vector<NonPlayerCharacter> SnapshotAndEraseNPCsOnNonWalkable(
                              {
                                  if (!tilemap.GetNavigation(npc.GetTileX(), npc.GetTileY()))
                                  {
-                                     std::cout << "Removing NPC at tile (" << npc.GetTileX() << ", "
-                                               << npc.GetTileY() << ") - no longer on navigation"
-                                               << std::endl;
+                                     Logger::InfoF(
+                                         LOG_SUBSYSTEM,
+                                         "Removing NPC at tile ({}, {}) - no longer on navigation",
+                                         npc.GetTileX(),
+                                         npc.GetTileY());
                                      snapshot.push_back(std::move(npc));
                                      return true;
                                  }
@@ -43,8 +50,10 @@ void RebuildPatrolRoutes(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs
     {
         if (!npc.ReinitializePatrolRoute(&tilemap))
         {
-            std::cout << "Warning: NPC at (" << npc.GetTileX() << ", " << npc.GetTileY()
-                      << ") could not find valid patrol route" << std::endl;
+            Logger::WarnF(LOG_SUBSYSTEM,
+                          "NPC at ({}, {}) could not find valid patrol route",
+                          npc.GetTileX(),
+                          npc.GetTileY());
         }
     }
 }
