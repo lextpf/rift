@@ -1,5 +1,12 @@
 #include "CameraController.h"
+
+#include "Logger.h"
 #include "MathConstants.h"
+
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Camera";
+}  // namespace
 
 void CameraController::Initialize(glm::vec2 playerVisualCenter, float viewWidth, float viewHeight)
 {
@@ -167,8 +174,10 @@ glm::mat4 CameraController::GetOrthoProjection(float width, float height)
 void CameraController::Toggle3DEffect()
 {
     m_State.enable3DEffect = !m_State.enable3DEffect;
-    std::cout << "3D Effect: " << (m_State.enable3DEffect ? "ON" : "OFF")
-              << " (Radius: " << m_State.globeSphereRadius << ")" << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "3D Effect: {} (Radius: {})",
+                  m_State.enable3DEffect ? "ON" : "OFF",
+                  m_State.globeSphereRadius);
 }
 
 void CameraController::HandleZoomScroll(double yoffset,
@@ -205,7 +214,7 @@ void CameraController::HandleZoomScroll(double yoffset,
     // Also update the follow target so camera doesn't snap back
     m_State.followTarget = m_State.position;
 
-    std::cout << "Camera zoom: " << m_State.zoom << "x" << std::endl;
+    Logger::InfoF(LOG_SUBSYSTEM, "Camera zoom: {}x", m_State.zoom);
 }
 
 void CameraController::ResetZoom(glm::vec2 playerVisualCenter,
@@ -225,7 +234,7 @@ void CameraController::ResetZoom(glm::vec2 playerVisualCenter,
     }
 
     m_State.hasFollowTarget = false;
-    std::cout << "Camera zoom reset to 1.0x" << std::endl;
+    Logger::Info(LOG_SUBSYSTEM, "Camera zoom reset to 1.0x");
 }
 
 void CameraController::ClampToMapBounds(float worldWidth, float worldHeight, float mapW, float mapH)
