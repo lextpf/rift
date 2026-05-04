@@ -11,6 +11,7 @@
 #include <excpt.h>
 #endif
 
+#include "Logger.h"
 #include "Texture.h"
 #include "VulkanCommon.h"
 #include "VulkanRenderer.h"
@@ -30,6 +31,11 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+namespace
+{
+constexpr const char* LOG_SUBSYSTEM = "Render";
+}  // namespace
+
 // Ensure Vulkan functions are loaded
 #ifdef _WIN32
 namespace
@@ -43,12 +49,10 @@ static bool LoadVulkanLibrary()
     g_VulkanLib = LoadLibraryA("vulkan-1.dll");
     if (g_VulkanLib == NULL)
     {
-        std::cerr << "Warning: Could not load vulkan-1.dll. Error: " << GetLastError() << std::endl;
-        std::cerr.flush();
+        Logger::WarnF(LOG_SUBSYSTEM, "Could not load vulkan-1.dll. Error: {}", GetLastError());
         return false;
     }
-    std::cout << "Vulkan library loaded successfully" << std::endl;
-    std::cout.flush();
+    Logger::Info(LOG_SUBSYSTEM, "Vulkan library loaded successfully");
     return true;
 }
 #endif
@@ -115,8 +119,7 @@ VulkanRenderer::VulkanRenderer(GLFWwindow* window)
       m_WhiteTextureImageView(VK_NULL_HANDLE),
       m_WhiteTextureSampler(VK_NULL_HANDLE)
 {
-    std::cout << "VulkanRenderer constructor called" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "VulkanRenderer constructor called");
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -133,12 +136,12 @@ bool VulkanRenderer::Init()
 {
     try
     {
-        std::cout << "Initializing Vulkan renderer..." << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Initializing Vulkan renderer...");
 
 #ifdef _WIN32
         if (!LoadVulkanLibrary())
         {
-            std::cerr << "Warning: Failed to load Vulkan library, but continuing..." << std::endl;
+            Logger::Warn(LOG_SUBSYSTEM, "Failed to load Vulkan library, but continuing...");
         }
 #endif
 
@@ -160,17 +163,17 @@ bool VulkanRenderer::Init()
         CreateCommandBuffers();
         CreateSyncObjects();
 
-        std::cout << "Vulkan renderer initialized successfully!" << std::endl;
+        Logger::Info(LOG_SUBSYSTEM, "Vulkan renderer initialized successfully!");
         return true;
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Exception in VulkanRenderer::Init(): " << e.what() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM, "Exception in VulkanRenderer::Init(): {}", e.what());
         return false;
     }
     catch (...)
     {
-        std::cerr << "Unknown exception in VulkanRenderer::Init()" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Unknown exception in VulkanRenderer::Init()");
         return false;
     }
 }
@@ -184,7 +187,8 @@ void VulkanRenderer::Shutdown()
         if (waitResult != VK_SUCCESS && waitResult != VK_ERROR_DEVICE_LOST)
         {
             // Device might already be lost/invalid, continue with cleanup
-            std::cerr << "Warning: vkDeviceWaitIdle failed: " << waitResult << std::endl;
+            Logger::WarnF(
+                LOG_SUBSYSTEM, "vkDeviceWaitIdle failed: {}", static_cast<int>(waitResult));
         }
 
         // Unmap vertex buffers if mapped
@@ -464,7 +468,7 @@ void VulkanRenderer::CreateInstance()
         {
             if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
             {
-                std::cerr << "Vulkan validation: " << pCallbackData->pMessage << std::endl;
+                Logger::WarnF(LOG_SUBSYSTEM, "Vulkan validation: {}", pCallbackData->pMessage);
             }
             return VK_FALSE;
         };
@@ -599,7 +603,7 @@ void VulkanRenderer::CreateSwapchain()
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr);
     if (formatCount == 0)
     {
-        std::cerr << "Vulkan: no surface formats available" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Vulkan: no surface formats available");
         return;
     }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -782,8 +786,7 @@ void VulkanRenderer::CreateRenderPass()
 
 void VulkanRenderer::CreateGraphicsPipeline()
 {
-    std::cout << "CreateGraphicsPipeline() step 1: Starting..." << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 1: Starting...");
     // Shader code (simplified - in production, compile GLSL to SPIR-V)
     // For now, we'll create a minimal pipeline
     // NOTE: Full implementation requires SPIR-V shader compilation
@@ -904,43 +907,40 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VK_CHECK(vkCreatePipelineLayout(m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout));
 
-    std::cout << "CreateGraphicsPipeline() step 2: Loading shaders..." << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 2: Loading shaders...");
 
     // Load shaders
     std::vector<uint32_t> vertShaderCode = VulkanShader::GetVertexShaderSPIRV();
     std::vector<uint32_t> fragShaderCode = VulkanShader::GetFragmentShaderSPIRV();
 
-    std::cout << "CreateGraphicsPipeline() step 2: Vertex shader size: " << vertShaderCode.size()
-              << " words" << std::endl;
-    std::cout << "CreateGraphicsPipeline() step 2: Fragment shader size: " << fragShaderCode.size()
-              << " words" << std::endl;
-    std::cout.flush();
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "CreateGraphicsPipeline() step 2: Vertex shader size: {} words",
+                   vertShaderCode.size());
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "CreateGraphicsPipeline() step 2: Fragment shader size: {} words",
+                   fragShaderCode.size());
 
     if (vertShaderCode.empty() || fragShaderCode.empty())
     {
-        std::cerr << "ERROR: Vulkan shaders not found!" << std::endl;
-        std::cerr << "Please compile shaders: glslangValidator -V shaders/sprite.vert -o "
-                     "shaders/sprite.vert.spv"
-                  << std::endl;
-        std::cerr << "                      glslangValidator -V shaders/sprite.frag -o "
-                     "shaders/sprite.frag.spv"
-                  << std::endl;
-        std::cerr << "Or run: build.bat" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "Vulkan shaders not found!");
+        Logger::Error(LOG_SUBSYSTEM,
+                      "Please compile shaders: glslangValidator -V shaders/sprite.vert -o "
+                      "shaders/sprite.vert.spv");
+        Logger::Error(LOG_SUBSYSTEM,
+                      "                      glslangValidator -V shaders/sprite.frag -o "
+                      "shaders/sprite.frag.spv");
+        Logger::Error(LOG_SUBSYSTEM, "Or run: build.bat");
         // Don't continue without shaders - throw exception
         throw std::runtime_error("Vulkan shaders not found. Please compile shaders first.");
     }
 
-    std::cout << "CreateGraphicsPipeline() step 3: Creating shader modules..." << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 3: Creating shader modules...");
 
     VkShaderModule vertShaderModule = VulkanShader::CreateShaderModule(m_Device, vertShaderCode);
-    std::cout << "CreateGraphicsPipeline() step 3: Vertex shader module created" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 3: Vertex shader module created");
 
     VkShaderModule fragShaderModule = VulkanShader::CreateShaderModule(m_Device, fragShaderCode);
-    std::cout << "CreateGraphicsPipeline() step 3: Fragment shader module created" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 3: Fragment shader module created");
 
     // Create shader stage info AFTER modules are created
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
@@ -957,8 +957,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-    std::cout << "CreateGraphicsPipeline() step 3: Shader stages configured" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 3: Shader stages configured");
 
     // Enable dynamic viewport and scissor for Y-flip support
     std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
@@ -984,42 +983,44 @@ void VulkanRenderer::CreateGraphicsPipeline()
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    std::cout << "CreateGraphicsPipeline() step 4: Validating pipeline state..." << std::endl;
-    std::cout << "  - Device: " << (void*)m_Device << std::endl;
-    std::cout << "  - RenderPass: " << (void*)m_RenderPass << std::endl;
-    std::cout << "  - PipelineLayout: " << (void*)m_PipelineLayout << std::endl;
-    std::cout << "  - Vertex shader module: " << (void*)vertShaderModule << std::endl;
-    std::cout << "  - Fragment shader module: " << (void*)fragShaderModule << std::endl;
-    std::cout << "  - Swapchain extent: " << m_SwapchainExtent.width << "x"
-              << m_SwapchainExtent.height << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 4: Validating pipeline state...");
+    Logger::DebugF(LOG_SUBSYSTEM, "  - Device: {}", static_cast<void*>(m_Device));
+    Logger::DebugF(LOG_SUBSYSTEM, "  - RenderPass: {}", static_cast<void*>(m_RenderPass));
+    Logger::DebugF(LOG_SUBSYSTEM, "  - PipelineLayout: {}", static_cast<void*>(m_PipelineLayout));
+    Logger::DebugF(
+        LOG_SUBSYSTEM, "  - Vertex shader module: {}", static_cast<void*>(vertShaderModule));
+    Logger::DebugF(
+        LOG_SUBSYSTEM, "  - Fragment shader module: {}", static_cast<void*>(fragShaderModule));
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "  - Swapchain extent: {}x{}",
+                   m_SwapchainExtent.width,
+                   m_SwapchainExtent.height);
 
-    std::cout << "CreateGraphicsPipeline() step 5: Calling vkCreateGraphicsPipelines()..."
-              << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM,
+                  "CreateGraphicsPipeline() step 5: Calling vkCreateGraphicsPipelines()...");
 
     VkResult pipelineResult = vkCreateGraphicsPipelines(
         m_Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_GraphicsPipeline);
     if (pipelineResult != VK_SUCCESS)
     {
-        std::cerr << "ERROR: vkCreateGraphicsPipelines failed with result: " << pipelineResult
-                  << std::endl;
-        std::cerr.flush();
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "vkCreateGraphicsPipelines failed with result: {}",
+                       static_cast<int>(pipelineResult));
 
         // Print error details
         switch (pipelineResult)
         {
             case VK_ERROR_OUT_OF_HOST_MEMORY:
-                std::cerr << "  Reason: Out of host memory" << std::endl;
+                Logger::Error(LOG_SUBSYSTEM, "  Reason: Out of host memory");
                 break;
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-                std::cerr << "  Reason: Out of device memory" << std::endl;
+                Logger::Error(LOG_SUBSYSTEM, "  Reason: Out of device memory");
                 break;
             case VK_ERROR_INVALID_SHADER_NV:
-                std::cerr << "  Reason: Invalid shader" << std::endl;
+                Logger::Error(LOG_SUBSYSTEM, "  Reason: Invalid shader");
                 break;
             default:
-                std::cerr << "  Reason: Unknown error code" << std::endl;
+                Logger::Error(LOG_SUBSYSTEM, "  Reason: Unknown error code");
                 break;
         }
 
@@ -1028,16 +1029,13 @@ void VulkanRenderer::CreateGraphicsPipeline()
         throw std::runtime_error("Failed to create graphics pipeline!");
     }
 
-    std::cout << "CreateGraphicsPipeline() step 4: Graphics pipeline created successfully"
-              << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM,
+                  "CreateGraphicsPipeline() step 4: Graphics pipeline created successfully");
 
-    std::cout << "CreateGraphicsPipeline() step 5: Cleaning up shader modules..." << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 5: Cleaning up shader modules...");
     vkDestroyShaderModule(m_Device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_Device, vertShaderModule, nullptr);
-    std::cout << "CreateGraphicsPipeline() complete!" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() complete!");
 }
 
 void VulkanRenderer::CreateFramebuffers()
@@ -1130,45 +1128,45 @@ void VulkanRenderer::RecreateImageAvailableSemaphore(size_t frame)
     if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[frame]) !=
         VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to recreate image-available semaphore for frame " << frame
-                  << std::endl;
+        Logger::ErrorF(
+            LOG_SUBSYSTEM, "Failed to recreate image-available semaphore for frame {}", frame);
         m_ImageAvailableSemaphores[frame] = VK_NULL_HANDLE;
     }
 }
 
 bool VulkanRenderer::CheckValidationLayerSupport()
 {
-    std::cout
-        << "CheckValidationLayerSupport() step 1: Calling vkEnumerateInstanceLayerProperties()..."
-        << std::endl;
-    std::cout.flush();
+    Logger::Debug(
+        LOG_SUBSYSTEM,
+        "CheckValidationLayerSupport() step 1: Calling vkEnumerateInstanceLayerProperties()...");
 
     uint32_t layerCount;
     VkResult result = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     if (result != VK_SUCCESS)
     {
-        std::cerr << "Warning: vkEnumerateInstanceLayerProperties failed: " << result << std::endl;
-        std::cerr.flush();
+        Logger::WarnF(LOG_SUBSYSTEM,
+                      "vkEnumerateInstanceLayerProperties failed: {}",
+                      static_cast<int>(result));
         return false;
     }
 
-    std::cout << "CheckValidationLayerSupport() step 1 complete: Found " << layerCount << " layers"
-              << std::endl;
-    std::cout.flush();
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "CheckValidationLayerSupport() step 1 complete: Found {} layers",
+                   layerCount);
 
     std::vector<VkLayerProperties> availableLayers(layerCount);
     result = vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
     if (result != VK_SUCCESS)
     {
-        std::cerr << "Warning: vkEnumerateInstanceLayerProperties (second call) failed: " << result
-                  << std::endl;
-        std::cerr.flush();
+        Logger::WarnF(LOG_SUBSYSTEM,
+                      "vkEnumerateInstanceLayerProperties (second call) failed: {}",
+                      static_cast<int>(result));
         return false;
     }
 
-    std::cout << "CheckValidationLayerSupport() step 2: Checking for required validation layers..."
-              << std::endl;
-    std::cout.flush();
+    Logger::Debug(
+        LOG_SUBSYSTEM,
+        "CheckValidationLayerSupport() step 2: Checking for required validation layers...");
 
     for (const char* layerName : m_ValidationLayers)
     {
@@ -1183,59 +1181,56 @@ bool VulkanRenderer::CheckValidationLayerSupport()
         }
         if (!layerFound)
         {
-            std::cout << "CheckValidationLayerSupport() step 2: Layer '" << layerName
-                      << "' not found" << std::endl;
-            std::cout.flush();
+            Logger::DebugF(LOG_SUBSYSTEM,
+                           "CheckValidationLayerSupport() step 2: Layer '{}' not found",
+                           layerName);
             return false;
         }
     }
 
-    std::cout << "CheckValidationLayerSupport() complete: All validation layers found" << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM,
+                  "CheckValidationLayerSupport() complete: All validation layers found");
 
     return true;
 }
 
 std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
 {
-    std::cout << "GetRequiredExtensions() step 1: Calling glfwGetRequiredInstanceExtensions()..."
-              << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM,
+                  "GetRequiredExtensions() step 1: Calling glfwGetRequiredInstanceExtensions()...");
 
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-    std::cout << "GetRequiredExtensions() step 1 complete: Got " << glfwExtensionCount
-              << " extensions from GLFW" << std::endl;
-    std::cout.flush();
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "GetRequiredExtensions() step 1 complete: Got {} extensions from GLFW",
+                   glfwExtensionCount);
 
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-    std::cout << "GetRequiredExtensions() step 2: Checking validation layer support..."
-              << std::endl;
-    std::cout.flush();
+    Logger::Debug(LOG_SUBSYSTEM,
+                  "GetRequiredExtensions() step 2: Checking validation layer support...");
 
     // Only add debug extension if validation layers are enabled
     const bool enableValidationLayers = ShouldEnableValidationLayers();
     if (enableValidationLayers && CheckValidationLayerSupport())
     {
-        std::cout
-            << "GetRequiredExtensions() step 2: Validation layers available, adding debug extension"
-            << std::endl;
-        std::cout.flush();
+        Logger::Debug(
+            LOG_SUBSYSTEM,
+            "GetRequiredExtensions() step 2: Validation layers available, adding debug extension");
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     else
     {
-        std::cout << "GetRequiredExtensions() step 2: Validation layers disabled or not available"
-                  << std::endl;
-        std::cout.flush();
+        Logger::Debug(
+            LOG_SUBSYSTEM,
+            "GetRequiredExtensions() step 2: Validation layers disabled or not available");
     }
 
-    std::cout << "GetRequiredExtensions() complete: Returning " << extensions.size()
-              << " extensions" << std::endl;
-    std::cout.flush();
+    Logger::DebugF(LOG_SUBSYSTEM,
+                   "GetRequiredExtensions() complete: Returning {} extensions",
+                   extensions.size());
 
     return extensions;
 }
@@ -1253,13 +1248,13 @@ void VulkanRenderer::BeginFrame()
 
     if (m_Device == VK_NULL_HANDLE || m_Swapchain == VK_NULL_HANDLE)
     {
-        std::cerr << "Error: BeginFrame called but Vulkan not initialized!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "BeginFrame called but Vulkan not initialized!");
         return;
     }
 
     if (m_CurrentFrame >= m_InFlightFences.size())
     {
-        std::cerr << "Error: CurrentFrame out of bounds!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds!");
         return;
     }
 
@@ -1284,7 +1279,9 @@ void VulkanRenderer::BeginFrame()
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
-        std::cerr << "Error: Failed to acquire swapchain image! Result: " << result << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "Failed to acquire swapchain image! Result: {}",
+                       static_cast<int>(result));
         // Same concern: on error the semaphore's state is ambiguous.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         return;
@@ -1292,16 +1289,20 @@ void VulkanRenderer::BeginFrame()
 
     if (m_ImageIndex >= m_CommandBuffers.size())
     {
-        std::cerr << "Error: ImageIndex out of bounds! ImageIndex=" << m_ImageIndex
-                  << ", CommandBufferCount=" << m_CommandBuffers.size() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "ImageIndex out of bounds! ImageIndex={}, CommandBufferCount={}",
+                       m_ImageIndex,
+                       m_CommandBuffers.size());
         return;
     }
 
     if (m_ImageIndex >= m_ImagesInFlight.size())
     {
-        std::cerr << "Error: ImageIndex out of bounds for image-fence tracking! ImageIndex="
-                  << m_ImageIndex << ", ImagesInFlightCount=" << m_ImagesInFlight.size()
-                  << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "ImageIndex out of bounds for image-fence tracking! ImageIndex={}, "
+                       "ImagesInFlightCount={}",
+                       m_ImageIndex,
+                       m_ImagesInFlight.size());
         return;
     }
 
@@ -1312,7 +1313,7 @@ void VulkanRenderer::BeginFrame()
 
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
-        std::cerr << "Error: CurrentFrame out of bounds for command buffers!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds for command buffers!");
         return;
     }
 
@@ -1324,14 +1325,19 @@ void VulkanRenderer::BeginFrame()
     VkResult beginResult = vkBeginCommandBuffer(m_CommandBuffers[m_CurrentFrame], &beginInfo);
     if (beginResult != VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to begin command buffer! Result: " << beginResult << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "Failed to begin command buffer! Result: {}",
+                       static_cast<int>(beginResult));
         return;
     }
 
     if (m_ImageIndex >= m_SwapchainFramebuffers.size())
     {
-        std::cerr << "Error: ImageIndex out of bounds for framebuffers! ImageIndex=" << m_ImageIndex
-                  << ", FramebufferCount=" << m_SwapchainFramebuffers.size() << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "ImageIndex out of bounds for framebuffers! ImageIndex={}, "
+                       "FramebufferCount={}",
+                       m_ImageIndex,
+                       m_SwapchainFramebuffers.size());
         return;
     }
 
@@ -1374,7 +1380,7 @@ void VulkanRenderer::BeginFrame()
     }
     else
     {
-        std::cerr << "Warning: Graphics pipeline is null, cannot bind!" << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM, "Graphics pipeline is null, cannot bind!");
     }
 }
 
@@ -1387,14 +1393,14 @@ void VulkanRenderer::EndFrame()
 
     if (m_Device == VK_NULL_HANDLE)
     {
-        std::cerr << "Error: EndFrame called but Vulkan not initialized!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "EndFrame called but Vulkan not initialized!");
         m_FrameActive = false;
         return;
     }
 
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
-        std::cerr << "Error: CurrentFrame out of bounds in EndFrame!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds in EndFrame!");
         // BeginFrame signaled the image-available semaphore; if we bail now
         // without submitting, that signal never gets consumed and the next
         // acquire on the same slot is illegal.
@@ -1411,7 +1417,8 @@ void VulkanRenderer::EndFrame()
     VkResult endResult = vkEndCommandBuffer(m_CommandBuffers[m_CurrentFrame]);
     if (endResult != VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to end command buffer! Result: " << endResult << std::endl;
+        Logger::ErrorF(
+            LOG_SUBSYSTEM, "Failed to end command buffer! Result: {}", static_cast<int>(endResult));
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
@@ -1421,7 +1428,7 @@ void VulkanRenderer::EndFrame()
         m_CurrentFrame >= m_RenderFinishedSemaphores.size() ||
         m_CurrentFrame >= m_InFlightFences.size())
     {
-        std::cerr << "Error: CurrentFrame out of bounds for sync objects!" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds for sync objects!");
         // Best-effort: if the semaphore slot still exists, recreate it.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
@@ -1446,7 +1453,8 @@ void VulkanRenderer::EndFrame()
     VkResult resetFenceResult = vkResetFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame]);
     if (resetFenceResult != VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to reset fence! Result: " << resetFenceResult << std::endl;
+        Logger::ErrorF(
+            LOG_SUBSYSTEM, "Failed to reset fence! Result: {}", static_cast<int>(resetFenceResult));
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
@@ -1456,8 +1464,9 @@ void VulkanRenderer::EndFrame()
         vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, m_InFlightFences[m_CurrentFrame]);
     if (submitResult != VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to submit command buffer! Result: " << submitResult
-                  << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "Failed to submit command buffer! Result: {}",
+                       static_cast<int>(submitResult));
         // vkResetFences succeeded above but submit failed, so the fence is
         // unsignaled with no work to signal it. Next BeginFrame would block
         // forever on vkWaitForFences. Destroy+recreate as signaled so the
@@ -1471,8 +1480,8 @@ void VulkanRenderer::EndFrame()
             if (vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[m_CurrentFrame]) !=
                 VK_SUCCESS)
             {
-                std::cerr << "Error: Failed to recreate in-flight fence after submit failure"
-                          << std::endl;
+                Logger::Error(LOG_SUBSYSTEM,
+                              "Failed to recreate in-flight fence after submit failure");
                 m_InFlightFences[m_CurrentFrame] = VK_NULL_HANDLE;
             }
         }
@@ -1506,8 +1515,9 @@ void VulkanRenderer::EndFrame()
     }
     else if (presentResult != VK_SUCCESS)
     {
-        std::cerr << "Error: Failed to present swapchain image! Result: " << presentResult
-                  << std::endl;
+        Logger::ErrorF(LOG_SUBSYSTEM,
+                       "Failed to present swapchain image! Result: {}",
+                       static_cast<int>(presentResult));
     }
 
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1607,8 +1617,16 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
 void VulkanRenderer::DrawSprite(
     const Texture& texture, glm::vec2 position, glm::vec2 size, float rotation, glm::vec3 color)
 {
-    DrawSpriteRegion(
-        texture, position, size, glm::vec2(0.0f), glm::vec2(1.0f), rotation, color, true);
+    DrawSpriteRegion(texture,
+                     position,
+                     size,
+                     glm::vec2(0.0f),
+                     glm::vec2(1.0f),
+                     rotation,
+                     color,
+                     true,
+                     false,
+                     false);
 }
 
 void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
@@ -1618,23 +1636,29 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
                                       glm::vec2 texSize,
                                       float rotation,
                                       glm::vec3 color,
-                                      bool flipY)
+                                      bool flipY,
+                                      bool tileFlipX,
+                                      bool tileFlipY)
 {
     if (!m_FrameActive)
         return;
 
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
-        std::cerr << "Warning: Attempting to draw but pipeline not ready. GraphicsPipeline="
-                  << (void*)m_GraphicsPipeline
-                  << ", DescriptorSetLayout=" << (void*)m_DescriptorSetLayout << std::endl;
+        Logger::WarnF(LOG_SUBSYSTEM,
+                      "Attempting to draw but pipeline not ready. GraphicsPipeline={}, "
+                      "DescriptorSetLayout={}",
+                      static_cast<void*>(m_GraphicsPipeline),
+                      static_cast<void*>(m_DescriptorSetLayout));
         return;  // Pipeline not ready
     }
 
     if (m_CommandBuffers.empty() || m_CurrentFrame >= m_CommandBuffers.size())
     {
-        std::cerr << "Warning: Command buffers not ready. CurrentFrame=" << m_CurrentFrame
-                  << ", BufferCount=" << m_CommandBuffers.size() << std::endl;
+        Logger::WarnF(LOG_SUBSYSTEM,
+                      "Command buffers not ready. CurrentFrame={}, BufferCount={}",
+                      m_CurrentFrame,
+                      m_CommandBuffers.size());
         return;
     }
 
@@ -1662,7 +1686,7 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
 
     if (texWidth <= 0 || texHeight <= 0)
     {
-        std::cerr << "Warning: Invalid texture size: " << texWidth << "x" << texHeight << std::endl;
+        Logger::WarnF(LOG_SUBSYSTEM, "Invalid texture size: {}x{}", texWidth, texHeight);
         return;
     }
 
@@ -1688,6 +1712,17 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     {
         vTop = texY;
         vBottom = texY + texH;
+    }
+
+    // Per-tile content mirror: swap source UV before rotation so flip composes
+    // as flip-then-rotate (the geometrically correct order for reflections).
+    if (tileFlipX)
+    {
+        std::swap(u0, u1);
+    }
+    if (tileFlipY)
+    {
+        std::swap(vTop, vBottom);
     }
 
     // Match OpenGL's UV assignment where top-left vertex gets vBottom
@@ -1858,7 +1893,9 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
                                     glm::vec2 texCoord,
                                     glm::vec2 texSize,
                                     glm::vec3 color,
-                                    bool flipY)
+                                    bool flipY,
+                                    bool tileFlipX,
+                                    bool tileFlipY)
 {
     if (!m_FrameActive)
         return;
@@ -1907,6 +1944,16 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
         v1 = (texCoord.y + texSize.y) / texH;
     }
 
+    // Per-tile content mirror via UV swap (the warped corners[] geometry stays put).
+    if (tileFlipX)
+    {
+        std::swap(u0, u1);
+    }
+    if (tileFlipY)
+    {
+        std::swap(v0, v1);
+    }
+
     // UV mapping: TL/TR get visual top (v1), BL/BR get visual bottom (v0)
     glm::vec2 texCoords[4] = {
         {u0, v1},  // TL
@@ -1939,8 +1986,10 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
         size_t currentCount = m_DescriptorSetCache.size();
         if (currentCount >= static_cast<size_t>(DESCRIPTOR_POOL_MAX_SETS * 0.9f))
         {
-            std::cerr << "Warning: Descriptor pool at " << currentCount << "/"
-                      << DESCRIPTOR_POOL_MAX_SETS << " sets" << std::endl;
+            Logger::WarnF(LOG_SUBSYSTEM,
+                          "Descriptor pool at {}/{} sets",
+                          currentCount,
+                          DESCRIPTOR_POOL_MAX_SETS);
             m_DescriptorPoolWarned = true;
         }
     }
@@ -1964,8 +2013,7 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
         {
             if (!m_DescriptorPoolWarned)
             {
-                std::cerr << "VulkanRenderer: Descriptor pool overflow, creating additional pool"
-                          << std::endl;
+                Logger::Warn(LOG_SUBSYSTEM, "Descriptor pool overflow, creating additional pool");
                 m_DescriptorPoolWarned = true;
             }
 
@@ -1991,8 +2039,9 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
 
         if (result != VK_SUCCESS)
         {
-            std::cerr << "Warning: Failed to allocate descriptor set. VkResult=" << result
-                      << std::endl;
+            Logger::WarnF(LOG_SUBSYSTEM,
+                          "Failed to allocate descriptor set. VkResult={}",
+                          static_cast<int>(result));
             return VK_NULL_HANDLE;
         }
     }
@@ -2389,7 +2438,7 @@ void VulkanRenderer::LoadFont()
 #ifdef USE_FREETYPE
     if (FT_Init_FreeType(&m_FreeType))
     {
-        std::cerr << "ERROR::FREETYPE: Could not init FreeType Library (Vulkan)" << std::endl;
+        Logger::Error(LOG_SUBSYSTEM, "FREETYPE: Could not init FreeType Library (Vulkan)");
         return;
     }
 
@@ -2461,20 +2510,22 @@ void VulkanRenderer::LoadFont()
         FT_Done_Face(m_Face);
         m_Face = nullptr;
         loaded = true;
-        std::cout << "Loaded font for Vulkan text: " << fontPath << " (" << m_Glyphs.size()
-                  << " glyphs)" << std::endl;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "Loaded font for Vulkan text: {} ({} glyphs)",
+                      fontPath,
+                      m_Glyphs.size());
         break;
     }
 
     if (!loaded)
     {
-        std::cerr << "WARNING: No font loaded for Vulkan renderer text. Text will be skipped."
-                  << std::endl;
+        Logger::Warn(LOG_SUBSYSTEM,
+                     "No font loaded for Vulkan renderer text. Text will be skipped.");
     }
 
     FT_Done_FreeType(m_FreeType);
     m_FreeType = nullptr;
 #else
-    std::cerr << "WARNING: FreeType not available; Vulkan text rendering disabled." << std::endl;
+    Logger::Warn(LOG_SUBSYSTEM, "FreeType not available; Vulkan text rendering disabled.");
 #endif
 }
