@@ -4,7 +4,7 @@
 
 ## Overview
 
-Rift is a 2.5D RPG game written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.4), a complete day/night cycle with atmospheric effects, tile-based collision, NPC pathfinding, and a built-in level editor.
+Rift is a 2.5D RPG game written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.0), a complete day/night cycle with atmospheric effects, tile-based collision, NPC patrol routing, and a built-in level editor.
 
 \htmlonly
 <pre class="mermaid">
@@ -27,7 +27,7 @@ flowchart LR
 
     subgraph GPU["Graphics Backends"]
         OpenGL[OpenGL 4.6]:::backend
-        Vulkan[Vulkan 1.4]:::backend
+        Vulkan[Vulkan 1.0]:::backend
     end
 
     Game -->|process| Input
@@ -58,7 +58,7 @@ Rift uses a **top-left origin, Y-down** coordinate system. Press **F1** to switc
 
 ## World & Collision
 
-Tile-based world with 8 configurable layers. Entities use AABB collision with corner-cutting tolerance for smooth movement.
+Tile-based world with 10 configurable layers. Entities use strict AABB collision with slide recovery, lane snapping, and NPC patrol routes generated from the navigation map.
 
 @see [Collision & Pathfinding](COLLISION.md) for collision detection, navigation meshes, and NPC AI.
 
@@ -94,7 +94,7 @@ Complete day/night cycle with 8 time periods, sun/moon arcs, star visibility, an
 | @ref Game               | Main loop orchestration, input handling, state management |
 | @ref IRenderer          | Abstract rendering interface (OpenGL/Vulkan)              |
 | @ref OpenGLRenderer     | OpenGL 4.6 backend implementation                         |
-| @ref VulkanRenderer     | Vulkan 1.4 backend implementation                         |
+| @ref VulkanRenderer     | Vulkan 1.0 backend implementation                         |
 | @ref Tilemap            | Tile storage, collision map, navigation map               |
 | @ref TimeManager        | Day/night cycle, ambient lighting                         |
 | @ref SkyRenderer        | Stars, sun, moon, atmospheric effects                     |
