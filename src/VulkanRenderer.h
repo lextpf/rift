@@ -23,8 +23,12 @@ struct GLFWwindow;
  * @author Alex (https://github.com/lextpf)
  * @ingroup Rendering
  *
- * Provides hardware-accelerated 2D rendering using the Vulkan graphics API
- * with batching optimizations similar to the OpenGL implementation.
+ * Provides hardware-accelerated 2D rendering using the Vulkan graphics API.
+ * Sprite draws
+ * currently submit one quad at a time with cached descriptor sets
+ * and persistent per-frame
+ * vertex buffers; this differs from OpenGL's
+ * texture-run sprite batching.
  *
  * @section vk_features Vulkan Features Used
  * | Feature              | Version | Usage                          |
@@ -60,8 +64,9 @@ struct GLFWwindow;
  * @endcode
  *
  * @section vk_batching Sprite Batching
- * Sprites are batched into a persistent mapped vertex buffer to minimize
- * CPU-GPU synchronization. Per-frame buffers avoid write hazards:
+ * Sprites are written into a persistent mapped vertex
+ * buffer and submitted as
+ * individual quad draws. Per-frame buffers avoid write hazards:
  *
  * @par Buffer Strategy
  * @code
@@ -70,12 +75,17 @@ struct GLFWwindow;
  * @endcode
  *
  * @section vk_textures Texture Management
- * Textures are uploaded via staging buffers and cached by Texture pointer:
- * 1. Create staging buffer (host-visible memory)
- * 2. Copy pixel data to staging buffer
- * 3. Record copy command to device-local VkImage
- * 4. Transition image layout to SHADER_READ_ONLY
- * 5. Create VkImageView and cache descriptor set
+ * UploadTexture() creates a host-visible staging buffer,
+ * copies pixel data,
+ * records the transfer to a device-local VkImage, transitions it to
+ *
+ * SHADER_READ_ONLY, then creates the VkImageView and descriptor set.
+ *
+ * Draw calls do not upload
+ * texture data mid-frame. A texture without a live
+ * Vulkan image view renders with the white
+ * fallback texture or is skipped,
+ * depending on the draw path.
  *
  * @section vk_limitations Current Limitations
  * - Single graphics pipeline (no compute shaders)
@@ -87,7 +97,8 @@ struct GLFWwindow;
  * - Additive blending flags are currently ignored in sprite/atlas/rect draw paths
  *
  * @see IRenderer Base interface with method documentation
- * @see OpenGLRenderer Alternative OpenGL implementation
+ * @see OpenGLRenderer Alternative OpenGL
+ * implementation
  * @see Texture CPU-side texture data management
  */
 class VulkanRenderer : public IRenderer
@@ -356,8 +367,8 @@ private:
 
     /// @name Texture Helpers
     /// @{
-    /// @brief Get cached Vulkan resources for a texture, uploading if needed.
-    /// @param texture CPU-side texture to look up or upload.
+    /// @brief Get cached Vulkan resources for a texture or a white fallback entry.
+    /// @param texture CPU-side texture to look up.
     TextureResources& GetOrCreateTexture(const Texture& texture);
     /// @brief Get or allocate a descriptor set for an image view.
     /// @param imageView Image view to bind.
