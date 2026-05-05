@@ -131,10 +131,13 @@ class Tilemap;
  * - **Ping-Pong Mode**: Index bounces: 0, 1, ..., N-1, N-2, ..., 1, 0, 1, ...
  *
  * @par Time Complexity
- * - **Initialize**: worst-case O(V^2) with current implementation
- *   - BFS tile discovery is O(V), but queue front-erasure is linear
- *   - Cycle detection uses linear membership checks over connected tiles
- *   - DFS backtrack steps are bounded by O(V)
+ * @f[
+ * T_{Initialize} = O(\min(V, maxRouteLength))
+ * @f]
+ * - **Initialize**: O(V) for the collected reachable set, bounded by `maxRouteLength`
+ *   - BFS uses deque front removal and a visited array
+ *   - Cycle detection uses visited-array membership checks
+ *   - DFS backtrack steps are linear in the generated waypoint count
  * - **GetNextWaypoint**: O(1)
  *
  * @par Space Complexity
@@ -205,7 +208,7 @@ public:
     size_t GetWaypointCount() const { return m_Waypoints.size(); }
 
     /**
-     * @brief Reset iteration to first waypoint.
+     * @brief Clear all waypoints and return the route to an invalid default state.
      */
     void Reset()
     {
