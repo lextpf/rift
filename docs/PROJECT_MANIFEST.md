@@ -20,6 +20,30 @@ Relative paths inside the manifest are resolved relative to the manifest file's
 directory. The build copies the manifest next to the executable so Release and
 Debug runs use the same configuration.
 
+\htmlonly
+<pre class="mermaid">
+sequenceDiagram
+    participant Game
+    participant Manifest as "ProjectManifest"
+    participant FileSystem
+    participant Validator
+
+    Game->>Manifest: LoadDefaultOrFallback(result)
+    Manifest->>FileSystem: Probe working directory
+    alt Manifest found
+        Manifest->>FileSystem: Parse rift.project.json
+        Manifest->>Validator: Validate schema and assets
+        alt Validation has errors
+            Validator-->>Game: Diagnostics; startup fails
+        else Valid or warnings only
+            Manifest-->>Game: Loaded manifest
+        end
+    else No manifest found
+        Manifest-->>Game: BuiltInFallback()
+    end
+</pre>
+\endhtmlonly
+
 ## Schema
 
 ```json
