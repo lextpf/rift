@@ -89,10 +89,11 @@ gameHours = \frac{realSeconds \times 24 \times timeScale}{dayDuration}
 $$
 
 Default configuration:
-- `dayDuration = 600` (10 real minutes = 1 game day)
+- `TimeManager` default: `dayDuration = 24` (24 real seconds = 1 game day)
+- `Game::Initialize()` overrides this to `dayDuration = 240` (4 real minutes = 1 game day)
 - `timeScale = 1.0` (normal speed)
 
-At default settings, 1 real second = 0.04 game hours = 2.4 game minutes.
+At the game startup setting, 1 real second = 0.1 game hours = 6 game minutes.
 
 ## Celestial Bodies
 
@@ -188,13 +189,14 @@ Ambient light color smoothly interpolates between key times:
 
 | Time  | RGB                | Description      |
 |-------|--------------------|------------------|
-| 00:00 | (0.15, 0.15, 0.25) | Deep night blue  |
-| 05:30 | (0.6, 0.4, 0.5)    | Pre-dawn purple  |
-| 06:30 | (1.0, 0.8, 0.6)    | Golden sunrise   |
-| 08:00 | (1.0, 1.0, 1.0)    | Full daylight    |
-| 17:00 | (1.0, 0.95, 0.9)   | Afternoon warmth |
-| 19:00 | (1.0, 0.6, 0.4)    | Sunset orange    |
-| 20:30 | (0.3, 0.3, 0.5)    | Twilight blue    |
+| 00:00 | (0.30, 0.30, 0.45) | Deep night blue  |
+| 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn |
+| 05:00 | (0.85, 0.75, 0.70) | Dawn warm light starts |
+| 07:00 | (0.95, 0.93, 0.90) | Morning warm white |
+| 10:00 | (1.00, 1.00, 0.98) | Midday neutral daylight |
+| 18:00 | (0.95, 0.90, 0.82) | Afternoon to dusk warmth |
+| 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange |
+| 22:00 | (0.50, 0.50, 0.65) | Evening blue |
 
 **Interpolation:**
 
@@ -229,9 +231,10 @@ Stars fade in at dusk and fade out at dawn:
 
 $$
 starVisibility = \begin{cases}
-1.0 & \text{if } time < 5.0 \text{ or } time \geq 22.0 \\\\
+0.0 & \text{if weather is overcast} \\\\
+\frac{time - 18.0}{2.0} & \text{if } 18.0 \leq time < 20.0 \\\\
+1.0 & \text{if } time < 5.0 \text{ or } time \geq 20.0 \\\\
 1.0 - \frac{time - 5.0}{2.0} & \text{if } 5.0 \leq time < 7.0 \\\\
-\frac{time - 20.0}{2.0} & \text{if } 20.0 \leq time < 22.0 \\\\
 0.0 & \text{otherwise}
 \end{cases}
 $$
@@ -242,9 +245,9 @@ graph LR
     subgraph Visibility["Star Visibility over Time"]
         T0["0:00<br/>100%"] --> T5["5:00<br/>100%"]
         T5 --> T7["7:00<br/>0%"]
-        T7 --> T20["20:00<br/>0%"]
-        T20 --> T22["22:00<br/>100%"]
-        T22 --> T24["24:00<br/>100%"]
+        T7 --> T18["18:00<br/>0%"]
+        T18 --> T20["20:00<br/>100%"]
+        T20 --> T24["24:00<br/>100%"]
     end
 </pre>
 \endhtmlonly
@@ -319,7 +322,7 @@ stateDiagram-v2
 \endhtmlonly
 
 **Properties:**
-- Only appear when `starVisibility > 0.5`
+- Spawn/update only while `starVisibility > 0.3` in clear weather
 - Random spawn position along top/sides of screen
 - Travel at random angles (mostly downward)
 - Leave a fading trail
@@ -346,7 +349,7 @@ $$
 ```cpp
 TimeManager time;
 time.Initialize();
-time.SetDayDuration(600.0f);  // 10 minutes per day
+time.SetDayDuration(240.0f);  // Game startup setting: 4 minutes per day
 time.SetTime(6.0f);           // Start at sunrise
 
 // In game loop:
