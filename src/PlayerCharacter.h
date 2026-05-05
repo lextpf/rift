@@ -84,12 +84,14 @@ struct EnumTraits<CharacterType> : EnumTraitsBase<CharacterType, EnumTraits<Char
  *
  * @par Collision
  * - Strict mode: Full 16x16 hitbox check
- * - Center mode: Center-point only, allows corner cutting
- * - Corner cutting: Automatic sliding around obstacles
- * - Lane snapping: Aligns to tile centers during cardinal movement
+ * - Slide recovery: Tests
+ * axis-separated fallbacks when a diagonal target is blocked
+ * - Lane snapping: Aligns to tile
+ * centers during cardinal movement
  *
  * @par Animation
- * Walk cycle: [1, 0, 2, 0] at 0.15s/frame (walk) or 0.075s/frame (run)
+ * Walk cycle: [1, 0, 2, 0] at 0.15s/frame
+ * (walk) or 0.075s/frame (run)
  */
 class PlayerCharacter : public GameCharacter
 {
