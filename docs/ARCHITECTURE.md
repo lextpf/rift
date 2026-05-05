@@ -296,15 +296,17 @@ graph LR
 
     Tilemap["Tilemap"]:::primary
 
-    subgraph Layers["8 Tile Layers"]
+    subgraph Layers["10 Tile Layers"]
         L0["Ground"]:::data
         L1["Ground Detail"]:::data
         L2["Objects"]:::data
         L3["Objects2"]:::data
-        L4["Foreground"]:::data
-        L5["Foreground2"]:::data
-        L6["Overlay"]:::data
-        L7["Overlay2"]:::data
+        L4["Objects3"]:::data
+        L5["Foreground"]:::data
+        L6["Foreground2"]:::data
+        L7["Overlay"]:::data
+        L8["Overlay2"]:::data
+        L9["Overlay3"]:::data
     end
 
     subgraph Derived["Derived Data"]
@@ -325,9 +327,9 @@ graph LR
 Tiles are stored in flat arrays for cache-efficient iteration:
 
 ```cpp
-// Accessing tile at (x, y) in layer L
+// Accessing tile at (x, y) in dynamic layer L
 int index = y * mapWidth + x;
-int tileID = m_Layers[L][index];
+int tileID = m_Layers[L].tiles[index];
 ```
 
 ### Entity System
@@ -420,10 +422,10 @@ graph LR
 Rift favors **Structure of Arrays (SoA)** for frequently iterated data:
 
 ```cpp
-// Tilemap stores each layer as a flat array
-std::vector<int> m_Layer0;  // Ground tiles
-std::vector<int> m_Layer1;  // Ground detail
-// ... etc
+// Tilemap stores dynamic layers; each layer owns flat per-tile arrays
+std::vector<TileLayer> m_Layers;
+int groundTile = m_Layers[0].tiles[index];
+int detailTile = m_Layers[1].tiles[index];
 
 // Rather than Array of Structures:
 // std::vector<Tile> m_Tiles; // Each tile has all layer data
@@ -433,24 +435,26 @@ This improves cache utilization when rendering a single layer.
 
 ### Sprite Batching
 
-Both renderers batch sprites by texture to minimize draw calls:
+OpenGL batches consecutive sprites by texture to minimize draw calls. Vulkan currently submits
+each sprite quad directly, while still using persistent per-frame vertex buffers and cached
+descriptor sets:
 
 \htmlonly
 <pre class="mermaid">
 sequenceDiagram
     participant Game
-    participant Renderer
+    participant OpenGL
+    participant Vulkan
     participant GPU
 
-    Game->>Renderer: DrawSprite(tex1, ...)
-    Game->>Renderer: DrawSprite(tex1, ...)
-    Game->>Renderer: DrawSprite(tex2, ...)
-    Game->>Renderer: DrawSprite(tex1, ...)
+    Game->>OpenGL: DrawSprite(tex1, ...)
+    Game->>OpenGL: DrawSprite(tex1, ...)
+    OpenGL->>GPU: Flush batch (tex1, 2 sprites)
 
-    Note over Renderer: Batch by texture
-
-    Renderer->>GPU: Draw batch (tex1, 3 sprites)
-    Renderer->>GPU: Draw batch (tex2, 1 sprite)
+    Game->>Vulkan: DrawSprite(tex1, ...)
+    Vulkan->>GPU: vkCmdDraw(quad)
+    Game->>Vulkan: DrawSprite(tex1, ...)
+    Vulkan->>GPU: vkCmdDraw(quad)
 </pre>
 \endhtmlonly
 
@@ -470,7 +474,7 @@ The margin accounts for perspective distortion when 3D effects are enabled.
 
 1. Create a class implementing `IRenderer`
 2. Add enum value to `RendererAPI`
-3. Update `RendererFactory::Create()` and `IsAvailable()`
+3. Update `CreateRenderer()` and `IsRendererAvailable()`
 4. Implement all virtual methods
 
 ### Adding a New Entity Type
