@@ -38,10 +38,10 @@
  * many sprites into a single draw call dramatically improves performance.
  *
  * @par Why Batching Matters
- * | Scenario               | Draw Calls | Performance |
- * |------------------------|------------|-------------|
- * | 1000 sprites, no batch | 1000       | ~15 FPS     |
- * | 1000 sprites, batched  | 1-10       | ~500+ FPS   |
+ * - Many sprites without batching: one draw call per sprite, high
+ * driver overhead.
+ * - Many sprites with batching: one draw call per texture run, lower CPU
+ * overhead.
  *
  * @par Batch Flow
  * @htmlonly
@@ -78,11 +78,9 @@
  * @endcode
  *
  * @par Flush Triggers
- * The batch is flushed (submitted to GPU) when:
- * - **Texture changes**: New sprite uses different texture than current batch
- * - **Buffer full**: Batch reaches MAX_BATCH_SPRITES (10000 sprites)
- * - **Frame ends**: EndFrame() flushes any remaining geometry
- * - **State changes**: SetProjection(), blend mode changes, etc.
+ * Flush triggers include texture changes, a full batch buffer, frame end,
+ * and
+ * switches between sprite, rect, particle, or text rendering paths.
  *
  * @par Batch Types
  * | Batch Type  | Buffer                  | Trigger            |
@@ -116,7 +114,8 @@
  * in the m_Characters map.
  *
  * @see IRenderer Base interface with method documentation
- * @see VulkanRenderer Alternative Vulkan implementation
+ * @see VulkanRenderer Alternative
+ * Vulkan implementation
  */
 struct GLFWwindow;
 
