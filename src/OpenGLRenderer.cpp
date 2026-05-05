@@ -558,16 +558,17 @@ void OpenGLRenderer::SetupQuad()
 void OpenGLRenderer::DrawSprite(
     const Texture& texture, glm::vec2 position, glm::vec2 size, float rotation, glm::vec3 color)
 {
-    DrawSpriteRegion(texture,
-                     position,
-                     size,
-                     glm::vec2(0.0f),
-                     glm::vec2(1.0f),
-                     rotation,
-                     color,
-                     true,
-                     false,
-                     false);
+    DrawSpriteRegion(
+        texture,
+        position,
+        size,
+        glm::vec2(0.0f),
+        glm::vec2(static_cast<float>(texture.GetWidth()), static_cast<float>(texture.GetHeight())),
+        rotation,
+        color,
+        true,
+        false,
+        false);
 }
 
 void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
