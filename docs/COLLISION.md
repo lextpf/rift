@@ -89,25 +89,25 @@ Where:
 
 ### Movement and Collision Resolution
 
-When an entity moves, collision is checked against both tile grid and other entities:
+When an entity moves, collision is checked against both the tile grid and other entities. Player
+movement uses strict tile-overlap tests, then attempts axis-separated recovery so diagonal movement
+can slide along walls instead of stopping outright:
 
 \htmlonly
 <pre class="mermaid">
-sequenceDiagram
-    participant Entity
-    participant Physics
-    participant TileMap
-    participant Entities
-
-    Entity->>Physics: Move(velocity * dt)
-    Physics->>Physics: Save previous position
-    Physics->>TileMap: Check tile collisions
-    TileMap-->>Physics: Blocked tiles
-    Physics->>Physics: Adjust position (slide)
-    Physics->>Entities: Check entity collisions
-    Entities-->>Physics: Overlapping entities
-    Physics->>Physics: Resolve overlaps
-    Physics-->>Entity: Final position
+flowchart TD
+    A["Input velocity * dt"] --> B["Build target bottom-center"]
+    B --> C{"Strict AABB overlaps blocked tiles?"}
+    C -->|No| G["Accept target"]
+    C -->|Yes| D["Try X-only target"]
+    D --> E["Try Y-only target"]
+    E --> F{"Any axis target clear?"}
+    F -->|Yes| H["Slide along clear axis"]
+    F -->|No| I["Keep previous safe position"]
+    G --> J["Check player/NPC AABB overlap"]
+    H --> J
+    I --> J
+    J --> K["Final resolved position"]
 </pre>
 \endhtmlonly
 
@@ -131,29 +131,21 @@ if (CheckCollision(position)) {
 
 This allows diagonal movement to slide along walls rather than stopping completely.
 
-### Corner Cutting
+### Corner Handling
 
-The collision system supports **corner cutting** for smoother navigation around obstacles:
-
-```
-Without corner cutting:     With corner cutting:
-    +---+                       +---+
-    |   |                       |   |
-    | X |  Player stuck         | -->  Player slides past
-    |   |                       |   |
-+---+---+                   +---+---+
-|       |                   |       |
-```
-
-**Corner Tolerance:**
-
-When moving diagonally near a corner, the system checks if the entity could pass with a small tolerance:
+The collision system does not expose a single public "corner tolerance" value. It uses strict AABB
+overlap against blocked tiles, then applies movement-context helpers for sliding and lane snapping.
+The important invariant is that the final accepted position must not overlap any blocked tile:
 
 $$
-canCutCorner = (overlap < cornerTolerance)
+blocked(p) = \exists t \in overlappedTiles(p): AABB(p) \cap AABB(t) \neq \varnothing
 $$
 
-Default `cornerTolerance = 4` pixels.
+A diagonal move may still make progress when one axis is clear:
+
+$$
+accept(p_x, p_y) = \neg blocked(p_x, p_y) \lor \neg blocked(p_x, y_0) \lor \neg blocked(x_0, p_y)
+$$
 
 ## Elevation System
 
@@ -188,33 +180,23 @@ stateDiagram-v2
 
 **Route Generation:**
 
-Patrol routes are computed using a spanning tree traversal of walkable tiles:
+Patrol routes are computed from the navigation map:
 
-1. Start at NPC's spawn position
-2. Build a spanning tree of reachable tiles
-3. Select waypoints along the tree edges
-4. Create a cyclic route visiting all waypoints
+1. Start at the NPC spawn tile.
+2. Use BFS to collect reachable walkable tiles, bounded by `maxRouteLength`.
+3. If the reachable set forms a closed degree-2 cycle, walk it as a loop.
+4. Otherwise, use DFS with backtracking so consecutive waypoints remain adjacent.
 
 $$
-route = [waypoint_0, waypoint_1, ..., waypoint_n, waypoint_0]
+route = [waypoint_0, waypoint_1, ..., waypoint_n]
 $$
 
-### Pathfinding Algorithm
+### Patrol Traversal
 
-NPCs use a simple **direct line** pathfinding for short distances:
-
-```cpp
-glm::vec2 direction = normalize(target - current);
-velocity = direction * speed;
-```
-
-For longer paths or when obstacles block the direct line:
-
-1. Check direct path
-2. If blocked, try adjacent tiles
-3. Follow pre-computed patrol route
-
-**Future Enhancement:** A* pathfinding for dynamic obstacle avoidance.
+NPCs do not run dynamic A* pathfinding each frame. They follow the generated waypoint list, wait
+briefly at waypoints, and recalculate routes when navigation tiles change or an NPC is placed.
+Loop routes wrap from the last waypoint back to the first; non-loop routes ping-pong through the
+list.
 
 ## NPC Behavior
 
@@ -317,14 +299,15 @@ When debug mode is active:
 - Movement direction indicator
 - Hitbox visualization
 
-### Corner Cutting Overlay
+### Collision Response Overlay
 
-Shows which tile corners allow diagonal passage:
+Debug drawing focuses on the collision/navigation data and entity hitboxes. Use these overlays to
+verify which blocked tiles are causing slide or stop behavior:
 
 ```
 +---+---+
 | X | X |  X = blocked
-+---O---+  O = corner cut allowed
++---*---+  * = entity bottom-center / hitbox anchor
 |   |   |
 +---+---+
 ```
@@ -381,20 +364,19 @@ Before:           After:
 
 ### Navigation Painting
 
-Press N to toggle navigation edit mode:
+Press M to toggle navigation edit mode:
 
 ```
-Left-click:  Set tile as navigable
-Right-click: Set tile as non-navigable
+Right-click: Toggle the first tile, then drag to apply that same navigable/non-navigable state
 ```
 
 ### NPC Placement
 
-Press P to toggle NPC placement mode:
+Press N to toggle NPC placement mode:
 
 ```
 Left-click:  Place NPC of selected type
-Right-click: Remove NPC at cursor
+Left-click existing NPC: Remove NPC at cursor
 ```
 
 Patrol routes are auto-generated when NPCs are placed.
