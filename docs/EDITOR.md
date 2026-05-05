@@ -109,3 +109,24 @@ Reflection caveat: when reflecting a region that overlaps a no-projection struct
 `Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.h:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.h` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
 
 `UndoRedoStack` (`src/UndoRedoStack.h`) holds two deques of `std::unique_ptr<EditorCommand>`. New commands push to the undo stack and clear the redo stack; capacity overflow drops the oldest entry from the front. Stroke accumulators in `src/EditorStrokeAccumulators.h` batch per-frame mutations during a drag-paint into a single composite command at mouse-up.
+
+\htmlonly
+<pre class="mermaid">
+sequenceDiagram
+    participant Input as "Mouse Drag"
+    participant Accum as "Stroke Accumulator"
+    participant Cmd as "Composite Command"
+    participant Stack as "UndoRedoStack"
+    participant Tilemap
+
+    Input->>Accum: Touch tile/value changes
+    Input->>Tilemap: Apply live preview edits
+    Input->>Accum: Mouse released
+    Accum->>Cmd: Build command from captured before/after state
+    Cmd->>Stack: Push undo, clear redo
+    Stack->>Cmd: Undo()
+    Cmd->>Tilemap: Restore before state
+    Stack->>Cmd: Redo()
+    Cmd->>Tilemap: Restore after state
+</pre>
+\endhtmlonly
