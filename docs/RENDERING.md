@@ -370,40 +370,70 @@ $$
 
 This is applied during UV calculation so sprite sheets work correctly regardless of how images are loaded.
 
-**OpenGL vs Vulkan:**
+**Backend convention:**
 
-| API    | Texture Origin | Framebuffer Origin |
-|--------|----------------|--------------------|
-| OpenGL | Bottom-left    | Bottom-left        |
-| Vulkan | Top-left       | Top-left           |
+| API    | Raw API convention | Rift sampling convention |
+|--------|--------------------|--------------------------|
+| OpenGL | Texture origin is bottom-left | `flipY=true` maps top-left image pixels to top-left sprites |
+| Vulkan | Runtime viewport and UV handling are explicit | Uses the same `flipY=true` convention as OpenGL for texture compatibility |
 
 Rift abstracts this via `IRenderer::RequiresYFlip()`.
 
-## Sprite Batching
+### Vulkan Texture Uploads
 
-Both renderers batch consecutive sprites that share the same texture into a single draw call. When the texture changes, the current batch is flushed and a new batch begins:
+Vulkan texture uploads must happen outside an active render pass. A draw call that references a
+texture without a Vulkan image view uses the renderer's white fallback texture rather than stalling
+to upload mid-frame:
 
 \htmlonly
 <pre class="mermaid">
 sequenceDiagram
     participant Game
-    participant Renderer
-    participant Batch as "Batch Buffer"
+    participant Renderer as "VulkanRenderer"
+    participant Texture
     participant GPU
 
-    Game->>Renderer: DrawSprite(tex1, pos1)
-    Renderer->>Batch: Add vertices
+    Game->>Renderer: UploadTexture(texture)
+    Renderer->>Texture: CreateVulkanTexture(...)
+    Texture->>GPU: Staging copy + image layout transition
+    Game->>Renderer: DrawSpriteRegion(texture, ...)
+    Renderer->>Texture: GetVulkanImageView()
+    alt Texture uploaded
+        Renderer->>GPU: Bind descriptor and draw textured quad
+    else Texture missing image view
+        Renderer->>GPU: Bind white fallback and draw quad
+    end
+</pre>
+\endhtmlonly
 
-    Game->>Renderer: DrawSprite(tex1, pos2)
-    Renderer->>Batch: Add vertices
+## Sprite Batching
 
-    Game->>Renderer: DrawSprite(tex2, pos3)
-    Note over Renderer: Texture changed!
-    Renderer->>GPU: Flush batch (tex1)
-    Renderer->>Batch: Add vertices (tex2)
+OpenGL batches consecutive sprites that share the same texture into a single draw call. When the
+texture changes, the current OpenGL batch is flushed and a new batch begins. Vulkan currently
+submits each quad directly with cached descriptor sets and persistent per-frame vertex buffers.
 
-    Game->>Renderer: EndFrame()
-    Renderer->>GPU: Flush remaining
+\htmlonly
+<pre class="mermaid">
+sequenceDiagram
+    participant Game
+    participant OpenGL
+    participant GLBatch as "OpenGL Batch"
+    participant Vulkan
+    participant GPU
+
+    Game->>OpenGL: DrawSprite(tex1, pos1)
+    OpenGL->>GLBatch: Add vertices
+
+    Game->>OpenGL: DrawSprite(tex1, pos2)
+    OpenGL->>GLBatch: Add vertices
+
+    Game->>OpenGL: DrawSprite(tex2, pos3)
+    Note over OpenGL: Texture changed
+    OpenGL->>GPU: Flush batch (tex1)
+    OpenGL->>GLBatch: Add vertices (tex2)
+
+    Game->>Vulkan: DrawSprite(tex1, pos1)
+    Vulkan->>GPU: vkCmdDraw(quad)
 </pre>
 \endhtmlonly
 
@@ -429,7 +459,7 @@ struct BatchVertex {
 The batch is flushed when:
 1. The batch buffer is full (vertices)
 2. Texture changes
-3. Blend mode changes
+3. OpenGL blend mode changes for rect/particle batches
 4. Frame ends
 
 ## Perspective Effects
@@ -585,7 +615,8 @@ $$
 C_{out} = C_{src} \times \alpha_{src} + C_{dst}
 $$
 
-Enabled via `DrawSpriteAlpha(..., additive=true)`.
+Enabled via `DrawSpriteAlpha(..., additive=true)` on OpenGL. Vulkan currently ignores the
+`additive` flag until it has a second additive-blend pipeline.
 
 ## Render Order
 
@@ -755,8 +786,8 @@ classDiagram
         +DrawSprite()
         +DrawSpriteRegion()
         +DrawSpriteAlpha()
-        +DrawFilledRect()
-        +SetProjectionMode()
+        +DrawColoredRect()
+        +SetProjection()
         +RequiresYFlip() bool
     }
 
@@ -776,19 +807,20 @@ classDiagram
         +CreatePipeline()
     }
 
-    class RendererFactory {
-        +Create(backend)$ IRenderer*
-        +GetAvailableBackends()$ vector
+    class RendererFactory_h {
+        <<free functions>>
+        +CreateRenderer(api, window)$ unique_ptr
+        +IsRendererAvailable(api)$ bool
     }
 
     IRenderer <|.. OpenGLRenderer : implements
     IRenderer <|.. VulkanRenderer : implements
-    RendererFactory ..> IRenderer : creates
+    RendererFactory_h ..> IRenderer : creates
 
     style IRenderer fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
     style OpenGLRenderer fill:#134e3a,stroke:#10b981,color:#e2e8f0
     style VulkanRenderer fill:#134e3a,stroke:#10b981,color:#e2e8f0
-    style RendererFactory fill:#4a2020,stroke:#ef4444,color:#e2e8f0
+    style RendererFactory_h fill:#4a2020,stroke:#ef4444,color:#e2e8f0
 </pre>
 \endhtmlonly
 
@@ -799,13 +831,15 @@ The `IRenderer` interface provides all drawing operations. Game code calls these
 ```cpp
 // Game code doesn't know if this is OpenGL or Vulkan
 renderer->DrawSprite(texture, position, size, rotation);
-renderer->DrawFilledRect(rect, color);
+renderer->DrawColoredRect(position, size, color);
 ```
 
-The `RendererFactory` creates the appropriate backend based on configuration or availability:
+`RendererFactory.h` provides free helper functions that create the appropriate backend based on
+configuration or availability:
 
 ```cpp
-IRenderer* renderer = RendererFactory::Create(RenderBackend::OpenGL);
+RendererAPI api = RendererAPI::OpenGL;
+std::unique_ptr<IRenderer> renderer = CreateRenderer(api, window);
 ```
 
 ## See Also
