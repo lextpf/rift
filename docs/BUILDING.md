@@ -169,7 +169,7 @@ If CMake reports missing dependencies (GLFW, GLM, GLAD, stb_image), see the [Set
 | Error                              | Solution                                 |
 |------------------------------------|------------------------------------------|
 | "Failed to create Vulkan instance" | Update GPU drivers, reinstall Vulkan SDK |
-| "No suitable GPU found"            | Ensure GPU supports Vulkan 1.2+          |
+| "No suitable GPU found"            | Ensure GPU supports Vulkan 1.0 and has current drivers |
 | "Shader compilation failed"        | Run shader compilation scripts           |
 
 ### Runtime Errors
