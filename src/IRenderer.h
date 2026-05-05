@@ -215,11 +215,26 @@ public:
     /**
      * @brief Draw a sprite using the backend's default texture region.
      *
+     *
      * Position is the **top-left corner** of the sprite.
-     * Current backend implementations delegate to DrawSpriteRegion with
-     * `texCoord=(0,0)` and `texSize=(1,1)` as **normalized** coordinates,
-     * meaning the entire texture is sampled.
-     * Use DrawSpriteRegion/DrawSpriteAtlas for explicit region control.
+     * DrawSprite samples the full texture
+     * extent. Use DrawSpriteRegion for
+     * pixel-coordinate subregions or DrawSpriteAtlas for
+     * normalized UV control.
+     *
+     * @par Region Coordinate Conventions
+     *
+     * DrawSpriteRegion uses pixel units:
+     * @f[
+     * \vec{uv}_{min} =
+     * \frac{\vec{texCoord}}{\vec{textureSize}}
+     * @f]
+     * @f[
+     * \vec{uv}_{max} =
+     * \frac{\vec{texCoord} + \vec{texSize}}{\vec{textureSize}}
+     * @f]
+     * DrawSpriteAtlas
+     * uses normalized UVs directly in @f$[0,1]@f$.
      *
      * @par Transformation Order
      * 1. Scale to size
@@ -675,12 +690,20 @@ public:
     /**
      * @brief Ensure a texture is uploaded to GPU memory.
      *
-     * If the texture hasn't been uploaded yet, this creates the GPU
-     * resource. Safe to call multiple times.
+     * If the texture hasn't been uploaded yet, this creates the GPU resource.
+     * Safe to call
+     * multiple times.
      *
-     * @par Lazy Loading
-     * Textures are typically loaded from disk on first use.
-     * This method forces immediate upload if needed.
+     * @par Backend Notes
+     * CPU-side texture data is loaded
+     * separately by Texture. OpenGL can lazily
+     * create texture objects during draw setup,
+     * while Vulkan callers should
+     * upload required textures before the frame that samples
+     * them. A Vulkan
+     * draw that sees no image view may use a white fallback instead of
+     * uploading
+     * mid-render-pass.
      *
      * @param texture Texture to upload.
      */
