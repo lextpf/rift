@@ -155,13 +155,14 @@ bool VulkanRenderer::Init()
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandPool();
+        // Shared fence must exist before the first upload.
+        CreateSyncObjects();
         CreateBuffers();
         CreateDescriptorPool();
         CreateTextureSampler();
         CreateWhiteTexture();
         LoadFont();
         CreateCommandBuffers();
-        CreateSyncObjects();
 
         Logger::Info(LOG_SUBSYSTEM, "Vulkan renderer initialized successfully!");
         return true;
@@ -597,17 +598,18 @@ void VulkanRenderer::CreateLogicalDevice()
 void VulkanRenderer::CreateSwapchain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &capabilities);
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &capabilities));
 
-    uint32_t formatCount;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr);
+    uint32_t formatCount = 0;
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr));
     if (formatCount == 0)
     {
-        Logger::Error(LOG_SUBSYSTEM, "Vulkan: no surface formats available");
-        return;
+        throw std::runtime_error(
+            "Vulkan: no surface formats available for this physical device/surface");
     }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, formats.data());
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        m_PhysicalDevice, m_Surface, &formatCount, formats.data()));
 
     // Prefer UNORM format to match OpenGL's non-gamma-corrected output
     // SRGB format applies gamma correction which makes textures appear brighter
@@ -621,12 +623,17 @@ void VulkanRenderer::CreateSwapchain()
         }
     }
 
-    uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        m_PhysicalDevice, m_Surface, &presentModeCount, nullptr);
+    uint32_t presentModeCount = 0;
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        m_PhysicalDevice, m_Surface, &presentModeCount, nullptr));
+    if (presentModeCount == 0)
+    {
+        throw std::runtime_error(
+            "Vulkan: no present modes available for this physical device/surface");
+    }
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        m_PhysicalDevice, m_Surface, &presentModeCount, presentModes.data());
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        m_PhysicalDevice, m_Surface, &presentModeCount, presentModes.data()));
 
     // Prefer uncapped presentation when available so app-side FPS limiting can work.
     // Fallback order:
