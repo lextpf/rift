@@ -601,7 +601,8 @@ void VulkanRenderer::CreateSwapchain()
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &capabilities));
 
     uint32_t formatCount = 0;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr));
+    VK_CHECK(
+        vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr));
     if (formatCount == 0)
     {
         throw std::runtime_error(
