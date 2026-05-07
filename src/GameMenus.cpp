@@ -241,7 +241,7 @@ void Game::LoadTitleScreenWorld()
     // Replace the particle zones with one zone per atmospheric particle
     // type, each spanning the whole map. The ParticleSystem caps each zone's
     // active count (configured in Initialize), so total density stays bounded.
-    // Excluded: Rain / Snow (weather we don't want at night) and Lantern.
+    // Excluded: Lantern (needs explicit lit-zone placement near a light source).
     if (auto* zones = m_Tilemap.GetParticleZonesMutable())
     {
         zones->clear();
@@ -252,6 +252,8 @@ void Game::LoadTitleScreenWorld()
 
         constexpr ParticleType TITLE_PARTICLE_TYPES[] = {
             ParticleType::Firefly,
+            ParticleType::Rain,
+            ParticleType::Snow,
             ParticleType::Fog,
             ParticleType::Sparkles,
             ParticleType::Wisp,
