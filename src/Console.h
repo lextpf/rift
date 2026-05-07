@@ -60,6 +60,11 @@ public:
     /// Erase the character before the cursor (no-op if at start).
     void OnBackspace();
 
+    /// Clear the entire input line and reset the cursor to position 0.
+    /// Used by the Ctrl+Backspace shortcut. Does not affect history or
+    /// scrollback.
+    void OnClearLine();
+
     /// Erase the character at the cursor (no-op if at end).
     void OnDelete();
 
@@ -205,12 +210,13 @@ public:
 
     // ---------------- Input event entry points ----------------
 
-    /// GLFW char callback path. Filters out the toggle key glyphs (`~`, `\``)
-    /// so opening the console doesn't insert the toggle character.
+    /// GLFW char callback path. Filters out the toggle-key glyphs (tilde and
+    /// grave accent) so opening the console doesn't insert the toggle character.
     void OnChar(std::uint32_t codepoint);
 
     void OnEnter();
     void OnBackspace();
+    void OnClearLine();
     void OnDelete();
     void OnTab();
     void OnUp();
