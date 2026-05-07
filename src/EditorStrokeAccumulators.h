@@ -36,9 +36,23 @@
 namespace
 {
 
-// Pack tile coords + layer into a single 64-bit key for unordered_map.
-// 21 bits per axis covers up to 2,097,152 tiles - far beyond any conceivable
-// map size. Layer fits in 4 bits (10 layers).
+/// @brief Pack tile coordinates and a layer index into a stable 64-bit key
+/// suitable for unordered_map dedup during a drag stroke.
+///
+/// Layout (low bits to high):
+/// @f[ \mathit{key} = (\mathit{layer} \ll 42) \mid ((y \mathbin{\&} \mathtt{0x1FFFFF}) \ll 21) \mid
+/// (x \mathbin{\&} \mathtt{0x1FFFFF}) @f]
+///
+/// 21 bits per axis cover maps up to 2,097,152 tiles wide or tall - far
+/// beyond any conceivable hand-authored map. Layer fits in 4 of the high 22
+/// bits (10 layers today; room to grow). Negative coordinates are masked into
+/// the same 21-bit window, which is fine because per-stroke dedup only ever
+/// compares keys generated from the same coordinate system in the same frame.
+///
+/// @param x Tile column.
+/// @param y Tile row.
+/// @param layer Layer index (0-based).
+/// @return Stable 64-bit key for unordered_map lookup.
 inline std::uint64_t MakeStrokeKey(int x, int y, std::size_t layer)
 {
     return (static_cast<std::uint64_t>(layer) << 42) |
