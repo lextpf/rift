@@ -2,6 +2,9 @@
 #include "DialogueTypes.h"
 #include "Game.h"
 
+#include "AmbienceConfig.h"
+
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -267,6 +270,107 @@ void DrawRoundedRectBorder(IRenderer& renderer,
             color);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Dialogue panel helpers (translucent slate + ribbon + selection triangle).
+// ---------------------------------------------------------------------------
+
+/// Snap a virtual-pixel coordinate to the nearest screen pixel boundary so
+/// border edges don't fringe at fractional zoom levels.
+float SnapToPixel(float value, float z)
+{
+    if (z <= 0.0f)
+        return value;
+    return std::floor(value / z + 0.5f) * z;
+}
+
+/// Translucent dark slate panel: single rgba fill + 1 px lighter border on all
+/// four edges. The fill's alpha (multiplied by fadeAlpha for scale-in fade)
+/// lets the world show through, so the panel harmonizes with whatever's behind
+/// it instead of having to pick a color that suits day, night, grass, and sky
+/// simultaneously. Replaces the prior wood-frame + parchment + portrait combo.
+void DrawSlatePanel(IRenderer& renderer, glm::vec2 pos, glm::vec2 size, float z, float fadeAlpha)
+{
+    const float pxOne = 1.0f * z;
+    const glm::vec4 fill(ambience::DIALOGUE_PANEL_FILL_RGB,
+                         ambience::DIALOGUE_PANEL_FILL_ALPHA * fadeAlpha);
+    const glm::vec4 border(ambience::DIALOGUE_PANEL_BORDER, fadeAlpha);
+
+    renderer.DrawColoredRect(pos, size, fill);
+    // 1 px border on all four edges.
+    renderer.DrawColoredRect(pos, glm::vec2(size.x, pxOne), border);
+    renderer.DrawColoredRect(
+        glm::vec2(pos.x, pos.y + size.y - pxOne), glm::vec2(size.x, pxOne), border);
+    renderer.DrawColoredRect(pos, glm::vec2(pxOne, size.y), border);
+    renderer.DrawColoredRect(
+        glm::vec2(pos.x + size.x - pxOne, pos.y), glm::vec2(pxOne, size.y), border);
+}
+
+/// Small > triangle (4x7 px) replacing the additive glow on the selected option.
+/// Widths form a symmetric kite around the width-4 peak so the bottom edge
+/// closes cleanly instead of being clipped one row short.
+void DrawAccentTriangle(IRenderer& renderer, glm::vec2 pos, glm::vec3 accent, float z, float alpha)
+{
+    static constexpr int widths[] = {1, 2, 3, 4, 3, 2, 1};  // 7-row right-pointing triangle
+    constexpr int rowCount = static_cast<int>(sizeof(widths) / sizeof(widths[0]));
+    const float pxOne = 1.0f * z;
+    const glm::vec4 c(accent, alpha);
+    for (int row = 0; row < rowCount; ++row)
+    {
+        renderer.DrawColoredRect(glm::vec2(pos.x, pos.y + static_cast<float>(row) * pxOne),
+                                 glm::vec2(static_cast<float>(widths[row]) * pxOne, pxOne),
+                                 c);
+    }
+}
+
+/// Speaker name ribbon at the top-left of the dialogue panel. Background is
+/// the per-NPC accent color; text is always cream + black outline (the
+/// hardcoded black outline gives definition against any accent background).
+void DrawSpeakerRibbon(IRenderer& renderer,
+                       glm::vec2 anchorTopLeft,
+                       const std::string& name,
+                       glm::vec3 accent,
+                       float z,
+                       float fadeAlpha,
+                       float textScale,
+                       float outlineSize)
+{
+    if (name.empty())
+        return;
+    const float pad = ambience::DIALOGUE_RIBBON_PADDING_X * z;
+    const float pxOne = 1.0f * z;
+    const float ribbonH = ambience::DIALOGUE_RIBBON_HEIGHT * z;
+    const float nameW = renderer.GetTextWidth(name, textScale);
+    const float ribbonW = nameW + 2.0f * pad;
+
+    const glm::vec4 bg(accent, 0.95f * fadeAlpha);
+    const glm::vec4 border(accent * 0.7f, 0.6f * fadeAlpha);
+
+    renderer.DrawColoredRect(anchorTopLeft, glm::vec2(ribbonW, ribbonH), bg);
+    // 1px border around the ribbon for separation
+    renderer.DrawColoredRect(anchorTopLeft, glm::vec2(ribbonW, pxOne), border);
+    renderer.DrawColoredRect(glm::vec2(anchorTopLeft.x, anchorTopLeft.y + ribbonH - pxOne),
+                             glm::vec2(ribbonW, pxOne),
+                             border);
+    renderer.DrawColoredRect(anchorTopLeft, glm::vec2(pxOne, ribbonH), border);
+    renderer.DrawColoredRect(glm::vec2(anchorTopLeft.x + ribbonW - pxOne, anchorTopLeft.y),
+                             glm::vec2(pxOne, ribbonH),
+                             border);
+
+    // Always render the ribbon name as light fill + black outline (the renderer's
+    // outline is hardcoded black). The black outline gives definition against any
+    // accent background; the cream fill keeps it readable.
+    const glm::vec3 textColor = ambience::DIALOGUE_RIBBON_TEXT_COLOR;
+
+    const float ascent = renderer.GetTextAscent(textScale);
+    const float textY = anchorTopLeft.y + (ribbonH - ascent) * 0.5f + ascent;
+    renderer.DrawText(name,
+                      glm::vec2(anchorTopLeft.x + pad, textY),
+                      textScale,
+                      textColor,
+                      outlineSize,
+                      fadeAlpha);
+}
 }  // namespace
 
 NonPlayerCharacter& Game::GetDialogueNPC()
@@ -358,243 +462,235 @@ void Game::RenderDialogueTreeBox()
         return;
     }
 
-    // Get world dimensions for positioning, adjusted for zoom
-    float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
-    float baseWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    float worldWidth = baseWorldWidth / m_Camera.GetState().zoom;
-    float worldHeight = baseWorldHeight / m_Camera.GetState().zoom;
+    // World-space dimensions, zoom-adjusted (unchanged behavior).
+    const float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
+    const float baseWorldHeight =
+        static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
+    const float worldWidth = baseWorldWidth / m_Camera.GetState().zoom;
+    const float worldHeight = baseWorldHeight / m_Camera.GetState().zoom;
 
-    // Scale factor for UI elements, inverse of zoom so they appear constant size on screen
-    float z = 1.0f / m_Camera.GetState().zoom;
+    // Inverse-zoom so UI sizes are constant on screen across zoom levels.
+    const float z = 1.0f / m_Camera.GetState().zoom;
 
-    // Fade-in animation
+    // Fade-in animation (smoothstep over 0.2s - preserved from the old path).
     constexpr float kFadeDuration = 0.2f;
-    float fadeT = std::min(1.0f, m_DialogueBoxFadeTimer / kFadeDuration);
-    float fadeAlpha = fadeT * fadeT * (3.0f - 2.0f * fadeT);  // smoothstep
+    const float fadeT = std::min(1.0f, m_DialogueBoxFadeTimer / kFadeDuration);
+    const float fadeAlpha = fadeT * fadeT * (3.0f - 2.0f * fadeT);
 
-    // Dialogue box dimensions and position (fixed at bottom of visible screen)
+    // Panel rect (preserved 90% width, 60px height, bottom-anchored).
     float boxWidth = baseWorldWidth * 0.9f * z;
     float boxHeight = 60.0f * z;
     float boxX = (worldWidth - boxWidth) * 0.5f;
     float boxY = worldHeight - boxHeight - (10.0f * z);
 
-    float r = 3.0f * z;  // Corner radius
-    float s = 1.0f * z;  // Step size (1 pixel per step)
-
-    glm::vec2 boxPos(boxX, boxY);
-    glm::vec2 boxSize(boxWidth, boxHeight);
-
-    // Drop shadow
-    float shadowOff = 2.0f * z;
-    glm::vec4 shadowColor(0.0f, 0.0f, 0.0f, 0.15f * fadeAlpha);
-    DrawFilledRoundedRect(
-        *m_Renderer, glm::vec2(boxX + shadowOff, boxY + shadowOff), boxSize, shadowColor, r, s);
-
-    // Gradient background (lighter/more transparent top, darker bottom)
-    glm::vec4 bgTop(0.26f, 0.25f, 0.24f, 0.82f * fadeAlpha);
-    glm::vec4 bgBot(0.22f, 0.21f, 0.20f, 0.95f * fadeAlpha);
-    DrawFilledRoundedRectGradient(*m_Renderer, boxPos, boxSize, bgTop, bgBot, r, s);
-
-    // Outer border - muted, subtle, following the rounded shape
-    float bw = 1.0f * z;
-    glm::vec4 borderColorOuter(0.50f, 0.48f, 0.45f, 0.8f * fadeAlpha);
-    DrawRoundedRectBorder(*m_Renderer, boxPos, boxSize, borderColorOuter, r, s, bw);
-
-    // Inner border - subtle accent, following the rounded shape
-    float ibo = 3.0f * z;  // inner border offset
-    float ibw = 1.0f * z;
-    glm::vec4 borderColorInner(0.42f, 0.40f, 0.37f, 0.5f * fadeAlpha);
-    m_Renderer->DrawColoredRect(glm::vec2(boxX + ibo + r, boxY + ibo),
-                                glm::vec2(boxWidth - ibo * 2 - r * 2, ibw),
-                                borderColorInner);  // Top
-    m_Renderer->DrawColoredRect(glm::vec2(boxX + ibo + r, boxY + boxHeight - ibo - ibw),
-                                glm::vec2(boxWidth - ibo * 2 - r * 2, ibw),
-                                borderColorInner);  // Bottom
-    m_Renderer->DrawColoredRect(glm::vec2(boxX + ibo, boxY + ibo + r),
-                                glm::vec2(ibw, boxHeight - ibo * 2 - r * 2),
-                                borderColorInner);  // Left
-    m_Renderer->DrawColoredRect(glm::vec2(boxX + boxWidth - ibo - ibw, boxY + ibo + r),
-                                glm::vec2(ibw, boxHeight - ibo * 2 - r * 2),
-                                borderColorInner);  // Right
-
-    float padding = 10.0f * z;
-    float textScale = 0.18f * z;
-    float lineHeight = 5.5f * z;
-    float contentTopMargin = 4.0f * z;  // Extra space at top for nameplate
-    float contentStartY = boxY + padding + contentTopMargin;
-    float currentY = contentStartY;
-
-    // Get text ascent for proper alignment
-    float textAscent = m_Renderer->GetTextAscent(textScale);
-    float outlineSize = 2.0f;  // Constant outline size
-    // TODO: Scale outlineSize by z to keep stroke weight visually consistent across zoom levels.
-    float textAlpha = fadeAlpha;
-
-    // Calculate available content height
-    float contentBottomY = boxY + boxHeight - padding;
-    float availableHeight = contentBottomY - contentStartY;
-
-    float speakerHeight = 0.0f;
-    if (!node->speaker.empty())
+    // Subtle scale-in: tightens from 1.04 -> 1.00 during fade-in.
     {
-        // Speaker nameplate background
-        float speakerScale = textScale * 1.2f;
-        float speakerAscent = m_Renderer->GetTextAscent(speakerScale);
-        float namePadding = 4.0f * z;  // Padding on left and right inside nameplate
-        float actualNameWidth = m_Renderer->GetTextWidth(node->speaker, speakerScale);
-        float nameWidth = actualNameWidth + namePadding * 2;
-        float nameHeight = speakerAscent + 4.0f * z;
-        float nameX = boxX + padding - namePadding;
-        float nameY = currentY - speakerAscent - 2.0f * z;
-
-        // Nameplate background - darker muted gold, with rounded corners
-        glm::vec4 nameBg(0.38f, 0.36f, 0.30f, 0.9f * fadeAlpha);
-        float nr = 2.0f * z;  // Nameplate corner radius
-        float ns = 1.0f * z;
-        glm::vec2 namePos(nameX, nameY);
-        glm::vec2 nameSize(nameWidth, nameHeight);
-        DrawFilledRoundedRect(*m_Renderer, namePos, nameSize, nameBg, nr, ns);
-
-        // Nameplate border - subtle, following rounded shape
-        glm::vec4 nameBorder(0.50f, 0.48f, 0.44f, 0.5f * fadeAlpha);
-        float nb = 1.0f * z;
-        DrawRoundedRectBorder(*m_Renderer, namePos, nameSize, nameBorder, nr, ns, nb);
-
-        glm::vec3 speakerColor(0.85f, 0.75f, 0.40f);
-        m_Renderer->DrawText(node->speaker,
-                             glm::vec2(boxX + padding, currentY - 1.0f * z),
-                             speakerScale,
-                             speakerColor,
-                             outlineSize,
-                             textAlpha);
-        speakerHeight = lineHeight + 4.0f * z;
-        currentY += speakerHeight;
+        const float scaleFactor =
+            ambience::DIALOGUE_BOX_SCALE_END +
+            (ambience::DIALOGUE_BOX_SCALE_START - ambience::DIALOGUE_BOX_SCALE_END) *
+                (1.0f - fadeAlpha);
+        if (scaleFactor != 1.0f)
+        {
+            const float sw = boxWidth * scaleFactor;
+            const float sh = boxHeight * scaleFactor;
+            boxX -= (sw - boxWidth) * 0.5f;
+            boxY -= (sh - boxHeight) * 0.5f;
+            boxWidth = sw;
+            boxHeight = sh;
+        }
     }
 
-    const float maxTextWidth = boxWidth - padding * 2;
+    // Pixel-snap so the panel border doesn't fringe at fractional zoom levels.
+    boxX = SnapToPixel(boxX, z);
+    boxY = SnapToPixel(boxY, z);
+
+    const glm::vec2 boxPos(boxX, boxY);
+    const glm::vec2 boxSize(boxWidth, boxHeight);
+    const float padInner = ambience::DIALOGUE_PANEL_PADDING * z;
+
+    // 1) Translucent slate panel (single fill + 1 px border on all four edges).
+    DrawSlatePanel(*m_Renderer, boxPos, boxSize, z, fadeAlpha);
+
+    // Per-NPC accent for the speaker ribbon background. Sampled lazily from the
+    // sprite (or player sprite if it's a player-turn line); fallback gold otherwise.
+    glm::vec3 accent = ambience::DIALOGUE_ACCENT_FALLBACK;
+    const bool isPlayerTurn =
+        !node->speaker.empty() && (node->speaker == "Player" || node->speaker == "You");
+    if (isPlayerTurn)
+    {
+        accent = m_Player.GetAccentColor();
+    }
+    else if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
+    {
+        accent = GetDialogueNPC().GetAccentColor();
+    }
+
+    // Layout constants for the body text area.
+    const float padding = 10.0f * z;
+    const float textScale = 0.18f * z;
+    const float lineHeight = 5.5f * z;
+    // Both ribbon and body use the same outline weight (renderer's outline is
+    // black). Pairing it with a *light* fill - DIALOGUE_BODY_TEXT_COLOR /
+    // DIALOGUE_RIBBON_TEXT_COLOR - produces the classic outlined-text look:
+    // crisp definition on the slate panel AND against any per-NPC accent ribbon.
+    const float ribbonOutlineSize = 2.0f;
+    const float bodyOutlineSize = 2.0f;
+    const float textAlpha = fadeAlpha;
+    const float textAscent = m_Renderer->GetTextAscent(textScale);
+
+    // Text area: full panel width minus inner padding (no portrait pane).
+    const float textAreaLeft = boxX + padInner;
+    const float textAreaTop = boxY + padInner;
+    const float textAreaRight = boxX + boxWidth - padInner;
+    const float textAreaBottom = boxY + boxHeight - padInner;
+    const float maxTextWidth = textAreaRight - textAreaLeft;
+
+    // 4) Speaker ribbon: inside the panel, anchored to the top of the text area
+    // (right of the portrait if one is drawn). Pushes the body text below.
+    float bodyTextStartY = textAreaTop + textAscent;
+    float speakerHeightUsed = 0.0f;
+    if (!node->speaker.empty())
+    {
+        const float ribbonScale = textScale * 1.2f;
+        const float ribbonY = textAreaTop;
+        const float ribbonX = textAreaLeft;
+        DrawSpeakerRibbon(*m_Renderer,
+                          glm::vec2(SnapToPixel(ribbonX, z), SnapToPixel(ribbonY, z)),
+                          node->speaker,
+                          accent,
+                          z,
+                          fadeAlpha,
+                          ribbonScale,
+                          ribbonOutlineSize);
+
+        // Push body text below the ribbon (with a small gap).
+        speakerHeightUsed = ambience::DIALOGUE_RIBBON_HEIGHT * z + 2.0f * z;
+        bodyTextStartY = textAreaTop + speakerHeightUsed + textAscent;
+    }
+    const float availableHeight = textAreaBottom - (textAreaTop + speakerHeightUsed);
+
     auto allLines =
         WrapText(node->text,
                  maxTextWidth,
                  [&](const std::string& s) { return m_Renderer->GetTextWidth(s, textScale); });
 
     const auto& visibleOptions = m_DialogueManager.GetVisibleOptions();
-    int numOptions = static_cast<int>(visibleOptions.size());
+    const int numOptions = static_cast<int>(visibleOptions.size());
 
-    // Text pagination: the dialogue box has a fixed pixel height. We need to
-    // fit the speaker name, NPC text, and response options all inside it.
-    // Options are anchored to the bottom, so text gets whatever space remains.
-    // If the text doesn't fit, we split it into pages the player can advance.
-    float heightAfterSpeaker = availableHeight - speakerHeight;
-    int totalLines = static_cast<int>(allLines.size());
-
-    // Subtract the space reserved for response options at the bottom.
-    // The (padding - optionsBottomPadding) term reclaims unused padding between
-    // the last text line and the first option.
-    float optionsBottomPadding = 7.0f * z;
+    // 5) Pagination math (preserved from the old path; measured against the new
+    // text area's bounds instead of the gradient panel).
+    const int totalLines = static_cast<int>(allLines.size());
+    const float optionsBottomPadding = 7.0f * z;
     float effectiveOptionsSpace =
         static_cast<float>(numOptions) * lineHeight - (padding - optionsBottomPadding);
     if (effectiveOptionsSpace < 0)
         effectiveOptionsSpace = 0;
-    float spaceForText = heightAfterSpeaker - effectiveOptionsSpace;
-    // +1 because int truncation loses a partial line that still fits
+    const float spaceForText = availableHeight - effectiveOptionsSpace;
     int maxTextLines = static_cast<int>(spaceForText / lineHeight) + 1;
     if (maxTextLines < 1)
         maxTextLines = 1;
 
-    bool everythingFits = (totalLines <= maxTextLines);
+    const bool everythingFits = (totalLines <= maxTextLines);
     int totalPages = 1;
-
     if (!everythingFits)
     {
-        // Ceiling division: how many pages of maxTextLines to show all text.
-        // Belt-and-suspenders guard: ensure divisor is never zero even if the
-        // earlier guard at line 488 is accidentally bypassed by future edits.
         maxTextLines = std::max(1, maxTextLines);
-        int remainingLines = totalLines - maxTextLines;
+        const int remainingLines = totalLines - maxTextLines;
         totalPages = 1 + (remainingLines + maxTextLines - 1) / maxTextLines;
     }
     m_DialogueTotalPages = totalPages;
-
-    // Clamp current page
     if (m_DialoguePage >= totalPages)
         m_DialoguePage = totalPages - 1;
     if (m_DialoguePage < 0)
         m_DialoguePage = 0;
+    const bool isLastPage = (m_DialoguePage == totalPages - 1);
 
-    bool isLastPage = (m_DialoguePage == totalPages - 1);
-
-    // Calculate which lines to show on current page
     int startLine = 0;
     int linesToShow = 0;
-
     if (totalPages == 1)
     {
-        // Everything fits
         startLine = 0;
         linesToShow = totalLines;
     }
     else if (isLastPage)
     {
-        // Last page shows remaining lines that fit above options
         startLine = m_DialoguePage * maxTextLines;
         linesToShow = totalLines - startLine;
     }
     else
     {
-        // Earlier pages show maxTextLines worth of text
         startLine = m_DialoguePage * maxTextLines;
         linesToShow = maxTextLines;
     }
 
-    // Typewriter: count total chars on this page to know when reveal is done
+    // 6) Typewriter reveal (preserved bit-for-bit from the old path).
     int totalCharsOnPage = 0;
     for (int i = 0; i < linesToShow && (startLine + i) < totalLines; ++i)
         totalCharsOnPage += static_cast<int>(allLines[startLine + i].size());
-    int charsToShow =
+    const int charsToShow =
         (m_DialogueCharReveal < 0.0f) ? totalCharsOnPage : static_cast<int>(m_DialogueCharReveal);
-    bool textFullyRevealed = (charsToShow >= totalCharsOnPage);
+    const bool textFullyRevealed = (charsToShow >= totalCharsOnPage);
 
-    // Render dialogue text lines with typewriter reveal
-    glm::vec3 textColor(0.82f, 0.80f, 0.75f);
+    // 7) Body text on slate (cream fill + black outline for legibility).
+    float currentY = bodyTextStartY;
     int charsRemaining = charsToShow;
+    const glm::vec3 bodyTextColor = ambience::DIALOGUE_BODY_TEXT_COLOR;
     for (int i = 0; i < linesToShow && (startLine + i) < totalLines; ++i)
     {
         const std::string& line = allLines[startLine + i];
-        int lineLen = static_cast<int>(line.size());
+        const int lineLen = static_cast<int>(line.size());
         if (charsRemaining <= 0)
             break;
         if (charsRemaining >= lineLen)
         {
             m_Renderer->DrawText(line,
-                                 glm::vec2(boxX + padding, currentY),
+                                 glm::vec2(textAreaLeft, currentY),
                                  textScale,
-                                 textColor,
-                                 outlineSize,
+                                 bodyTextColor,
+                                 bodyOutlineSize,
                                  textAlpha);
         }
         else
         {
-            m_Renderer->DrawText(line.substr(0, charsRemaining),
-                                 glm::vec2(boxX + padding, currentY),
-                                 textScale,
-                                 textColor,
-                                 outlineSize,
-                                 textAlpha);
+            if (charsRemaining > 0)
+            {
+                m_Renderer->DrawText(line.substr(0, charsRemaining),
+                                     glm::vec2(textAreaLeft, currentY),
+                                     textScale,
+                                     bodyTextColor,
+                                     bodyOutlineSize,
+                                     textAlpha);
+            }
+            if (m_DialogueCharReveal >= 0.0f && charsRemaining < lineLen)
+            {
+                const float partialFrac = m_DialogueCharReveal - std::floor(m_DialogueCharReveal);
+                if (partialFrac > 0.0f)
+                {
+                    const float xOffset =
+                        (charsRemaining > 0)
+                            ? m_Renderer->GetTextWidth(line.substr(0, charsRemaining), textScale)
+                            : 0.0f;
+                    m_Renderer->DrawText(line.substr(charsRemaining, 1),
+                                         glm::vec2(textAreaLeft + xOffset, currentY),
+                                         textScale,
+                                         bodyTextColor,
+                                         bodyOutlineSize,
+                                         textAlpha * partialFrac);
+                }
+            }
         }
         charsRemaining -= lineLen;
         currentY += lineHeight;
     }
     currentY += 1.0f * z;
 
-    // Position for bottom-right prompt
-    float promptY = boxY + boxHeight - padding * 0.8f;
-    float promptX = boxX + boxWidth - padding - 16.0f * z;
-
-    // Only show continue prompt / options once typewriter is done
+    // 8) Continue prompt or response options.
+    const float promptY = boxY + boxHeight - padInner - padding * 0.4f;
+    const float promptX = boxX + boxWidth - padInner - padding - 16.0f * z;
     const bool showContinuePrompt = !isLastPage || visibleOptions.empty();
     if (!textFullyRevealed)
     {
-        // Still revealing - don't show prompt or options yet
+        // Still revealing - wait until typewriter completes before showing prompt/options.
     }
     else if (showContinuePrompt)
     {
@@ -602,55 +698,46 @@ void Game::RenderDialogueTreeBox()
                            promptX,
                            promptY,
                            textScale,
-                           outlineSize,
+                           ribbonOutlineSize,
                            z,
                            fadeAlpha,
                            m_DialogueBoxFadeTimer);
     }
     else
     {
-        // Last page with options - show response options right under the text
-        int selectedIndex = m_DialogueManager.GetSelectedOptionIndex();
-
+        // Last page with options - accent triangle on selected, parchment-friendly text.
+        const int selectedIndex = m_DialogueManager.GetSelectedOptionIndex();
         for (size_t i = 0; i < visibleOptions.size(); ++i)
         {
             const DialogueOption* opt = visibleOptions[i];
-            bool isSelected = (static_cast<int>(i) == selectedIndex);
+            const bool isSelected = (static_cast<int>(i) == selectedIndex);
 
             if (isSelected)
             {
-                // Feathered additive glow behind the selected option line.
-                // Multiple layers expand outward with decreasing alpha.
-                float glowCenterY = currentY - textAscent * 0.5f;
-                float baseH = lineHeight;
-                float baseW = boxWidth - padding * 2;
-                float baseX = boxX + padding;
-                constexpr int kGlowLayers = 4;
-                for (int g = 0; g < kGlowLayers; ++g)
-                {
-                    float expand = static_cast<float>(g) * 1.0f * z;
-                    float layerAlpha = 0.06f * (1.0f - static_cast<float>(g) / kGlowLayers);
-                    glm::vec4 gc(0.85f, 0.65f, 0.2f, layerAlpha * fadeAlpha);
-                    m_Renderer->DrawColoredRect(
-                        glm::vec2(baseX - expand, glowCenterY - baseH * 0.5f - expand),
-                        glm::vec2(baseW + expand * 2, baseH + expand * 2),
-                        gc,
-                        true);
-                }
-
-                float arrowCenterY = currentY - textAscent * 0.5f;
-                float arrowX = boxX + padding;
-                DrawRightArrow(
-                    *m_Renderer, arrowX, arrowCenterY, z, glm::vec4(1.0f, 0.88f, 0.4f, fadeAlpha));
+                // Sine pulse on accent triangle (matches old gold-arrow pulse cadence).
+                const float pulseAlpha =
+                    ambience::DIALOGUE_ARROW_PULSE_BASE +
+                    ambience::DIALOGUE_ARROW_PULSE_AMPLITUDE *
+                        std::sin(m_DialogueBoxFadeTimer * ambience::DIALOGUE_ARROW_PULSE_HZ *
+                                 6.28318530f);
+                const float triH = ambience::DIALOGUE_SELECTION_TRIANGLE_H * z;
+                const float triCenterY = currentY - textAscent * 0.5f;
+                const float triX = textAreaLeft;
+                const float triY = triCenterY - triH * 0.5f;
+                DrawAccentTriangle(*m_Renderer,
+                                   glm::vec2(SnapToPixel(triX, z), SnapToPixel(triY, z)),
+                                   accent,
+                                   z,
+                                   fadeAlpha * pulseAlpha);
             }
 
-            std::string prefix = "   ";
-            glm::vec3 optionColor =
-                isSelected ? glm::vec3(0.85f, 0.75f, 0.40f) : glm::vec3(0.58f, 0.55f, 0.50f);
+            const std::string prefix = "   ";  // indent so option text clears the triangle
+            // Selected option uses the full body cream; non-selected dims slightly
+            // (~70% intensity) so the eye still picks out the active line.
+            const glm::vec3 optionColor = isSelected ? ambience::DIALOGUE_BODY_TEXT_COLOR
+                                                     : ambience::DIALOGUE_BODY_TEXT_COLOR * 0.70f;
 
-            // Detect quest-giving options by convention: any consequence that
-            // sets a flag matching "accepted_*_quest" is treated as a quest offer.
-            // This lets designers mark quest options purely through flag naming.
+            // Quest detection (preserved): "accepted_*_quest" flag => quest option.
             bool givesQuest = false;
             for (const auto& cons : opt->consequences)
             {
@@ -665,21 +752,20 @@ void Game::RenderDialogueTreeBox()
             }
 
             std::string displayText = prefix + opt->text;
-            // Truncate long option text to prevent overflow
-            float maxTextWidth = boxWidth - 2.0f * padding;
-            if (m_Renderer->GetTextWidth(displayText, textScale) > maxTextWidth)
+            // Truncate (preserved binary-search ellipsis fit).
+            const float optMaxWidth = textAreaRight - textAreaLeft;
+            if (m_Renderer->GetTextWidth(displayText, textScale) > optMaxWidth)
             {
-                std::string ellipsis = "...";
-                float ellipsisWidth = m_Renderer->GetTextWidth(ellipsis, textScale);
-                // Binary-search for the longest prefix that fits with ellipsis.
+                const std::string ellipsis = "...";
+                const float ellipsisWidth = m_Renderer->GetTextWidth(ellipsis, textScale);
                 size_t lo = 1;
                 size_t hi = displayText.size();
                 while (lo < hi)
                 {
-                    size_t mid = lo + (hi - lo + 1) / 2;
+                    const size_t mid = lo + (hi - lo + 1) / 2;
                     if (m_Renderer->GetTextWidth(displayText.substr(0, mid), textScale) +
                             ellipsisWidth <=
-                        maxTextWidth)
+                        optMaxWidth)
                     {
                         lo = mid;
                     }
@@ -691,23 +777,22 @@ void Game::RenderDialogueTreeBox()
                 displayText = displayText.substr(0, lo) + ellipsis;
             }
             m_Renderer->DrawText(displayText,
-                                 glm::vec2(boxX + padding, currentY),
+                                 glm::vec2(textAreaLeft, currentY),
                                  textScale,
                                  optionColor,
-                                 outlineSize,
+                                 bodyOutlineSize,
                                  textAlpha);
 
-            // Draw the exclamation mark in gold if this is a quest option
+            // Quest marker stays gold for visual signal.
             if (givesQuest)
             {
-                glm::vec3 questYellow(1.0f, 0.88f, 0.4f);
-                float textWidth = m_Renderer->GetTextWidth(prefix + opt->text + " ", textScale);
-                float exclamationX = boxX + padding + textWidth;
+                const glm::vec3 questYellow(0.85f, 0.65f, 0.20f);
+                const float w = m_Renderer->GetTextWidth(prefix + opt->text + " ", textScale);
                 m_Renderer->DrawText(">!<",
-                                     glm::vec2(exclamationX, currentY),
+                                     glm::vec2(textAreaLeft + w, currentY),
                                      textScale,
                                      questYellow,
-                                     outlineSize,
+                                     bodyOutlineSize,
                                      textAlpha);
             }
             currentY += lineHeight;
