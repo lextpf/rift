@@ -77,7 +77,7 @@ inline float KarisBloomWeight(float lum, float threshold)
  * @brief HSV saturation - "how colored is this pixel."
  *
  * Returns `(max - min) / max` over the RGB channels, or 0 for all-equal
- * (achromatic) input. Mirrors the GLSL formula in bloom_threshold.frag so the
+ * (achromatic) input. Mirrors the GLSL formula in BloomPrefilter.frag so the
  * same math is testable on the CPU side. The 1e-4 epsilon guards against a
  * divide-by-zero on near-black pixels (which read as achromatic anyway).
  *
@@ -107,7 +107,7 @@ inline float KarisBloomChromaWeight(float sat, float threshold)
 
 /**
  * @brief Pure-math saturation pump. Mirrors the GLSL `applySaturation()` in
- *        post.frag so the same formula is testable on the CPU side.
+ *        PostFXComposite.frag so the same formula is testable on the CPU side.
  *
  * `s = 1.0` is identity, `s > 1.0` pumps chroma away from luma, `s = 0.0`
  * collapses to grayscale. LUMA weights match the shader.
@@ -128,13 +128,17 @@ inline glm::vec3 ApplySaturation(const glm::vec3& c, float s)
  * - Dusk (~19h):  purple lift / slight gamma lift / warm-orange gain
  * - Night:        navy lift / slight gamma crush / cool muted gain
  *
- * All values capped well below +/-0.08 (matching `GRADING_TINT_AMPLITUDE`).
- * Inline coefficients here are the documentation amplitude scaled by 1.6 -
- * bumping `GRADING_TINT_AMPLITUDE` alone changes the doc anchor; the magnitudes
- * here must be scaled together.
+ * Per-channel directional weights are dimensionless multipliers of
+ * `GRADING_TINT_AMPLITUDE`, drawn from {0, +/-0.1, +/-0.2, +/-0.3, +/-0.4,
+ * +/-0.6, +/-0.8, +/-1.0, +1.2}. They encode time-of-day color identity
+ * (red strongest at warmth, blue strongest at night) and the channel
+ * hierarchy; tuning the per-time-of-day swing magnitude is a single edit
+ * to `GRADING_TINT_AMPLITUDE` in AmbienceConfig.h.
  */
 inline GradingParams ComputeGradingParams(float timeOfDay, float nightFactor)
 {
+    constexpr float A = ambience::GRADING_TINT_AMPLITUDE;
+
     // Warmth ramps at golden hour (dawn 5-7h, dusk 18-20h), zero elsewhere.
     float warmth = 0.0f;
     bool isDusk = false;
@@ -153,35 +157,37 @@ inline GradingParams ComputeGradingParams(float timeOfDay, float nightFactor)
     // Gain (highlights): warm at dawn, orange at dusk, cool muted at night.
     if (isDusk)
     {
-        p.gain = glm::vec3(1.0f + 0.096f * warmth, 1.0f + 0.048f * warmth, 1.0f - 0.064f * warmth);
+        p.gain =
+            glm::vec3(1.0f + 1.2f * A * warmth, 1.0f + 0.6f * A * warmth, 1.0f - 0.8f * A * warmth);
     }
     else
     {
-        p.gain = glm::vec3(1.0f + 0.080f * warmth, 1.0f + 0.032f * warmth, 1.0f - 0.048f * warmth);
+        p.gain =
+            glm::vec3(1.0f + 1.0f * A * warmth, 1.0f + 0.4f * A * warmth, 1.0f - 0.6f * A * warmth);
     }
-    p.gain += glm::vec3(-0.064f, -0.032f, +0.064f) * nightFactor;
+    p.gain += glm::vec3(-0.8f, -0.4f, +0.8f) * A * nightFactor;
 
     // Lift (shadows): cool at dawn, purple at dusk, navy at night.
     if (isDusk)
     {
-        p.lift = glm::vec3(+0.008f, -0.008f, +0.016f) * warmth;
+        p.lift = glm::vec3(+0.1f, -0.1f, +0.2f) * A * warmth;
     }
     else
     {
-        p.lift = glm::vec3(-0.008f, 0.0f, +0.024f) * warmth;
+        p.lift = glm::vec3(-0.1f, 0.0f, +0.3f) * A * warmth;
     }
-    p.lift += glm::vec3(-0.016f, -0.008f, +0.032f) * nightFactor;
+    p.lift += glm::vec3(-0.2f, -0.1f, +0.4f) * A * nightFactor;
 
     // Gamma (midtones): slight lift at golden hour, slight crush at night.
     if (isDusk)
     {
-        p.gamma = glm::vec3(1.0f + 0.016f * warmth, 1.0f, 1.0f - 0.016f * warmth);
+        p.gamma = glm::vec3(1.0f + 0.2f * A * warmth, 1.0f, 1.0f - 0.2f * A * warmth);
     }
     else
     {
-        p.gamma = glm::vec3(1.0f + 0.032f * warmth, 1.0f + 0.016f * warmth, 1.0f);
+        p.gamma = glm::vec3(1.0f + 0.4f * A * warmth, 1.0f + 0.2f * A * warmth, 1.0f);
     }
-    p.gamma += glm::vec3(-0.048f, -0.032f, 0.0f) * nightFactor;
+    p.gamma += glm::vec3(-0.6f, -0.4f, 0.0f) * A * nightFactor;
 
     return p;
 }
