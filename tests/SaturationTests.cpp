@@ -1,6 +1,6 @@
 // Tests for ApplySaturation (chroma pump: out = mix(vec3(luma), c, s)).
 // Pure-math, lives inline in PostFXParams.h so the test calls it directly.
-// The GLSL applySaturation() in post.frag uses identical math; verifying the
+// The GLSL applySaturation() in PostFXComposite.frag uses identical math; verifying the
 // C++ side is sufficient (the test build cannot create a GL context).
 
 #include "PostFXParams.h"
@@ -36,7 +36,7 @@ TEST(ApplySaturation, GrayscaleAtZero)
 {
     // s = 0.0 should collapse to vec3(dot(c, LUMA)) for any color.
     // This implicitly verifies that the C++ LUMA matches the GLSL LUMA in
-    // post.frag: any drift in either constant would break this test.
+    // PostFXComposite.frag: any drift in either constant would break this test.
     const std::array<glm::vec3, 3> samples{
         glm::vec3(0.9f, 0.1f, 0.1f),
         glm::vec3(0.2f, 0.7f, 0.3f),
