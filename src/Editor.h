@@ -80,8 +80,8 @@ struct EditorContext
  * EditorContext built each frame; Editor never holds a pointer to Game.
  *
  * @par Activation
- * Toggled with the **E** key in Game::ProcessInput(). When active the tile
- * picker opens automatically; when deactivated it closes.
+ * Toggled via the developer-console `editor [on|off|toggle]` command. When
+ * active the tile picker opens automatically; when deactivated it closes.
  *
  * @par Editor Modes
  * Only one sub-mode is active at a time, selected by hotkey:
@@ -109,11 +109,11 @@ struct EditorContext
  * Game::ScrollCallback -->  Editor::HandleScroll    (elevation / tile picker)
  * @endcode
  *
- * @par Debug Overlays (F3)
- * When debug mode is active (toggled independently of editor mode), all
- * overlay layers are rendered: collision, navigation, elevation, corner
- * cutting, no-projection, structures, Y-sort flags, particle zones, and
- * NPC patrol info.
+ * @par Debug Overlays
+ * When debug mode is active (toggled with `debug.overlays` in the developer
+ * console, independently of editor mode), all overlay layers are rendered:
+ * collision, navigation, elevation, corner cutting, no-projection,
+ * structures, Y-sort flags, particle zones, and NPC patrol info.
  *
  * @see EditorContext, Game::MakeEditorContext()
  */
@@ -135,7 +135,7 @@ public:
     void Initialize(const std::vector<std::string>& npcTypes);
 
     /// @brief Check if the level editor is active.
-    /// @return `true` when the editor is active (toggled with E key).
+    /// @return `true` when the editor is active (toggled via `editor` console command).
     [[nodiscard]] bool IsActive() const { return m_Active; }
 
     /// @brief Push an on-screen status toast (e.g. from save/load).
@@ -192,7 +192,7 @@ public:
     void RenderNoProjectionAnchors(const EditorContext& ctx);
 
     /// @brief Check if debug overlays are enabled.
-    /// @return `true` when debug overlays are visible (F3 toggle).
+    /// @return `true` when debug overlays are visible (toggled via `debug.overlays`).
     [[nodiscard]] bool IsDebugMode() const { return m_DebugMode; }
 
     /// @brief Check if text debug info (FPS, coords) is shown.
@@ -212,6 +212,13 @@ public:
 
     /// @brief Toggle text debug info display on/off.
     void ToggleShowDebugInfo();
+
+    /// @brief Set debug overlay rendering on/off explicitly.
+    /// Mirrors the visibility of no-projection anchor markers.
+    void SetDebugMode(bool enabled);
+
+    /// @brief Set text debug info display on/off explicitly.
+    void SetShowDebugInfo(bool enabled);
 
     /**
      * @brief Reset tile picker zoom and pan to defaults.
@@ -382,7 +389,7 @@ private:
 
     /// @name Mode State
     /// @{
-    bool m_Active;          ///< Master toggle for the level editor (E key).
+    bool m_Active;          ///< Master toggle for the level editor (`editor` cmd).
     bool m_ShowTilePicker;  ///< Whether the tile picker panel is visible.
     EditMode m_EditMode;    ///< Current sub-mode (only one active at a time).
     /// @}
@@ -416,7 +423,7 @@ private:
 
     /// @name Debug Flags
     /// @{
-    bool m_DebugMode;                ///< Enables all debug overlays (F3).
+    bool m_DebugMode;                ///< Enables all debug overlays (`debug.overlays` cmd).
     bool m_ShowDebugInfo;            ///< Shows text debug info (FPS, tile coords, etc.).
     bool m_ShowNoProjectionAnchors;  ///< Renders no-projection anchor markers on top of UI.
     bool m_HasUnsavedChanges;        ///< True after edits since the last successful save/load.

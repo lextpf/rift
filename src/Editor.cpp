@@ -117,14 +117,24 @@ void Editor::SetActive(bool active)
 
 void Editor::ToggleDebugMode()
 {
-    m_DebugMode = !m_DebugMode;
-    m_ShowNoProjectionAnchors = m_DebugMode;
-    Logger::InfoF(LOG_SUBSYSTEM, "Debug mode: {}", m_DebugMode ? "ON" : "OFF");
+    SetDebugMode(!m_DebugMode);
 }
 
 void Editor::ToggleShowDebugInfo()
 {
-    m_ShowDebugInfo = !m_ShowDebugInfo;
+    SetShowDebugInfo(!m_ShowDebugInfo);
+}
+
+void Editor::SetDebugMode(bool enabled)
+{
+    m_DebugMode = enabled;
+    m_ShowNoProjectionAnchors = m_DebugMode;
+    Logger::InfoF(LOG_SUBSYSTEM, "Debug mode: {}", m_DebugMode ? "ON" : "OFF");
+}
+
+void Editor::SetShowDebugInfo(bool enabled)
+{
+    m_ShowDebugInfo = enabled;
     Logger::InfoF(LOG_SUBSYSTEM, "Debug info display: {}", m_ShowDebugInfo ? "ON" : "OFF");
 }
 
