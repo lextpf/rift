@@ -1,5 +1,6 @@
 #include "NonPlayerCharacter.h"
 
+#include "AmbienceConfig.h"
 #include "Logger.h"
 
 #include <algorithm>
@@ -139,7 +140,20 @@ bool NonPlayerCharacter::Load(const std::string& relativePath)
             return false;
         }
     }
+    // Sprite changed; the cached accent must be re-derived from the new pixels.
+    m_AccentSampled = false;
     return true;
+}
+
+glm::vec3 NonPlayerCharacter::GetAccentColor() const
+{
+    if (!m_AccentSampled)
+    {
+        m_AccentColor =
+            m_SpriteSheet.SampleDominantNonSkinColor(ambience::DIALOGUE_ACCENT_FALLBACK);
+        m_AccentSampled = true;
+    }
+    return m_AccentColor;
 }
 
 void NonPlayerCharacter::UploadTextures(IRenderer& renderer)

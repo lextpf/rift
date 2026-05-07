@@ -219,12 +219,29 @@ public:
     /// @brief Get mutable reference to sprite sheet (for texture upload).
     Texture& GetSpriteSheet() { return m_SpriteSheet; }
 
+    /**
+     * @brief Get a representative accent color for this NPC (lazy, cached).
+     *
+     * Sampled from the sprite sheet via @ref Texture::SampleDominantNonSkinColor.
+     * Used by the dialogue panel to tint the speaker ribbon and selected-option
+     * indicator so each NPC reads as visually distinct without authored palette
+     * data. First call computes; subsequent calls return the cached value.
+     *
+     * Cache invalidates implicitly only when the NPC's sprite is reloaded via
+     * Load(); the m_AccentSampled flag is reset there.
+     *
+     * @return RGB accent color in [0, 1] per channel.
+     */
+    glm::vec3 GetAccentColor() const;
+
 private:
-    Texture m_SpriteSheet;        ///< Loaded sprite sheet texture
-    std::string m_Type;           ///< NPC type identifier (e.g., "elder", "guard")
-    std::string m_Name;           ///< Display name shown during dialogue
-    std::string m_Dialogue;       ///< Simple dialogue text (fallback when no tree)
-    DialogueTree m_DialogueTree;  ///< Branching dialogue tree (may be empty)
+    Texture m_SpriteSheet;                  ///< Loaded sprite sheet texture
+    mutable glm::vec3 m_AccentColor{0.0f};  ///< Cached accent color (lazy via GetAccentColor)
+    mutable bool m_AccentSampled{false};    ///< False until GetAccentColor() runs once
+    std::string m_Type;                     ///< NPC type identifier (e.g., "elder", "guard")
+    std::string m_Name;                     ///< Display name shown during dialogue
+    std::string m_Dialogue;                 ///< Simple dialogue text (fallback when no tree)
+    DialogueTree m_DialogueTree;            ///< Branching dialogue tree (may be empty)
 
     static std::unordered_map<std::string, std::string> s_NpcAssets;
 
@@ -234,12 +251,22 @@ private:
     int m_TargetTileX{0};  ///< Next waypoint tile column
     int m_TargetTileY{0};  ///< Next waypoint tile row
 
-    float m_WaitTimer{0.0f};        ///< Countdown before resuming patrol after reaching waypoint
-    bool m_IsStopped{false};        ///< Movement halted (e.g., during dialogue)
-    bool m_StandingStill{false};    ///< In random standing-still idle state
-    float m_LookAroundTimer{0.0f};  ///< Countdown for look-around animation
-    float m_RandomStandStillCheckTimer{0.0f};  ///< Interval timer for random stand-still checks
-    float m_RandomStandStillTimer{0.0f};       ///< Remaining time in random standing-still state
+    /// @par Idle behavior timing
+    /// At each waypoint the NPC may pause and look around. The four timers
+    /// below drive a small random schedule: every 5 - 10 s the NPC rolls a
+    /// 30 % chance to enter a 2 - 5 s standing-still state. While standing
+    /// still it triggers look-around animations on the same cadence. Concrete
+    /// constants live in `NonPlayerCharacter.cpp`; the header documents the
+    /// shape so designers can predict NPC behavior without reading the impl.
+    float m_WaitTimer{0.0f};  ///< Countdown before resuming patrol after reaching waypoint
+    bool m_IsStopped{false};  ///< Soft-collision halt while overlapping the player; reset when the
+                              ///< player moves away
+    bool m_StandingStill{false};    ///< Currently in the random standing-still idle state
+    float m_LookAroundTimer{0.0f};  ///< Countdown until the next look-around animation step
+    float m_RandomStandStillCheckTimer{
+        0.0f};  ///< Interval (~5 - 10 s) between standing-still chance rolls
+    float m_RandomStandStillTimer{
+        0.0f};  ///< Remaining time (~2 - 5 s) in the current standing-still state
 
     PatrolRoute m_PatrolRoute;  ///< Generated patrol waypoints through navigation map
 
