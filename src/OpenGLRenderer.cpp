@@ -117,13 +117,19 @@ void OpenGLRenderer::SetFontCandidates(const std::vector<std::string>& fontCandi
 
 void OpenGLRenderer::Shutdown()
 {
-    // Delete font atlas texture
+    // Delete font atlas textures
     if (m_FontAtlasTexture != 0)
     {
         glDeleteTextures(1, &m_FontAtlasTexture);
         m_FontAtlasTexture = 0;
     }
     m_Characters.clear();
+    if (m_HeadlineFontAtlasTexture != 0)
+    {
+        glDeleteTextures(1, &m_HeadlineFontAtlasTexture);
+        m_HeadlineFontAtlasTexture = 0;
+    }
+    m_HeadlineCharacters.clear();
 
 #ifdef USE_FREETYPE
     // Cleanup FreeType
@@ -196,6 +202,36 @@ void OpenGLRenderer::Shutdown()
         m_WhiteTexture = 0;
     }
 
+    // Post-FX cleanup
+    DestroySceneFramebuffer();
+    DestroyBloomFramebuffers();
+    if (m_PostVAO != 0)
+    {
+        glDeleteVertexArrays(1, &m_PostVAO);
+        m_PostVAO = 0;
+    }
+    if (m_PostProgram != 0)
+    {
+        glDeleteProgram(m_PostProgram);
+        m_PostProgram = 0;
+    }
+    if (m_BloomThresholdProgram != 0)
+    {
+        glDeleteProgram(m_BloomThresholdProgram);
+        m_BloomThresholdProgram = 0;
+    }
+    if (m_BloomDownProgram != 0)
+    {
+        glDeleteProgram(m_BloomDownProgram);
+        m_BloomDownProgram = 0;
+    }
+    if (m_BloomUpProgram != 0)
+    {
+        glDeleteProgram(m_BloomUpProgram);
+        m_BloomUpProgram = 0;
+    }
+    m_SceneBound = false;
+
     m_BatchVertices.clear();
     m_RectBatchVertices.clear();
 }
@@ -219,6 +255,414 @@ std::string OpenGLRenderer::LoadShaderFromFile(const std::string& filepath)
     std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
     return source;
+}
+
+unsigned int OpenGLRenderer::CompileShaderProgram(const std::string& vertSrc,
+                                                  const std::string& fragSrc,
+                                                  const char* debugLabel)
+{
+    if (vertSrc.empty() || fragSrc.empty())
+    {
+        Logger::ErrorF(LOG_SUBSYSTEM, "Shader source empty for {}", debugLabel);
+        return 0;
+    }
+
+    int success = 0;
+    char infoLog[512] = {};
+
+    unsigned int vs = glCreateShader(GL_VERTEX_SHADER);
+    const char* vsPtr = vertSrc.c_str();
+    glShaderSource(vs, 1, &vsPtr, nullptr);
+    glCompileShader(vs);
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        glGetShaderInfoLog(vs, 512, nullptr, infoLog);
+        Logger::ErrorF(LOG_SUBSYSTEM, "Vertex shader compile failed ({}): {}", debugLabel, infoLog);
+        glDeleteShader(vs);
+        return 0;
+    }
+
+    unsigned int fs = glCreateShader(GL_FRAGMENT_SHADER);
+    const char* fsPtr = fragSrc.c_str();
+    glShaderSource(fs, 1, &fsPtr, nullptr);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        glGetShaderInfoLog(fs, 512, nullptr, infoLog);
+        Logger::ErrorF(
+            LOG_SUBSYSTEM, "Fragment shader compile failed ({}): {}", debugLabel, infoLog);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        return 0;
+    }
+
+    unsigned int prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        glGetProgramInfoLog(prog, 512, nullptr, infoLog);
+        Logger::ErrorF(LOG_SUBSYSTEM, "Shader program link failed ({}): {}", debugLabel, infoLog);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        glDeleteProgram(prog);
+        return 0;
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return prog;
+}
+
+bool OpenGLRenderer::InitPostFXShaders()
+{
+    std::string postVert = LoadShaderFromFile("shaders/post.vert");
+    std::string postFrag = LoadShaderFromFile("shaders/post.frag");
+    std::string thresholdFrag = LoadShaderFromFile("shaders/bloom_threshold.frag");
+    std::string downFrag = LoadShaderFromFile("shaders/bloom_down.frag");
+    std::string upFrag = LoadShaderFromFile("shaders/bloom_up.frag");
+
+    m_PostProgram = CompileShaderProgram(postVert, postFrag, "post");
+    m_BloomThresholdProgram = CompileShaderProgram(postVert, thresholdFrag, "bloom_threshold");
+    m_BloomDownProgram = CompileShaderProgram(postVert, downFrag, "bloom_down");
+    m_BloomUpProgram = CompileShaderProgram(postVert, upFrag, "bloom_up");
+
+    if (m_PostProgram == 0 || m_BloomThresholdProgram == 0 || m_BloomDownProgram == 0 ||
+        m_BloomUpProgram == 0)
+    {
+        return false;
+    }
+
+    // Composite (post.frag) uniforms.
+    m_PostULoc_Scene = glGetUniformLocation(m_PostProgram, "uScene");
+    m_PostULoc_Bloom = glGetUniformLocation(m_PostProgram, "uBloom");
+    m_PostULoc_BloomIntensity = glGetUniformLocation(m_PostProgram, "uBloomIntensity");
+    m_PostULoc_Lift = glGetUniformLocation(m_PostProgram, "uLift");
+    m_PostULoc_Gamma = glGetUniformLocation(m_PostProgram, "uGamma");
+    m_PostULoc_Gain = glGetUniformLocation(m_PostProgram, "uGain");
+    m_PostULoc_Saturation = glGetUniformLocation(m_PostProgram, "uSaturation");
+    m_PostULoc_CAStrength = glGetUniformLocation(m_PostProgram, "uCAStrength");
+    m_PostULoc_VignetteIntensity = glGetUniformLocation(m_PostProgram, "uVignetteIntensity");
+    m_PostULoc_VignetteInnerR = glGetUniformLocation(m_PostProgram, "uVignetteInnerR");
+    m_PostULoc_VignetteOuterR = glGetUniformLocation(m_PostProgram, "uVignetteOuterR");
+    m_PostULoc_VignetteAspectY = glGetUniformLocation(m_PostProgram, "uVignetteAspectY");
+    m_PostULoc_EdgeDesat = glGetUniformLocation(m_PostProgram, "uEdgeDesat");
+    m_PostULoc_GrainIntensity = glGetUniformLocation(m_PostProgram, "uGrainIntensity");
+    m_PostULoc_GrainChromaMix = glGetUniformLocation(m_PostProgram, "uGrainChromaMix");
+    m_PostULoc_Time = glGetUniformLocation(m_PostProgram, "uTime");
+    m_PostULoc_TonemapKnee = glGetUniformLocation(m_PostProgram, "uTonemapKnee");
+    m_PostULoc_Enabled = glGetUniformLocation(m_PostProgram, "uPostFXEnabled");
+
+    // Bloom prep uniforms.
+    m_BloomThresholdULoc_Scene = glGetUniformLocation(m_BloomThresholdProgram, "uScene");
+    m_BloomThresholdULoc_SatThreshold =
+        glGetUniformLocation(m_BloomThresholdProgram, "uSatThreshold");
+
+    m_BloomDownULoc_Input = glGetUniformLocation(m_BloomDownProgram, "uInput");
+    m_BloomDownULoc_SrcTexelSize = glGetUniformLocation(m_BloomDownProgram, "uSrcTexelSize");
+
+    m_BloomUpULoc_Input = glGetUniformLocation(m_BloomUpProgram, "uInput");
+    m_BloomUpULoc_SrcTexelSize = glGetUniformLocation(m_BloomUpProgram, "uSrcTexelSize");
+
+    glGenVertexArrays(1, &m_PostVAO);
+    return true;
+}
+
+void OpenGLRenderer::EnsureSceneFramebuffer(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+    {
+        return;
+    }
+    if (m_SceneFBO != 0 && m_SceneFBOWidth == width && m_SceneFBOHeight == height)
+    {
+        return;
+    }
+
+    DestroySceneFramebuffer();
+
+    glGenFramebuffers(1, &m_SceneFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_SceneFBO);
+
+    glGenTextures(1, &m_SceneColorTex);
+    glBindTexture(GL_TEXTURE_2D, m_SceneColorTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_SceneColorTex, 0);
+
+    glGenRenderbuffers(1, &m_SceneDepthRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, m_SceneDepthRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+    glFramebufferRenderbuffer(
+        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_SceneDepthRBO);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        Logger::ErrorF(LOG_SUBSYSTEM, "Scene FBO incomplete: 0x{:x}", status);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    m_SceneFBOWidth = width;
+    m_SceneFBOHeight = height;
+}
+
+void OpenGLRenderer::EnsureBloomFramebuffers(int width, int height)
+{
+    // Mip 0 is half scene resolution; each subsequent mip is half the previous.
+    int mip0W = std::max(1, width / 2);
+    int mip0H = std::max(1, height / 2);
+
+    if (m_BloomMipFBO[0] != 0 && m_BloomMipWidth[0] == mip0W && m_BloomMipHeight[0] == mip0H)
+    {
+        return;
+    }
+
+    DestroyBloomFramebuffers();
+
+    glGenFramebuffers(kBloomMipLevels, m_BloomMipFBO);
+    glGenTextures(kBloomMipLevels, m_BloomMipTex);
+
+    int w = mip0W;
+    int h = mip0H;
+    for (int i = 0; i < kBloomMipLevels; ++i)
+    {
+        m_BloomMipWidth[i] = w;
+        m_BloomMipHeight[i] = h;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_BloomMipFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, m_BloomMipTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, nullptr);
+        // Linear filtering is essential - the downsample/upsample shaders sample
+        // at fractional offsets to combine multiple texels per fetch.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_BloomMipTex[i], 0);
+
+        w = std::max(1, w / 2);
+        h = std::max(1, h / 2);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void OpenGLRenderer::DestroySceneFramebuffer()
+{
+    if (m_SceneFBO != 0)
+    {
+        glDeleteFramebuffers(1, &m_SceneFBO);
+        m_SceneFBO = 0;
+    }
+    if (m_SceneColorTex != 0)
+    {
+        glDeleteTextures(1, &m_SceneColorTex);
+        m_SceneColorTex = 0;
+    }
+    if (m_SceneDepthRBO != 0)
+    {
+        glDeleteRenderbuffers(1, &m_SceneDepthRBO);
+        m_SceneDepthRBO = 0;
+    }
+    m_SceneFBOWidth = 0;
+    m_SceneFBOHeight = 0;
+}
+
+void OpenGLRenderer::DestroyBloomFramebuffers()
+{
+    if (m_BloomMipFBO[0] != 0)
+    {
+        glDeleteFramebuffers(kBloomMipLevels, m_BloomMipFBO);
+    }
+    if (m_BloomMipTex[0] != 0)
+    {
+        glDeleteTextures(kBloomMipLevels, m_BloomMipTex);
+    }
+    for (int i = 0; i < kBloomMipLevels; ++i)
+    {
+        m_BloomMipFBO[i] = 0;
+        m_BloomMipTex[i] = 0;
+        m_BloomMipWidth[i] = 0;
+        m_BloomMipHeight[i] = 0;
+    }
+}
+
+void OpenGLRenderer::BeginScene()
+{
+    if (m_ViewportWidth <= 0 || m_ViewportHeight <= 0)
+    {
+        // Game::Render hasn't called SetViewport yet - bail and keep rendering to
+        // the swapchain. EndSceneApplyPostFX will short-circuit on m_SceneBound.
+        return;
+    }
+
+    EnsureSceneFramebuffer(m_ViewportWidth, m_ViewportHeight);
+    EnsureBloomFramebuffers(m_ViewportWidth, m_ViewportHeight);
+
+    if (m_SceneFBO == 0)
+    {
+        return;
+    }
+
+    // Flush any straggling batch state from the previous frame's UI before
+    // switching render targets.
+    FlushBatch();
+    FlushRectBatch();
+    FlushParticleBatch();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_SceneFBO);
+    glViewport(0, 0, m_SceneFBOWidth, m_SceneFBOHeight);
+    m_SceneBound = true;
+}
+
+void OpenGLRenderer::RunBloomPrep()
+{
+    // Mip-chain bloom (COD/Siggraph 2014 architecture):
+    //   1. Threshold pass: scene -> mip[0] (Karis soft filter)
+    //   2. Downsample chain: mip[0] -> mip[1] -> ... -> mip[N-1]
+    //   3. Upsample chain (additive): mip[N-1] += into mip[N-2] += into ... += into mip[0]
+    //
+    // The result is mip[0] with smooth multi-scale bloom: small mips contribute
+    // tight bright halos near sources, large mips contribute wide soft halos.
+
+    glDisable(GL_DEPTH_TEST);
+    glBindVertexArray(m_PostVAO);
+    glActiveTexture(GL_TEXTURE0);
+
+    // Step 1: threshold pass into mip[0].
+    glDisable(GL_BLEND);
+    glViewport(0, 0, m_BloomMipWidth[0], m_BloomMipHeight[0]);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_BloomMipFBO[0]);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(m_BloomThresholdProgram);
+    glBindTexture(GL_TEXTURE_2D, m_SceneColorTex);
+    glUniform1i(m_BloomThresholdULoc_Scene, 0);
+    glUniform1f(m_BloomThresholdULoc_SatThreshold, ambience::BLOOM_SATURATION_THRESHOLD);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    // Step 2: downsample chain. Each pass reads from the previous mip.
+    glUseProgram(m_BloomDownProgram);
+    glUniform1i(m_BloomDownULoc_Input, 0);
+    for (int i = 1; i < kBloomMipLevels; ++i)
+    {
+        glViewport(0, 0, m_BloomMipWidth[i], m_BloomMipHeight[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_BloomMipFBO[i]);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glBindTexture(GL_TEXTURE_2D, m_BloomMipTex[i - 1]);
+        // Texel size of the SOURCE mip (the one we're sampling FROM).
+        glUniform2f(m_BloomDownULoc_SrcTexelSize,
+                    1.0f / static_cast<float>(m_BloomMipWidth[i - 1]),
+                    1.0f / static_cast<float>(m_BloomMipHeight[i - 1]));
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+
+    // Step 3: upsample chain. Additively combine each mip into the next-finer one.
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glUseProgram(m_BloomUpProgram);
+    glUniform1i(m_BloomUpULoc_Input, 0);
+    for (int i = kBloomMipLevels - 1; i > 0; --i)
+    {
+        glViewport(0, 0, m_BloomMipWidth[i - 1], m_BloomMipHeight[i - 1]);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_BloomMipFBO[i - 1]);
+        glBindTexture(GL_TEXTURE_2D, m_BloomMipTex[i]);
+        glUniform2f(m_BloomUpULoc_SrcTexelSize,
+                    1.0f / static_cast<float>(m_BloomMipWidth[i]),
+                    1.0f / static_cast<float>(m_BloomMipHeight[i]));
+        // Additive draw - bloom_up.frag's output is GL_ONE * src + GL_ONE * dst.
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+
+    // Final bloom is in mip[0]. Restore non-additive blending.
+    glDisable(GL_BLEND);
+}
+
+void OpenGLRenderer::EndSceneApplyPostFX(const PostFXParams& params)
+{
+    if (!m_SceneBound)
+    {
+        return;
+    }
+
+    // Ensure all world rendering inside the scene FBO has flushed before we
+    // start sampling from the color attachment.
+    FlushBatch();
+    FlushRectBatch();
+    FlushParticleBatch();
+
+    RunBloomPrep();
+
+    // Composite to the default framebuffer (swapchain).
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_ViewportWidth, m_ViewportHeight);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glBindVertexArray(m_PostVAO);
+    glUseProgram(m_PostProgram);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_SceneColorTex);
+    glUniform1i(m_PostULoc_Scene, 0);
+
+    // Final bloom result is in mip[0] after the upsample chain.
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_BloomMipTex[0]);
+    glUniform1i(m_PostULoc_Bloom, 1);
+
+    // Bloom + grading.
+    glUniform1f(m_PostULoc_BloomIntensity, params.bloomIntensity);
+    glUniform3f(m_PostULoc_Lift,
+                params.gradingParams.lift.r,
+                params.gradingParams.lift.g,
+                params.gradingParams.lift.b);
+    glUniform3f(m_PostULoc_Gamma,
+                params.gradingParams.gamma.r,
+                params.gradingParams.gamma.g,
+                params.gradingParams.gamma.b);
+    glUniform3f(m_PostULoc_Gain,
+                params.gradingParams.gain.r,
+                params.gradingParams.gain.g,
+                params.gradingParams.gain.b);
+    glUniform1f(m_PostULoc_Saturation, params.saturation);
+
+    // Lens character.
+    glUniform1f(m_PostULoc_CAStrength, ambience::CA_STRENGTH);
+    glUniform1f(m_PostULoc_VignetteIntensity, params.vignetteIntensity);
+    glUniform1f(m_PostULoc_VignetteInnerR, ambience::VIGNETTE_INNER_R);
+    glUniform1f(m_PostULoc_VignetteOuterR, ambience::VIGNETTE_OUTER_R);
+    glUniform1f(m_PostULoc_VignetteAspectY, ambience::VIGNETTE_ASPECT_Y_SCALE);
+    glUniform1f(m_PostULoc_EdgeDesat, ambience::VIGNETTE_EDGE_DESAT);
+
+    // Grain.
+    glUniform1f(m_PostULoc_GrainIntensity, params.grainIntensity);
+    glUniform1f(m_PostULoc_GrainChromaMix, ambience::GRAIN_CHROMA_MIX);
+    glUniform1f(m_PostULoc_Time, params.time);
+
+    // Tonemap.
+    glUniform1f(m_PostULoc_TonemapKnee, ambience::TONEMAP_KNEE);
+
+    // Master gate. When false the shader early-returns the raw scene.
+    glUniform1i(m_PostULoc_Enabled, params.postFXEnabled ? 1 : 0);
+
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    // Restore default state for subsequent UI rendering.
+    glActiveTexture(GL_TEXTURE0);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    m_SceneBound = false;
 }
 
 bool OpenGLRenderer::Init()
@@ -336,6 +780,13 @@ bool OpenGLRenderer::Init()
     m_AmbientColorLoc = glGetUniformLocation(m_ShaderProgram, "ambientColor");
     m_UseColorOnlyLoc = glGetUniformLocation(m_ShaderProgram, "useColorOnly");
 
+    if (!InitPostFXShaders())
+    {
+        Logger::Warn(
+            LOG_SUBSYSTEM,
+            "Post-FX shaders failed to compile - rendering will skip the post-process pass");
+    }
+
     m_Initialized = true;
     return true;
 }
@@ -377,6 +828,11 @@ void OpenGLRenderer::SetProjection(const glm::mat4& projection)
 void OpenGLRenderer::SetViewport(int x, int y, int width, int height)
 {
     glViewport(x, y, width, height);
+    // Track the latest viewport size so BeginScene() can size the offscreen
+    // FBO to match. Resizing the FBO is deferred to BeginScene to avoid
+    // recreating GL resources mid-frame.
+    m_ViewportWidth = width;
+    m_ViewportHeight = height;
 }
 
 void OpenGLRenderer::SetVanishingPointPerspective(
@@ -1141,15 +1597,12 @@ void OpenGLRenderer::FlushParticleBatch()
 void OpenGLRenderer::LoadFont(const std::string& fontPath)
 {
 #ifdef USE_FREETYPE
-    // FreeType is a library for rendering TrueType/OpenType fonts to bitmaps.
-    // We use it to generate a texture atlas containing all ASCII glyphs.
     if (FT_Init_FreeType(&m_FreeType))
     {
         Logger::Error(LOG_SUBSYSTEM, "FREETYPE: Could not init FreeType Library");
         return;
     }
 
-    // Load the font file (TTF/OTF) and select the first face (index 0)
     if (FT_New_Face(m_FreeType, fontPath.c_str(), 0, &m_Face))
     {
         Logger::ErrorF(LOG_SUBSYSTEM, "FREETYPE: Failed to load font: {}", fontPath);
@@ -1158,8 +1611,53 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
         return;
     }
 
-    // Set glyph size in pixels (height only; width is proportional)
-    FT_Set_Pixel_Sizes(m_Face, 0, 24);
+    // Build two atlases from the same font face: a 24-px body atlas and a
+    // 96-px headline atlas. Drawing the title from the headline atlas at
+    // its native size avoids the upscale-blur of the body glyphs.
+    BuildAtlasInto(BODY_FONT_PIXEL_SIZE,
+                   m_Characters,
+                   m_FontAtlasTexture,
+                   m_FontAtlasWidth,
+                   m_FontAtlasHeight);
+    BuildAtlasInto(HEADLINE_FONT_PIXEL_SIZE,
+                   m_HeadlineCharacters,
+                   m_HeadlineFontAtlasTexture,
+                   m_HeadlineFontAtlasWidth,
+                   m_HeadlineFontAtlasHeight);
+
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Loaded font: {} (body atlas {}x{}, headline atlas {}x{})",
+                  fontPath,
+                  m_FontAtlasWidth,
+                  m_FontAtlasHeight,
+                  m_HeadlineFontAtlasWidth,
+                  m_HeadlineFontAtlasHeight);
+#else
+    Logger::Error(LOG_SUBSYSTEM, "LoadFont called but FreeType is not available!");
+#endif
+}
+
+void OpenGLRenderer::BuildAtlasInto(int pixelSize,
+                                    std::map<char, Character>& outChars,
+                                    unsigned int& outTexture,
+                                    int& outWidth,
+                                    int& outHeight)
+{
+#ifdef USE_FREETYPE
+    if (!m_Face)
+    {
+        Logger::Error(LOG_SUBSYSTEM, "BuildAtlasInto: no FreeType face loaded");
+        return;
+    }
+
+    outChars.clear();
+    if (outTexture != 0)
+    {
+        glDeleteTextures(1, &outTexture);
+        outTexture = 0;
+    }
+
+    FT_Set_Pixel_Sizes(m_Face, 0, pixelSize);
 
     // FreeType renders 8-bit grayscale bitmaps; disable 4-byte alignment requirement
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1170,8 +1668,10 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     int atlasHeight = 0;
     int rowHeight = 0;
     int currentX = 0;
-    const int ATLAS_MAX_WIDTH = 512;  // Row width limit before wrapping
-    const int PADDING = 2;            // Gap between glyphs to prevent bleeding
+    // Larger atlases get a wider row limit so the headline atlas doesn't
+    // explode in height (96-px glyphs at 512-wide rows is ~17 rows).
+    const int ATLAS_MAX_WIDTH = (pixelSize >= 64) ? 2048 : 512;
+    const int PADDING = 2;  // Gap between glyphs to prevent bleeding
 
     // Cache glyph bitmaps and metrics from first pass (FreeType reuses internal buffer)
     struct GlyphData
@@ -1243,8 +1743,8 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     atlasWidth = nextPow2(atlasWidth);
     atlasHeight = nextPow2(atlasHeight);
 
-    m_FontAtlasWidth = atlasWidth;
-    m_FontAtlasHeight = atlasHeight;
+    outWidth = atlasWidth;
+    outHeight = atlasHeight;
 
     // RGBA format with white color and alpha from glyph grayscale
     std::vector<unsigned char> atlasData(atlasWidth * atlasHeight * 4, 0);
@@ -1299,7 +1799,7 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
         // Store character info for text rendering
         Character character = {
             glm::ivec2(w, h), glm::ivec2(gd.bearingX, gd.bearingY), gd.advance, u0, v0, u1, v1};
-        m_Characters.insert(std::pair<char, Character>(c, character));
+        outChars.insert(std::pair<char, Character>(c, character));
 
         currentX += w + PADDING;
         if (h > rowHeight)
@@ -1309,8 +1809,8 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
     }
 
     // Upload atlas to GPU
-    glGenTextures(1, &m_FontAtlasTexture);
-    glBindTexture(GL_TEXTURE_2D, m_FontAtlasTexture);
+    glGenTextures(1, &outTexture);
+    glBindTexture(GL_TEXTURE_2D, outTexture);
     glTexImage2D(GL_TEXTURE_2D,
                  0,
                  GL_RGBA,
@@ -1329,15 +1829,13 @@ void OpenGLRenderer::LoadFont(const std::string& fontPath)
 
     // Restore default alignment for other texture uploads
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-
-    Logger::InfoF(LOG_SUBSYSTEM,
-                  "Loaded font: {} (atlas {}x{}, {} characters)",
-                  fontPath,
-                  atlasWidth,
-                  atlasHeight,
-                  m_Characters.size());
 #else
-    Logger::Error(LOG_SUBSYSTEM, "LoadFont called but FreeType is not available!");
+    (void)pixelSize;
+    (void)outChars;
+    (void)outTexture;
+    (void)outWidth;
+    (void)outHeight;
+    Logger::Error(LOG_SUBSYSTEM, "BuildAtlasInto called but FreeType is not available!");
 #endif
 }
 
@@ -1360,9 +1858,11 @@ float OpenGLRenderer::GetTextAscent(float scale) const
     return static_cast<float>(maxAscent) * scale;
 }
 
-float OpenGLRenderer::GetTextWidth(const std::string& text, float scale) const
+float OpenGLRenderer::GetTextWidthImpl(const std::string& text,
+                                       float scale,
+                                       const std::map<char, Character>& chars) const
 {
-    if (m_Characters.empty() || text.empty())
+    if (chars.empty() || text.empty())
     {
         return 0.0f;
     }
@@ -1370,14 +1870,24 @@ float OpenGLRenderer::GetTextWidth(const std::string& text, float scale) const
     float width = 0.0f;
     for (char c : text)
     {
-        auto it = m_Characters.find(c);
-        if (it != m_Characters.end())
+        auto it = chars.find(c);
+        if (it != chars.end())
         {
             // Advance is in 1/64th pixels (FreeType convention)
             width += (it->second.Advance >> 6) * scale;
         }
     }
     return width;
+}
+
+float OpenGLRenderer::GetTextWidth(const std::string& text, float scale) const
+{
+    return GetTextWidthImpl(text, scale, m_Characters);
+}
+
+float OpenGLRenderer::GetTextWidthLarge(const std::string& text, float scale) const
+{
+    return GetTextWidthImpl(text, scale, m_HeadlineCharacters);
 }
 
 void OpenGLRenderer::DrawText(const std::string& text,
@@ -1387,11 +1897,48 @@ void OpenGLRenderer::DrawText(const std::string& text,
                               float outlineSize,
                               float alpha)
 {
+    DrawTextImpl(
+        text, position, scale, color, outlineSize, alpha, m_Characters, m_FontAtlasTexture);
+}
+
+void OpenGLRenderer::DrawTextLarge(const std::string& text,
+                                   glm::vec2 position,
+                                   float scale,
+                                   glm::vec3 color,
+                                   float outlineSize,
+                                   float alpha)
+{
+    if (m_HeadlineCharacters.empty() || m_HeadlineFontAtlasTexture == 0)
+    {
+        // Headline atlas not available: fall back to scaled body atlas so the
+        // call still produces visible (just blurry) text instead of nothing.
+        IRenderer::DrawTextLarge(text, position, scale, color, outlineSize, alpha);
+        return;
+    }
+    DrawTextImpl(text,
+                 position,
+                 scale,
+                 color,
+                 outlineSize,
+                 alpha,
+                 m_HeadlineCharacters,
+                 m_HeadlineFontAtlasTexture);
+}
+
+void OpenGLRenderer::DrawTextImpl(const std::string& text,
+                                  glm::vec2 position,
+                                  float scale,
+                                  glm::vec3 color,
+                                  float outlineSize,
+                                  float alpha,
+                                  const std::map<char, Character>& chars,
+                                  unsigned int atlasTexture)
+{
     // Text uses different render state, so flush other batches first
     FlushBatch();
     FlushRectBatch();
 
-    if (m_Characters.empty() || m_FontAtlasTexture == 0)
+    if (chars.empty() || atlasTexture == 0)
     {
         Logger::Error(LOG_SUBSYSTEM, "DrawText: No font atlas loaded!");
         return;
@@ -1410,8 +1957,8 @@ void OpenGLRenderer::DrawText(const std::string& text,
     {
         if (c != '\n')
         {
-            auto it = m_Characters.find(c);
-            if (it != m_Characters.end())
+            auto it = chars.find(c);
+            if (it != chars.end())
             {
                 lineHeight = static_cast<float>(it->second.Size.y);
                 break;
@@ -1457,8 +2004,8 @@ void OpenGLRenderer::DrawText(const std::string& text,
                 continue;
             }
 
-            auto it = m_Characters.find(c);
-            if (it == m_Characters.end())
+            auto it = chars.find(c);
+            if (it == chars.end())
                 continue;
             const Character& ch = it->second;
 
@@ -1517,7 +2064,7 @@ void OpenGLRenderer::DrawText(const std::string& text,
 
     // Bind font atlas (contains all glyphs in one texture)
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_FontAtlasTexture);
+    glBindTexture(GL_TEXTURE_2D, atlasTexture);
 
     glBindVertexArray(m_TextVAO);
 

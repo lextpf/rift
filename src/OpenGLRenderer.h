@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderer.h"
+#include "PostFXParams.h"
 #include "RendererMacros.h"
 
 #include <glad/glad.h>
@@ -141,6 +142,18 @@ public:
 
     RIFT_DECLARE_COMMON_RENDERER_METHODS;
 
+    /// Draws text from the high-resolution headline atlas; crisp at the
+    /// scales used by the title screen ("RIFT" logo) without upscaling
+    /// 24-px body glyphs.
+    void DrawTextLarge(const std::string& text,
+                       glm::vec2 position,
+                       float scale,
+                       glm::vec3 color,
+                       float outlineSize,
+                       float alpha) override;
+
+    [[nodiscard]] float GetTextWidthLarge(const std::string& text, float scale) const override;
+
     void SetFontCandidates(const std::vector<std::string>& fontCandidates) override;
 
     void SetVanishingPointPerspective(bool enabled,
@@ -181,7 +194,7 @@ private:
     /// @brief Create a 1x1 white texture for colored rectangle rendering.
     void CreateWhiteTexture();
 
-    /// @brief Load a TTF font and build the glyph texture atlas.
+    /// @brief Load a TTF font and build both glyph atlases (body + headline).
     /// @param fontPath Path to the .ttf font file.
     void LoadFont(const std::string& fontPath);
 
@@ -203,9 +216,47 @@ private:
         float u0, v0, u1, v1;  ///< UV coordinates in the font atlas.
     };
 
-    std::map<char, Character> m_Characters;     ///< Glyph lookup table.
-    unsigned int m_FontAtlasTexture;            ///< OpenGL texture ID for font atlas.
-    int m_FontAtlasWidth, m_FontAtlasHeight;    ///< Atlas dimensions.
+    /// @brief Body-text glyph atlas, rasterized at @c BODY_FONT_PIXEL_SIZE.
+    std::map<char, Character> m_Characters;
+    unsigned int m_FontAtlasTexture;
+    int m_FontAtlasWidth, m_FontAtlasHeight;
+
+    /// @brief Headline glyph atlas at @c HEADLINE_FONT_PIXEL_SIZE.
+    /// Used by @ref DrawTextLarge so title-screen text stays crisp without
+    /// upscaling the body atlas's 24-px glyphs.
+    std::map<char, Character> m_HeadlineCharacters;
+    unsigned int m_HeadlineFontAtlasTexture = 0;
+    int m_HeadlineFontAtlasWidth = 0;
+    int m_HeadlineFontAtlasHeight = 0;
+
+    /// FreeType pixel sizes for the two atlases.
+    static constexpr int BODY_FONT_PIXEL_SIZE = 24;
+    static constexpr int HEADLINE_FONT_PIXEL_SIZE = 96;
+
+    /// @brief Internal: build one atlas at @p pixelSize into the provided slots.
+    /// Used by LoadFont to emit both body and headline atlases from one face.
+    void BuildAtlasInto(int pixelSize,
+                        std::map<char, Character>& outChars,
+                        unsigned int& outTexture,
+                        int& outWidth,
+                        int& outHeight);
+
+    /// @brief Internal: shared body of DrawText, parameterized over the atlas.
+    /// @c chars and @c atlasTexture select between body and headline atlases.
+    void DrawTextImpl(const std::string& text,
+                      glm::vec2 position,
+                      float scale,
+                      glm::vec3 color,
+                      float outlineSize,
+                      float alpha,
+                      const std::map<char, Character>& chars,
+                      unsigned int atlasTexture);
+
+    /// @brief Internal: shared body of GetTextWidth.
+    [[nodiscard]] float GetTextWidthImpl(const std::string& text,
+                                         float scale,
+                                         const std::map<char, Character>& chars) const;
+
     std::vector<std::string> m_FontCandidates;  ///< Project-specific font candidates.
 
 #ifdef USE_FREETYPE
@@ -337,6 +388,94 @@ private:
      * @return Shader source as string, or empty string on error.
      */
     std::string LoadShaderFromFile(const std::string& filepath);
+
+    /**
+     * @brief Compile and link a vertex+fragment program from inline source strings.
+     * @return Linked GL program ID, or 0 on compile/link failure.
+     */
+    unsigned int CompileShaderProgram(const std::string& vertSrc,
+                                      const std::string& fragSrc,
+                                      const char* debugLabel);
+
+    /// @}
+
+    /// @name Viewport tracking (for post-FX FBO sizing)
+    /// @{
+    int m_ViewportWidth = 0;
+    int m_ViewportHeight = 0;
+    /// @}
+
+    /// @name Post-FX Pipeline
+    /// @{
+
+    /// Scene FBO + color texture + depth renderbuffer. Resized on viewport change.
+    unsigned int m_SceneFBO = 0;
+    unsigned int m_SceneColorTex = 0;
+    unsigned int m_SceneDepthRBO = 0;
+    int m_SceneFBOWidth = 0;
+    int m_SceneFBOHeight = 0;
+
+    /// Bloom mip chain: progressively halved render targets for the
+    /// downsample/upsample bloom architecture. Mip 0 is half scene resolution;
+    /// each subsequent mip is half the previous. See AmbienceConfig::BLOOM_MIP_LEVELS.
+    static constexpr int kBloomMipLevels = 5;
+    unsigned int m_BloomMipFBO[kBloomMipLevels] = {};
+    unsigned int m_BloomMipTex[kBloomMipLevels] = {};
+    int m_BloomMipWidth[kBloomMipLevels] = {};
+    int m_BloomMipHeight[kBloomMipLevels] = {};
+
+    /// Empty VAO for post-FX full-screen triangle (no vertex buffer needed).
+    unsigned int m_PostVAO = 0;
+
+    /// Post-FX programs and cached uniform locations.
+    unsigned int m_PostProgram = 0;
+    unsigned int m_BloomThresholdProgram = 0;
+    unsigned int m_BloomDownProgram = 0;
+    unsigned int m_BloomUpProgram = 0;
+
+    GLint m_PostULoc_Scene = -1;
+    GLint m_PostULoc_Bloom = -1;
+    GLint m_PostULoc_BloomIntensity = -1;
+    GLint m_PostULoc_Lift = -1;
+    GLint m_PostULoc_Gamma = -1;
+    GLint m_PostULoc_Gain = -1;
+    GLint m_PostULoc_Saturation = -1;
+    GLint m_PostULoc_CAStrength = -1;
+    GLint m_PostULoc_VignetteIntensity = -1;
+    GLint m_PostULoc_VignetteInnerR = -1;
+    GLint m_PostULoc_VignetteOuterR = -1;
+    GLint m_PostULoc_VignetteAspectY = -1;
+    GLint m_PostULoc_EdgeDesat = -1;
+    GLint m_PostULoc_GrainIntensity = -1;
+    GLint m_PostULoc_GrainChromaMix = -1;
+    GLint m_PostULoc_Time = -1;
+    GLint m_PostULoc_TonemapKnee = -1;
+    GLint m_PostULoc_Enabled = -1;
+
+    GLint m_BloomThresholdULoc_Scene = -1;
+    GLint m_BloomThresholdULoc_SatThreshold = -1;
+
+    GLint m_BloomDownULoc_Input = -1;
+    GLint m_BloomDownULoc_SrcTexelSize = -1;
+
+    GLint m_BloomUpULoc_Input = -1;
+    GLint m_BloomUpULoc_SrcTexelSize = -1;
+
+    /// True after BeginScene has bound the scene FBO; cleared by EndSceneApplyPostFX.
+    bool m_SceneBound = false;
+
+    /// @brief Allocate (or recreate, on size change) the scene FBO + color tex + depth RBO.
+    void EnsureSceneFramebuffer(int width, int height);
+    /// @brief Allocate (or recreate, on size change) the bloom ping-pong FBOs.
+    void EnsureBloomFramebuffers(int width, int height);
+    /// @brief Destroy scene FBO resources (called on resize and Shutdown).
+    void DestroySceneFramebuffer();
+    /// @brief Destroy bloom FBO resources (called on resize and Shutdown).
+    void DestroyBloomFramebuffers();
+    /// @brief Compile post-FX shader programs (called once during Init).
+    bool InitPostFXShaders();
+    /// @brief Run the bright-pass + separable Gaussian blur sequence into m_BloomTex[0].
+    void RunBloomPrep();
 
     /// @}
 };
