@@ -86,7 +86,7 @@ struct Particle
     glm::vec2 move_direction;
     float max_lifetime;
 };
-````
+```
 
 ### Prefer named data over positional data
 
@@ -401,7 +401,7 @@ Trailing member/enum docs:
 //!< ...
 ```
 
-In `.cpp` files`, use `//` comments only.
+In `.cpp` files, use `//` comments only.
 
 ### Doxide guidance
 
