@@ -1000,11 +1000,6 @@ public:
      * @brief Methods for managing animated tile definitions.
      * @{
      */
-    /**
-     * @brief Add a new animated tile definition.
-     * @param anim The animation definition.
-     * @return The animation ID (index).
-     */
     /// @brief Pop the most recently added animation. Used by AddAnimatedTileCmd::Revert
     /// under the strict LIFO invariant (no per-tile animationMap reference survives
     /// because the corresponding SetTileAnimationCmd::Revert ran first).
@@ -1014,6 +1009,11 @@ public:
             m_AnimatedTiles.pop_back();
     }
 
+    /**
+     * @brief Add a new animated tile definition.
+     * @param anim The animation definition.
+     * @return The animation ID (index).
+     */
     int AddAnimatedTile(const AnimatedTile& anim)
     {
         m_AnimatedTiles.push_back(anim);
