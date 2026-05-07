@@ -12,15 +12,54 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Game";
 
-constexpr float INTERACTION_RANGE = 32.0f;      ///< NPC interaction range in pixels (2 tiles)
-constexpr float COLLISION_DISTANCE = 20.0f;     ///< Very close = colliding with NPC
-constexpr float DIRECTION_LENIENCY = 8.0f;      ///< Pixels of directional leniency when very close
-constexpr float TILE_POSITION_EPS = 0.1f;       ///< Epsilon for tile coordinate calculation
-constexpr float APPEARANCE_COPY_RANGE = 32.0f;  ///< Range for copying NPC appearance (2 tiles)
+constexpr float INTERACTION_RANGE = 32.0f;   ///< NPC interaction range in pixels (2 tiles)
+constexpr float COLLISION_DISTANCE = 20.0f;  ///< Very close = colliding with NPC
+constexpr float DIRECTION_LENIENCY = 8.0f;   ///< Pixels of directional leniency when very close
+constexpr float TILE_POSITION_EPS = 0.1f;    ///< Epsilon for tile coordinate calculation
 }  // namespace
 
 void Game::ProcessInput(float deltaTime)
 {
+    // Console toggle is checked unconditionally so `~` can both open and
+    // close it. When the console is open it consumes all subsequent input.
+    if (m_KeyConsole.JustPressed(m_Window))
+    {
+        m_Console.Toggle();
+    }
+    if (m_Console.IsOpen())
+    {
+        PumpConsoleKeys();
+        return;  // Suppress player movement, editor toggles, F-keys, etc.
+    }
+
+    // Top-level mode dispatch: Title and Pause have their own input handlers
+    // and consume all non-console input.
+    if (m_GameMode == GameMode::Title)
+    {
+        ProcessTitleInput();
+        return;
+    }
+    if (m_GameMode == GameMode::Paused)
+    {
+        ProcessPauseInput();
+        return;
+    }
+
+    // Esc enters Pause from Playing, but yields to dialogue's own Esc handler
+    // so a single press can't both close the dialogue and pause the game.
+    // Always call JustPressed to keep the toggle's edge state advancing.
+    {
+        bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnap.active;
+        bool escJustPressed = m_KeyEscape.JustPressed(m_Window);
+        if (!inAnyDialogue && escJustPressed)
+        {
+            m_GameMode = GameMode::Paused;
+            m_PauseMenu.enabled.assign(2, true);
+            m_PauseMenu.selected = 0;
+            return;
+        }
+    }
+
     glm::vec2 moveDirection(0.0f);
 
     // Check if shift is pressed for running (1.5x movement speed)
@@ -55,17 +94,6 @@ void Game::ProcessInput(float deltaTime)
         moveDirection.x += 1.0f;  // Right
     }
 
-    // Toggles between gameplay and editor mode.
-    if (m_KeyE.JustPressed(m_Window))
-    {
-        m_Editor.SetActive(!m_Editor.IsActive());
-        Logger::InfoF(LOG_SUBSYSTEM, "Editor mode: {}", m_Editor.IsActive() ? "ON" : "OFF");
-        if (m_Editor.IsActive())
-        {
-            Logger::Info(LOG_SUBSYSTEM, "Press T to toggle tile picker visibility");
-        }
-    }
-
     // Delegate all editor-specific key input to Editor
     if (m_Editor.IsActive())
     {
@@ -73,9 +101,10 @@ void Game::ProcessInput(float deltaTime)
     }
 
     // --- Remainder of ProcessInput: keys that stay in Game ---
-    // (E key is above, editor delegation just above)
-    // The following sections handle: Z, F1-F6, Space, PageUp/Down, C, B, X, F, dialogue, player
-    // movement
+    // The following sections handle: Z, F6, Space, B, X (debug-only corner cut), F,
+    // dialogue, player movement.
+    // Engine controls (editor toggle, renderer switch, debug overlays, time-of-day,
+    // 3D globe, character cycle, NPC appearance copy) are exposed as console commands.
 
     // Resets camera zoom to 1.0x and recenters on player.
     // In editor mode, also resets tile picker zoom and pan.
@@ -115,81 +144,6 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // Toggle between OpenGL and Vulkan renderers at runtime
-    if (m_KeyF1.JustPressed(m_Window))
-    {
-        // Toggle between OpenGL and Vulkan
-        RendererAPI newApi =
-            (m_RendererAPI == RendererAPI::OpenGL) ? RendererAPI::Vulkan : RendererAPI::OpenGL;
-        SwitchRenderer(newApi);
-    }
-
-    // Toggles FPS and position information display
-    if (m_KeyF2.JustPressed(m_Window))
-    {
-        m_Editor.ToggleShowDebugInfo();
-    }
-
-    // Enables visual debug overlays including:
-    //   - Collision tiles
-    //   - Player collision tolerance zones
-    //   - Navigation tiles
-    //   - NPC information
-    //   - All tile layers visible
-    if (m_KeyF3.JustPressed(m_Window))
-    {
-        m_Editor.ToggleDebugMode();
-    }
-
-    // Cycle through all 8 time periods
-    if (m_KeyF4.JustPressed(m_Window))
-    {
-        m_TimeOfDayCycle = (m_TimeOfDayCycle + 1) % 8;
-        const char* periodName = "";
-        switch (m_TimeOfDayCycle)
-        {
-            case 0:  // Dawn (05:00-07:00)
-                m_TimeManager.SetTime(6.0f);
-                periodName = "Dawn (06:00)";
-                break;
-            case 1:  // Morning (07:00-10:00)
-                m_TimeManager.SetTime(8.5f);
-                periodName = "Morning (08:30)";
-                break;
-            case 2:  // Midday (10:00-16:00)
-                m_TimeManager.SetTime(13.0f);
-                periodName = "Midday (13:00)";
-                break;
-            case 3:  // Afternoon (16:00-18:00)
-                m_TimeManager.SetTime(17.0f);
-                periodName = "Afternoon (17:00)";
-                break;
-            case 4:  // Dusk (18:00-20:00)
-                m_TimeManager.SetTime(19.0f);
-                periodName = "Dusk (19:00)";
-                break;
-            case 5:  // Evening (20:00-22:00)
-                m_TimeManager.SetTime(21.0f);
-                periodName = "Evening (21:00)";
-                break;
-            case 6:  // Night (22:00-04:00)
-                m_TimeManager.SetTime(1.0f);
-                periodName = "Night (01:00)";
-                break;
-            case 7:  // LateNight (04:00-05:00)
-                m_TimeManager.SetTime(4.5f);
-                periodName = "Late Night (04:30)";
-                break;
-        }
-        Logger::InfoF(LOG_SUBSYSTEM, "Time of day: {}", periodName);
-    }
-
-    // Toggles the 3D globe effect for an isometric-like view
-    if (m_KeyF5.JustPressed(m_Window))
-    {
-        m_Camera.Toggle3DEffect();
-    }
-
     // Toggle FPS cap (0 = uncapped, 500 = capped)
     if (m_KeyF6.JustPressed(m_Window))
     {
@@ -218,53 +172,6 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // Adjusts 3D effect parameters when enabled:
-    //   - Page Up/Down adjusts globe radius and tilt
-    if (m_Camera.GetState().enable3DEffect)
-    {
-        // Globe effect parameter adjustment
-        if (m_KeyPageUp.JustPressed(m_Window))
-        {
-            m_Camera.GetState().globeSphereRadius =
-                std::min(500.0f, m_Camera.GetState().globeSphereRadius + 10.0f);
-            m_Camera.GetState().tilt = std::max(0.0f, m_Camera.GetState().tilt - 0.05f);
-            Logger::InfoF(LOG_SUBSYSTEM,
-                          "3D Effect - Radius: {}, Tilt: {}",
-                          m_Camera.GetState().globeSphereRadius,
-                          m_Camera.GetState().tilt);
-        }
-
-        if (m_KeyPageDown.JustPressed(m_Window))
-        {
-            m_Camera.GetState().globeSphereRadius =
-                std::max(50.0f, m_Camera.GetState().globeSphereRadius - 10.0f);
-            m_Camera.GetState().tilt = std::min(1.0f, m_Camera.GetState().tilt + 0.05f);
-            Logger::InfoF(LOG_SUBSYSTEM,
-                          "3D Effect - Radius: {}, Tilt: {}",
-                          m_Camera.GetState().globeSphereRadius,
-                          m_Camera.GetState().tilt);
-        }
-    }
-    // Cycles through available player character sprites.
-    // Each character type has its own sprite sheet loaded from assets.
-    // Skip when Ctrl is held in editor mode - that's reserved for Ctrl+C (copy).
-    {
-        const bool ctrlHeld = glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                              glfwGetKey(m_Window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
-        if (m_KeyC.JustPressed(m_Window) && !(m_Editor.IsActive() && ctrlHeld))
-        {
-            CharacterType newType = NextEnum(m_Player.GetCharacterType());
-
-            // Attempt to load and switch to new character
-            if (m_Player.SwitchCharacter(newType))
-            {
-                Logger::InfoF(LOG_SUBSYSTEM,
-                              "Character switched to: {}",
-                              EnumTraits<CharacterType>::ToString(newType));
-            }
-        }
-    }
-
     // Toggles bicycle mode on/off. When bicycling:
     //   - Movement speed is 2.0x base speed
     //   - Uses center-only collision detection
@@ -285,58 +192,9 @@ void Game::ProcessInput(float deltaTime)
         Logger::InfoF(LOG_SUBSYSTEM, "Bicycle: {}", newBicycling ? "ON" : "OFF");
     }
 
-    // Copies the appearance of a nearby NPC, transforming the player.
-    // Press X again to restore original appearance.
-    // Note: Running or bicycling will automatically restore original appearance
-    //       since NPCs don't have running/bicycle sprites.
-    if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
-        !m_DialogueSnap.active && m_KeyX.JustPressed(m_Window))
-    {
-        if (m_Player.IsUsingCopiedAppearance())
-        {
-            // Restore original appearance
-            m_Player.RestoreOriginalAppearance();
-            m_Player.UploadTextures(*m_Renderer);
-            Logger::Info(LOG_SUBSYSTEM, "Restored original appearance (X)");
-        }
-        else
-        {
-            // Try to copy appearance from nearby NPC
-            glm::vec2 playerPos = m_Player.GetPosition();
-
-            NonPlayerCharacter* nearestNPC = nullptr;
-            float nearestDist = APPEARANCE_COPY_RANGE + 1.0f;
-
-            for (auto& npc : m_NPCs)
-            {
-                glm::vec2 npcPos = npc.GetPosition();
-                float dist = glm::length(npcPos - playerPos);
-                if (dist < nearestDist && dist <= APPEARANCE_COPY_RANGE)
-                {
-                    nearestDist = dist;
-                    nearestNPC = &npc;
-                }
-            }
-
-            if (nearestNPC != nullptr)
-            {
-                std::string spritePath = nearestNPC->GetSpritePath();
-                if (m_Player.CopyAppearanceFrom(spritePath))
-                {
-                    m_Player.UploadTextures(*m_Renderer);
-                    Logger::InfoF(
-                        LOG_SUBSYSTEM, "Copied appearance from: {} (X)", nearestNPC->GetType());
-                }
-            }
-            else
-            {
-                Logger::Info(LOG_SUBSYSTEM, "No NPC nearby to copy (X)");
-            }
-        }
-    }
     // In debug mode, X key toggles corner cutting on the collision tile under cursor
     // The corner nearest to the mouse cursor within the tile is toggled
-    else if (m_Editor.IsDebugMode() && m_KeyX.JustPressed(m_Window))
+    if (m_Editor.IsDebugMode() && m_KeyX.JustPressed(m_Window))
     {
         double mouseX, mouseY;
         glfwGetCursorPos(m_Window, &mouseX, &mouseY);
@@ -589,7 +447,11 @@ void Game::ProcessInput(float deltaTime)
 
                     // If diagonal, snap to nearest cardinal direction
                     // Prefer the direction with larger absolute value
-                    // TODO: Refactor, this logic is crazy messy
+                    // TODO: Extract this dialogue-snap direction calculation
+                    // (cardinal-aligned + diagonal->cardinal fallback) into a
+                    // FindDialogueSnapTile helper alongside the existing
+                    // DialogueSnapState code so the snap rules live next to
+                    // the state they drive.
                     int finalDx = 0;
                     int finalDy = 0;
                     if (dx != 0 && dy != 0)
@@ -772,9 +634,10 @@ void Game::ProcessDialogueInput()
 
 void Game::ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime)
 {
-    // Only process player movement if not in editor mode and not in dialogue
+    // Only process player movement if not in editor mode, not in dialogue,
+    // and the developer console is closed.
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
-        !m_DialogueSnap.active)
+        !m_DialogueSnap.active && !m_Console.IsOpen())
     {
         // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
@@ -787,7 +650,14 @@ void Game::ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime)
             m_NpcPositions.push_back(npc.GetPosition());
         }
 
-        m_Player.Move(moveDirection, deltaTime, &m_Tilemap, &m_NpcPositions);
+        // No-clip (developer console): bypass tile + NPC collision by passing
+        // null pointers; PlayerCharacter::Move integrates raw input when the
+        // tilemap is null. CollisionResolver::HandleIdleSnap also handles
+        // null gracefully (PlayerCharacter.cpp:563, CollisionResolver.cpp:1270).
+        const Tilemap* tilemap = m_Player.IsNoClip() ? nullptr : &m_Tilemap;
+        const std::vector<glm::vec2>* npcPositions =
+            m_Player.IsNoClip() ? nullptr : &m_NpcPositions;
+        m_Player.Move(moveDirection, deltaTime, tilemap, npcPositions);
     }
     else if (m_InDialogue || m_DialogueSnap.active)
     {
@@ -802,6 +672,13 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
     Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
     if (!game)
     {
+        return;
+    }
+
+    // Console takes scroll exclusively while open (scrollback navigation).
+    if (game->m_Console.IsOpen())
+    {
+        game->m_Console.OnScroll(yoffset);
         return;
     }
 
@@ -847,6 +724,64 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
                                         editorFreeMode,
                                         editorFreeMode);
     }
+}
+
+void Game::CharCallback(GLFWwindow* window, unsigned int codepoint)
+{
+    Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
+    if (!game)
+    {
+        return;
+    }
+    // Filter by physical key, not character: layouts that map GRAVE_ACCENT
+    // to '^' / 'degree symbol' / accented glyphs would otherwise leak the toggle key
+    // into the console buffer (e.g. "^help" on open or "noclip^" on close).
+    if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS)
+    {
+        return;
+    }
+    game->m_Console.OnChar(codepoint);
+}
+
+void Game::PumpConsoleKeys()
+{
+    // Local debounced toggles for the keys the console consumes. Held inside
+    // this method (function-local statics) so they only allocate when the
+    // console is actually open.
+    static KeyToggle<GLFW_KEY_ENTER> kEnter;
+    static KeyToggle<GLFW_KEY_BACKSPACE> kBackspace;
+    static KeyToggle<GLFW_KEY_DELETE> kDelete;
+    static KeyToggle<GLFW_KEY_TAB> kTab;
+    static KeyToggle<GLFW_KEY_UP> kUp;
+    static KeyToggle<GLFW_KEY_DOWN> kDown;
+    static KeyToggle<GLFW_KEY_LEFT> kLeft;
+    static KeyToggle<GLFW_KEY_RIGHT> kRight;
+    static KeyToggle<GLFW_KEY_HOME> kHome;
+    static KeyToggle<GLFW_KEY_END> kEnd;
+    static KeyToggle<GLFW_KEY_ESCAPE> kEscape;
+
+    if (kEnter.JustPressed(m_Window))
+        m_Console.OnEnter();
+    if (kBackspace.JustPressed(m_Window))
+        m_Console.OnBackspace();
+    if (kDelete.JustPressed(m_Window))
+        m_Console.OnDelete();
+    if (kTab.JustPressed(m_Window))
+        m_Console.OnTab();
+    if (kUp.JustPressed(m_Window))
+        m_Console.OnUp();
+    if (kDown.JustPressed(m_Window))
+        m_Console.OnDown();
+    if (kLeft.JustPressed(m_Window))
+        m_Console.OnLeft();
+    if (kRight.JustPressed(m_Window))
+        m_Console.OnRight();
+    if (kHome.JustPressed(m_Window))
+        m_Console.OnHome();
+    if (kEnd.JustPressed(m_Window))
+        m_Console.OnEnd();
+    if (kEscape.JustPressed(m_Window))
+        m_Console.OnEscape();
 }
 
 void Game::ReleaseDialogueNPC()
