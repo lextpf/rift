@@ -163,6 +163,16 @@ public:
      */
     void UploadTextures(IRenderer& renderer);
 
+    /// @brief Get the walking sprite sheet (const, for rendering / sampling).
+    const Texture& GetSpriteSheet() const { return m_SpriteSheet; }
+    /// @brief Get mutable reference to the walking sprite sheet.
+    Texture& GetSpriteSheet() { return m_SpriteSheet; }
+
+    /// @brief Get a representative accent color for the player (lazy, cached).
+    /// Sampled from the walking sprite sheet via @ref Texture::SampleDominantNonSkinColor;
+    /// reset when SwitchCharacter or CopyAppearanceFrom replaces the sheet.
+    glm::vec3 GetAccentColor() const;
+
     /**
      * @brief Update player animation state.
      *
@@ -217,13 +227,26 @@ public:
 
     /**
      * @brief Enable or disable running mode.
+     *
+     * Running selects the running sprite sheet and the running movement speed.
+     * If bicycle mode is also active, bicycle takes precedence and running has
+     * no visible effect until bicycle is disabled.
+     *
      * @param running true to enable running, false for walking.
+     * @see SetBicycling
      */
     void SetRunning(bool running);
 
     /**
      * @brief Enable or disable bicycle mode.
+     *
+     * Bicycle has the highest priority among movement modes. The active mode
+     * is resolved as `Bicycling > Running > Walking`: enabling bicycle while
+     * running keeps the running flag set internally, but the bicycle sprite
+     * and bicycle speed are used until bicycle is disabled.
+     *
      * @param bicycling true to enable bicycle, false to disable.
+     * @see SetRunning
      */
     void SetBicycling(bool bicycling);
 
@@ -232,6 +255,19 @@ public:
      * @return true if bicycle mode is active.
      */
     bool IsBicycling() const { return m_IsBicycling; }
+
+    /**
+     * @brief Toggle no-clip mode (bypass tile and NPC collision).
+     *
+     * When enabled, Game::ProcessPlayerMovement passes nullptr for the
+     * tilemap and NPC list, so PlayerCharacter::Move integrates raw input
+     * without consulting the collision pipeline. Used by the developer
+     * console's `noclip` command.
+     */
+    void SetNoClip(bool enabled) { m_NoClip = enabled; }
+
+    /// @brief Check if no-clip mode is active.
+    bool IsNoClip() const { return m_NoClip; }
 
     /**
      * @brief Check if player is currently moving.
@@ -367,12 +403,16 @@ private:
     Texture m_BicycleSpriteSheet;  ///< Bicycle sprite sheet
     /** @} */
 
+    mutable glm::vec3 m_AccentColor{0.0f};  ///< Cached accent color (lazy via GetAccentColor)
+    mutable bool m_AccentSampled{false};    ///< Reset on character/appearance swap
+
     /**
      * @name Movement State
      * @{
      */
     bool m_IsRunning;                   ///< Running mode flag (1.9x speed)
     bool m_IsBicycling;                 ///< Bicycle mode flag (2.0x speed)
+    bool m_NoClip = false;              ///< Developer-console no-clip mode (skip collision)
     bool m_IsUsingCopiedAppearance;     ///< True if using copied NPC appearance
     glm::vec2 m_LastSafeTileCenter;     ///< Last valid tile center (for stuck recovery)
     glm::vec2 m_LastMovementDirection;  ///< Previous frame's movement direction

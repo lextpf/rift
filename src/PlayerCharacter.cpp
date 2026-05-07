@@ -1,5 +1,6 @@
 #include "PlayerCharacter.h"
 
+#include "AmbienceConfig.h"
 #include "IRenderer.h"
 #include "Logger.h"
 #include "Tilemap.h"
@@ -199,6 +200,8 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
         m_BicycleSpriteSheet = std::move(newBicycle);
     }
     m_CharacterType = characterType;
+    // Walking sheet swapped; accent color must be re-sampled from the new pixels.
+    m_AccentSampled = false;
 
     Logger::InfoF(LOG_SUBSYSTEM, "Switched to {}", typeName);
     return true;
@@ -233,8 +236,21 @@ bool PlayerCharacter::CopyAppearanceFrom(const std::string& spritePath)
     // Commit the change -- only the walking sheet is replaced.
     m_SpriteSheet = std::move(newWalk);
     m_IsUsingCopiedAppearance = true;
+    // New walking pixels -> drop the cached accent so dialogue picks up the disguise.
+    m_AccentSampled = false;
     Logger::InfoF(LOG_SUBSYSTEM, "Copied appearance from: {}", spritePath);
     return true;
+}
+
+glm::vec3 PlayerCharacter::GetAccentColor() const
+{
+    if (!m_AccentSampled)
+    {
+        m_AccentColor =
+            m_SpriteSheet.SampleDominantNonSkinColor(ambience::DIALOGUE_ACCENT_FALLBACK);
+        m_AccentSampled = true;
+    }
+    return m_AccentColor;
 }
 
 void PlayerCharacter::RestoreOriginalAppearance()
