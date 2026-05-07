@@ -1,5 +1,4 @@
 /**
- * @file DoxygenGroups.h
  * @brief Doxygen module definitions and hierarchical documentation structure.
  * @author Alex (https://github.com/lextpf)
  *
@@ -35,7 +34,7 @@
  */
 
 /**
- * @defgroup Core Core Engine
+ * @addtogroup Core Core Engine
  * @brief Core engine components including the main game loop, state management, and orchestration.
  *
  * The Core module provides the foundational infrastructure for the game:
@@ -69,7 +68,7 @@
  */
 
 /**
- * @defgroup Rendering Rendering System
+ * @addtogroup Rendering Rendering System
  * @brief Graphics abstraction layer supporting OpenGL and Vulkan backends.
  *
  * The Rendering module provides a unified interface for 2D sprite rendering,
@@ -179,7 +178,7 @@
  */
 
 /**
- * @defgroup World World System
+ * @addtogroup World World System
  * @brief Game world representation including tilemaps, collision detection, and navigation.
  *
  * The World module manages the static game environment and provides spatial queries.
@@ -225,7 +224,7 @@
  */
 
 /**
- * @defgroup Entities Entity System
+ * @addtogroup Entities Entity System
  * @brief Game entities including the player character and non-player characters (NPCs).
  *
  * The Entities module manages all dynamic objects in the game world.
@@ -269,7 +268,7 @@
  */
 
 /**
- * @defgroup Input Input System
+ * @addtogroup Input Input System
  * @brief Input handling for keyboard and mouse interactions.
  *
  * The Input module processes user input and translates it into game actions.
@@ -280,11 +279,12 @@
  * - **Gameplay Mode**: Player movement, NPC interaction, collision detection, camera control
  * - **Editor Mode**: Tile placement, collision editing, NPC spawning, navigation editing
  *
- * Press **E** to toggle between modes.
+ * Open the developer console with **`** (or **F12** on non-US layouts) and run
+ * `editor on` to enter editor mode.
  *
  * @par Input Priority
  * Input is processed hierarchically. Higher-priority handlers block lower ones:
- * 1. **Global toggles** (E, F3, F4) - always processed
+ * 1. **Console toggle** (\`/F12) - always processed; when open consumes all input
  * 2. **Dialogue** - blocks movement when active (Esc to dismiss)
  * 3. **Editor controls** - only when editor mode is active
  * 4. **Player movement** - only in gameplay mode, outside dialogue
@@ -296,8 +296,6 @@
  * |     Shift     | Run (1.9x speed)                 |
  * |       B       | Toggle bicycle mode (2.0x speed) |
  * |       F       | Talk to NPC (when facing one)    |
- * |       X       | Copy/restore NPC appearance      |
- * |       C       | Cycle character sprite           |
  * |  Ctrl+Scroll  | Zoom camera                      |
  * |  Arrow Keys   | Pan camera (reset when moving)   |
  * |       Z       | Reset zoom to 1.0x               |
@@ -324,7 +322,6 @@
  * @par Editor Controls
  * |     Key      |                Action                 |
  * |--------------|---------------------------------------|
- * |      E       | Toggle editor mode                    |
  * |     1-0      | Select tilemap layer (1-5 bg, 6-0 fg) |
  * |      T       | Toggle tile picker                    |
  * |      R       | Rotate selection 90 deg               |
@@ -348,15 +345,32 @@
  * | Ctrl+Scroll  | Zoom                                  |
  *
  * @par Debug and Visual Controls
- * |   Key   |                         Action                          |
- * |---------|---------------------------------------------------------|
- * |   F1    | Switch renderer (OpenGL/Vulkan)                         |
- * |   F2    | Toggle debug overlays (collision, navigation, anchors)  |
- * |   F3    | Toggle FPS/position display                             |
- * |   F4    | Toggle 3D globe effect                                  |
- * |   F5    | Cycle time of day (day/evening/night/morning)           |
- * | Up/Down | Adjust 3D globe intensity                               |
- * |    X    | Toggle corner cut blocking on tile (debug mode only)    |
+ * Engine controls are exposed as developer-console commands (open with **\`**
+ * or **F12**). The remaining keybindings are gameplay-only.
+ *
+ * |        Key         |                  Action                     |
+ * |--------------------|---------------------------------------------|
+ * |        F6          | Toggle FPS cap (uncapped / 500)             |
+ * |       Space        | Toggle free camera (gameplay only)          |
+ * |         X          | Toggle corner cut blocking (debug mode only)|
+ *
+ * |  Canonical                  | Aliases               |              Action                  |
+ * |-----------------------------|-----------------------|--------------------------------------|
+ * | `editor [on\|off\|toggle]`  | `ed`                  | Toggle level editor mode             |
+ * | `renderer.set <opengl\|vulkan>` | `rndr.set`, `gfx` | Switch renderer at runtime           |
+ * | `debug.info [on\|off]`      | `dbg.info`, `fps`     | Toggle FPS/coords HUD                |
+ * | `debug.overlays [on\|off]`  | `dbg.overlays`, `dbg` | Toggle collision/nav/anchor overlays |
+ * | `globe [on\|off]`           | (none)                | Toggle 3D globe perspective          |
+ * | `globe.radius <50..500>`    | `glb.r`, `globe.r`, `gr` | Set globe radius                  |
+ * | `globe.tilt <0..1>`         | `glb.t`, `globe.t`, `gt` | Set camera tilt                   |
+ * | `globe.intensity <up\|down>`| `glb.i`, `globe.i`, `gi` | Coupled radius+tilt step          |
+ * | `time.next`                 | `tm.next`, `tn`       | Advance to next time-of-day preset   |
+ * | `time.set <hours>`          | (none)                | Set in-game time (0.0-24.0)          |
+ * | `character.set <name>`      | `char.set`, `cs`      | Switch player character              |
+ * | `character.next`            | `char.next`, `cn`     | Cycle to next player character       |
+ * | `appearance.copy`           | `appr.copy`, `mimic`  | Copy appearance from nearest NPC     |
+ * | `appearance.restore`        | `appr.restore`, `unmimic` | Restore original appearance      |
+ * | `postfx [on\|off\|toggle]`  | `fx`, `pfx`           | Toggle bloom/grading/vignette/grain  |
  *
  * @par Key Debouncing
  * Toggle keys use a flag pattern to prevent repeated triggers:
@@ -374,7 +388,7 @@
  */
 
 /**
- * @defgroup Dialogue Dialogue System
+ * @addtogroup Dialogue Dialogue System
  * @brief Interactive dialogue and conversation management for NPC interactions.
  *
  * The Dialogue module provides a flexible conversation system for player-NPC
@@ -419,7 +433,7 @@
  */
 
 /**
- * @defgroup Effects Visual Effects System
+ * @addtogroup Effects Visual Effects System
  * @brief Particle systems, atmospheric effects, and visual enhancements.
  *
  * The Effects module provides dynamic visual elements that enhance the game's
