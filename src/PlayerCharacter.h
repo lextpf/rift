@@ -78,9 +78,9 @@ struct EnumTraits<CharacterType> : EnumTraitsBase<CharacterType, EnumTraits<Char
  * @endcode
  *
  * @par Movement
- * - Walking: 80 px/s (1.0x base)
- * - Running: 152 px/s (1.9x)
- * - Bicycle: 160 px/s (2.0x)
+ * - Walking: 50 px/s (1.0x base)
+ * - Running: 87.5 px/s (1.75x)
+ * - Bicycle: 112.5 px/s (2.25x)
  *
  * @par Collision
  * - Strict mode: Full 16x16 hitbox check
@@ -270,6 +270,18 @@ public:
     bool IsNoClip() const { return m_NoClip; }
 
     /**
+     * @brief Set the developer-console speed multiplier (speedhack).
+     *
+     * Multiplies the final movement speed (after run/bicycle multipliers).
+     * 1.0 is normal; values >1 speed up, <1 slow down. Caller is expected
+     * to validate `m > 0` before calling.
+     */
+    void SetSpeedMultiplier(float m) { m_SpeedMultiplier = m; }
+
+    /// @brief Current developer-console speed multiplier (default 1.0).
+    float GetSpeedMultiplier() const { return m_SpeedMultiplier; }
+
+    /**
      * @brief Check if player is currently moving.
      * @return true if player is in motion, false if idle.
      */
@@ -410,9 +422,10 @@ private:
      * @name Movement State
      * @{
      */
-    bool m_IsRunning;                   ///< Running mode flag (1.9x speed)
-    bool m_IsBicycling;                 ///< Bicycle mode flag (2.0x speed)
+    bool m_IsRunning;                   ///< Running mode flag (1.75x speed)
+    bool m_IsBicycling;                 ///< Bicycle mode flag (2.25x speed)
     bool m_NoClip = false;              ///< Developer-console no-clip mode (skip collision)
+    float m_SpeedMultiplier = 1.0f;     ///< Developer-console speedhack multiplier (1.0 = normal)
     bool m_IsUsingCopiedAppearance;     ///< True if using copied NPC appearance
     glm::vec2 m_LastSafeTileCenter;     ///< Last valid tile center (for stuck recovery)
     glm::vec2 m_LastMovementDirection;  ///< Previous frame's movement direction
