@@ -20,9 +20,9 @@
  * chromatic aberration gives radial color fringe at frame edges, and a
  * saturation-thresholded chroma bloom spreads color outward from saturated
  * sources without lifting luminance (so red lanterns bleed red, blue water
- * bleeds blue, white surfaces stay matte). Saturation +35%, bloom 0.40
+ * bleeds blue, white surfaces stay matte). Saturation +25%, bloom 0.30
  * (chroma-only), vignette ~17%, CA 0.007 (~10px at 1024-wide), color
- * grading +/-8%, grain +/-2 luma steps. Camera breathing/sway remains
+ * grading +/-6%, grain +/-2 luma steps. Camera breathing/sway remains
  * sub-pixel.
  */
 namespace ambience
@@ -31,7 +31,7 @@ namespace ambience
 // =============================================================================
 // Post-FX pipeline (single offscreen FBO + screen-quad pass)
 //
-// Composition order in post.frag:
+// Composition order in PostFXComposite.frag:
 //   1. Sample scene (with chromatic aberration per-channel offset)
 //   2. Add chroma-only bloom (b - vec3(dot(b, LUMA))) - zero net luminance
 //   3. LGG grading split (shadows / midtones / highlights)
@@ -39,7 +39,7 @@ namespace ambience
 //   5. Grain (luminance-modulated, slight chroma)
 //   6. Tonemap (soft-shoulder)
 //
-// The bloom feeder (bloom_threshold.frag) gates on HSV saturation, not luma -
+// The bloom feeder (BloomPrefilter.frag) gates on HSV saturation, not luma -
 // only colored pixels enter the mip chain. Combined with the chroma-only
 // composite this gives "color bleed without shine."
 // =============================================================================
@@ -74,17 +74,17 @@ constexpr float GRAIN_CHROMA_MIX = 0.30f;
 /// bloom; below pass through. 0.30 admits visibly colored pixels (saturated
 /// foliage, water, lanterns, dialogue accents) and rejects whites / off-whites
 /// / lit tile faces - the gating mechanism for "neon glow on colored sources,
-/// no glow on bright surfaces." See bloom_threshold.frag and the Karis-style
+/// no glow on bright surfaces." See BloomPrefilter.frag and the Karis-style
 /// soft filter in PostFXParams::KarisBloomChromaWeight.
 constexpr float BLOOM_SATURATION_THRESHOLD = 0.30f;
 
-/// Bloom intensity scalar applied during composite. 0.40 with the chroma-only
-/// composite path in post.frag (`col += b - vec3(dot(b, LUMA))`) yields a
+/// Bloom intensity scalar applied during composite. 0.30 with the chroma-only
+/// composite path in PostFXComposite.frag (`col += b - vec3(dot(b, LUMA))`) yields a
 /// pleasantly subtle color bleed without any net luminance lift - the entire
 /// bloom contribution projects onto the chroma plane orthogonal to the luma
 /// axis. Set to 0.0 to disable bloom contribution while keeping the mip
 /// chain available.
-constexpr float BLOOM_INTENSITY = 0.40f;
+constexpr float BLOOM_INTENSITY = 0.30f;
 
 /// Number of mip levels in the bloom downsample/upsample chain.
 /// 5 levels covers 1/2 -> 1/32 resolution, enough for multi-scale character on cozy scenes.
@@ -93,16 +93,17 @@ constexpr int BLOOM_MIP_LEVELS = 5;
 /// Global color saturation multiplier applied after grading, before vignette.
 /// 1.0 = identity, >1 pumps chroma, 0 = grayscale. The math is luma-preserving
 /// (`mix(vec3(L), c, s)`) so this adds zero brightness - the entire "pop" is
-/// chroma deviation, not luma lift. 1.35 reads as a clear arcade-neon pop on
+/// chroma deviation, not luma lift. 1.25 reads as a softer arcade-neon pop on
 /// foliage / sky / tiles, well below the cartoon threshold (>=1.6). See
-/// post.frag applySaturation().
-constexpr float COLOR_SATURATION = 1.35f;
+/// PostFXComposite.frag applySaturation().
+constexpr float COLOR_SATURATION = 1.25f;
 
-/// Color grading warm/cool RGB swing (+/-). Per-time-of-day blend at 0.08
+/// Color grading warm/cool RGB swing (+/-). Per-time-of-day blend at 0.06
 /// reads as distinct mood per anchor (dawn/midday/dusk/night) without
-/// crossing into "filtered" territory. Documentation anchor for the inline
-/// coefficients in PostFXParams::ComputeGradingParams.
-constexpr float GRADING_TINT_AMPLITUDE = 0.08f;
+/// crossing into "filtered" territory. Drives the inline directional
+/// weights in PostFXParams::ComputeGradingParams; this is the single tuning
+/// lever for per-time-of-day swing magnitude.
+constexpr float GRADING_TINT_AMPLITUDE = 0.06f;
 
 /// Chromatic aberration strength (UV space). The R/B channels are sampled at radial
 /// offsets that grow with distance from screen center, so the center stays sharp
@@ -138,9 +139,10 @@ constexpr float AMBIENT_DUST_SPAWN_PER_SEC = 3.5f;
 /// Per-second spawn rate for pollen (golden hour only - bias formula gates window).
 constexpr float AMBIENT_POLLEN_SPAWN_PER_SEC = 2.5f;
 
-/// Maximum alpha for ambient particles. Firefly-tier peak so they read as a
-/// decorative feature of the world rather than a barely-visible filter.
-constexpr float AMBIENT_PARTICLE_ALPHA_CAP = 0.85f;
+/// Maximum alpha for ambient particles. Uniform 0.6-0.75 target across most
+/// particle types so they read as glowy decorative features rather than
+/// barely-visible filters.
+constexpr float AMBIENT_PARTICLE_ALPHA_CAP = 0.7f;
 
 /// Margin in world pixels around camera rect for spawning (pre-spawned just off-screen).
 constexpr float AMBIENT_PARTICLE_SPAWN_MARGIN = 64.0f;
@@ -229,7 +231,7 @@ constexpr float DIALOGUE_PANEL_PADDING = 6.0f;
 /// text; pairing with a *light* fill produces the classic outlined-text look
 /// (Stardew, Pokemon). Pure black text + black outline collapses into a
 /// black blob - the fill must contrast with the outline.
-constexpr glm::vec3 DIALOGUE_BODY_TEXT_COLOR{1.000f, 0.960f, 0.880f};  ///< warm white #fff5e0
+constexpr glm::vec3 DIALOGUE_BODY_TEXT_COLOR{1.000f, 0.960f, 0.880f};  ///< warm white \#fff5e0
 
 /// Speaker ribbon text fill color. Same rationale as body text: light fill +
 /// black outline reads on any accent background without a luminance flip.
