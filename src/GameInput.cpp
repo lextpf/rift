@@ -763,7 +763,14 @@ void Game::PumpConsoleKeys()
     if (kEnter.JustPressed(m_Window))
         m_Console.OnEnter();
     if (kBackspace.JustPressed(m_Window))
-        m_Console.OnBackspace();
+    {
+        const bool ctrl = glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                          glfwGetKey(m_Window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        if (ctrl)
+            m_Console.OnClearLine();
+        else
+            m_Console.OnBackspace();
+    }
     if (kDelete.JustPressed(m_Window))
         m_Console.OnDelete();
     if (kTab.JustPressed(m_Window))
