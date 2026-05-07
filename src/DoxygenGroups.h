@@ -365,7 +365,9 @@
  * | `globe.tilt <0..1>`         | `glb.t`, `globe.t`, `gt` | Set camera tilt                   |
  * | `globe.intensity <up\|down>`| `glb.i`, `globe.i`, `gi` | Coupled radius+tilt step          |
  * | `time.next`                 | `tm.next`, `tn`       | Advance to next time-of-day preset   |
- * | `time.set <hours>`          | (none)                | Set in-game time (0.0-24.0)          |
+ * | `teleport <tx> <ty>`        | `tp`                  | Move player to tile coord            |
+ * | `time.set <hours>`          | `ts`                  | Set in-game time (0.0-24.0)          |
+ * | `noclip [on\|off]`          | `nc`                  | Toggle player tile/NPC collision     |
  * | `character.set <name>`      | `char.set`, `cs`      | Switch player character              |
  * | `character.next`            | `char.next`, `cn`     | Cycle to next player character       |
  * | `appearance.copy`           | `appr.copy`, `mimic`  | Copy appearance from nearest NPC     |
@@ -477,4 +479,29 @@
  * Each particle zone has configurable density and spawn rate limits.
  *
  * @see ParticleSystem, SkyRenderer, ParticleZone
+ */
+
+/**
+ * @addtogroup Editor Editor & Tools
+ * @brief In-game level editor: tile placement, undo/redo, NPC and particle-zone
+ *        editing, navigation/elevation strokes, and the EditorCommand pattern.
+ *
+ * The Editor module is decoupled from Game via the EditorContext struct, which
+ * is built fresh each frame by Game::MakeEditorContext(). The editor never
+ * stores the context across frames - its reference members would dangle.
+ *
+ * @par Architecture
+ * - **Editor**: top-level mode driver, mouse/keyboard handlers, rendering of
+ *   overlays and the tile picker.
+ * - **EditorContext**: per-frame bundle of references to Game state the editor
+ *   may mutate (tilemap, player, NPCs, time, project manifest).
+ * - **EditorCommand**: abstract base for undo/redo. Concrete commands live in
+ *   EditorCommands.{h,cpp}; CompositeCmd batches multiple commands as one
+ *   undo step (used by stroke accumulators).
+ * - **UndoRedoStack**: bounded stack of EditorCommand instances.
+ * - **Stroke accumulators**: TilePlaceStrokeAccum, CollisionStrokeAccum,
+ *   NavigationStrokeAccum, ElevationStrokeAccum - coalesce drag-paint input
+ *   into a single composite command at mouse release.
+ *
+ * @see Editor, EditorCommand, EditorCommands, UndoRedoStack
  */
