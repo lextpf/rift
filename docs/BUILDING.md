@@ -96,9 +96,9 @@ flowchart LR
     classDef tool fill:#f39c12,stroke:#e67e22,color:#1a1a2e
     classDef output fill:#134e3a,stroke:#10b981,color:#e2e8f0
 
-    GLSL["sprite.vert/frag"]:::source
+    GLSL["Geometry.vert/frag"]:::source
     Compiler["glslangValidator"]:::tool
-    SPIRV["sprite.vert.spv"]:::output
+    SPIRV["Geometry.vert.spv"]:::output
 
     GLSL --> Compiler --> SPIRV
 </pre>
@@ -108,8 +108,8 @@ The `build.bat` script compiles shaders via `glslangValidator` (installed with t
 
 **Manual compilation:**
 ```cmd
-glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv
-glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv
+glslangValidator -V shaders/Geometry.vert -o shaders/Geometry.vert.spv
+glslangValidator -V shaders/Geometry.frag -o shaders/Geometry.frag.spv
 glslangValidator -V shaders/text.vert -o shaders/text.vert.spv
 glslangValidator -V shaders/text.frag -o shaders/text.frag.spv
 ```
