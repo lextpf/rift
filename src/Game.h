@@ -297,7 +297,7 @@ private:
      * @brief Process keyboard and mouse input.
      *
      * Handles both gameplay and editor input based on current mode.
-     * See @ref GameInput for complete input documentation.
+     * See @ref Input for complete input documentation.
      *
      * @param deltaTime Frame time in seconds (for movement scaling).
      */
