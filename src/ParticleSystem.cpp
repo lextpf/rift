@@ -1,5 +1,6 @@
 #include "ParticleSystem.h"
 
+#include "AmbienceConfig.h"
 #include "Logger.h"
 #include "MathConstants.h"
 #include "ProceduralTexture.h"
@@ -560,6 +561,179 @@ struct ParticleBehavior<ParticleType::Sunshine>
 };
 
 // ---------------------------------------------------------------------------
+// DriftingLeaf (ambient cozy: small leaf drifting on prevailing wind)
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::DriftingLeaf>
+{
+    static constexpr float SpawnRate = 2.5f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Wind drift along normalised wind direction with gentle Y oscillation.
+        const glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+        p.position += wind * 18.0f * ctx.deltaTime;
+        p.position.y += std::sin(ctx.time * 1.4f + p.phase) * 6.0f * ctx.deltaTime;
+        p.rotation += 25.0f * ctx.deltaTime;
+
+        // Subtle alpha curve: fade in / fade out over lifetime.
+        float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.8f);
+        float lifeFade = std::min(1.0f, p.lifetime / 1.5f);
+        p.color.a = fadeIn * lifeFade * ambience::AMBIENT_PARTICLE_ALPHA_CAP;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::DriftingLeaf;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity = glm::vec2(0.0f);
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        p.color = glm::vec4(0.55f + ctx.dist(ctx.rng) * 0.25f,
+                            0.45f + ctx.dist(ctx.rng) * 0.25f,
+                            0.20f + ctx.dist(ctx.rng) * 0.15f,
+                            0.0f);
+        p.size = 6.0f + ctx.dist(ctx.rng) * 4.0f;
+        p.lifetime = 10.0f + ctx.dist(ctx.rng) * 5.0f;
+        p.maxLifetime = p.lifetime;
+        p.additive = false;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// DustMote (ambient cozy: tiny golden mote in sunbeams)
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::DustMote>
+{
+    static constexpr float SpawnRate = 3.5f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Slow vertical rise/fall + small horizontal jitter.
+        p.position.y += std::sin(ctx.time * 0.6f + p.phase) * 4.0f * ctx.deltaTime;
+        p.position.x += std::cos(ctx.time * 0.4f + p.phase * 1.3f) * 3.0f * ctx.deltaTime;
+
+        float twinkle = 0.7f + 0.3f * std::sin(ctx.time * 2.5f + p.phase);
+        float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.6f);
+        float lifeFade = std::min(1.0f, p.lifetime / 1.0f);
+        p.color.a = fadeIn * lifeFade * twinkle * ambience::AMBIENT_PARTICLE_ALPHA_CAP * 0.95f;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::DustMote;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity = glm::vec2(0.0f);
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        p.color = glm::vec4(1.0f, 0.92f, 0.65f, 0.0f);
+        p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.lifetime = 6.0f + ctx.dist(ctx.rng) * 4.0f;
+        p.maxLifetime = p.lifetime;
+        p.additive = true;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Pollen (ambient cozy: yellow drift during golden hour)
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::Pollen>
+{
+    static constexpr float SpawnRate = 2.5f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Horizontal drift on wind, very gentle vertical sway.
+        const glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+        p.position += wind * 8.0f * ctx.deltaTime;
+        p.position.y += std::sin(ctx.time * 0.9f + p.phase) * 3.0f * ctx.deltaTime;
+
+        float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.7f);
+        float lifeFade = std::min(1.0f, p.lifetime / 1.2f);
+        p.color.a = fadeIn * lifeFade * ambience::AMBIENT_PARTICLE_ALPHA_CAP * 0.9f;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::Pollen;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity = glm::vec2(0.0f);
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        p.color = glm::vec4(1.0f, 0.95f, 0.55f, 0.0f);
+        p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.lifetime = 7.0f + ctx.dist(ctx.rng) * 5.0f;
+        p.maxLifetime = p.lifetime;
+        p.additive = true;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Smoke (zone-spawned chimney smoke: low alpha, slow rise, sine-modulated drift)
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::Smoke>
+{
+    static constexpr float SpawnRate = 1.5f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Slow rise + gentle horizontal sine drift; size grows slightly as smoke rises.
+        p.position.y -= ambience::SMOKE_RISE_SPEED * ctx.deltaTime;
+        p.position.x +=
+            std::sin(ctx.time * 0.8f + p.phase) * ambience::SMOKE_DRIFT_AMPLITUDE * ctx.deltaTime;
+        p.size += 4.0f * ctx.deltaTime;
+
+        // Fade in fast, fade out over second half of lifetime.
+        float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.4f);
+        float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.6f));
+        p.color.a = fadeIn * lifeFade * ambience::SMOKE_ALPHA_CAP;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::Smoke;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity = glm::vec2(0.0f);
+        p.color = glm::vec4(0.55f, 0.55f, 0.55f, 0.0f);
+        p.size = ambience::SMOKE_BASE_SIZE_PX + ctx.dist(ctx.rng) * 4.0f;
+        p.lifetime =
+            ambience::SMOKE_LIFETIME_MIN +
+            ctx.dist(ctx.rng) * (ambience::SMOKE_LIFETIME_MAX - ambience::SMOKE_LIFETIME_MIN);
+        p.maxLifetime = p.lifetime;
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        p.additive = false;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Dispatch tables - auto-generated from ParticleBehavior specializations
 // ---------------------------------------------------------------------------
 
@@ -634,8 +808,8 @@ void ParticleSystem::UploadTextures(IRenderer& renderer)
 
 void ParticleSystem::BuildAtlas()
 {
-    // Particle texture sources: 6 files + 2 procedural
-    // We'll pack them in a 512x512 atlas with a simple row layout
+    // Particle texture sources: 9 files + 2 procedural; Smoke aliases Fog post-pack.
+    // We'll pack them in a 512x512 atlas with a simple row layout.
 
     struct TextureSource
     {
@@ -644,7 +818,9 @@ void ParticleSystem::BuildAtlas()
         int height = 0;
     };
 
-    TextureSource sources[8];
+    // Indexed by ParticleType enum value. Smoke (=11) aliases Fog after packing.
+    constexpr int kAtlasSourceCount = 11;
+    TextureSource sources[kAtlasSourceCount];
     const char* filePaths[6] = {
         "assets/particles/304502d7-426b-4abc-a608-ff01a185df96.png",  // Firefly
         "assets/particles/9509e404-2fce-4fbf-a082-720f85e7244e.png",  // Rain
@@ -657,13 +833,13 @@ void ParticleSystem::BuildAtlas()
     // Load file-based textures temporarily to get their pixel data.
     // All sources are normalized to RGBA (4 channels) so the atlas copy
     // loop can safely read 4 bytes per pixel regardless of the original format.
-    for (int i = 0; i < 6; i++)
+    auto loadPng = [](const char* path, TextureSource& src)
     {
         Texture temp;
-        if (temp.LoadFromFile(filePaths[i]))
+        if (temp.LoadFromFile(path))
         {
-            sources[i].width = temp.GetWidth();
-            sources[i].height = temp.GetHeight();
+            src.width = temp.GetWidth();
+            src.height = temp.GetHeight();
             int channels = temp.GetChannels();
             size_t pixelCount =
                 static_cast<size_t>(temp.GetWidth()) * static_cast<size_t>(temp.GetHeight());
@@ -672,46 +848,55 @@ void ParticleSystem::BuildAtlas()
             {
                 // Already RGBA -- straight copy.
                 size_t dataSize = pixelCount * 4;
-                sources[i].pixels.resize(dataSize);
+                src.pixels.resize(dataSize);
                 if (!temp.GetImageData().empty())
                 {
-                    memcpy(sources[i].pixels.data(), temp.GetImageData().data(), dataSize);
+                    memcpy(src.pixels.data(), temp.GetImageData().data(), dataSize);
                 }
+                return;
             }
-            else if (channels == 3 && !temp.GetImageData().empty())
+            if (channels == 3 && !temp.GetImageData().empty())
             {
                 // RGB -> RGBA: expand each pixel, setting alpha to 255.
-                sources[i].pixels.resize(pixelCount * 4);
-                const unsigned char* src = temp.GetImageData().data();
-                unsigned char* dst = sources[i].pixels.data();
+                src.pixels.resize(pixelCount * 4);
+                const unsigned char* srcPx = temp.GetImageData().data();
+                unsigned char* dst = src.pixels.data();
                 for (size_t px = 0; px < pixelCount; ++px)
                 {
-                    dst[px * 4 + 0] = src[px * 3 + 0];
-                    dst[px * 4 + 1] = src[px * 3 + 1];
-                    dst[px * 4 + 2] = src[px * 3 + 2];
+                    dst[px * 4 + 0] = srcPx[px * 3 + 0];
+                    dst[px * 4 + 1] = srcPx[px * 3 + 1];
+                    dst[px * 4 + 2] = srcPx[px * 3 + 2];
                     dst[px * 4 + 3] = 255;
                 }
-            }
-            else
-            {
-                // Unsupported channel count -- fall through to white fallback.
-                sources[i].width = 16;
-                sources[i].height = 16;
-                sources[i].pixels.resize(16 * 16 * 4, 255);
+                return;
             }
         }
-        else
-        {
-            // Fallback: 16x16 white texture
-            sources[i].width = 16;
-            sources[i].height = 16;
-            sources[i].pixels.resize(16 * 16 * 4, 255);
-        }
+        // Fallback: 16x16 white texture (also covers unsupported channel counts).
+        src.width = 16;
+        src.height = 16;
+        src.pixels.assign(16 * 16 * 4, 255);
+    };
+
+    for (int i = 0; i < 6; i++)
+    {
+        loadPng(filePaths[i], sources[i]);
     }
 
     // Generate procedural textures
     GenerateLanternPixels(sources[6].pixels, sources[6].width, sources[6].height);
     GenerateSunshinePixels(sources[7].pixels, sources[7].width, sources[7].height);
+
+    // Ambient decorative particles get dedicated atlas slots so each has a
+    // distinct visual identity instead of borrowing from Snow / Sparkles.
+    const char* ambientFilePaths[3] = {
+        "assets/particles/9f7690be-3cc2-4a2c-8941-610dd427ec66.png",  // DriftingLeaf
+        "assets/particles/0fe573b0-b024-42aa-93dc-7d17e2758c8e.png",  // DustMote
+        "assets/particles/e5c27507-e3bd-4d30-b2ae-add5f2843f80.png"   // Pollen
+    };
+    for (int i = 0; i < 3; i++)
+    {
+        loadPng(ambientFilePaths[i], sources[static_cast<int>(ParticleType::DriftingLeaf) + i]);
+    }
 
     // Calculate atlas layout - simple horizontal packing with rows.
     // Pre-scan texture sizes to compute required atlas height so the
@@ -721,7 +906,7 @@ void ParticleSystem::BuildAtlas()
     {
         int scanX = 0;
         int scanRowHeight = 0;
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < kAtlasSourceCount; i++)
         {
             int w = sources[i].width;
             int h = sources[i].height;
@@ -746,7 +931,7 @@ void ParticleSystem::BuildAtlas()
     int currentY = 0;
     int rowHeight = 0;
 
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < kAtlasSourceCount; i++)
     {
         int w = sources[i].width;
         int h = sources[i].height;
@@ -812,6 +997,11 @@ void ParticleSystem::BuildAtlas()
         currentX += w + 1;  // 1px padding
         rowHeight = std::max(rowHeight, h);
     }
+
+    // Smoke does not have its own atlas slot - it reuses Fog's pixel data.
+    // Per-particle color in the spawn step tints it gray.
+    m_AtlasRegions[static_cast<int>(ParticleType::Smoke)] =
+        m_AtlasRegions[static_cast<int>(ParticleType::Fog)];
 
     // Create the atlas texture
     m_AtlasTexture.LoadFromData(atlasPixels.data(), atlasWidth, atlasHeight, 4, false);
@@ -907,6 +1097,14 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
     const ParticleUpdateContext updateCtx{m_Time, deltaTime, m_NightFactor, m_Zones, hasZones};
 
+    // Ambient cozy particles (DriftingLeaf/DustMote/Pollen) are spawned globally
+    // with zoneIndex = -1 and must survive the orphan check below.
+    auto isAmbient = [](ParticleType t)
+    {
+        return t == ParticleType::DriftingLeaf || t == ParticleType::DustMote ||
+               t == ParticleType::Pollen;
+    };
+
     // Update existing particles (mark dead ones, remove in bulk afterward)
     for (auto& p : m_Particles)
     {
@@ -917,8 +1115,10 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
             continue;
         }
 
-        // Mark particle for removal if its zone no longer exists
-        if (!hasZones || p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size()))
+        // Mark particle for removal if its zone no longer exists. Ambient
+        // (zoneless) particles are exempt - they manage their own lifecycle.
+        if (!isAmbient(p.type) &&
+            (!hasZones || p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size())))
         {
             p.lifetime = 0.0f;
             continue;
@@ -942,19 +1142,25 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
     // Remove dead and orphaned particles in one pass
     std::erase_if(m_Particles, [](const Particle& p) { return p.lifetime <= 0.0f; });
 
+    if (hasZones)
+    {
+        // Build per-zone particle counts in a single O(n) pass
+        m_ZoneParticleCounts.assign(m_Zones->size(), 0);
+        for (const auto& p : m_Particles)
+        {
+            if (p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_ZoneParticleCounts.size()))
+            {
+                m_ZoneParticleCounts[p.zoneIndex]++;
+            }
+        }
+    }
+
+    // Maintain global ambient population (independent of zones).
+    UpdateAmbientSpawning(deltaTime, cameraPos, viewSize);
+
     if (!hasZones)
     {
         return;
-    }
-
-    // Build per-zone particle counts in a single O(n) pass
-    m_ZoneParticleCounts.assign(m_Zones->size(), 0);
-    for (const auto& p : m_Particles)
-    {
-        if (p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(m_ZoneParticleCounts.size()))
-        {
-            m_ZoneParticleCounts[p.zoneIndex]++;
-        }
     }
 
     // Spawn new particles for each zone
@@ -1019,6 +1225,108 @@ void ParticleSystem::SpawnParticleInZone(int zoneIndex, const ParticleZone& zone
     }
     ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles};
     kSpawnDispatch[typeIndex](zoneIndex, zone, ctx);
+}
+
+namespace
+{
+/// Returns a smoothstep ramp peaking near `center` (in 0-24h time).
+/// Width controls the half-width of the bump.
+float TimeOfDayBump(float timeOfDay, float center, float width)
+{
+    // Wrap-aware shortest distance on a 24h circle.
+    float diff = std::abs(timeOfDay - center);
+    if (diff > 12.0f)
+    {
+        diff = 24.0f - diff;
+    }
+    if (diff >= width)
+    {
+        return 0.0f;
+    }
+    float t = 1.0f - diff / width;
+    return t * t * (3.0f - 2.0f * t);  // smoothstep
+}
+}  // namespace
+
+void ParticleSystem::UpdateAmbientSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize)
+{
+    // Count current ambient particles (per type and total).
+    int totalAmbient = 0;
+    int countLeaf = 0, countDust = 0, countPollen = 0;
+    for (const auto& p : m_Particles)
+    {
+        switch (p.type)
+        {
+            case ParticleType::DriftingLeaf:
+                ++countLeaf;
+                ++totalAmbient;
+                break;
+            case ParticleType::DustMote:
+                ++countDust;
+                ++totalAmbient;
+                break;
+            case ParticleType::Pollen:
+                ++countPollen;
+                ++totalAmbient;
+                break;
+            default:
+                break;
+        }
+    }
+    if (totalAmbient >= ambience::AMBIENT_PARTICLE_TOTAL_CAP)
+    {
+        return;
+    }
+
+    // Time-of-day biasing. Each curve peaks at 1.0 at the named hour.
+    // Leaves: any daylight (peak midday, half-strength dawn/dusk).
+    // Dust motes: dawn/midday sunbeams.
+    // Pollen: golden hour only (dawn ~6h or dusk ~19h).
+    float leafBias = TimeOfDayBump(m_TimeOfDay, 13.0f, 8.0f);
+    float dustBias =
+        std::max(TimeOfDayBump(m_TimeOfDay, 6.5f, 2.5f), TimeOfDayBump(m_TimeOfDay, 12.0f, 4.0f));
+    float pollenBias =
+        std::max(TimeOfDayBump(m_TimeOfDay, 6.5f, 1.5f), TimeOfDayBump(m_TimeOfDay, 19.0f, 1.5f));
+
+    auto tickType = [&](ParticleType type, float ratePerSec, float bias)
+    {
+        int idx = static_cast<int>(type);
+        m_AmbientSpawnTimers[idx] += deltaTime * std::max(0.0f, bias);
+        float interval = (ratePerSec > 0.0f) ? (1.0f / ratePerSec) : 1e9f;
+        while (m_AmbientSpawnTimers[idx] >= interval &&
+               totalAmbient < ambience::AMBIENT_PARTICLE_TOTAL_CAP)
+        {
+            m_AmbientSpawnTimers[idx] -= interval;
+            SpawnAmbientParticle(type, cameraPos, viewSize);
+            ++totalAmbient;
+        }
+    };
+
+    tickType(ParticleType::DriftingLeaf, ambience::AMBIENT_LEAF_SPAWN_PER_SEC, leafBias);
+    tickType(ParticleType::DustMote, ambience::AMBIENT_DUST_SPAWN_PER_SEC, dustBias);
+    tickType(ParticleType::Pollen, ambience::AMBIENT_POLLEN_SPAWN_PER_SEC, pollenBias);
+
+    (void)countLeaf;
+    (void)countDust;
+    (void)countPollen;
+}
+
+void ParticleSystem::SpawnAmbientParticle(ParticleType type,
+                                          glm::vec2 cameraPos,
+                                          glm::vec2 viewSize)
+{
+    // Build a fake camera-rect zone so the per-type Spawn function (single
+    // source of truth) handles all the type-specific initialization.
+    // zoneIndex = -1 marks the particle as ambient (exempt from zone-orphan
+    // cleanup and uncounted by per-zone caps).
+    const float margin = ambience::AMBIENT_PARTICLE_SPAWN_MARGIN;
+    ParticleZone fakeZone;
+    fakeZone.position = cameraPos - glm::vec2(margin);
+    fakeZone.size = viewSize + glm::vec2(margin * 2.0f);
+    fakeZone.type = type;
+    fakeZone.enabled = true;
+    fakeZone.noProjection = false;
+    SpawnParticleInZone(-1, fakeZone);
 }
 
 void ParticleSystem::Render(IRenderer& renderer,

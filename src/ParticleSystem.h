@@ -30,25 +30,39 @@ class Tilemap;
  */
 enum class ParticleType
 {
-    Firefly = 0,   ///< Pulsing yellow-green glow, gentle drift
-    Rain = 1,      ///< Fast falling droplets, slight angle
-    Snow = 2,      ///< Slow falling flakes with side drift
-    Fog = 3,       ///< Large translucent patches, very slow
-    Sparkles = 4,  ///< Brief bright flashes, stationary
-    Wisp = 5,      ///< Magical spiraling orbs, color variety
-    Lantern = 6,   ///< Warm glow, night-only visibility
-    Sunshine = 7   ///< Sun rays (day=yellow) / moon beams (night=blue)
+    Firefly = 0,       ///< Pulsing yellow-green glow, gentle drift
+    Rain = 1,          ///< Fast falling droplets, slight angle
+    Snow = 2,          ///< Slow falling flakes with side drift
+    Fog = 3,           ///< Large translucent patches, very slow
+    Sparkles = 4,      ///< Brief bright flashes, stationary
+    Wisp = 5,          ///< Magical spiraling orbs, color variety
+    Lantern = 6,       ///< Warm glow, night-only visibility
+    Sunshine = 7,      ///< Sun rays (day=yellow) / moon beams (night=blue)
+    DriftingLeaf = 8,  ///< Ambient cozy: small green/yellow leaf drifting on wind
+    DustMote = 9,      ///< Ambient cozy: tiny golden mote in sunbeams
+    Pollen = 10,       ///< Ambient cozy: yellow pollen during golden hour
+    Smoke = 11         ///< Zone-spawned chimney smoke: low alpha, slow rise
 };
 
 /// Compile-time reflection for ParticleType.
 template <>
 struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
-    static constexpr size_t Count = 8;
-    static constexpr std::string_view Names[] = {
-        "Firefly", "Rain", "Snow", "Fog", "Sparkles", "Wisp", "Lantern", "Sunshine"};
+    static constexpr size_t Count = 12;
+    static constexpr std::string_view Names[] = {"Firefly",
+                                                 "Rain",
+                                                 "Snow",
+                                                 "Fog",
+                                                 "Sparkles",
+                                                 "Wisp",
+                                                 "Lantern",
+                                                 "Sunshine",
+                                                 "DriftingLeaf",
+                                                 "DustMote",
+                                                 "Pollen",
+                                                 "Smoke"};
 
-    static_assert(std::to_underlying(ParticleType::Sunshine) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::Smoke) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
 };
 
@@ -322,8 +336,28 @@ public:
      */
     void OnZoneRemoved(int zoneIndex);
 
+    /**
+     * @brief Set the time-of-day used for ambient-particle spawn biasing.
+     *
+     * DriftingLeaf, DustMote, and Pollen spawn at different rates depending
+     * on the time of day (motes prefer daylight, pollen golden hour, etc.).
+     *
+     * @param timeOfDay Current TimeManager hour in [0, 24].
+     */
+    void SetTimeOfDay(float timeOfDay) { m_TimeOfDay = timeOfDay; }
+
 private:
     void SpawnParticleInZone(int zoneIndex, const ParticleZone& zone);
+
+    /// @brief Maintain global ambient particle population (leaves/dust/pollen)
+    /// independent of editor zones, biased by time of day.
+    /// @param deltaTime Frame time in seconds.
+    /// @param cameraPos Camera position for spawning rect.
+    /// @param viewSize Viewport size for spawning rect.
+    void UpdateAmbientSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize);
+
+    /// @brief Spawn one global (zoneIndex = -1) ambient particle of the given type.
+    void SpawnAmbientParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
 
     /// @name Particle Pool
     /// @{
@@ -342,8 +376,13 @@ private:
     size_t m_MaxParticlesPerZone;              ///< Per-zone particle cap.
     float m_Time;                              ///< Elapsed time for oscillation effects.
     float m_NightFactor;                       ///< Day/night factor (0-1) for lanterns.
+    float m_TimeOfDay = 12.0f;                 ///< Hour in [0, 24] for ambient spawn biasing.
     std::vector<float> m_ZoneSpawnTimers;      ///< Per-zone spawn accumulators.
     std::vector<size_t> m_ZoneParticleCounts;  ///< Per-zone active particle counts.
+
+    /// Per-type ambient spawn timers (only DriftingLeaf, DustMote, Pollen used).
+    /// Indexed by ParticleType enum value.
+    float m_AmbientSpawnTimers[12] = {};
 
     /// @}
 
@@ -369,9 +408,9 @@ private:
         glm::vec2 uvMax;  ///< Bottom-right UV coordinate.
     };
 
-    Texture m_AtlasTexture;         ///< Combined particle texture atlas.
-    AtlasRegion m_AtlasRegions[8];  ///< UV regions indexed by ParticleType.
-    bool m_TexturesLoaded;          ///< Whether LoadTextures() succeeded.
+    Texture m_AtlasTexture;          ///< Combined particle texture atlas.
+    AtlasRegion m_AtlasRegions[12];  ///< UV regions indexed by ParticleType.
+    bool m_TexturesLoaded;           ///< Whether LoadTextures() succeeded.
 
     /**
      * @brief Build the texture atlas from individual particle textures.
