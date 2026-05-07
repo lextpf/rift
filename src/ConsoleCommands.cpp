@@ -271,6 +271,27 @@ bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
 }
 
 // ============================================================================
+// time.freeze [on|off|toggle] - pause / resume the day-night cycle
+// ============================================================================
+
+bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("time.freeze: time manager unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(args, ctx.time->IsPaused(), "time.freeze", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.time->SetPaused(target);
+    ctx.out.Print(std::string("time.freeze: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// ============================================================================
 // map.load <filename>
 // ============================================================================
 
@@ -352,6 +373,47 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     {
         ctx.out.Print("  - " + q);
     }
+    return true;
+}
+
+// ============================================================================
+// player.speed [multiplier] - speedhack: scale player movement speed
+// ============================================================================
+
+bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("player.speed: player unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        char line[64];
+        std::snprintf(line, sizeof(line), "player.speed: %.3f", ctx.player->GetSpeedMultiplier());
+        ctx.out.Print(line);
+        return true;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("player.speed: usage 'player.speed [multiplier]'");
+        return false;
+    }
+    float m = 0.0f;
+    if (!ParseFloat(args[0], m))
+    {
+        ctx.out.PrintError("player.speed: multiplier must be a finite number");
+        return false;
+    }
+    if (m <= 0.0f)
+    {
+        ctx.out.PrintError("player.speed: multiplier must be > 0");
+        return false;
+    }
+    ctx.player->SetSpeedMultiplier(m);
+    char line[64];
+    std::snprintf(line, sizeof(line), "player.speed: %.3f", m);
+    ctx.out.Print(line);
     return true;
 }
 
@@ -857,7 +919,8 @@ void Console::RegisterDefaultCommands()
                         {
                             CommandContext ctx = makeContext();
                             (void)Cmd_Teleport(args, ctx);
-                        });
+                        },
+                        {"tp"});
 
     m_Registry.Register("flag.set",
                         "flag.set <name> <value> - set a game state flag",
@@ -881,7 +944,17 @@ void Console::RegisterDefaultCommands()
                         {
                             CommandContext ctx = makeContext();
                             (void)Cmd_TimeSet(args, ctx);
-                        });
+                        },
+                        {"ts"});
+
+    m_Registry.Register("time.freeze",
+                        "[on|off|toggle] - pause/resume day-night cycle",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TimeFreeze(args, ctx);
+                        },
+                        {"tm.freeze", "tf"});
 
     m_Registry.Register("map.load",
                         "map.load <filename> - switch maps",
@@ -905,7 +978,8 @@ void Console::RegisterDefaultCommands()
                         {
                             CommandContext ctx = makeContext();
                             (void)Cmd_NoClip(args, ctx);
-                        });
+                        },
+                        {"nc"});
 
     m_Registry.Register("editor",
                         "[on|off|toggle] - toggle level editor mode",
@@ -1032,4 +1106,13 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_PostFX(args, ctx);
                         },
                         {"fx", "pfx"});
+
+    m_Registry.Register("player.speed",
+                        "[multiplier] - speedhack: scale player movement (1.0 = normal)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_PlayerSpeed(args, ctx);
+                        },
+                        {"pspeed", "speed"});
 }
