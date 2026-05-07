@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CameraController.h"
+#include "Console.h"
 #include "DialogueManager.h"
 #include "Editor.h"
+#include "GameMode.h"
 #include "GameStateManager.h"
 #include "IRenderer.h"
 #include "KeyToggle.h"
+#include "MenuLogic.h"
 #include "NonPlayerCharacter.h"
 #include "ParticleSystem.h"
 #include "PlayerCharacter.h"
@@ -274,7 +277,22 @@ public:
      */
     static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
+    /**
+     * @brief GLFW character callback - feeds typed text into the developer console.
+     *
+     * Forwards the codepoint to m_Console.OnChar; the console itself decides
+     * whether to consume it (only when open). Mirrors ScrollCallback's static
+     * forwarding pattern.
+     */
+    static void CharCallback(GLFWwindow* window, unsigned int codepoint);
+
 private:
+    /// Console is an authorised mutator of game state (it's the developer's
+    /// REPL). Granting friendship lets the default command bindings reach
+    /// m_Player / m_GameState / m_TimeManager / m_Tilemap / m_NPCs without
+    /// adding accessors that exist solely for console use.
+    friend class Console;
+
     /**
      * @brief Process keyboard and mouse input.
      *
@@ -319,6 +337,13 @@ private:
 
     /**
      * @brief Build an EditorContext from current Game state.
+     *
+     * @warning The returned context holds references into Game-owned state and
+     * is only valid for the current frame. It must be passed straight to the
+     * Editor and discarded; storing it across frames will leave dangling
+     * references when Game state is rebuilt (e.g. on `renderer.set` or
+     * map reload). See `Editor.h` for the full lifetime contract.
+     *
      * @return EditorContext with references to Game-owned state.
      */
     EditorContext MakeEditorContext();
@@ -375,6 +400,64 @@ private:
      * @brief Force-close tree dialogue via Escape.
      */
     void ForceCloseTreeDialogue();
+
+    /// @name Title Screen / Pause Overlay
+    /// @brief Top-level menu state and dispatch (see @c GameMenus.cpp).
+    /// @{
+
+    /// True when @c rift.save.json (or whatever the manifest configures)
+    /// exists as a regular file. Used to grey out @em Continue and to gate
+    /// the overwrite-confirmation prompt on @em New @em Game.
+    [[nodiscard]] bool CheckSaveExists() const;
+
+    /// Load the game world: tilemap, NPCs, player position, camera target.
+    /// @param loadSave  True to load from @c m_SaveMapPath; false to
+    ///                  regenerate the default tilemap and place the player
+    ///                  at the default spawn.
+    /// Called from @em Continue / @em New @em Game in the title menu.
+    /// Boot uses @c LoadTitleScreenWorld instead so the user's save isn't
+    /// touched until they pick @em Continue.
+    void LoadGameWorld(bool loadSave);
+
+    /// Load the cosmetic title-screen world: a plain grass map populated
+    /// with firefly particle zones and frozen at night. No player, no NPCs.
+    /// Used at boot and on @em Quit @em to @em Title to keep the title's
+    /// scenic background separate from the player's actual save.
+    void LoadTitleScreenWorld();
+
+    /// Reset world + per-session state back to a fresh start.
+    /// Wraps @c LoadGameWorld(false) plus @c TimeManager::Initialize and
+    /// @c GameStateManager::Clear. Does @b not touch the on-disk save.
+    void ResetWorldToDefaults();
+
+    /// Process input while @c m_GameMode == Title (menu nav, confirm prompt).
+    void ProcessTitleInput();
+
+    /// Process input while @c m_GameMode == Paused (Resume / Quit-to-Title).
+    void ProcessPauseInput();
+
+    /// Refresh @c m_TitleMenu.enabled flags based on save existence and
+    /// snap selection to the first enabled item. Call on entering Title.
+    void RebuildTitleMenu();
+
+    /// Render an entire Title-mode frame: BeginFrame to EndFrame, with its
+    /// own scene clear + PostFX + UI. Called as an early-return from
+    /// @c Render() so Title runs a minimal pipeline.
+    void RenderTitleFrame();
+
+    /// Render the title screen content (logo + menu + version) into the
+    /// current frame after @c EndSceneApplyPostFX. Used by
+    /// @c RenderTitleFrame.
+    void RenderTitleContent();
+
+    /// Render the dim overlay + pause menu on top of the existing world
+    /// frame. Called from inside @c Render() before the console pass.
+    void RenderPauseOverlay();
+
+    /// Render the New-Game confirm-overwrite modal on top of the title
+    /// screen. Called from @c RenderTitleContent when @c m_ConfirmOverwriteShown.
+    void RenderConfirmOverwritePrompt();
+    /// @}
 
     /**
      * @brief Set up the snap alignment animation before starting dialogue.
@@ -476,6 +559,18 @@ private:
     /// @name Frame Timing
     /// @{
     float m_LastFrameTime = 0.0f;  ///< Timestamp of last frame (for delta calculation)
+
+    /// Time accumulator threaded into PostFXParams. Drives the grain noise
+    /// seed and any subtle time-based motion in the post-process pass.
+    /// Wraps periodically inside Game::Update to avoid float precision drift.
+    float m_PostFXTime = 0.0f;
+
+    /// Master toggle for post-processing. When false, the PostFX call sites
+    /// in Game::Render() and the title-screen path skip building grading /
+    /// vignette / grain / bloom intensities, so the offscreen scene is
+    /// composited into the swapchain unmodified. Toggleable from the
+    /// developer console via the `postfx` command.
+    bool m_PostFXEnabled = true;
     /// @}
 
     FPSCounter m_Fps;  ///< Frame rate measurement
@@ -535,22 +630,20 @@ private:
     /// @name Input Toggle State
     /// @brief Debounced key toggles for one-shot actions (moved from function-local statics).
     /// @{
-    KeyToggle<GLFW_KEY_E> m_KeyE;
     KeyToggle<GLFW_KEY_Z> m_KeyZ;
-    KeyToggle<GLFW_KEY_F1> m_KeyF1;
-    KeyToggle<GLFW_KEY_F2> m_KeyF2;
-    KeyToggle<GLFW_KEY_F3> m_KeyF3;
-    KeyToggle<GLFW_KEY_F4> m_KeyF4;
-    KeyToggle<GLFW_KEY_F5> m_KeyF5;
     KeyToggle<GLFW_KEY_F6> m_KeyF6;
     KeyToggle<GLFW_KEY_SPACE> m_KeySpaceFreeCamera;
-    KeyToggle<GLFW_KEY_PAGE_UP> m_KeyPageUp;
-    KeyToggle<GLFW_KEY_PAGE_DOWN> m_KeyPageDown;
-    KeyToggle<GLFW_KEY_C> m_KeyC;
     KeyToggle<GLFW_KEY_B> m_KeyB;
+    /// X drives the debug-only corner-cut toggle in IsDebugMode (gameplay
+    /// X for appearance copy lives in the developer console as
+    /// `appearance.copy` / `appearance.restore`).
     KeyToggle<GLFW_KEY_X> m_KeyX;
     KeyToggle<GLFW_KEY_F> m_KeyF;
-    int m_TimeOfDayCycle = 0;  ///< Current time-of-day preset index for F4 cycling
+    /// Toggles the developer console. GRAVE_ACCENT is the physical key
+    /// under Esc on US ANSI; on non-US layouts (e.g. German QWERTZ) that
+    /// physical key produces a different glyph, so F12 is offered as a
+    /// layout-independent fallback.
+    KeyToggle<GLFW_KEY_GRAVE_ACCENT, GLFW_KEY_F12> m_KeyConsole;
 
     // Dialogue-mode input toggles
     KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> m_KeyDialogueUp;
@@ -561,5 +654,41 @@ private:
     KeyToggle<GLFW_KEY_ENTER> m_KeyDialogueEnter;
     KeyToggle<GLFW_KEY_SPACE> m_KeyDialogueSpace;
     KeyToggle<GLFW_KEY_ESCAPE> m_KeyDialogueEscape;
+
+    // Title / Pause menu input toggles. Independent KeyToggle instances from
+    // the dialogue ones (each tracks its own edge state); modes are mutually
+    // exclusive at runtime, so the per-instance state never crosses over.
+    KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> m_KeyMenuUp;
+    KeyToggle<GLFW_KEY_DOWN, GLFW_KEY_S> m_KeyMenuDown;
+    KeyToggle<GLFW_KEY_LEFT, GLFW_KEY_A> m_KeyMenuLeft;
+    KeyToggle<GLFW_KEY_RIGHT, GLFW_KEY_D> m_KeyMenuRight;
+    KeyToggle<GLFW_KEY_ENTER, GLFW_KEY_SPACE> m_KeyMenuConfirm;
+    KeyToggle<GLFW_KEY_ESCAPE> m_KeyEscape;
+    /// @}
+
+    /// @name Top-Level Mode + Menu State
+    /// @{
+    GameMode m_GameMode = GameMode::Title;     ///< Top-level game state.
+    MenuLogic::ItemList m_TitleMenu;           ///< Title menu (4 items).
+    MenuLogic::ItemList m_PauseMenu;           ///< Pause menu (2 items).
+    bool m_ConfirmOverwriteShown = false;      ///< New-Game-with-save modal visible.
+    MenuLogic::ConfirmPrompt m_ConfirmPrompt;  ///< State of the modal.
+    int m_DefaultMapWidth = 64;                ///< Cached from manifest for ResetWorldToDefaults.
+    int m_DefaultMapHeight = 48;               ///< Cached from manifest for ResetWorldToDefaults.
+    /// Player character types declared in the project manifest, in
+    /// declaration order. Cached during Initialize() so LoadGameWorld can
+    /// pick a default character without re-reading the manifest.
+    std::vector<CharacterType> m_ConfiguredCharacters;
+    /// @}
+
+    /// @name Developer Console
+    /// @{
+    /// Drains console-mode key events while the console is open. Reads
+    /// the polled GLFW key state via local KeyToggle<> instances and
+    /// forwards edge transitions to m_Console. Called as the early-return
+    /// path in ProcessInput when the console has focus.
+    void PumpConsoleKeys();
+
+    Console m_Console{*this};  ///< In-game developer REPL toggled with `~`.
     /// @}
 };

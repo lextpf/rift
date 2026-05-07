@@ -3,12 +3,15 @@
 #endif
 
 #include "Game.h"
+
+#include "AmbienceConfig.h"
 #include "Logger.h"
 #include "MathConstants.h"
 #include "MathUtils.h"
 #include "NonPlayerCharacter.h"
 #include "OpenGLRenderer.h"
 #include "PlayerCharacter.h"
+#include "PostFXParams.h"
 #include "ProjectManifest.h"
 #include "RendererFactory.h"
 #include "Version.h"
@@ -161,6 +164,7 @@ bool Game::Initialize()
 
     // Set callbacks
     glfwSetScrollCallback(m_Window, ScrollCallback);
+    glfwSetCharCallback(m_Window, CharCallback);
     glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
     glfwSetWindowRefreshCallback(m_Window, WindowRefreshCallback);
 
@@ -270,27 +274,14 @@ bool Game::Initialize()
     }
     m_Editor.Initialize(npcSpritePaths);
 
-    // Try to load save from JSON first, if it exists
-    // If loading fails, generate a default map
-    int loadedPlayerTileX = -1;
-    int loadedPlayerTileY = -1;
-    int loadedCharacterType = -1;
-    bool mapLoaded = m_Tilemap.LoadMapFromJSON(
-        m_SaveMapPath, &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
-    if (!mapLoaded)
-    {
-        Logger::Info(LOG_SUBSYSTEM, "No existing save found, generating default map");
-        m_Tilemap.SetTilemapSize(manifest.defaultMapWidth, manifest.defaultMapHeight);
-    }
+    // Cache manifest fields needed by LoadGameWorld() so it can be invoked
+    // again at runtime (Continue / New Game) without re-reading the file.
+    m_DefaultMapWidth = manifest.defaultMapWidth;
+    m_DefaultMapHeight = manifest.defaultMapHeight;
 
-    // Upload tileset texture to Vulkan renderer
-    if (m_RendererAPI == RendererAPI::Vulkan)
-    {
-        m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
-        Logger::Info(LOG_SUBSYSTEM, "Tileset texture uploaded to Vulkan");
-    }
-
-    std::vector<CharacterType> configuredCharacters;
+    // Register player character sprite assets (static, one-time) and cache the
+    // configured character list so LoadGameWorld can pick a default.
+    m_ConfiguredCharacters.clear();
     for (const auto& [characterName, character] : manifest.playerCharacters)
     {
         std::optional<CharacterType> characterType =
@@ -300,7 +291,7 @@ bool Game::Initialize()
             continue;
         }
 
-        configuredCharacters.push_back(*characterType);
+        m_ConfiguredCharacters.push_back(*characterType);
         for (const auto& [spriteType, path] : character.sprites)
         {
             PlayerCharacter::SetCharacterAsset(
@@ -308,51 +299,31 @@ bool Game::Initialize()
         }
     }
 
-    // After tilemap is loaded, instead of manual sprite loads:
-    // Use saved character type or the first character configured in the manifest.
-    CharacterType initialCharacter =
-        (loadedCharacterType >= 0 &&
-         loadedCharacterType < static_cast<int>(EnumTraits<CharacterType>::Count))
-            ? static_cast<CharacterType>(loadedCharacterType)
-            : (configuredCharacters.empty() ? CharacterType::BW1_MALE
-                                            : configuredCharacters.front());
-    if (!configuredCharacters.empty() &&
-        std::ranges::find(configuredCharacters, initialCharacter) == configuredCharacters.end())
-    {
-        initialCharacter = configuredCharacters.front();
-    }
-    if (!m_Player.SwitchCharacter(initialCharacter))
-    {
-        Logger::Error(LOG_SUBSYSTEM, "Failed to initialize player sprites!");
-        return false;
-    }
+    m_LastFrameTime = static_cast<float>(glfwGetTime());
 
-    // Upload player sprite textures to Vulkan renderer
-    if (m_RendererAPI == RendererAPI::Vulkan)
-    {
-        // For now, the textures will be uploaded when first used in DrawSpriteRegion
-        // But we can add a public method to PlayerCharacter to upload textures if needed
-        Logger::Info(LOG_SUBSYSTEM,
-                     "PlayerCharacter sprites loaded, textures will be uploaded on first use");
-    }
+    // Initialize particle system. Tile size and zones are set inside
+    // LoadTitleScreenWorld below; here we just bring the system online.
+    m_Particles.LoadTextures();
+    m_Particles.SetTileSize(m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
+    m_Particles.SetMaxParticlesPerZone(50);
 
-    // Camera viewport size
+    // Initialize day & night cycle and sky. LoadTitleScreenWorld will
+    // override the time-of-day to night before the first frame renders.
+    m_TimeManager.Initialize();
+    m_TimeManager.SetDayDuration(1200.0f);  // 20 real minutes = 1 in-game day
+    m_SkyRenderer.Initialize();
+
+    // Initialize dialogue system
+    m_DialogueManager.Initialize(&m_GameState);
+
+    // Show the title screen first; the player's save file is left untouched
+    // until they pick "Continue" or "New Game" from the title menu. Done
+    // last so the world setup overrides any earlier defaults (time of day,
+    // particle zones, camera anchor).
+    LoadTitleScreenWorld();
+
     float camWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float camWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-
-    // Place player at saved position or default (9, 5)
-    // Player takes up 2 tiles in height
-    int playerTileX = (loadedPlayerTileX >= 0) ? loadedPlayerTileX : 9;
-    int playerTileY = (loadedPlayerTileY >= 0) ? loadedPlayerTileY : 5;
-
-    m_Player.SetTilePosition(playerTileX, playerTileY);
-    glm::vec2 playerPos = m_Player.GetPosition();
-
-    // Center camera on player's visual center
-    glm::vec2 playerVisualCenter =
-        glm::vec2(playerPos.x, playerPos.y - PlayerCharacter::HITBOX_HEIGHT);
-    m_Camera.Initialize(playerVisualCenter, camWorldWidth, camWorldHeight);
-
     float mapWidth = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
     float mapHeight = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
     Logger::InfoF(LOG_SUBSYSTEM,
@@ -368,36 +339,9 @@ bool Game::Initialize()
                   m_TilesVisibleWidth,
                   m_TilesVisibleHeight);
     Logger::InfoF(LOG_SUBSYSTEM,
-                  "Player position: ({}, {}) - Tile ({}, {})",
-                  playerPos.x,
-                  playerPos.y,
-                  playerTileX,
-                  playerTileY);
-    Logger::InfoF(LOG_SUBSYSTEM,
                   "Camera position: ({}, {})",
                   m_Camera.GetState().position.x,
                   m_Camera.GetState().position.y);
-    Logger::InfoF(LOG_SUBSYSTEM,
-                  "PlayerCharacter size: {}x{} pixels (ONE TILE)",
-                  PlayerCharacter::RENDER_WIDTH,
-                  PlayerCharacter::RENDER_HEIGHT);
-
-    m_LastFrameTime = static_cast<float>(glfwGetTime());
-
-    // Initialize particle system
-    m_Particles.LoadTextures();
-    m_Particles.SetZones(m_Tilemap.GetParticleZones());
-    m_Particles.SetTileSize(m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
-    m_Particles.SetTilemap(&m_Tilemap);
-    m_Particles.SetMaxParticlesPerZone(50);
-
-    // Initialize day & night cycle
-    m_TimeManager.Initialize();
-    m_TimeManager.SetDayDuration(240.0f);  // 240 seconds = 1 Game day
-    m_SkyRenderer.Initialize();
-
-    // Initialize dialogue system
-    m_DialogueManager.Initialize(&m_GameState);
 
     return true;
 }
@@ -559,10 +503,22 @@ void Game::Update(float deltaTime)
         }
     }
 
-    m_Player.Update(deltaTime);
+    // Pause freezes the world entirely. Title leaves cosmetic systems
+    // (sky, particles, animated tiles) running so fireflies still drift
+    // behind the menu, but locks the time-of-day, player, and NPCs.
+    if (m_GameMode == GameMode::Paused)
+    {
+        return;
+    }
+    const bool isPlaying = (m_GameMode == GameMode::Playing);
 
-    // Update day & night cycle
-    m_TimeManager.Update(deltaTime);
+    if (isPlaying)
+    {
+        m_Player.Update(deltaTime);
+
+        // Update day & night cycle (frozen in Title so the night setting holds).
+        m_TimeManager.Update(deltaTime);
+    }
     m_SkyRenderer.Update(deltaTime, m_TimeManager);
 
     // Update particle system
@@ -587,10 +543,26 @@ void Game::Update(float deltaTime)
     }
     // Set night factor for lantern glows and rays
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
+    m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
     m_Particles.Update(deltaTime, particleCullCam, viewSize);
+
+    // Advance the post-process time accumulator (drives grain noise + any
+    // subtle time-based motion in the post pass). Wrap periodically so that
+    // long sessions don't lose float precision.
+    m_PostFXTime += deltaTime;
+    if (m_PostFXTime > 86400.0f)  // 24h wrap
+    {
+        m_PostFXTime -= 86400.0f;
+    }
 
     // Update animated tiles
     m_Tilemap.UpdateAnimations(deltaTime);
+
+    // Title: stop here. No player to elevate, no NPCs to step, no dialogue.
+    if (!isPlaying)
+    {
+        return;
+    }
 
     // Get player position, needed for NPC updates and collision
     glm::vec2 playerPos = m_Player.GetPosition();
@@ -720,11 +692,27 @@ void Game::Update(float deltaTime)
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
 
+    // When the developer console is open, arrows belong to text editing
+    // (cursor movement / history). Don't pan the camera underneath.
+    if (m_Console.IsOpen())
+    {
+        arrowUp = arrowDown = arrowLeft = arrowRight = false;
+    }
+
     // Check if WASD keys are pressed for player movement
     bool wasdPressed = (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS ||
                         glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS ||
                         glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS ||
                         glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS);
+
+    // When the developer console is open, those keystrokes belong to text
+    // input, not camera-follow. Player movement WASD is already gated up in
+    // ProcessInput; this signal is the camera's smooth-vs-grid follow toggle,
+    // which would otherwise jitter the view as the user types into the console.
+    if (m_Console.IsOpen())
+    {
+        wasdPressed = false;
+    }
 
     // Camera follow target: use actual player position while moving for smooth tracking,
     // and tile center when idle so the camera settles on the grid.
@@ -831,6 +819,15 @@ void Game::Render()
         ~RenderGuard() { flag = false; }
     } renderGuard(m_IsRendering);
 
+    // DIAGNOSTIC: temporarily restore the V1 minimal Title render path
+    // (clear + UI only, no world geometry) to isolate whether the white-screen
+    // bug is in running the regular Render pipeline for Title, or elsewhere.
+    if (m_GameMode == GameMode::Title)
+    {
+        RenderTitleFrame();
+        return;
+    }
+
     // Render order (back to front):
     // 1. Sky color (clear)
     // 2. Background tilemap layers (ground, ground detail, objects)
@@ -851,6 +848,12 @@ void Game::Render()
     }
 
     m_Renderer->BeginFrame();
+
+    // Redirect the world+sky+lights pass to an offscreen scene FBO so the
+    // post-FX pipeline can composite bloom, color grading, vignette, and
+    // film grain. UI passes (editor, dialogue, debug) draw directly to the
+    // swapchain after EndSceneApplyPostFX, keeping text sharp and ungrained.
+    m_Renderer->BeginScene();
 
     // Use sky color from TimeManager for clear color
     glm::vec3 skyColor = m_TimeManager.GetSkyColor();
@@ -1013,7 +1016,8 @@ void Game::Render()
     // Add player.
     // Both halves use anchor position for sorting.
     // Skip player if behind the sphere (edge case when zoomed way out).
-    if (!m_Editor.IsActive())
+    // Title mode also skips the player so the menu shows a clean scenic world.
+    if (!m_Editor.IsActive() && m_GameMode != GameMode::Title)
     {
         glm::vec2 playerPos = m_Player.GetPosition();
         float playerScreenX = playerPos.x - renderCam.x;
@@ -1160,6 +1164,15 @@ void Game::Render()
     // Render regular particles on top of world
     m_Particles.Render(*m_Renderer, m_Camera.GetState().position, false, false);
 
+    // Cloud shadows drift across the world (multiplicative-style darkening).
+    // Rendered BEFORE the screen-space sky overlay so shadows darken ground
+    // tiles + entities but don't dim sun rays / stars / atmospheric glow.
+    m_SkyRenderer.RenderCloudShadows(*m_Renderer,
+                                     m_Camera.GetState().position,
+                                     glm::vec2(zoomedWidth, zoomedHeight),
+                                     m_PostFXTime,
+                                     m_TimeManager.GetStarVisibility());
+
     // Render ambient light overlay
     m_Renderer->SuspendPerspective(true);
     glm::mat4 screenProjection = glm::ortho(0.0f, worldWidth, worldHeight, 0.0f);
@@ -1168,6 +1181,37 @@ void Game::Render()
         *m_Renderer, m_TimeManager, static_cast<int>(worldWidth), static_cast<int>(worldHeight));
     m_Renderer->SetProjection(projection);  // Restore world projection
     m_Renderer->SuspendPerspective(false);
+
+    // Composite the offscreen scene through the post-FX chain (bloom +
+    // grading + vignette + grain) into the swapchain. Subsequent UI draws
+    // (editor overlays, dialogue, debug HUD) go directly to the swapchain
+    // and are NOT post-processed.
+    {
+        PostFXParams postFX;
+        postFX.timeOfDay = m_TimeManager.GetTimeOfDay();
+        postFX.nightFactor = m_TimeManager.GetStarVisibility();
+        postFX.time = m_PostFXTime;
+        postFX.postFXEnabled = m_PostFXEnabled;
+        if (m_PostFXEnabled)
+        {
+            postFX.vignetteIntensity = ambience::VIGNETTE_INTENSITY;
+            postFX.grainIntensity = ambience::GRAIN_INTENSITY;
+            postFX.bloomIntensity = ambience::BLOOM_INTENSITY;
+            postFX.gradingParams = ComputeGradingParams(postFX.timeOfDay, postFX.nightFactor);
+        }
+        else
+        {
+            postFX.vignetteIntensity = 0.0f;
+            postFX.grainIntensity = 0.0f;
+            postFX.bloomIntensity = 0.0f;
+            postFX.saturation = 1.0f;
+            // gradingParams default-constructs to identity (lift=0,gamma=1,gain=1).
+            // The shader-side gate (postFXEnabled=false) is the real off-switch;
+            // these zeroes are a defensive fallback in case the uniform fails to bind.
+        }
+
+        m_Renderer->EndSceneApplyPostFX(postFX);
+    }
 
     // Render editor overlays and tile picker
     if (m_Editor.IsActive() || m_Editor.IsDebugMode())
@@ -1385,6 +1429,26 @@ void Game::Render()
         m_Editor.RenderNoProjectionAnchors(MakeEditorContext());
     }
 
+    // Pause overlay sits on top of the gameplay UI (editor, dialogue, debug)
+    // but below the console so the developer REPL stays accessible.
+    if (m_GameMode == GameMode::Paused)
+    {
+        RenderPauseOverlay();
+    }
+
+    // Title menu UI sits on top of the (rendered) scenic world.
+    if (m_GameMode == GameMode::Title)
+    {
+        RenderTitleContent();
+        if (m_ConfirmOverwriteShown)
+        {
+            RenderConfirmOverwritePrompt();
+        }
+    }
+
+    // Developer console renders last so it sits on top of every other layer.
+    m_Console.Render(*m_Renderer, m_ScreenWidth, m_ScreenHeight);
+
     m_Renderer->EndFrame();
 
     // Restore unsnapped camera for game state updates
@@ -1514,6 +1578,7 @@ bool Game::SwitchRenderer(RendererAPI api)
         // Restore window callbacks
         glfwSetWindowUserPointer(m_Window, this);
         glfwSetScrollCallback(m_Window, ScrollCallback);
+        glfwSetCharCallback(m_Window, CharCallback);
         glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
         glfwSetWindowRefreshCallback(m_Window, WindowRefreshCallback);
 
