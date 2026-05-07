@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderer.h"
+#include "PostFXParams.h"
 #include "RendererMacros.h"
 
 #include <vulkan/vulkan.h>

@@ -1392,6 +1392,19 @@ void VulkanRenderer::BeginFrame()
     }
 }
 
+void VulkanRenderer::BeginScene()
+{
+    // Post-FX pipeline on Vulkan is a later phase - see plan in
+    // docs/superpowers/specs (or the development plan file). The Vulkan path
+    // currently renders directly to swapchain without bloom/grading/vignette/
+    // grain. F1 toggle still works; users on Vulkan see the unprocessed scene.
+}
+
+void VulkanRenderer::EndSceneApplyPostFX(const PostFXParams& /*params*/)
+{
+    // No-op: see BeginScene() comment.
+}
+
 void VulkanRenderer::EndFrame()
 {
     if (!m_FrameActive)
