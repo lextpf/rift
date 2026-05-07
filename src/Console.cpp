@@ -59,6 +59,17 @@ void ConsoleBuffer::OnBackspace()
     ResetHistoryIndex();
 }
 
+void ConsoleBuffer::OnClearLine()
+{
+    if (m_Input.empty() && m_CursorPos == 0)
+    {
+        return;
+    }
+    m_Input.clear();
+    m_CursorPos = 0;
+    ResetHistoryIndex();
+}
+
 void ConsoleBuffer::OnDelete()
 {
     if (m_CursorPos >= m_Input.size())
@@ -386,6 +397,14 @@ void Console::OnBackspace()
     if (!m_Open)
         return;
     m_Buffer.OnBackspace();
+    ResetTabState();
+}
+
+void Console::OnClearLine()
+{
+    if (!m_Open)
+        return;
+    m_Buffer.OnClearLine();
     ResetTabState();
 }
 
