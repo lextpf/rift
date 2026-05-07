@@ -79,6 +79,25 @@ TEST(ConsoleBufferTests, BackspaceAndDelete)
     EXPECT_EQ(buf.CursorPos(), 2u);
 }
 
+TEST(ConsoleBufferTests, OnClearLineEmptiesInputAndResetsCursor)
+{
+    ConsoleBuffer buf;
+    TypeString(buf, "partial command");
+    buf.OnLeft();
+    buf.OnLeft();  // cursor mid-line
+    buf.OnClearLine();
+    EXPECT_EQ(buf.Input(), "");
+    EXPECT_EQ(buf.CursorPos(), 0u);
+}
+
+TEST(ConsoleBufferTests, OnClearLineNoOpOnEmpty)
+{
+    ConsoleBuffer buf;
+    buf.OnClearLine();
+    EXPECT_EQ(buf.Input(), "");
+    EXPECT_EQ(buf.CursorPos(), 0u);
+}
+
 TEST(ConsoleBufferTests, CursorClampsAtBoundaries)
 {
     ConsoleBuffer buf;
