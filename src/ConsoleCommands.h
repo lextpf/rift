@@ -59,6 +59,7 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_StateDump(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx);
@@ -76,4 +77,5 @@ bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx
 bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx);
 /// @}
