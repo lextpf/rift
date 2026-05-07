@@ -350,6 +350,27 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/EditorCommands.cpp"
         "${CMAKE_SOURCE_DIR}/src/NavigationRecalc.cpp"
         "${CMAKE_SOURCE_DIR}/src/ProjectManifest.cpp"
+        # ParticleSystem: ambient spawn logic is renderer-free; tests exercise
+        # it via Update(...) without ever calling LoadTextures/Render.
+        "${CMAKE_SOURCE_DIR}/src/ParticleSystem.cpp"
+        # Console: data layer + free command functions are renderer-free.
+        # ConsoleCommands.cpp's Console::RegisterDefaultCommands references
+        # Game internals via friendship; tests do not call it (they wire
+        # CommandContext by hand), so the symbol is unreferenced and the
+        # linker drops it.
+        "${CMAKE_SOURCE_DIR}/src/Console.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ConsoleCommands.cpp"
+        "${CMAKE_SOURCE_DIR}/src/GameStateManager.cpp"
+        # Editor + CameraController: needed by ConsoleCommandsTests for the
+        # editor / debug.* / globe.* commands. Editor::Render() in Editor.cpp
+        # references the overlay rendering methods defined in
+        # EditorRendering.cpp; both are linked but never invoked at runtime.
+        # IRenderer methods they call are virtual and dispatched at runtime,
+        # so no concrete renderer is needed. EditorInput.cpp is intentionally
+        # excluded - ProcessMouseInput pulls in the dialogue-tree builders.
+        "${CMAKE_SOURCE_DIR}/src/Editor.cpp"
+        "${CMAKE_SOURCE_DIR}/src/EditorRendering.cpp"
+        "${CMAKE_SOURCE_DIR}/src/CameraController.cpp"
     )
 
     # Create test executable
