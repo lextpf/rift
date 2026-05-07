@@ -111,6 +111,9 @@ public:
     /// @brief Toggle the 3D globe effect on/off.
     void Toggle3DEffect();
 
+    /// @brief Set the 3D globe effect on/off explicitly.
+    void SetEnable3DEffect(bool enabled);
+
     /**
      * @brief Handle scroll wheel zoom.
      * @param yoffset Scroll delta (positive = zoom in).

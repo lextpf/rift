@@ -173,7 +173,12 @@ glm::mat4 CameraController::GetOrthoProjection(float width, float height)
 
 void CameraController::Toggle3DEffect()
 {
-    m_State.enable3DEffect = !m_State.enable3DEffect;
+    SetEnable3DEffect(!m_State.enable3DEffect);
+}
+
+void CameraController::SetEnable3DEffect(bool enabled)
+{
+    m_State.enable3DEffect = enabled;
     Logger::InfoF(LOG_SUBSYSTEM,
                   "3D Effect: {} (Radius: {})",
                   m_State.enable3DEffect ? "ON" : "OFF",
