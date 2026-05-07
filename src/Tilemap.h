@@ -645,6 +645,10 @@ public:
      *
      * @warning This method uses **1-based** layer indexing (unlike the Dynamic
      * Layer System methods which are 0-based). Layer 1 maps to internal layer 0.
+     * The 1-based convention is a legacy artifact preserved here so default
+     * callers (`layer = 1`) keep targeting the Ground layer without churn.
+     * Prefer the 0-based layer accessors (e.g. `GetLayerNoProjection`) in new
+     * code; this overload is kept only for backward compatibility.
      *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
