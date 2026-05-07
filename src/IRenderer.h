@@ -425,8 +425,10 @@ public:
      * @param corners  Array of 4 screen-space positions [TL, TR, BR, BL].
      * @param texCoord Top-left corner of texture region in pixels.
      * @param texSize  Size of texture region in pixels.
-     * @param color    Color tint (default: white = no tint).
-     * @param flipY    Flip vertical UV coordinates (default: true for OpenGL).
+     * @param color      Color tint (default: white = no tint).
+     * @param flipY      Flip vertical UV coordinates (default: true for OpenGL).
+     * @param tileFlipX  Mirror the source UV region horizontally (default: false).
+     * @param tileFlipY  Mirror the source UV region vertically (default: false).
      */
     virtual void DrawWarpedQuad(const Texture& texture,
                                 const glm::vec2 corners[4],
