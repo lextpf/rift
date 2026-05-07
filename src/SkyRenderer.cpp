@@ -1,11 +1,13 @@
 #include "SkyRenderer.h"
 #include "TimeManager.h"
 
+#include "AmbienceConfig.h"
 #include "MathConstants.h"
 #include "ProceduralTexture.h"
 
 #include <algorithm>
 #include <cmath>
+#include <glm/gtc/matrix_transform.hpp>
 #include <random>
 
 SkyRenderer::SkyRenderer()
@@ -1063,5 +1065,58 @@ void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
                                  0.0f,
                                  glm::vec4(1.0f, 0.92f, 0.65f, brightness),
                                  true);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cloud shadows: drift over world (multiplicative-style alpha darkening).
+//
+// Visibility ramps off at night so shadows don't darken already-dim scenes.
+// Implemented via plain alpha blending with black color at low alpha - for the
+// 4-8% intensity we target, this approximates a multiplicative blend without
+// needing a new render-state path.
+// ---------------------------------------------------------------------------
+
+// ComputeCloudShadowPosition is defined inline in SkyRenderer.h so tests can
+// link against it without dragging the full SkyRenderer.cpp (and its
+// IRenderer/Texture stack) into the test binary.
+
+void SkyRenderer::RenderCloudShadows(
+    IRenderer& renderer, glm::vec2 cameraPos, glm::vec2 viewSize, float time, float nightFactor)
+{
+    if (!m_Initialized)
+    {
+        return;
+    }
+
+    // Disable at night - no shadows when the sun isn't out.
+    float dayFactor = 1.0f - std::clamp(nightFactor, 0.0f, 1.0f);
+    if (dayFactor < 0.05f)
+    {
+        return;
+    }
+
+    const float blobSize = ambience::CLOUD_SHADOW_SIZE_PX;
+    const float baseAlpha = ambience::CLOUD_SHADOW_INTENSITY * dayFactor;
+
+    for (int i = 0; i < ambience::CLOUD_SHADOW_COUNT; ++i)
+    {
+        glm::vec2 worldPos = ComputeCloudShadowPosition(i, time, cameraPos);
+        // Convert to camera-local screen coordinates (renderer's world projection
+        // expects positions relative to camera).
+        glm::vec2 screenPos = worldPos - cameraPos - glm::vec2(blobSize * 0.5f);
+
+        // Cull aggressively - only render blobs whose bounding box overlaps view.
+        if (screenPos.x + blobSize < 0.0f || screenPos.x > viewSize.x)
+            continue;
+        if (screenPos.y + blobSize < 0.0f || screenPos.y > viewSize.y)
+            continue;
+
+        renderer.DrawSpriteAlpha(m_GlowTexture,
+                                 screenPos,
+                                 glm::vec2(blobSize),
+                                 0.0f,
+                                 glm::vec4(0.0f, 0.0f, 0.0f, baseAlpha),
+                                 false);
     }
 }

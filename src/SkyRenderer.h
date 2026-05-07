@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cmath>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <random>
 #include <vector>
 
+#include "AmbienceConfig.h"
 #include "IRenderer.h"
 #include "Texture.h"
 
@@ -252,6 +255,60 @@ public:
      * @param screenHeight Current screen height in pixels.
      */
     void Render(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+
+    /**
+     * @brief Render slowly-drifting cloud shadows on the world (multiplicative-style darkening).
+     *
+     * Drawn AFTER world+particle rendering and BEFORE the screen-space sky
+     * overlay, so shadows darken ground tiles + entities but never the sun
+     * rays / stars / atmospheric glow that pierce the sky. Disabled when
+     * `nightFactor` is high (no shadows at night).
+     *
+     * @param renderer    Renderer interface (world projection still active).
+     * @param cameraPos   World-space camera position (top-left).
+     * @param viewSize    Visible world rect in pixels.
+     * @param time        Current time, drives drift along the wind direction.
+     * @param nightFactor 0=day (full intensity), 1=night (disabled).
+     */
+    void RenderCloudShadows(IRenderer& renderer,
+                            glm::vec2 cameraPos,
+                            glm::vec2 viewSize,
+                            float time,
+                            float nightFactor);
+
+    /**
+     * @brief Pure-math helper: world-space cloud shadow position at time `t`.
+     *
+     * Public for test access. Returns the (x, y) world-space position of the
+     * cloud-shadow blob at slot `index` after `t` seconds of drift; the
+     * deterministic per-slot phase is folded into the return value.
+     *
+     * Inlined so tests can link without pulling in the full SkyRenderer.cpp
+     * (and its IRenderer/Texture stack) into the test binary.
+     */
+    static glm::vec2 ComputeCloudShadowPosition(int index, float t, glm::vec2 origin)
+    {
+        constexpr float kCellSize = 480.0f;
+        constexpr float kLoop = 2.0f * kCellSize;
+
+        // Per-slot world-space anchor inside a 2x2 grid.
+        const float gridX = static_cast<float>(index % 2) * kCellSize;
+        const float gridY = static_cast<float>((index / 2) % 2) * kCellSize;
+
+        // Absolute drifted position: keeps drifting linearly in wind direction.
+        const glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+        const glm::vec2 drift = wind * (ambience::CLOUD_SHADOW_DRIFT_SPEED * t);
+        const glm::vec2 absolute = glm::vec2(gridX, gridY) + drift;
+
+        // Fold to the equivalent position (mod kLoop) closest to `origin`. This
+        // is what keeps shadows visible around the camera even after long drift,
+        // without the discontinuity that a [0, kLoop) wrap creates near zero.
+        // std::remainder(x, p) returns a value in (-p/2, p/2] congruent to x mod p.
+        auto wrapNearest = [kLoop](float a, float ref)
+        { return ref + std::remainder(a - ref, kLoop); };
+
+        return glm::vec2(wrapNearest(absolute.x, origin.x), wrapNearest(absolute.y, origin.y));
+    }
 
 private:
     /// @name Texture Generation
