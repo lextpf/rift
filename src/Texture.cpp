@@ -2,6 +2,8 @@
 
 #include "Logger.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -465,6 +467,97 @@ void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
 
     // Unbind to prevent accidental modification
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+namespace
+{
+/// Convert sRGB byte channels (0-255) to HSV (each in [0, 1]).
+/// Hue is normalized to [0, 1] (multiply by 360 for degrees).
+struct Hsv
+{
+    float h, s, v;
+};
+
+Hsv RgbToHsv(unsigned char r8, unsigned char g8, unsigned char b8)
+{
+    const float r = r8 / 255.0f;
+    const float g = g8 / 255.0f;
+    const float b = b8 / 255.0f;
+    const float maxC = std::max({r, g, b});
+    const float minC = std::min({r, g, b});
+    const float delta = maxC - minC;
+
+    Hsv out{0.0f, 0.0f, maxC};
+    if (maxC > 0.0f)
+        out.s = delta / maxC;
+
+    if (delta > 0.0f)
+    {
+        if (maxC == r)
+            out.h = std::fmod(((g - b) / delta) + 6.0f, 6.0f);
+        else if (maxC == g)
+            out.h = ((b - r) / delta) + 2.0f;
+        else
+            out.h = ((r - g) / delta) + 4.0f;
+        out.h /= 6.0f;  // [0, 1]
+    }
+    return out;
+}
+}  // namespace
+
+glm::vec3 Texture::SampleDominantNonSkinColor(glm::vec3 fallback) const
+{
+    // Filter thresholds. The upper-value cutoff from the original spec was dropped:
+    // pure saturated colors like #ff8030 (orange) or #ffff00 (yellow) have value=1.0
+    // because at least one RGB channel is at maximum. Real highlights (near-white)
+    // are already excluded by the saturation < 0.30 filter (highlights have low sat),
+    // so an upper value cap is both redundant and wrong.
+    constexpr float kMinSat = 0.30f;
+    constexpr float kMinValue = 0.25f;
+    constexpr float kSkinHueMaxNorm = 30.0f / 360.0f;  // 30 degrees normalized
+    constexpr float kSkinSatMin = 0.20f;
+    constexpr float kSkinSatMax = 0.60f;
+    constexpr unsigned char kAlphaThreshold = 128;
+
+    if (m_Width <= 0 || m_Height <= 0 || m_Channels < 4 || m_ImageData.empty())
+        return fallback;
+
+    const size_t pixelCount = static_cast<size_t>(m_Width) * static_cast<size_t>(m_Height);
+    const size_t expectedBytes = pixelCount * static_cast<size_t>(m_Channels);
+    if (m_ImageData.size() < expectedBytes)
+        return fallback;
+
+    float bestScore = -1.0f;  // saturation * value of best survivor so far
+    glm::vec3 bestRgb = fallback;
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        const unsigned char* p = m_ImageData.data() + i * static_cast<size_t>(m_Channels);
+        if (p[3] < kAlphaThreshold)
+            continue;
+
+        const Hsv hsv = RgbToHsv(p[0], p[1], p[2]);
+        if (hsv.s < kMinSat)
+            continue;
+        if (hsv.v < kMinValue)
+            continue;
+
+        // Skin-tone band: orange-tan hues at low-mid saturation read as skin.
+        // Saturated reds and oranges (sat > kSkinSatMax) escape the filter.
+        const bool inSkinHue = (hsv.h >= 0.0f && hsv.h <= kSkinHueMaxNorm);
+        const bool inSkinSat = (hsv.s >= kSkinSatMin && hsv.s <= kSkinSatMax);
+        if (inSkinHue && inSkinSat)
+            continue;
+
+        const float score = hsv.s * hsv.v;
+        if (score > bestScore)
+        {
+            bestScore = score;
+            bestRgb = glm::vec3(p[0] / 255.0f, p[1] / 255.0f, p[2] / 255.0f);
+        }
+    }
+
+    return bestRgb;
 }
 
 void Texture::Bind(unsigned int slot) const

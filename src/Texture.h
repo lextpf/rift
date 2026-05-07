@@ -6,6 +6,7 @@
 
 #include <glad/glad.h>
 #include <vulkan/vulkan.h>
+#include <glm/glm.hpp>
 
 /**
  * @class Texture
@@ -347,6 +348,26 @@ public:
      * @return Const reference to the pixel data vector.
      */
     const std::vector<unsigned char>& GetImageData() const { return m_ImageData; }
+
+    /**
+     * @brief Pick a representative non-skin color from the texture's pixel data.
+     *
+     * Walks @ref m_ImageData once, converts each pixel to HSV, filters out
+     * transparent / desaturated / shadow / highlight / skin-tone pixels, and
+     * returns the survivor with the highest @f$ saturation \times value @f$.
+     * Used to derive a per-NPC accent tint for UI without authored palette data.
+     *
+     * @par Filters (each rejects)
+     * - alpha < 128 (transparent)
+     * - saturation < 0.30 (greys, near-whites, near-blacks - also excludes
+     *   real highlights, which have low saturation by definition)
+     * - value < 0.25 (shadows)
+     * - hue in [0deg, 30deg] AND saturation in [0.20, 0.60] (skin-tone band)
+     *
+     * @param fallback Color returned if no pixel survives the filters.
+     * @return Most vibrant non-skin pixel's RGB, or @p fallback.
+     */
+    glm::vec3 SampleDominantNonSkinColor(glm::vec3 fallback) const;
 
     /// @}
 
