@@ -932,11 +932,11 @@ void VulkanRenderer::CreateGraphicsPipeline()
     {
         Logger::Error(LOG_SUBSYSTEM, "Vulkan shaders not found!");
         Logger::Error(LOG_SUBSYSTEM,
-                      "Please compile shaders: glslangValidator -V shaders/sprite.vert -o "
-                      "shaders/sprite.vert.spv");
+                      "Please compile shaders: glslangValidator -V shaders/Geometry.vert -o "
+                      "shaders/Geometry.vert.spv");
         Logger::Error(LOG_SUBSYSTEM,
-                      "                      glslangValidator -V shaders/sprite.frag -o "
-                      "shaders/sprite.frag.spv");
+                      "                      glslangValidator -V shaders/Geometry.frag -o "
+                      "shaders/Geometry.frag.spv");
         Logger::Error(LOG_SUBSYSTEM, "Or run: build.bat");
         // Don't continue without shaders - throw exception
         throw std::runtime_error("Vulkan shaders not found. Please compile shaders first.");

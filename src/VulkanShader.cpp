@@ -167,13 +167,13 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
 std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 {
     // Try to load compiled SPIR-V file
-    std::vector<uint32_t> code = ReadSPIRVFile("shaders/sprite.vert.spv");
+    std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.vert.spv");
     if (code.empty())
     {
-        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/sprite.vert.spv");
-        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/sprite.vert to SPIR-V using:");
+        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/Geometry.vert.spv");
+        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/Geometry.vert to SPIR-V using:");
         Logger::Warn(LOG_SUBSYSTEM,
-                     "  glslangValidator -V shaders/sprite.vert -o shaders/sprite.vert.spv");
+                     "  glslangValidator -V shaders/Geometry.vert -o shaders/Geometry.vert.spv");
     }
     return code;
 }
@@ -181,13 +181,13 @@ std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 std::vector<uint32_t> VulkanShader::GetFragmentShaderSPIRV()
 {
     // Try to load compiled SPIR-V file
-    std::vector<uint32_t> code = ReadSPIRVFile("shaders/sprite.frag.spv");
+    std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.frag.spv");
     if (code.empty())
     {
-        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/sprite.frag.spv");
-        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/sprite.frag to SPIR-V using:");
+        Logger::Warn(LOG_SUBSYSTEM, "Could not load shaders/Geometry.frag.spv");
+        Logger::Warn(LOG_SUBSYSTEM, "Please compile shaders/Geometry.frag to SPIR-V using:");
         Logger::Warn(LOG_SUBSYSTEM,
-                     "  glslangValidator -V shaders/sprite.frag -o shaders/sprite.frag.spv");
+                     "  glslangValidator -V shaders/Geometry.frag -o shaders/Geometry.frag.spv");
     }
     return code;
 }

@@ -182,7 +182,7 @@ void main()
     vec3 col = sampleSceneCA(vUV, uCAStrength);
 
     // 2. Add chroma-only bloom contribution.
-    //    The bloom feeder (bloom_threshold.frag) gates on HSV saturation, so
+    //    The bloom feeder (BloomPrefilter.frag) gates on HSV saturation, so
     //    only colored pixels reach this point in the pipeline. We then project
     //    the bloom sample onto the chroma plane orthogonal to the luma axis
     //    (b - vec3(dot(b, LUMA))) so dot(bChroma, LUMA) == 0 by construction:

@@ -237,8 +237,8 @@ endforeach()
 find_program(GLSLANG_VALIDATOR glslangValidator)
 
 set(SHADER_SOURCES
-    "${SHADERS_DIR}/sprite.vert"
-    "${SHADERS_DIR}/sprite.frag"
+    "${SHADERS_DIR}/Geometry.vert"
+    "${SHADERS_DIR}/Geometry.frag"
 )
 
 if(GLSLANG_VALIDATOR)

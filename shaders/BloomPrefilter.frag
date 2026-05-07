@@ -6,7 +6,7 @@
 // Reads the scene texture and outputs only pixels with HSV saturation above a
 // threshold, scaled by a Karis-style soft weight `over / (1 + over)`. This is
 // the gating mechanism for the arcade-neon look: only colored pixels enter the
-// bloom mip chain, so the downstream chroma-only composite in post.frag bleeds
+// bloom mip chain, so the downstream chroma-only composite in PostFXComposite.frag bleeds
 // hue outward from saturated sources without lifting any luminance.
 //
 // V-relative saturation (max-min)/max reads dim colored pixels as fully
@@ -14,7 +14,7 @@
 // arcade-neon eye reads "this pixel is colored," not "this pixel is intense."
 // White / off-white / grey pixels return saturation 0 and are excluded.
 //
-// Output feeds into the bloom mip chain (bloom_down.frag -> bloom_up.frag).
+// Output feeds into the bloom mip chain (BloomDownsample.frag -> BloomUpsample.frag).
 // -----------------------------------------------------------------------------
 
 layout(location = 0) in vec2 vUV;

@@ -320,16 +320,16 @@ unsigned int OpenGLRenderer::CompileShaderProgram(const std::string& vertSrc,
 
 bool OpenGLRenderer::InitPostFXShaders()
 {
-    std::string postVert = LoadShaderFromFile("shaders/post.vert");
-    std::string postFrag = LoadShaderFromFile("shaders/post.frag");
-    std::string thresholdFrag = LoadShaderFromFile("shaders/bloom_threshold.frag");
-    std::string downFrag = LoadShaderFromFile("shaders/bloom_down.frag");
-    std::string upFrag = LoadShaderFromFile("shaders/bloom_up.frag");
+    std::string postVert = LoadShaderFromFile("shaders/FullscreenTriangle.vert");
+    std::string postFrag = LoadShaderFromFile("shaders/PostFXComposite.frag");
+    std::string thresholdFrag = LoadShaderFromFile("shaders/BloomPrefilter.frag");
+    std::string downFrag = LoadShaderFromFile("shaders/BloomDownsample.frag");
+    std::string upFrag = LoadShaderFromFile("shaders/BloomUpsample.frag");
 
-    m_PostProgram = CompileShaderProgram(postVert, postFrag, "post");
-    m_BloomThresholdProgram = CompileShaderProgram(postVert, thresholdFrag, "bloom_threshold");
-    m_BloomDownProgram = CompileShaderProgram(postVert, downFrag, "bloom_down");
-    m_BloomUpProgram = CompileShaderProgram(postVert, upFrag, "bloom_up");
+    m_PostProgram = CompileShaderProgram(postVert, postFrag, "PostFXComposite");
+    m_BloomThresholdProgram = CompileShaderProgram(postVert, thresholdFrag, "BloomPrefilter");
+    m_BloomDownProgram = CompileShaderProgram(postVert, downFrag, "BloomDownsample");
+    m_BloomUpProgram = CompileShaderProgram(postVert, upFrag, "BloomUpsample");
 
     if (m_PostProgram == 0 || m_BloomThresholdProgram == 0 || m_BloomDownProgram == 0 ||
         m_BloomUpProgram == 0)
@@ -337,7 +337,7 @@ bool OpenGLRenderer::InitPostFXShaders()
         return false;
     }
 
-    // Composite (post.frag) uniforms.
+    // Composite (PostFXComposite.frag) uniforms.
     m_PostULoc_Scene = glGetUniformLocation(m_PostProgram, "uScene");
     m_PostULoc_Bloom = glGetUniformLocation(m_PostProgram, "uBloom");
     m_PostULoc_BloomIntensity = glGetUniformLocation(m_PostProgram, "uBloomIntensity");
@@ -578,7 +578,7 @@ void OpenGLRenderer::RunBloomPrep()
         glUniform2f(m_BloomUpULoc_SrcTexelSize,
                     1.0f / static_cast<float>(m_BloomMipWidth[i]),
                     1.0f / static_cast<float>(m_BloomMipHeight[i]));
-        // Additive draw - bloom_up.frag's output is GL_ONE * src + GL_ONE * dst.
+        // Additive draw - BloomUpsample.frag's output is GL_ONE * src + GL_ONE * dst.
         glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
@@ -709,8 +709,8 @@ bool OpenGLRenderer::Init()
     Logger::Warn(LOG_SUBSYSTEM, "FreeType not available. Text rendering disabled.");
 #endif
     // Load and compile shaders from files
-    std::string vertexShaderSource = LoadShaderFromFile("shaders/sprite.vert");
-    std::string fragmentShaderSource = LoadShaderFromFile("shaders/sprite.frag");
+    std::string vertexShaderSource = LoadShaderFromFile("shaders/Geometry.vert");
+    std::string fragmentShaderSource = LoadShaderFromFile("shaders/Geometry.frag");
 
     if (vertexShaderSource.empty() || fragmentShaderSource.empty())
     {

@@ -18,8 +18,8 @@
  * The Vulkan renderer requires shaders in SPIR-V format:
  * @code
  * // Shaders are pre-compiled during build:
- * // glslangValidator -V sprite.vert -o sprite.vert.spv
- * // glslangValidator -V sprite.frag -o sprite.frag.spv
+ * // glslangValidator -V Geometry.vert -o Geometry.vert.spv
+ * // glslangValidator -V Geometry.frag -o Geometry.frag.spv
  *
  * // At runtime, load and create modules:
  * auto vertSPV = VulkanShader::GetVertexShaderSPIRV();
@@ -33,8 +33,8 @@
  *
  * | Shader   | File             | Purpose                              |
  * |----------|------------------|--------------------------------------|
- * | Vertex   | sprite.vert.spv  | Transform vertices, pass UVs/colors  |
- * | Fragment | sprite.frag.spv  | Sample texture, apply tint           |
+ * | Vertex   | Geometry.vert.spv  | Transform vertices, pass UVs/colors  |
+ * | Fragment | Geometry.frag.spv  | Sample texture, apply tint           |
  *
  * @par Build Integration
  * SPIR-V compilation is handled by the build script:
@@ -71,7 +71,7 @@ public:
     /**
      * @brief Load pre-compiled vertex shader SPIR-V from file.
      *
-     * Loads `shaders/sprite.vert.spv` from the working directory.
+     * Loads `shaders/Geometry.vert.spv` from the working directory.
      *
      * @return SPIR-V bytecode, or empty vector if file not found.
      */
@@ -80,7 +80,7 @@ public:
     /**
      * @brief Load pre-compiled fragment shader SPIR-V from file.
      *
-     * Loads `shaders/sprite.frag.spv` from the working directory.
+     * Loads `shaders/Geometry.frag.spv` from the working directory.
      *
      * @return SPIR-V bytecode, or empty vector if file not found.
      */
