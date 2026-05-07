@@ -280,6 +280,143 @@ TEST(ConsoleCommandsTests, NoClipRejectsBadArg)
     EXPECT_FALSE(player.IsNoClip());
 }
 
+// ---------------------------------------------------------------------------
+// player.speed
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, PlayerSpeedSetsMultiplier)
+{
+    PlayerCharacter player;
+    ASSERT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    ArgPack args({"2.5"});
+    EXPECT_TRUE(Cmd_PlayerSpeed(args.span(), ctx));
+    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 2.5f);
+    EXPECT_TRUE(BufferContains(buf, "2.500"));
+}
+
+TEST(ConsoleCommandsTests, PlayerSpeedNoArgPrintsCurrentWithoutMutating)
+{
+    PlayerCharacter player;
+    player.SetSpeedMultiplier(1.5f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_PlayerSpeed(args.span(), ctx));
+    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.5f);
+    EXPECT_TRUE(BufferContains(buf, "1.500"));
+}
+
+TEST(ConsoleCommandsTests, PlayerSpeedRejectsNonPositive)
+{
+    PlayerCharacter player;
+    player.SetSpeedMultiplier(2.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    {
+        ArgPack zero({"0"});
+        EXPECT_FALSE(Cmd_PlayerSpeed(zero.span(), ctx));
+    }
+    {
+        ArgPack neg({"-1.5"});
+        EXPECT_FALSE(Cmd_PlayerSpeed(neg.span(), ctx));
+    }
+    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 2.0f);
+}
+
+TEST(ConsoleCommandsTests, PlayerSpeedRejectsBadFloat)
+{
+    PlayerCharacter player;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    ArgPack args({"foo"});
+    EXPECT_FALSE(Cmd_PlayerSpeed(args.span(), ctx));
+    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.0f);
+}
+
+TEST(ConsoleCommandsTests, PlayerSpeedRejectsTooManyArgs)
+{
+    PlayerCharacter player;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    ArgPack args({"1.0", "2.0"});
+    EXPECT_FALSE(Cmd_PlayerSpeed(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, PlayerSpeedFailsWithoutPlayer)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({"2.0"});
+    EXPECT_FALSE(Cmd_PlayerSpeed(args.span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// time.freeze
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, TimeFreezeTogglesByDefault)
+{
+    TimeManager time;
+    ASSERT_FALSE(time.IsPaused());
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    ArgPack none({});
+    EXPECT_TRUE(Cmd_TimeFreeze(none.span(), ctx));
+    EXPECT_TRUE(time.IsPaused());
+    EXPECT_TRUE(Cmd_TimeFreeze(none.span(), ctx));
+    EXPECT_FALSE(time.IsPaused());
+}
+
+TEST(ConsoleCommandsTests, TimeFreezeExplicitOnOff)
+{
+    TimeManager time;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    ArgPack on({"on"});
+    EXPECT_TRUE(Cmd_TimeFreeze(on.span(), ctx));
+    EXPECT_TRUE(time.IsPaused());
+
+    ArgPack off({"off"});
+    EXPECT_TRUE(Cmd_TimeFreeze(off.span(), ctx));
+    EXPECT_FALSE(time.IsPaused());
+}
+
+TEST(ConsoleCommandsTests, TimeFreezeRejectsBadArg)
+{
+    TimeManager time;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    ArgPack bogus({"halt"});
+    EXPECT_FALSE(Cmd_TimeFreeze(bogus.span(), ctx));
+    EXPECT_FALSE(time.IsPaused());
+}
+
+TEST(ConsoleCommandsTests, TimeFreezeFailsWithoutTime)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({});
+    EXPECT_FALSE(Cmd_TimeFreeze(args.span(), ctx));
+}
+
 TEST(ConsoleCommandsTests, StateDumpPrintsSummary)
 {
     PlayerCharacter player;
