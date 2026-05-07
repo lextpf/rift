@@ -71,11 +71,11 @@ struct ParticleBehavior<ParticleType::Firefly>
             rotationSpeed = -rotationSpeed;
         p.rotation += rotationSpeed * ctx.deltaTime;
 
-        // Pulsing glow, alpha oscillates between 0.2 and 0.8
+        // Pulsing glow, alpha oscillates between 0.0 and 0.7
         float pulse = 0.5f + 0.5f * std::sin(ctx.time * 4.0f + p.phase);
         float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.3f));
         float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.5f);
-        p.color.a = pulse * lifeFade * fadeIn * 0.8f;
+        p.color.a = pulse * lifeFade * fadeIn * 0.7f;
     }
 
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
@@ -91,8 +91,37 @@ struct ParticleBehavior<ParticleType::Firefly>
         p.velocity.x = (ctx.dist(ctx.rng) - 0.5f) * 5.0f;
         p.velocity.y = (ctx.dist(ctx.rng) - 0.5f) * 5.0f;
 
-        p.color =
-            glm::vec4(1.0f, 0.9f + ctx.dist(ctx.rng) * 0.1f, 0.3f + ctx.dist(ctx.rng) * 0.2f, 0.0f);
+        float colorChoice = ctx.dist(ctx.rng);
+        if (colorChoice < 0.30f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.9f + ctx.dist(ctx.rng) * 0.1f,
+                                0.3f + ctx.dist(ctx.rng) * 0.2f,
+                                0.0f);  // Warm yellow
+        }
+        else if (colorChoice < 0.45f)
+        {
+            p.color = glm::vec4(0.4f + ctx.dist(ctx.rng) * 0.2f,
+                                1.0f,
+                                0.5f + ctx.dist(ctx.rng) * 0.2f,
+                                0.0f);  // Green
+        }
+        else if (colorChoice < 0.60f)
+        {
+            p.color = glm::vec4(0.4f, 0.8f + ctx.dist(ctx.rng) * 0.15f, 1.0f, 0.0f);  // Cyan-blue
+        }
+        else if (colorChoice < 0.75f)
+        {
+            p.color = glm::vec4(1.0f, 0.4f + ctx.dist(ctx.rng) * 0.15f, 0.8f, 0.0f);  // Pink
+        }
+        else if (colorChoice < 0.90f)
+        {
+            p.color = glm::vec4(1.0f, 0.4f + ctx.dist(ctx.rng) * 0.15f, 0.2f, 0.0f);  // Red-orange
+        }
+        else
+        {
+            p.color = glm::vec4(0.8f + ctx.dist(ctx.rng) * 0.15f, 0.4f, 1.0f, 0.0f);  // Purple
+        }
 
         p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 4.0f + ctx.dist(ctx.rng) * 5.0f;
@@ -150,7 +179,7 @@ struct ParticleBehavior<ParticleType::Rain>
         p.velocity.x = 0.0f;
         p.velocity.y = 150.0f + ctx.dist(ctx.rng) * 100.0f;
 
-        float targetAlpha = 0.5f + ctx.dist(ctx.rng) * 0.3f;
+        float targetAlpha = 0.6f + ctx.dist(ctx.rng) * 0.15f;
         p.color = glm::vec4(0.8f, 0.85f, 1.0f, 0.0f);
         p.phase = targetAlpha;
 
@@ -158,7 +187,7 @@ struct ParticleBehavior<ParticleType::Rain>
         p.lifetime = 2.0f;
         p.maxLifetime = p.lifetime;
         p.rotation = -35.0f - ctx.dist(ctx.rng) * 30.0f;
-        p.additive = false;
+        p.additive = true;
 
         ctx.particles.push_back(p);
     }
@@ -209,7 +238,7 @@ struct ParticleBehavior<ParticleType::Snow>
         p.velocity.x = (ctx.dist(ctx.rng) - 0.5f) * 12.0f;
         p.velocity.y = 12.0f + ctx.dist(ctx.rng) * 10.0f;
 
-        p.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.35f + ctx.dist(ctx.rng) * 0.15f);
+        p.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.6f + ctx.dist(ctx.rng) * 0.15f);
 
         p.size = 1.5f + ctx.dist(ctx.rng) * 1.5f;
         p.lifetime = 15.0f;
@@ -252,7 +281,7 @@ struct ParticleBehavior<ParticleType::Fog>
         // More visible during day, significantly less at night
         float dayBoost = 1.0f + (1.0f - ctx.nightFactor) * 0.4f;
         float nightReduce = 1.0f - ctx.nightFactor * 0.6f;
-        p.color.a = pulse * lifeFade * fadeIn * 0.28f * dayBoost * nightReduce;
+        p.color.a = pulse * lifeFade * fadeIn * 0.40f * dayBoost * nightReduce;
     }
 
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
@@ -295,7 +324,7 @@ struct ParticleBehavior<ParticleType::Sparkles>
     {
         // Instant sparkle, bright flash then fade
         float lifeRatio = 1.0f - (p.lifetime / p.maxLifetime);
-        float flash = lifeRatio < 0.15f ? 1.0f : 0.0f;
+        float flash = lifeRatio < 0.15f ? 0.75f : 0.0f;
         p.color.a = flash;
     }
 
@@ -312,8 +341,34 @@ struct ParticleBehavior<ParticleType::Sparkles>
         p.velocity.x = 0.0f;
         p.velocity.y = 0.0f;
 
-        float warmth = ctx.dist(ctx.rng) * 0.3f;
-        p.color = glm::vec4(1.0f, 1.0f - warmth * 0.2f, 1.0f - warmth, 1.0f);
+        float hueChoice = ctx.dist(ctx.rng);
+        if (hueChoice < 0.25f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.9f + ctx.dist(ctx.rng) * 0.1f,
+                                0.6f + ctx.dist(ctx.rng) * 0.2f,
+                                1.0f);  // Warm gold
+        }
+        else if (hueChoice < 0.45f)
+        {
+            p.color = glm::vec4(0.65f + ctx.dist(ctx.rng) * 0.1f, 0.85f, 1.0f, 1.0f);  // Cool blue
+        }
+        else if (hueChoice < 0.60f)
+        {
+            p.color = glm::vec4(1.0f, 0.65f + ctx.dist(ctx.rng) * 0.1f, 0.9f, 1.0f);  // Pink
+        }
+        else if (hueChoice < 0.75f)
+        {
+            p.color = glm::vec4(0.7f, 1.0f, 0.8f + ctx.dist(ctx.rng) * 0.1f, 1.0f);  // Mint
+        }
+        else if (hueChoice < 0.90f)
+        {
+            p.color = glm::vec4(0.75f + ctx.dist(ctx.rng) * 0.1f, 0.7f, 1.0f, 1.0f);  // Lavender
+        }
+        else
+        {
+            p.color = glm::vec4(1.0f, 0.75f + ctx.dist(ctx.rng) * 0.1f, 0.55f, 1.0f);  // Peach
+        }
 
         p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 0.5f + ctx.dist(ctx.rng) * 0.5f;
@@ -355,7 +410,7 @@ struct ParticleBehavior<ParticleType::Wisp>
         float shimmer = 0.8f + 0.2f * std::sin(ctx.time * 7.0f + p.phase);
         float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.25f));
         float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 1.0f);
-        p.color.a = twinkle * shimmer * lifeFade * fadeIn * 0.85f;
+        p.color.a = twinkle * shimmer * lifeFade * fadeIn * 0.7f;
     }
 
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
@@ -372,12 +427,62 @@ struct ParticleBehavior<ParticleType::Wisp>
         p.velocity.y = (ctx.dist(ctx.rng) - 0.5f) * 6.0f - 5.0f;
 
         float colorChoice = ctx.dist(ctx.rng);
-        if (colorChoice < 0.33f)
-            p.color = glm::vec4(0.6f, 0.8f, 1.0f, 0.0f);  // Cyan
-        else if (colorChoice < 0.66f)
-            p.color = glm::vec4(0.8f, 0.6f, 1.0f, 0.0f);  // Purple
+        if (colorChoice < 0.16f)
+        {
+            p.color = glm::vec4(0.5f + ctx.dist(ctx.rng) * 0.2f,
+                                0.75f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.0f);  // Cyan
+        }
+        else if (colorChoice < 0.32f)
+        {
+            p.color = glm::vec4(0.75f + ctx.dist(ctx.rng) * 0.15f,
+                                0.5f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.0f);  // Purple
+        }
+        else if (colorChoice < 0.46f)
+        {
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.0f);  // White-blue
+        }
+        else if (colorChoice < 0.60f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.5f + ctx.dist(ctx.rng) * 0.2f,
+                                0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Magenta
+        }
+        else if (colorChoice < 0.72f)
+        {
+            p.color = glm::vec4(0.5f + ctx.dist(ctx.rng) * 0.2f,
+                                1.0f,
+                                0.6f + ctx.dist(ctx.rng) * 0.2f,
+                                0.0f);  // Green
+        }
+        else if (colorChoice < 0.82f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.7f + ctx.dist(ctx.rng) * 0.15f,
+                                0.4f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Amber
+        }
+        else if (colorChoice < 0.92f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.5f + ctx.dist(ctx.rng) * 0.2f,
+                                0.0f);  // Gold
+        }
         else
-            p.color = glm::vec4(0.9f, 0.9f, 1.0f, 0.0f);  // White-blue
+        {
+            p.color = glm::vec4(1.0f,
+                                0.4f + ctx.dist(ctx.rng) * 0.2f,
+                                0.4f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Crimson
+        }
 
         p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 4.0f + ctx.dist(ctx.rng) * 3.0f;
@@ -594,14 +699,67 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
         p.velocity = glm::vec2(0.0f);
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
-        p.color = glm::vec4(0.55f + ctx.dist(ctx.rng) * 0.25f,
-                            0.45f + ctx.dist(ctx.rng) * 0.25f,
-                            0.20f + ctx.dist(ctx.rng) * 0.15f,
-                            0.0f);
+        float leafChoice = ctx.dist(ctx.rng);
+        if (leafChoice < 0.18f)
+        {
+            p.color = glm::vec4(0.35f + ctx.dist(ctx.rng) * 0.20f,
+                                0.65f + ctx.dist(ctx.rng) * 0.25f,
+                                0.20f + ctx.dist(ctx.rng) * 0.20f,
+                                0.0f);  // Green (fresh)
+        }
+        else if (leafChoice < 0.33f)
+        {
+            p.color = glm::vec4(0.50f + ctx.dist(ctx.rng) * 0.20f,
+                                0.25f + ctx.dist(ctx.rng) * 0.20f,
+                                0.10f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Brown (dead)
+        }
+        else if (leafChoice < 0.51f)
+        {
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                0.65f + ctx.dist(ctx.rng) * 0.20f,
+                                0.20f + ctx.dist(ctx.rng) * 0.20f,
+                                0.0f);  // Gold (autumn)
+        }
+        else if (leafChoice < 0.63f)
+        {
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                0.25f + ctx.dist(ctx.rng) * 0.20f,
+                                0.15f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Red (maple)
+        }
+        else if (leafChoice < 0.73f)
+        {
+            p.color = glm::vec4(0.60f + ctx.dist(ctx.rng) * 0.15f,
+                                0.85f + ctx.dist(ctx.rng) * 0.15f,
+                                0.30f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Yellow-green
+        }
+        else if (leafChoice < 0.83f)
+        {
+            p.color = glm::vec4(0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.50f + ctx.dist(ctx.rng) * 0.15f,
+                                0.15f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Orange (pumpkin)
+        }
+        else if (leafChoice < 0.92f)
+        {
+            p.color = glm::vec4(0.55f + ctx.dist(ctx.rng) * 0.20f,
+                                0.15f + ctx.dist(ctx.rng) * 0.15f,
+                                0.20f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Burgundy (oak)
+        }
+        else
+        {
+            p.color = glm::vec4(0.75f + ctx.dist(ctx.rng) * 0.15f,
+                                0.45f + ctx.dist(ctx.rng) * 0.15f,
+                                0.15f + ctx.dist(ctx.rng) * 0.10f,
+                                0.0f);  // Amber (copper)
+        }
         p.size = 6.0f + ctx.dist(ctx.rng) * 4.0f;
         p.lifetime = 10.0f + ctx.dist(ctx.rng) * 5.0f;
         p.maxLifetime = p.lifetime;
-        p.additive = false;
+        p.additive = true;
         ctx.particles.push_back(p);
     }
 };
@@ -638,7 +796,63 @@ struct ParticleBehavior<ParticleType::DustMote>
         p.velocity = glm::vec2(0.0f);
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
-        p.color = glm::vec4(1.0f, 0.92f, 0.65f, 0.0f);
+        float tintChoice = ctx.dist(ctx.rng);
+        if (tintChoice < 0.22f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.90f + ctx.dist(ctx.rng) * 0.05f,
+                                0.55f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Warm gold
+        }
+        else if (tintChoice < 0.36f)
+        {
+            p.color = glm::vec4(0.90f + ctx.dist(ctx.rng) * 0.10f,
+                                0.92f + ctx.dist(ctx.rng) * 0.08f,
+                                1.0f,
+                                0.0f);  // Pale silver
+        }
+        else if (tintChoice < 0.48f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                0.30f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Amber (rust)
+        }
+        else if (tintChoice < 0.60f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.75f + ctx.dist(ctx.rng) * 0.10f,
+                                0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Soft peach
+        }
+        else if (tintChoice < 0.72f)
+        {
+            p.color = glm::vec4(0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                0.85f + ctx.dist(ctx.rng) * 0.10f,
+                                1.0f,
+                                0.0f);  // Sky blue
+        }
+        else if (tintChoice < 0.82f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                0.80f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Rose pink
+        }
+        else if (tintChoice < 0.92f)
+        {
+            p.color = glm::vec4(0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.75f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Mint
+        }
+        else
+        {
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.10f,
+                                0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.0f);  // Pale violet
+        }
         p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 6.0f + ctx.dist(ctx.rng) * 4.0f;
         p.maxLifetime = p.lifetime;
@@ -679,7 +893,63 @@ struct ParticleBehavior<ParticleType::Pollen>
         p.velocity = glm::vec2(0.0f);
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
-        p.color = glm::vec4(1.0f, 0.95f, 0.55f, 0.0f);
+        float speciesChoice = ctx.dist(ctx.rng);
+        if (speciesChoice < 0.22f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.50f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Yellow
+        }
+        else if (speciesChoice < 0.40f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.70f + ctx.dist(ctx.rng) * 0.15f,
+                                0.80f + ctx.dist(ctx.rng) * 0.10f,
+                                0.0f);  // Pink (cherry blossom)
+        }
+        else if (speciesChoice < 0.56f)
+        {
+            p.color = glm::vec4(0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.0f);  // White (dandelion)
+        }
+        else if (speciesChoice < 0.68f)
+        {
+            p.color = glm::vec4(0.80f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.65f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Pale green
+        }
+        else if (speciesChoice < 0.78f)
+        {
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.10f,
+                                0.70f + ctx.dist(ctx.rng) * 0.15f,
+                                1.0f,
+                                0.0f);  // Lavender
+        }
+        else if (speciesChoice < 0.88f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.65f + ctx.dist(ctx.rng) * 0.10f,
+                                0.30f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Orange (marigold)
+        }
+        else if (speciesChoice < 0.95f)
+        {
+            p.color = glm::vec4(1.0f,
+                                0.55f + ctx.dist(ctx.rng) * 0.15f,
+                                0.55f + ctx.dist(ctx.rng) * 0.15f,
+                                0.0f);  // Coral
+        }
+        else
+        {
+            p.color = glm::vec4(1.0f,
+                                0.35f + ctx.dist(ctx.rng) * 0.15f,
+                                0.85f + ctx.dist(ctx.rng) * 0.10f,
+                                0.0f);  // Magenta
+        }
         p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 7.0f + ctx.dist(ctx.rng) * 5.0f;
         p.maxLifetime = p.lifetime;
