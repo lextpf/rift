@@ -260,7 +260,7 @@ cd rift
 
 <summary>General Keybinds</summary>
 
-### Gameplay
+<h3>Gameplay</h3>
 
 | Key         | Action                           |
 |-------------|----------------------------------|
@@ -275,7 +275,7 @@ cd rift
 | Z           | Reset zoom to 1.0x               |
 | Space       | Free camera mode                 |
 
-### Dialogue
+<h3>Dialogue</h3>
 
 | Key            |  Action                     |
 |----------------|-----------------------------|
@@ -283,7 +283,7 @@ cd rift
 | Enter/Space    | Confirm selection / advance |
 | Escape         | End dialogue                |
 
-### Movement Modes
+<h3>Movement Modes</h3>
 
 | Mode    | Speed    | Collision              |
 |---------|----------|------------------------|
@@ -291,7 +291,7 @@ cd rift
 | Running | 150 px/s | Relaxed (center point) |
 | Bicycle | 200 px/s | Relaxed (center point) |
 
-### Editor
+<h3>Editor</h3>
 
 | Key          | Action                             |
 |--------------|------------------------------------|
@@ -318,7 +318,7 @@ cd rift
 | Scroll       | Pan tile picker                    |
 | Ctrl+Scroll  | Zoom                               |
 
-### Debug and Visual
+<h3>Debug and Visual</h3>
 
 | Key     | Action                                                 |
 |---------|--------------------------------------------------------|
@@ -420,7 +420,7 @@ rift/
 |   |-- player/               # Player character sprite sheets and animations
 |   +-- particles/            # Small particle effect images (sparks, dust, etc.)
 |-- shaders/                  # GLSL shaders
-|   +-- sprite.vert/frag      # Sprite rendering
+|   +-- Geometry.vert/frag    # Forward-pass rendering (sprites, tiles, particles)
 |-- docs/                     # Documentation
 +-- external/                 # Third-party dependencies
 ```
