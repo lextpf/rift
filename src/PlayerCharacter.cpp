@@ -54,7 +54,7 @@ PlayerCharacter::PlayerCharacter()
       m_Collision(*this)
 {
     m_Position = glm::vec2(200.0f, 150.0f);
-    m_Speed = 80.0f;
+    m_Speed = 50.0f;
 }
 
 PlayerCharacter::~PlayerCharacter() = default;
@@ -553,9 +553,10 @@ void PlayerCharacter::Move(glm::vec2 direction,
     // Calculate speed and movement
     float currentSpeed = m_Speed;
     if (m_IsBicycling)
-        currentSpeed *= 2.0f;
+        currentSpeed *= 2.25f;
     else if (m_IsRunning)
-        currentSpeed *= 1.9f;
+        currentSpeed *= 1.75f;
+    currentSpeed *= m_SpeedMultiplier;
 
     glm::vec2 desiredMovement = normalizedDir * currentSpeed * deltaTime;
     const float requestedMoveLen = glm::length(desiredMovement);
