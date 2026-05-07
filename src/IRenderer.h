@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PerspectiveTransform.h"
+#include "PostFXParams.h"
 #include "Texture.h"
 
 #include <glm/glm.hpp>
@@ -211,6 +212,43 @@ public:
      * - Present swapchain image
      */
     virtual void EndFrame() = 0;
+
+    /**
+     * @brief Redirect subsequent draws to an offscreen scene framebuffer.
+     *
+     * Called from Game::Render() after BeginFrame() and before clearing.
+     * Subsequent draws (world, sky, lights) accumulate into the scene
+     * target instead of the swapchain. UI passes draw directly to the
+     * swapchain after EndSceneApplyPostFX() unbinds the offscreen target.
+     *
+     * @par OpenGL
+     * - Bind offscreen FBO with color texture + depth renderbuffer
+     * - FBO is recreated on resize via the existing window-refresh path
+     *
+     * @par Vulkan
+     * - Currently a no-op (Vulkan post-FX is a later phase). Scene renders
+     *   directly to swapchain; renderer.set still works without bloom/grading.
+     */
+    virtual void BeginScene() = 0;
+
+    /**
+     * @brief Composite the offscreen scene through the post-FX chain into
+     *        the swapchain.
+     *
+     * Reads the scene texture, optionally extracts a bright pass and runs
+     * separable Gaussian blur into bloom targets, then writes the swapchain
+     * via a full-screen-quad fragment shader that combines:
+     * - Scene + bloom add (intensity from params)
+     * - Color grading (per-time-of-day RGB tint)
+     * - Vignette (smoothstep falloff from screen center)
+     * - Light film grain (low-frequency tiled noise)
+     *
+     * After this returns, subsequent draws go to the swapchain unmodified
+     * (so dialogue, editor, debug overlays stay sharp and ungrained).
+     *
+     * @param params Frame-specific intensities + time-of-day blend factors.
+     */
+    virtual void EndSceneApplyPostFX(const PostFXParams& params) = 0;
 
     /**
      * @brief Draw a sprite using the backend's default texture region.
@@ -756,6 +794,36 @@ public:
      * @return Width in pixels.
      */
     virtual float GetTextWidth(const std::string& text, float scale = 1.0f) const = 0;
+
+    /**
+     * @brief Draw text using a large (headline) glyph atlas.
+     *
+     * The default body atlas is rasterized at ~24 px and visibly blurs when
+     * scaled up beyond ~2x. Backends may load a second, higher-resolution
+     * atlas (~96 px) to keep title/headline text crisp without scaling.
+     *
+     * Default fallback: scales the body atlas by an internal multiplier so
+     * existing call sites still work, just without the headline crispness.
+     *
+     * Parameters mirror @ref DrawText. @p scale is interpreted relative to
+     * the headline atlas's native size (typically 96 px).
+     */
+    virtual void DrawTextLarge(const std::string& text,
+                               glm::vec2 position,
+                               float scale = 1.0f,
+                               glm::vec3 color = glm::vec3(1.0f),
+                               float outlineSize = 1.0f,
+                               float alpha = 0.85f);
+
+    /**
+     * @brief Measure text width using the headline atlas.
+     *
+     * Default fallback uses the body atlas scaled up by the headline ratio,
+     * so layout calculations match @ref DrawTextLarge for both real and
+     * fallback implementations.
+     */
+    [[nodiscard]] virtual float GetTextWidthLarge(const std::string& text,
+                                                  float scale = 1.0f) const;
 
     /**
      * @brief Check if this renderer requires Y-axis flipping for textures.

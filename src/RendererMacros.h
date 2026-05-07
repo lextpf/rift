@@ -6,18 +6,29 @@
  * @ingroup Rendering
  *
  * Expands to the full set of overridden virtual method declarations:
- * Init, Shutdown, BeginFrame, EndFrame, DrawSprite, DrawSpriteRegion,
- * DrawSpriteAlpha, DrawSpriteAtlas, DrawColoredRect, DrawWarpedQuad,
- * SetProjection, SetViewport, Clear, UploadTexture, DrawText,
- * GetTextAscent, and GetTextWidth.
+ * Init, Shutdown, BeginFrame, EndFrame, BeginScene, EndSceneApplyPostFX,
+ * DrawSprite, DrawSpriteRegion, DrawSpriteAlpha, DrawSpriteAtlas,
+ * DrawColoredRect, DrawWarpedQuad, SetProjection, SetViewport, Clear,
+ * UploadTexture, DrawText, GetTextAscent, and GetTextWidth.
+ *
+ * @par Why this macro exists
+ * Both `OpenGLRenderer` and `VulkanRenderer` must declare every IRenderer
+ * override with byte-identical signatures. Centralising the declarations here
+ * makes signature drift impossible: any change to IRenderer's pure-virtual set
+ * must be mirrored in this macro, after which both backends recompile against
+ * the same source. Do not bypass this macro for one-off overrides; add the
+ * method here and to `IRenderer.h` together.
  *
  * @see IRenderer for documentation of each method.
+ * @see OpenGLRenderer, VulkanRenderer for the backends that consume this macro.
  */
 #define RIFT_DECLARE_COMMON_RENDERER_METHODS                                                 \
     [[nodiscard]] bool Init() override;                                                      \
     void Shutdown() override;                                                                \
     void BeginFrame() override;                                                              \
     void EndFrame() override;                                                                \
+    void BeginScene() override;                                                              \
+    void EndSceneApplyPostFX(const PostFXParams& params) override;                           \
     void DrawSprite(const Texture& texture,                                                  \
                     glm::vec2 position,                                                      \
                     glm::vec2 size,                                                          \

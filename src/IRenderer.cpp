@@ -91,6 +91,29 @@ void IRenderer::SuspendPerspective(bool suspend)
     m_PerspectiveSuspended = suspend;
 }
 
+namespace
+{
+// Fallback factor mapping a "headline 1.0x" call onto the body atlas. Backends
+// that don't implement a separate high-resolution atlas still produce visually
+// large text via this default (just blurry, like a pre-fix DrawText 4.0x call).
+constexpr float kHeadlineFallbackScale = 4.0f;
+}  // namespace
+
+void IRenderer::DrawTextLarge(const std::string& text,
+                              glm::vec2 position,
+                              float scale,
+                              glm::vec3 color,
+                              float outlineSize,
+                              float alpha)
+{
+    DrawText(text, position, scale * kHeadlineFallbackScale, color, outlineSize, alpha);
+}
+
+float IRenderer::GetTextWidthLarge(const std::string& text, float scale) const
+{
+    return GetTextWidth(text, scale * kHeadlineFallbackScale);
+}
+
 glm::vec2 IRenderer::ProjectPoint(const glm::vec2& p) const
 {
     const auto& s = GetPerspectiveState();
