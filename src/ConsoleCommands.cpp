@@ -2,12 +2,15 @@
 
 #include "CameraController.h"
 #include "Console.h"
+#include "DialogueManager.h"
+#include "DialogueTypes.h"
 #include "Editor.h"
 #include "EnumTraits.h"
 #include "Game.h"
 #include "GameStateManager.h"
 #include "IRenderer.h"
 #include "NonPlayerCharacter.h"
+#include "ParticleSystem.h"
 #include "PlayerCharacter.h"
 #include "Tilemap.h"
 #include "TimeManager.h"
@@ -17,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <string>
 
 namespace
@@ -879,6 +883,1031 @@ bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& 
 }
 
 // ============================================================================
+// player.pos - print tile coords, world pixel coords, facing direction
+// ============================================================================
+
+bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("player.pos: player unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("player.pos: usage 'player.pos'");
+        return false;
+    }
+    const glm::vec2 p = ctx.player->GetPosition();
+    const int tileX = static_cast<int>(std::floor(p.x / CONSOLE_TILE_SIZE));
+    const int tileY = static_cast<int>(std::floor((p.y - 0.1f) / CONSOLE_TILE_SIZE));
+    const char* facing = "DOWN";
+    switch (ctx.player->GetDirection())
+    {
+        case CharacterDirection::DOWN:
+            facing = "DOWN";
+            break;
+        case CharacterDirection::UP:
+            facing = "UP";
+            break;
+        case CharacterDirection::LEFT:
+            facing = "LEFT";
+            break;
+        case CharacterDirection::RIGHT:
+            facing = "RIGHT";
+            break;
+    }
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "player.pos: tile=(%d, %d) world=(%.1f, %.1f) facing=%s",
+                  tileX,
+                  tileY,
+                  static_cast<double>(p.x),
+                  static_cast<double>(p.y),
+                  facing);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// player.bicycle [on|off|toggle]
+// ============================================================================
+
+bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("player.bicycle: player unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(args, ctx.player->IsBicycling(), "player.bicycle", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.player->SetBicycling(target);
+    ctx.out.Print(std::string("player.bicycle: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// ============================================================================
+// player.run [on|off|toggle]
+// ============================================================================
+
+bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("player.run: player unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(args, ctx.player->IsRunning(), "player.run", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.player->SetRunning(target);
+    ctx.out.Print(std::string("player.run: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// ============================================================================
+// npc.list - print every NPC's index, name, type, tile, AI state
+// ============================================================================
+
+bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.list: npc list unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("npc.list: usage 'npc.list'");
+        return false;
+    }
+    char header[64];
+    std::snprintf(
+        header, sizeof(header), "npc.list: %zu NPC(s)", static_cast<std::size_t>(ctx.npcs->size()));
+    ctx.out.Print(header);
+    if (ctx.npcs->empty())
+    {
+        return true;
+    }
+    ctx.out.Print("  (idx may shift after npc.despawn)");
+    for (std::size_t i = 0; i < ctx.npcs->size(); ++i)
+    {
+        const auto& npc = (*ctx.npcs)[i];
+        char line[192];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  [%zu] %s (%s) tile=(%d, %d) %s",
+                      i,
+                      npc.GetName().c_str(),
+                      npc.GetType().c_str(),
+                      npc.GetTileX(),
+                      npc.GetTileY(),
+                      npc.IsStopped() ? "stopped" : "patrolling");
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// npc.tp <idx> <tileX> <tileY>
+// ============================================================================
+
+bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.tp: npc list unavailable");
+        return false;
+    }
+    if (args.size() != 3)
+    {
+        ctx.out.PrintError("npc.tp: usage 'npc.tp <idx> <tileX> <tileY>'");
+        return false;
+    }
+    int idx = 0;
+    int tx = 0;
+    int ty = 0;
+    if (!ParseInt(args[0], idx) || !ParseInt(args[1], tx) || !ParseInt(args[2], ty))
+    {
+        ctx.out.PrintError("npc.tp: idx and tile coords must be non-negative integers");
+        return false;
+    }
+    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    {
+        ctx.out.PrintError("npc.tp: idx out of range");
+        return false;
+    }
+    (*ctx.npcs)[static_cast<std::size_t>(idx)].SetTilePosition(tx, ty, CONSOLE_TILE_SIZE);
+    char line[80];
+    std::snprintf(line, sizeof(line), "npc.tp: [%d] -> tile (%d, %d)", idx, tx, ty);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// npc.spawn <type> <tileX> <tileY> - load sprite, place at tile,
+// upload textures if a renderer is bound (skipped in unit tests).
+// ============================================================================
+
+bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.spawn: npc list unavailable");
+        return false;
+    }
+    if (args.size() != 3)
+    {
+        ctx.out.PrintError("npc.spawn: usage 'npc.spawn <type> <tileX> <tileY>'");
+        return false;
+    }
+    int tx = 0;
+    int ty = 0;
+    if (!ParseInt(args[1], tx) || !ParseInt(args[2], ty))
+    {
+        ctx.out.PrintError("npc.spawn: tile coords must be non-negative integers");
+        return false;
+    }
+    const std::string type(args[0]);
+    NonPlayerCharacter npc;
+    if (!npc.Load(NonPlayerCharacter::ResolveAssetPath(type)))
+    {
+        ctx.out.PrintError("npc.spawn: failed to load sprite for type '" + type + "'");
+        return false;
+    }
+    npc.SetTilePosition(tx, ty, CONSOLE_TILE_SIZE);
+    if (ctx.renderer != nullptr)
+    {
+        npc.UploadTextures(*ctx.renderer);
+    }
+    ctx.npcs->push_back(std::move(npc));
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "npc.spawn: [%zu] '%s' at tile (%d, %d)",
+                  static_cast<std::size_t>(ctx.npcs->size() - 1),
+                  type.c_str(),
+                  tx,
+                  ty);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// npc.despawn <idx> - refuse if NPC is the active dialogue speaker.
+// ============================================================================
+
+bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.despawn: npc list unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("npc.despawn: usage 'npc.despawn <idx>'");
+        return false;
+    }
+    int idx = 0;
+    if (!ParseInt(args[0], idx))
+    {
+        ctx.out.PrintError("npc.despawn: idx must be a non-negative integer");
+        return false;
+    }
+    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    {
+        ctx.out.PrintError("npc.despawn: idx out of range");
+        return false;
+    }
+    if (ctx.game != nullptr && ctx.game->IsInSimpleDialogue() &&
+        ctx.game->GetDialogueNPCIndex() == idx)
+    {
+        ctx.out.PrintError(
+            "npc.despawn: cannot despawn NPC currently in dialogue (use dialogue.end first)");
+        return false;
+    }
+    ctx.npcs->erase(ctx.npcs->begin() + idx);
+    char line[64];
+    std::snprintf(line, sizeof(line), "npc.despawn: removed [%d]", idx);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// npc.freeze <idx|all> [on|off|toggle]
+// ============================================================================
+
+bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.freeze: npc list unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        ctx.out.PrintError("npc.freeze: usage 'npc.freeze <idx|all> [on|off|toggle]'");
+        return false;
+    }
+    const bool isAll = (args[0] == "all");
+    int idx = -1;
+    if (!isAll)
+    {
+        if (!ParseInt(args[0], idx) || idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+        {
+            ctx.out.PrintError("npc.freeze: first arg must be 'all' or a valid NPC index");
+            return false;
+        }
+    }
+    std::span<const std::string_view> toggleArgs = args.subspan(1);
+    const bool current = isAll ? false : (*ctx.npcs)[static_cast<std::size_t>(idx)].IsStopped();
+    bool target = false;
+    if (!ParseToggleArg(toggleArgs, current, "npc.freeze", ctx.out, target))
+    {
+        return false;
+    }
+    if (isAll)
+    {
+        for (auto& n : *ctx.npcs)
+        {
+            n.SetStopped(target);
+        }
+        ctx.out.Print(std::string("npc.freeze all: ") + (target ? "ON" : "OFF"));
+    }
+    else
+    {
+        (*ctx.npcs)[static_cast<std::size_t>(idx)].SetStopped(target);
+        char line[64];
+        std::snprintf(line, sizeof(line), "npc.freeze [%d]: %s", idx, target ? "ON" : "OFF");
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// npc.dialog <idx> <text...> - rejoins multi-token text with single spaces
+// (the console tokenizer is whitespace-only, no quoting).
+// ============================================================================
+
+bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.dialog: npc list unavailable");
+        return false;
+    }
+    if (args.size() < 2)
+    {
+        ctx.out.PrintError("npc.dialog: usage 'npc.dialog <idx> <text...>'");
+        return false;
+    }
+    int idx = 0;
+    if (!ParseInt(args[0], idx) || idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    {
+        ctx.out.PrintError("npc.dialog: idx out of range");
+        return false;
+    }
+    std::string text;
+    for (std::size_t i = 1; i < args.size(); ++i)
+    {
+        if (i > 1)
+        {
+            text += ' ';
+        }
+        text.append(args[i]);
+    }
+    (*ctx.npcs)[static_cast<std::size_t>(idx)].SetDialogue(text);
+    char line[96];
+    std::snprintf(line, sizeof(line), "npc.dialog [%d]: set", idx);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// dialogue.active - print mode + current node for tree, or simple text
+// ============================================================================
+
+bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.dialogue == nullptr)
+    {
+        ctx.out.PrintError("dialogue.active: dialogue manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("dialogue.active: usage 'dialogue.active'");
+        return false;
+    }
+    const bool simpleActive = (ctx.game != nullptr && ctx.game->IsInSimpleDialogue());
+    const bool treeActive = ctx.dialogue->IsActive();
+    if (!simpleActive && !treeActive)
+    {
+        ctx.out.Print("dialogue.active: no active dialogue");
+        return true;
+    }
+    if (simpleActive)
+    {
+        ctx.out.Print(std::string("dialogue.active: simple text=\"") +
+                      ctx.game->GetSimpleDialogueText() + "\"");
+        return true;
+    }
+    const DialogueNode* node = ctx.dialogue->GetCurrentNode();
+    if (node == nullptr)
+    {
+        ctx.out.Print("dialogue.active: tree (no current node)");
+        return true;
+    }
+    char line[192];
+    std::snprintf(line,
+                  sizeof(line),
+                  "dialogue.active: tree node='%s' selected=%d",
+                  node->id.c_str(),
+                  ctx.dialogue->GetSelectedOptionIndex());
+    ctx.out.Print(line);
+    const auto& opts = ctx.dialogue->GetVisibleOptions();
+    for (std::size_t i = 0; i < opts.size(); ++i)
+    {
+        if (opts[i] != nullptr)
+        {
+            ctx.out.Print(std::string("  ") + std::to_string(i) + ": " + opts[i]->text);
+        }
+    }
+    return true;
+}
+
+// ============================================================================
+// dialogue.end - close any active dialogue (simple or tree)
+// ============================================================================
+
+bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("dialogue.end: game unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("dialogue.end: usage 'dialogue.end'");
+        return false;
+    }
+    ctx.game->EndAnyDialogue();
+    ctx.out.Print("dialogue.end: closed");
+    return true;
+}
+
+// ============================================================================
+// dialogue.skip - confirm current option (advance tree dialogue)
+// ============================================================================
+
+bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.dialogue == nullptr)
+    {
+        ctx.out.PrintError("dialogue.skip: dialogue manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("dialogue.skip: usage 'dialogue.skip'");
+        return false;
+    }
+    if (!ctx.dialogue->IsActive())
+    {
+        ctx.out.PrintError("dialogue.skip: no active tree dialogue");
+        return false;
+    }
+    ctx.dialogue->ConfirmSelection();
+    ctx.out.Print("dialogue.skip: advanced");
+    return true;
+}
+
+// ============================================================================
+// flag.list - dump every flag in GameStateManager
+// ============================================================================
+
+bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.gameState == nullptr)
+    {
+        ctx.out.PrintError("flag.list: game state unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("flag.list: usage 'flag.list'");
+        return false;
+    }
+    const auto& flags = ctx.gameState->GetAllFlags();
+    char header[48];
+    std::snprintf(
+        header, sizeof(header), "flag.list: %zu flag(s)", static_cast<std::size_t>(flags.size()));
+    ctx.out.Print(header);
+    // Sort for deterministic output (unordered_map iteration order is unstable).
+    std::vector<std::string> keys;
+    keys.reserve(flags.size());
+    for (const auto& [k, _v] : flags)
+    {
+        keys.push_back(k);
+    }
+    std::sort(keys.begin(), keys.end());
+    for (const auto& k : keys)
+    {
+        const auto it = flags.find(k);
+        ctx.out.Print(std::string("  ") + k + " = " + (it != flags.end() ? it->second : ""));
+    }
+    return true;
+}
+
+// ============================================================================
+// flag.unset <name>
+// ============================================================================
+
+bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.gameState == nullptr)
+    {
+        ctx.out.PrintError("flag.unset: game state unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("flag.unset: usage 'flag.unset <name>'");
+        return false;
+    }
+    const std::string name(args[0]);
+    const bool existed = ctx.gameState->HasFlag(name);
+    ctx.gameState->ClearFlag(name);
+    if (existed)
+    {
+        ctx.out.Print(std::string("flag.unset: removed '") + name + "'");
+    }
+    else
+    {
+        ctx.out.Print(std::string("flag.unset: '") + name + "' was not set");
+    }
+    return true;
+}
+
+// ============================================================================
+// time.scale <multiplier>
+// ============================================================================
+
+bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("time.scale: time manager unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("time.scale: usage 'time.scale <multiplier>'");
+        return false;
+    }
+    float m = 0.0f;
+    if (!ParseFloat(args[0], m))
+    {
+        ctx.out.PrintError("time.scale: multiplier must be a finite number");
+        return false;
+    }
+    if (m <= 0.0f)
+    {
+        ctx.out.PrintError("time.scale: multiplier must be > 0");
+        return false;
+    }
+    ctx.time->SetTimeScale(m);
+    char line[48];
+    std::snprintf(line, sizeof(line), "time.scale: %.3f", static_cast<double>(m));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// time.weather <clear|overcast>
+// ============================================================================
+
+bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("time.weather: time manager unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("time.weather: usage 'time.weather <clear|overcast>'");
+        return false;
+    }
+    WeatherState state{};
+    if (args[0] == "clear" || args[0] == "Clear" || args[0] == "CLEAR")
+    {
+        state = WeatherState::Clear;
+    }
+    else if (args[0] == "overcast" || args[0] == "Overcast" || args[0] == "OVERCAST")
+    {
+        state = WeatherState::Overcast;
+    }
+    else
+    {
+        ctx.out.PrintError("time.weather: usage 'time.weather <clear|overcast>'");
+        return false;
+    }
+    ctx.time->SetWeather(state);
+    ctx.out.Print(std::string("time.weather: ") +
+                  (state == WeatherState::Clear ? "clear" : "overcast"));
+    return true;
+}
+
+// ============================================================================
+// time.status - print time, period, weather, day count, moon phase
+// ============================================================================
+
+bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("time.status: time manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("time.status: usage 'time.status'");
+        return false;
+    }
+    const char* periodName = "Unknown";
+    switch (ctx.time->GetTimePeriod())
+    {
+        case TimePeriod::Dawn:
+            periodName = "Dawn";
+            break;
+        case TimePeriod::Morning:
+            periodName = "Morning";
+            break;
+        case TimePeriod::Midday:
+            periodName = "Midday";
+            break;
+        case TimePeriod::Afternoon:
+            periodName = "Afternoon";
+            break;
+        case TimePeriod::Dusk:
+            periodName = "Dusk";
+            break;
+        case TimePeriod::Evening:
+            periodName = "Evening";
+            break;
+        case TimePeriod::Night:
+            periodName = "Night";
+            break;
+        case TimePeriod::LateNight:
+            periodName = "LateNight";
+            break;
+    }
+    const char* weatherName =
+        (ctx.time->GetWeather() == WeatherState::Clear) ? "Clear" : "Overcast";
+    char line[160];
+    std::snprintf(line,
+                  sizeof(line),
+                  "time.status: %.2fh (%s) weather=%s day=%d moonPhase=%d scale=%.2f%s",
+                  static_cast<double>(ctx.time->GetTimeOfDay()),
+                  periodName,
+                  weatherName,
+                  ctx.time->GetDayCount(),
+                  ctx.time->GetMoonPhase(),
+                  static_cast<double>(ctx.time->GetTimeScale()),
+                  ctx.time->IsPaused() ? " [paused]" : "");
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// particle.spawn <type> <worldX> <worldY> - one-shot spawn at world pixels
+// ============================================================================
+
+bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.particles == nullptr)
+    {
+        ctx.out.PrintError("particle.spawn: particle system unavailable");
+        return false;
+    }
+    if (args.size() != 3)
+    {
+        ctx.out.PrintError("particle.spawn: usage 'particle.spawn <type> <worldX> <worldY>'");
+        return false;
+    }
+    const auto parsed = EnumTraits<ParticleType>::FromString(args[0]);
+    if (!parsed.has_value())
+    {
+        ctx.out.PrintError(std::string("particle.spawn: unknown type '") + std::string(args[0]) +
+                           "' (valid: Firefly Rain Snow Fog Sparkles Wisp Lantern Sunshine "
+                           "DriftingLeaf DustMote Pollen)");
+        return false;
+    }
+    float wx = 0.0f;
+    float wy = 0.0f;
+    if (!ParseFloat(args[1], wx) || !ParseFloat(args[2], wy))
+    {
+        ctx.out.PrintError("particle.spawn: world coords must be finite numbers");
+        return false;
+    }
+    ctx.particles->SpawnOne(*parsed, glm::vec2(wx, wy));
+    char line[112];
+    std::snprintf(line,
+                  sizeof(line),
+                  "particle.spawn: %s at (%.1f, %.1f)",
+                  std::string(EnumTraits<ParticleType>::ToString(*parsed)).c_str(),
+                  static_cast<double>(wx),
+                  static_cast<double>(wy));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// particle.list - count particles per type, list zones
+// ============================================================================
+
+bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.particles == nullptr)
+    {
+        ctx.out.PrintError("particle.list: particle system unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("particle.list: usage 'particle.list'");
+        return false;
+    }
+    const auto& particles = ctx.particles->GetParticles();
+    int counts[EnumTraits<ParticleType>::Count] = {};
+    for (const auto& p : particles)
+    {
+        const int idx = static_cast<int>(p.type);
+        if (idx >= 0 && idx < static_cast<int>(EnumTraits<ParticleType>::Count))
+        {
+            ++counts[idx];
+        }
+    }
+    char header[48];
+    std::snprintf(header,
+                  sizeof(header),
+                  "particle.list: %zu active",
+                  static_cast<std::size_t>(particles.size()));
+    ctx.out.Print(header);
+    for (std::size_t i = 0; i < EnumTraits<ParticleType>::Count; ++i)
+    {
+        if (counts[i] > 0)
+        {
+            char line[80];
+            std::snprintf(line,
+                          sizeof(line),
+                          "  %s: %d",
+                          std::string(EnumTraits<ParticleType>::Names[i]).c_str(),
+                          counts[i]);
+            ctx.out.Print(line);
+        }
+    }
+    if (ctx.tilemap != nullptr)
+    {
+        const std::vector<ParticleZone>* zones = ctx.tilemap->GetParticleZones();
+        const std::size_t zoneCount = (zones != nullptr) ? zones->size() : 0;
+        char zoneHeader[48];
+        std::snprintf(zoneHeader, sizeof(zoneHeader), "  zones: %zu", zoneCount);
+        ctx.out.Print(zoneHeader);
+    }
+    return true;
+}
+
+// ============================================================================
+// particle.kill_all
+// ============================================================================
+
+bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.particles == nullptr)
+    {
+        ctx.out.PrintError("particle.kill_all: particle system unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("particle.kill_all: usage 'particle.kill_all'");
+        return false;
+    }
+    ctx.particles->Clear();
+    ctx.out.Print("particle.kill_all: cleared");
+    return true;
+}
+
+// ============================================================================
+// camera.freecam [on|off|toggle]
+// ============================================================================
+
+bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("camera.freecam: camera unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(args, ctx.camera->GetState().freeMode, "camera.freecam", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.camera->GetState().freeMode = target;
+    ctx.out.Print(std::string("camera.freecam: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// ============================================================================
+// camera.zoom <factor> - clamp into a sensible developer range
+// ============================================================================
+
+bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("camera.zoom: camera unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("camera.zoom: usage 'camera.zoom <factor 0.1-10.0>'");
+        return false;
+    }
+    float z = 0.0f;
+    if (!ParseFloat(args[0], z))
+    {
+        ctx.out.PrintError("camera.zoom: factor must be a finite number");
+        return false;
+    }
+    if (z < 0.1f || z > 10.0f)
+    {
+        ctx.out.PrintError("camera.zoom: factor out of range [0.1, 10.0]");
+        return false;
+    }
+    ctx.camera->GetState().zoom = z;
+    char line[48];
+    std::snprintf(line, sizeof(line), "camera.zoom: %.3f", static_cast<double>(z));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// camera.follow [on|off|toggle] - re-attach camera to player; clears freecam.
+// ============================================================================
+
+bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("camera.follow: camera unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(
+            args, ctx.camera->GetState().hasFollowTarget, "camera.follow", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.camera->GetState().hasFollowTarget = target;
+    if (target)
+    {
+        ctx.camera->GetState().freeMode = false;
+    }
+    ctx.out.Print(std::string("camera.follow: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// ============================================================================
+// camera.info - dump camera state
+// ============================================================================
+
+bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("camera.info: camera unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("camera.info: usage 'camera.info'");
+        return false;
+    }
+    const auto& s = ctx.camera->GetState();
+    char line[192];
+    std::snprintf(line,
+                  sizeof(line),
+                  "camera.info: pos=(%.1f, %.1f) zoom=%.3f tilt=%.2f globe3D=%s freecam=%s "
+                  "follow=%s target=(%.1f, %.1f)",
+                  static_cast<double>(s.position.x),
+                  static_cast<double>(s.position.y),
+                  static_cast<double>(s.zoom),
+                  static_cast<double>(s.tilt),
+                  s.enable3DEffect ? "ON" : "OFF",
+                  s.freeMode ? "ON" : "OFF",
+                  s.hasFollowTarget ? "ON" : "OFF",
+                  static_cast<double>(s.followTarget.x),
+                  static_cast<double>(s.followTarget.y));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// map.save [path] - default path comes from Game::GetSaveMapPath
+// ============================================================================
+
+bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr || ctx.npcs == nullptr || ctx.player == nullptr)
+    {
+        ctx.out.PrintError("map.save: world refs unavailable");
+        return false;
+    }
+    if (args.size() > 1)
+    {
+        ctx.out.PrintError("map.save: usage 'map.save [path]'");
+        return false;
+    }
+    std::string path;
+    if (args.empty())
+    {
+        if (ctx.game == nullptr)
+        {
+            ctx.out.PrintError("map.save: game ref required for default path");
+            return false;
+        }
+        path = ctx.game->GetSaveMapPath();
+    }
+    else
+    {
+        path = std::string(args[0]);
+    }
+    const glm::vec2 ppos = ctx.player->GetPosition();
+    const int playerTileX = static_cast<int>(std::floor(ppos.x / CONSOLE_TILE_SIZE));
+    const int playerTileY = static_cast<int>(std::floor((ppos.y - 0.1f) / CONSOLE_TILE_SIZE));
+    const int characterType = static_cast<int>(ctx.player->GetCharacterType());
+    if (!ctx.tilemap->SaveMapToJSON(path, ctx.npcs, playerTileX, playerTileY, characterType))
+    {
+        ctx.out.PrintError("map.save: failed to write '" + path + "'");
+        return false;
+    }
+    ctx.out.Print("map.save: wrote '" + path + "'");
+    return true;
+}
+
+// ============================================================================
+// map.size
+// ============================================================================
+
+bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("map.size: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("map.size: usage 'map.size'");
+        return false;
+    }
+    const int w = ctx.tilemap->GetMapWidth();
+    const int h = ctx.tilemap->GetMapHeight();
+    const int tw = ctx.tilemap->GetTileWidth();
+    const int th = ctx.tilemap->GetTileHeight();
+    char line[112];
+    std::snprintf(line,
+                  sizeof(line),
+                  "map.size: %d x %d tiles (%d x %d px), tile=%dx%d",
+                  w,
+                  h,
+                  w * tw,
+                  h * th,
+                  tw,
+                  th);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// map.collision <tileX> <tileY>
+// ============================================================================
+
+bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("map.collision: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 2)
+    {
+        ctx.out.PrintError("map.collision: usage 'map.collision <tileX> <tileY>'");
+        return false;
+    }
+    int tx = 0;
+    int ty = 0;
+    if (!ParseInt(args[0], tx) || !ParseInt(args[1], ty))
+    {
+        ctx.out.PrintError("map.collision: tile coords must be non-negative integers");
+        return false;
+    }
+    const bool blocked = ctx.tilemap->GetTileCollision(tx, ty);
+    char line[80];
+    std::snprintf(line,
+                  sizeof(line),
+                  "map.collision: tile (%d, %d) = %s",
+                  tx,
+                  ty,
+                  blocked ? "BLOCKED" : "open");
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// perf - print FPS, frame time, draw calls
+// ============================================================================
+
+bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("perf: game unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("perf: usage 'perf'");
+        return false;
+    }
+    const FPSCounter& fps = ctx.game->GetFPSCounter();
+    const float frameMs = (fps.currentFps > 0.0f) ? (1000.0f / fps.currentFps) : 0.0f;
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "perf: fps=%.1f frame=%.2fms drawCalls=%d target=%.1f",
+                  static_cast<double>(fps.currentFps),
+                  static_cast<double>(frameMs),
+                  fps.currentDrawCalls,
+                  static_cast<double>(fps.targetFps));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
 // Console::RegisterDefaultCommands - production wiring. Lives here so all
 // the default commands and their bindings are in one translation unit.
 // ============================================================================
@@ -900,6 +1929,8 @@ void Console::RegisterDefaultCommands()
             /* renderer    */ m_Game.m_Renderer.get(),
             /* game        */ &m_Game,
             /* postFXEnabled */ &m_Game.m_PostFXEnabled,
+            /* dialogue    */ &m_Game.m_DialogueManager,
+            /* particles   */ &m_Game.m_Particles,
         };
     };
 
@@ -917,7 +1948,8 @@ void Console::RegisterDefaultCommands()
                         {
                             CommandContext ctx = makeContext();
                             (void)Cmd_Clear(args, ctx);
-                        });
+                        },
+                        {"cls"});
 
     m_Registry.Register("teleport",
                         "teleport <tx> <ty> - move player to tile coord",
@@ -1120,5 +2152,239 @@ void Console::RegisterDefaultCommands()
                             CommandContext ctx = makeContext();
                             (void)Cmd_PlayerSpeed(args, ctx);
                         },
-                        {"pspeed", "speed"});
+                        {"pspeed", "speed", "psp"});
+
+    m_Registry.Register("player.pos",
+                        "print player tile, world pixel, and facing direction",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_PlayerPos(args, ctx);
+                        },
+                        {"pos", "ppos"});
+
+    m_Registry.Register("player.bicycle",
+                        "[on|off|toggle] - toggle bicycle mode",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_PlayerBicycle(args, ctx);
+                        },
+                        {"bike"});
+
+    m_Registry.Register("player.run",
+                        "[on|off|toggle] - toggle running mode",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_PlayerRun(args, ctx);
+                        });
+
+    m_Registry.Register("npc.list",
+                        "list NPCs (idx, name, type, tile, AI state)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcList(args, ctx);
+                        },
+                        {"npcs"});
+
+    m_Registry.Register("npc.tp",
+                        "<idx> <tx> <ty> - teleport NPC by vector index",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcTp(args, ctx);
+                        });
+
+    m_Registry.Register("npc.spawn",
+                        "<type> <tx> <ty> - spawn an NPC at tile coords",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcSpawn(args, ctx);
+                        });
+
+    m_Registry.Register("npc.despawn",
+                        "<idx> - remove NPC by index (refuses if in dialogue)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcDespawn(args, ctx);
+                        });
+
+    m_Registry.Register("npc.freeze",
+                        "<idx|all> [on|off|toggle] - halt NPC AI",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcFreeze(args, ctx);
+                        });
+
+    m_Registry.Register("npc.dialog",
+                        "<idx> <text...> - set NPC simple dialogue text",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcDialog(args, ctx);
+                        });
+
+    m_Registry.Register("dialogue.active",
+                        "print current dialogue node and visible options",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_DialogueActive(args, ctx);
+                        },
+                        {"dlg"});
+
+    m_Registry.Register("dialogue.end",
+                        "force-close any active dialogue (simple or tree)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_DialogueEnd(args, ctx);
+                        },
+                        {"dlg.end"});
+
+    m_Registry.Register("dialogue.skip",
+                        "advance tree dialogue (confirm current selection)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_DialogueSkip(args, ctx);
+                        },
+                        {"dlg.skip"});
+
+    m_Registry.Register("flag.list",
+                        "dump every game-state flag",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_FlagList(args, ctx);
+                        },
+                        {"flags"});
+
+    m_Registry.Register("flag.unset",
+                        "<name> - remove a flag",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_FlagUnset(args, ctx);
+                        });
+
+    m_Registry.Register("time.scale",
+                        "<multiplier> - set time progression scale (1.0 = normal)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TimeScale(args, ctx);
+                        });
+
+    m_Registry.Register("time.weather",
+                        "<clear|overcast> - set weather state",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TimeWeather(args, ctx);
+                        },
+                        {"weather"});
+
+    m_Registry.Register("time.status",
+                        "print time, period, weather, day count, moon phase",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TimeStatus(args, ctx);
+                        });
+
+    m_Registry.Register("particle.spawn",
+                        "<type> <wx> <wy> - spawn particle at world pixel coords",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ParticleSpawn(args, ctx);
+                        });
+
+    m_Registry.Register("particle.list",
+                        "count active particles by type, list zones",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ParticleList(args, ctx);
+                        });
+
+    m_Registry.Register("particle.kill_all",
+                        "remove all active particles",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ParticleKillAll(args, ctx);
+                        });
+
+    m_Registry.Register("camera.freecam",
+                        "[on|off|toggle] - decouple camera from player",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CameraFreecam(args, ctx);
+                        },
+                        {"freecam"});
+
+    m_Registry.Register("camera.zoom",
+                        "<factor 0.1-10.0> - set camera zoom",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CameraZoom(args, ctx);
+                        },
+                        {"zoom"});
+
+    m_Registry.Register("camera.follow",
+                        "[on|off|toggle] - re-attach camera to player",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CameraFollow(args, ctx);
+                        });
+
+    m_Registry.Register("camera.info",
+                        "dump camera state (pos, zoom, freecam, follow, tilt)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CameraInfo(args, ctx);
+                        });
+
+    m_Registry.Register("map.save",
+                        "[path] - save current map to JSON",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MapSave(args, ctx);
+                        });
+
+    m_Registry.Register("map.size",
+                        "print map dimensions in tiles and pixels",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MapSize(args, ctx);
+                        });
+
+    m_Registry.Register("map.collision",
+                        "<tx> <ty> - query collision flag at tile",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MapCollision(args, ctx);
+                        });
+
+    m_Registry.Register("perf",
+                        "print FPS, frame time, draw calls",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_Perf(args, ctx);
+                        });
 }

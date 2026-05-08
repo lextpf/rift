@@ -7,11 +7,13 @@
 class CameraController;
 class ConsoleBuffer;
 class ConsoleCommandRegistry;
+class DialogueManager;
 class Editor;
 class Game;
 class GameStateManager;
 class IRenderer;
 class NonPlayerCharacter;
+class ParticleSystem;
 class PlayerCharacter;
 class TimeManager;
 class Tilemap;
@@ -38,11 +40,13 @@ struct CommandContext
     Tilemap* tilemap = nullptr;
     std::vector<NonPlayerCharacter>* npcs = nullptr;
     const ConsoleCommandRegistry* registry = nullptr;
-    Editor* editor = nullptr;            ///< Level editor state and toggles.
-    CameraController* camera = nullptr;  ///< Camera (3D effect, globe radius/tilt).
-    IRenderer* renderer = nullptr;       ///< Active renderer for texture uploads.
-    Game* game = nullptr;                ///< Game (cross-cutting ops like renderer.set).
-    bool* postFXEnabled = nullptr;       ///< Master toggle for post-processing pipeline.
+    Editor* editor = nullptr;             ///< Level editor state and toggles.
+    CameraController* camera = nullptr;   ///< Camera (3D effect, globe radius/tilt).
+    IRenderer* renderer = nullptr;        ///< Active renderer for texture uploads.
+    Game* game = nullptr;                 ///< Game (cross-cutting ops like renderer.set).
+    bool* postFXEnabled = nullptr;        ///< Master toggle for post-processing pipeline.
+    DialogueManager* dialogue = nullptr;  ///< Branching dialogue manager (current node, options).
+    ParticleSystem* particles = nullptr;  ///< Particle system (single-shot spawn, list, kill).
 };
 
 /// @name Default console commands
@@ -78,4 +82,32 @@ bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx);
 /// @}
