@@ -228,6 +228,20 @@ public:
      */
     [[nodiscard]] std::string GetQuestDescription(const std::string& questName) const;
 
+    /**
+     * @brief Get read-only view of every stored flag.
+     *
+     * Exposed primarily for the developer console's `flag.list` command so it
+     * can iterate flags without mutating storage. The returned reference is
+     * stable until the next call that mutates `m_Flags`.
+     *
+     * @return Const reference to the underlying key/value flag map.
+     */
+    [[nodiscard]] const std::unordered_map<std::string, std::string>& GetAllFlags() const
+    {
+        return m_Flags;
+    }
+
     GameStateManager(const GameStateManager&) = default;
     GameStateManager& operator=(const GameStateManager&) = default;
     GameStateManager(GameStateManager&&) = default;
