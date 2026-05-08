@@ -286,24 +286,6 @@ void Editor::Render(const EditorContext& ctx)
         RenderEditorUI(ctx);
     }
 
-    // Status toast (save success/failure, load result). Rendered on top of
-    // everything so the user actually sees it - this is what distinguishes
-    // "save silently failed" from "save succeeded".
-    if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
-    {
-        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
-        glm::mat4 uiProjection = glm::ortho(0.0f,
-                                            static_cast<float>(ctx.screenWidth),
-                                            static_cast<float>(ctx.screenHeight),
-                                            0.0f,
-                                            -1.0f,
-                                            1.0f);
-        ctx.renderer.SetProjection(uiProjection);
-        const glm::vec2 pos(20.0f,
-                            static_cast<float>(ctx.screenHeight) - EDITOR_HUD_HEIGHT - 24.0f);
-        ctx.renderer.DrawText(m_StatusMessage, pos, 0.5f, m_StatusColor);
-    }
-
     // Shared overlays: rendered once when either editor or debug mode is active
     if ((m_Active || m_DebugMode) && !m_ShowTilePicker)
     {
@@ -345,6 +327,28 @@ void Editor::Render(const EditorContext& ctx)
     {
         IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         RenderEditorHUD(ctx);
+    }
+
+    // Status toast (save success/failure, flip confirmation, etc.). Rendered
+    // last so that:
+    //   - It draws ON TOP of every overlay rather than beneath them.
+    //   - Its UI-ortho SetProjection() does not leak into the world-projection
+    //     overlays above. PerspectiveSuspendGuard restores the suspension
+    //     flag but not the projection matrix; Game::Render re-binds the world
+    //     projection after Editor::Render returns.
+    if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
+    {
+        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
+        glm::mat4 uiProjection = glm::ortho(0.0f,
+                                            static_cast<float>(ctx.screenWidth),
+                                            static_cast<float>(ctx.screenHeight),
+                                            0.0f,
+                                            -1.0f,
+                                            1.0f);
+        ctx.renderer.SetProjection(uiProjection);
+        const glm::vec2 pos(20.0f,
+                            static_cast<float>(ctx.screenHeight) - EDITOR_HUD_HEIGHT - 24.0f);
+        ctx.renderer.DrawText(m_StatusMessage, pos, 0.5f, m_StatusColor);
     }
 }
 
