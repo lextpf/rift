@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include <cmath>
+
 class AmbientParticleSpawnTest : public ::testing::Test
 {
 protected:
@@ -183,4 +185,69 @@ TEST_F(AmbientParticleZoneTest, ZoneSpawnedParticlesAreInsideZoneBounds)
         EXPECT_GE(p.position.y, z.position.y);
         EXPECT_LE(p.position.y, z.position.y + z.size.y);
     }
+}
+
+// --- Color palette constraints --------------------------------------------
+// DustMote represents floating dust caught in light - it should look
+// neutral. Pollen carries the chromatic ambient palette and must not
+// re-introduce the white/grey range.
+
+TEST_F(AmbientParticleZoneTest, DustMoteColorsAreNeutralGreyOnly)
+{
+    ps.SetTimeOfDay(2.0f);
+    PlaceZone(ParticleType::DustMote);
+    for (int i = 0; i < 60; ++i)
+    {
+        ps.Update(0.5f, cameraPos, viewSize);
+    }
+    int sampled = 0;
+    for (const auto& p : ps.GetParticles())
+    {
+        if (p.type != ParticleType::DustMote)
+        {
+            continue;
+        }
+        ++sampled;
+        // Pure grey: R == G == B (within float tolerance from accumulated math).
+        EXPECT_NEAR(p.color.r, p.color.g, 1e-4f)
+            << "DustMote has non-neutral RGB: (" << p.color.r << ", " << p.color.g << ", "
+            << p.color.b << ")";
+        EXPECT_NEAR(p.color.g, p.color.b, 1e-4f)
+            << "DustMote has non-neutral RGB: (" << p.color.r << ", " << p.color.g << ", "
+            << p.color.b << ")";
+    }
+    EXPECT_GT(sampled, 0);
+}
+
+TEST_F(AmbientParticleZoneTest, PollenIsNeverWhitish)
+{
+    ps.SetTimeOfDay(12.0f);
+    PlaceZone(ParticleType::Pollen);
+    for (int i = 0; i < 80; ++i)
+    {
+        ps.Update(0.5f, cameraPos, viewSize);
+    }
+    int sampled = 0;
+    for (const auto& p : ps.GetParticles())
+    {
+        if (p.type != ParticleType::Pollen)
+        {
+            continue;
+        }
+        ++sampled;
+        // The previous "White (dandelion)" species set R/G/B all >= 0.95 with
+        // tight grouping. Forbid any pollen falling in that envelope.
+        const bool whitish = p.color.r >= 0.9f && p.color.g >= 0.9f && p.color.b >= 0.9f &&
+                             std::abs(p.color.r - p.color.g) <= 0.10f &&
+                             std::abs(p.color.g - p.color.b) <= 0.10f;
+        EXPECT_FALSE(whitish) << "Pollen rendered nearly white: (" << p.color.r << ", "
+                              << p.color.g << ", " << p.color.b << ")";
+    }
+    EXPECT_GT(sampled, 0);
+}
+
+TEST(ParticleType, SmokeRemoved)
+{
+    EXPECT_EQ(EnumTraits<ParticleType>::Count, 11u);
+    EXPECT_EQ(static_cast<int>(ParticleType::Pollen), 10);
 }
