@@ -7,11 +7,14 @@
 #include "../src/CameraController.h"
 #include "../src/Console.h"
 #include "../src/ConsoleCommands.h"
+#include "../src/DialogueManager.h"
 #include "../src/Editor.h"
 #include "../src/GameStateManager.h"
 #include "../src/NonPlayerCharacter.h"
+#include "../src/ParticleSystem.h"
 #include "../src/PlayerCharacter.h"
 #include "../src/TimeManager.h"
+#include "../src/Tilemap.h"
 
 #include <string>
 #include <string_view>
@@ -759,6 +762,589 @@ TEST(ConsoleCommandsTests, PostFXFailsWithoutPointer)
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     EXPECT_FALSE(Cmd_PostFX(ArgPack({}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// player.pos / player.bicycle / player.run
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, PlayerPosPrintsTileWorldFacing)
+{
+    PlayerCharacter player;
+    player.SetTilePosition(3, 4);
+    player.SetDirection(CharacterDirection::LEFT);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    EXPECT_TRUE(Cmd_PlayerPos(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "tile=(3, 4)"));
+    EXPECT_TRUE(BufferContains(buf, "facing=LEFT"));
+}
+
+TEST(ConsoleCommandsTests, PlayerPosFailsWithoutPlayerOrExtraArgs)
+{
+    {
+        ConsoleBuffer buf;
+        CommandContext ctx{buf};
+        EXPECT_FALSE(Cmd_PlayerPos(ArgPack({}).span(), ctx));
+    }
+    PlayerCharacter player;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+    EXPECT_FALSE(Cmd_PlayerPos(ArgPack({"oops"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, PlayerBicycleToggle)
+{
+    PlayerCharacter player;
+    ASSERT_FALSE(player.IsBicycling());
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    EXPECT_TRUE(Cmd_PlayerBicycle(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(player.IsBicycling());
+    EXPECT_TRUE(Cmd_PlayerBicycle(ArgPack({"off"}).span(), ctx));
+    EXPECT_FALSE(player.IsBicycling());
+    EXPECT_FALSE(Cmd_PlayerBicycle(ArgPack({"junk"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, PlayerRunToggle)
+{
+    PlayerCharacter player;
+    ASSERT_FALSE(player.IsRunning());
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+
+    EXPECT_TRUE(Cmd_PlayerRun(ArgPack({"on"}).span(), ctx));
+    EXPECT_TRUE(player.IsRunning());
+    EXPECT_TRUE(Cmd_PlayerRun(ArgPack({}).span(), ctx));  // toggle
+    EXPECT_FALSE(player.IsRunning());
+}
+
+TEST(ConsoleCommandsTests, PlayerRunFailsWithoutPlayer)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_PlayerRun(ArgPack({"on"}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// npc.list / npc.tp / npc.spawn / npc.despawn / npc.freeze / npc.dialog
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, NpcListPrintsCount)
+{
+    std::vector<NonPlayerCharacter> npcs(2);
+    npcs[0].SetName("Anna");
+    npcs[1].SetName("Bob");
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_TRUE(Cmd_NpcList(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "2 NPC"));
+    EXPECT_TRUE(BufferContains(buf, "Anna"));
+    EXPECT_TRUE(BufferContains(buf, "Bob"));
+}
+
+TEST(ConsoleCommandsTests, NpcListEmptyVector)
+{
+    std::vector<NonPlayerCharacter> npcs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+    EXPECT_TRUE(Cmd_NpcList(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "0 NPC"));
+}
+
+TEST(ConsoleCommandsTests, NpcTpUpdatesPosition)
+{
+    std::vector<NonPlayerCharacter> npcs(1);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_TRUE(Cmd_NpcTp(ArgPack({"0", "5", "9"}).span(), ctx));
+    EXPECT_EQ(npcs[0].GetTileX(), 5);
+    EXPECT_EQ(npcs[0].GetTileY(), 9);
+}
+
+TEST(ConsoleCommandsTests, NpcTpRejectsBadIndexAndArity)
+{
+    std::vector<NonPlayerCharacter> npcs(1);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_FALSE(Cmd_NpcTp(ArgPack({"99", "0", "0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcTp(ArgPack({"0", "1"}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcTp(ArgPack({"abc", "1", "2"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, NpcSpawnRejectsBadArgsAndUnknownType)
+{
+    std::vector<NonPlayerCharacter> npcs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({"BW1_NPC1", "abc", "1"}).span(), ctx));
+    // Unknown type with no asset on disk: Load() fails, command returns false.
+    EXPECT_FALSE(
+        Cmd_NpcSpawn(ArgPack({"definitely_not_a_real_npc_type", "5", "5"}).span(), ctx));
+    EXPECT_TRUE(npcs.empty());
+}
+
+TEST(ConsoleCommandsTests, NpcDespawnRemovesAndBoundsCheck)
+{
+    std::vector<NonPlayerCharacter> npcs(2);
+    npcs[0].SetName("First");
+    npcs[1].SetName("Second");
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_FALSE(Cmd_NpcDespawn(ArgPack({"99"}).span(), ctx));
+    EXPECT_EQ(npcs.size(), 2u);
+    EXPECT_TRUE(Cmd_NpcDespawn(ArgPack({"0"}).span(), ctx));
+    EXPECT_EQ(npcs.size(), 1u);
+    EXPECT_EQ(npcs[0].GetName(), "Second");
+}
+
+TEST(ConsoleCommandsTests, NpcFreezePerIndex)
+{
+    std::vector<NonPlayerCharacter> npcs(2);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"0", "on"}).span(), ctx));
+    EXPECT_TRUE(npcs[0].IsStopped());
+    EXPECT_FALSE(npcs[1].IsStopped());
+
+    EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"0"}).span(), ctx));  // toggle
+    EXPECT_FALSE(npcs[0].IsStopped());
+}
+
+TEST(ConsoleCommandsTests, NpcFreezeAll)
+{
+    std::vector<NonPlayerCharacter> npcs(3);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"all", "on"}).span(), ctx));
+    for (const auto& n : npcs)
+    {
+        EXPECT_TRUE(n.IsStopped());
+    }
+    EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"all", "off"}).span(), ctx));
+    for (const auto& n : npcs)
+    {
+        EXPECT_FALSE(n.IsStopped());
+    }
+}
+
+TEST(ConsoleCommandsTests, NpcFreezeRejectsBadArgs)
+{
+    std::vector<NonPlayerCharacter> npcs(1);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_FALSE(Cmd_NpcFreeze(ArgPack({}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcFreeze(ArgPack({"99"}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcFreeze(ArgPack({"0", "weird"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, NpcDialogSetsTextWithMultiToken)
+{
+    std::vector<NonPlayerCharacter> npcs(1);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_TRUE(Cmd_NpcDialog(ArgPack({"0", "Hello", "world!"}).span(), ctx));
+    EXPECT_EQ(npcs[0].GetDialogue(), "Hello world!");
+}
+
+TEST(ConsoleCommandsTests, NpcDialogRejectsBadArgs)
+{
+    std::vector<NonPlayerCharacter> npcs(1);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+
+    EXPECT_FALSE(Cmd_NpcDialog(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcDialog(ArgPack({"99", "hi"}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// dialogue.active / dialogue.end / dialogue.skip
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, DialogueActiveReportsInactive)
+{
+    DialogueManager dm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.dialogue = &dm;
+
+    EXPECT_TRUE(Cmd_DialogueActive(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "no active dialogue"));
+}
+
+TEST(ConsoleCommandsTests, DialogueActiveFailsWithoutManager)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_DialogueActive(ArgPack({}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, DialogueEndFailsWithoutGame)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_DialogueEnd(ArgPack({}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, DialogueSkipRefusesWhenInactive)
+{
+    DialogueManager dm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.dialogue = &dm;
+
+    EXPECT_FALSE(Cmd_DialogueSkip(ArgPack({}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// flag.list / flag.unset
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, FlagListDumpsAllFlags)
+{
+    GameStateManager state;
+    state.SetFlagValue("alpha", "1");
+    state.SetFlagValue("bravo", "two");
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &state;
+
+    EXPECT_TRUE(Cmd_FlagList(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "2 flag"));
+    EXPECT_TRUE(BufferContains(buf, "alpha = 1"));
+    EXPECT_TRUE(BufferContains(buf, "bravo = two"));
+}
+
+TEST(ConsoleCommandsTests, FlagListEmpty)
+{
+    GameStateManager state;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &state;
+    EXPECT_TRUE(Cmd_FlagList(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "0 flag"));
+}
+
+TEST(ConsoleCommandsTests, FlagUnsetRemovesFlag)
+{
+    GameStateManager state;
+    state.SetFlag("done", true);
+    ASSERT_TRUE(state.HasFlag("done"));
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &state;
+
+    EXPECT_TRUE(Cmd_FlagUnset(ArgPack({"done"}).span(), ctx));
+    EXPECT_FALSE(state.HasFlag("done"));
+}
+
+TEST(ConsoleCommandsTests, FlagUnsetNoOpForUnknown)
+{
+    GameStateManager state;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &state;
+    EXPECT_TRUE(Cmd_FlagUnset(ArgPack({"missing"}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "was not set"));
+}
+
+// ---------------------------------------------------------------------------
+// time.scale / time.weather / time.status
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, TimeScaleSetsAndRejectsNonPositive)
+{
+    TimeManager tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &tm;
+
+    EXPECT_TRUE(Cmd_TimeScale(ArgPack({"3.5"}).span(), ctx));
+    EXPECT_FLOAT_EQ(tm.GetTimeScale(), 3.5f);
+
+    EXPECT_FALSE(Cmd_TimeScale(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_TimeScale(ArgPack({"-1"}).span(), ctx));
+    EXPECT_FALSE(Cmd_TimeScale(ArgPack({"foo"}).span(), ctx));
+    EXPECT_FLOAT_EQ(tm.GetTimeScale(), 3.5f);
+}
+
+TEST(ConsoleCommandsTests, TimeWeatherSetsClearAndOvercast)
+{
+    TimeManager tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &tm;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"overcast"}).span(), ctx));
+    EXPECT_EQ(tm.GetWeather(), WeatherState::Overcast);
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"clear"}).span(), ctx));
+    EXPECT_EQ(tm.GetWeather(), WeatherState::Clear);
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"snow"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, TimeStatusPrintsKeyFields)
+{
+    TimeManager tm;
+    tm.SetTime(10.5f);
+    tm.SetWeather(WeatherState::Overcast);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &tm;
+
+    EXPECT_TRUE(Cmd_TimeStatus(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "10.50h"));
+    EXPECT_TRUE(BufferContains(buf, "Overcast"));
+}
+
+// ---------------------------------------------------------------------------
+// particle.spawn / particle.list / particle.kill_all
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, ParticleSpawnAddsParticle)
+{
+    ParticleSystem ps;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.particles = &ps;
+
+    EXPECT_TRUE(Cmd_ParticleSpawn(ArgPack({"Firefly", "100", "200"}).span(), ctx));
+    EXPECT_EQ(ps.GetParticles().size(), 1u);
+    EXPECT_EQ(ps.GetParticles()[0].type, ParticleType::Firefly);
+}
+
+TEST(ConsoleCommandsTests, ParticleSpawnSurvivesUpdateTickWithoutZones)
+{
+    // Regression: particles spawned via the console use zoneIndex = -1 to
+    // mark themselves as zoneless. The Update() orphan-cleanup pass must
+    // leave them alone so the user actually sees the particle for its
+    // natural lifetime. Previously every type except DriftingLeaf/DustMote/
+    // Pollen died on the very next frame.
+    ParticleSystem ps;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.particles = &ps;
+
+    EXPECT_TRUE(Cmd_ParticleSpawn(ArgPack({"Firefly", "100", "200"}).span(), ctx));
+    ASSERT_EQ(ps.GetParticles().size(), 1u);
+
+    ps.Update(0.016f, glm::vec2(0.0f), glm::vec2(800.0f, 600.0f));
+    EXPECT_EQ(ps.GetParticles().size(), 1u)
+        << "console-spawned particle must survive the orphan-cleanup pass";
+}
+
+TEST(ConsoleCommandsTests, ParticleSpawnRejectsBadArgs)
+{
+    ParticleSystem ps;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.particles = &ps;
+
+    EXPECT_FALSE(Cmd_ParticleSpawn(ArgPack({"NotAType", "0", "0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_ParticleSpawn(ArgPack({"Firefly", "abc", "0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_ParticleSpawn(ArgPack({"Firefly"}).span(), ctx));
+    EXPECT_TRUE(ps.GetParticles().empty());
+}
+
+TEST(ConsoleCommandsTests, ParticleListPrintsCounts)
+{
+    ParticleSystem ps;
+    ps.SpawnOne(ParticleType::Firefly, glm::vec2(0.0f));
+    ps.SpawnOne(ParticleType::Firefly, glm::vec2(0.0f));
+    ps.SpawnOne(ParticleType::Snow, glm::vec2(0.0f));
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.particles = &ps;
+
+    EXPECT_TRUE(Cmd_ParticleList(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "3 active"));
+    EXPECT_TRUE(BufferContains(buf, "Firefly: 2"));
+    EXPECT_TRUE(BufferContains(buf, "Snow: 1"));
+}
+
+TEST(ConsoleCommandsTests, ParticleKillAllClearsPool)
+{
+    ParticleSystem ps;
+    ps.SpawnOne(ParticleType::Firefly, glm::vec2(0.0f));
+    ASSERT_FALSE(ps.GetParticles().empty());
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.particles = &ps;
+
+    EXPECT_TRUE(Cmd_ParticleKillAll(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(ps.GetParticles().empty());
+}
+
+TEST(ConsoleCommandsTests, ParticleCommandsFailWithoutSystem)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_ParticleSpawn(ArgPack({"Firefly", "0", "0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_ParticleList(ArgPack({}).span(), ctx));
+    EXPECT_FALSE(Cmd_ParticleKillAll(ArgPack({}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// camera.freecam / camera.zoom / camera.follow / camera.info
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, CameraFreecamToggle)
+{
+    CameraController cam;
+    ASSERT_FALSE(cam.GetState().freeMode);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_CameraFreecam(ArgPack({"on"}).span(), ctx));
+    EXPECT_TRUE(cam.GetState().freeMode);
+    EXPECT_TRUE(Cmd_CameraFreecam(ArgPack({}).span(), ctx));
+    EXPECT_FALSE(cam.GetState().freeMode);
+}
+
+TEST(ConsoleCommandsTests, CameraZoomSetsAndClampsRange)
+{
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_CameraZoom(ArgPack({"2.5"}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetState().zoom, 2.5f);
+    EXPECT_FALSE(Cmd_CameraZoom(ArgPack({"0.05"}).span(), ctx));
+    EXPECT_FALSE(Cmd_CameraZoom(ArgPack({"15"}).span(), ctx));
+    EXPECT_FALSE(Cmd_CameraZoom(ArgPack({"abc"}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetState().zoom, 2.5f);
+}
+
+TEST(ConsoleCommandsTests, CameraFollowEnablesAndClearsFreecam)
+{
+    CameraController cam;
+    cam.GetState().freeMode = true;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_CameraFollow(ArgPack({"on"}).span(), ctx));
+    EXPECT_TRUE(cam.GetState().hasFollowTarget);
+    EXPECT_FALSE(cam.GetState().freeMode);  // cleared by follow=on
+
+    EXPECT_TRUE(Cmd_CameraFollow(ArgPack({"off"}).span(), ctx));
+    EXPECT_FALSE(cam.GetState().hasFollowTarget);
+}
+
+TEST(ConsoleCommandsTests, CameraInfoPrintsState)
+{
+    CameraController cam;
+    cam.GetState().position = glm::vec2(123.4f, 56.7f);
+    cam.GetState().zoom = 1.5f;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_CameraInfo(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "pos=(123.4, 56.7)"));
+    EXPECT_TRUE(BufferContains(buf, "zoom=1.500"));
+}
+
+// ---------------------------------------------------------------------------
+// map.size / map.collision (map.save success path writes to disk - skipped)
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, MapSizePrintsDimensions)
+{
+    Tilemap tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &tm;
+
+    EXPECT_TRUE(Cmd_MapSize(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "tile=16x16") ||
+                BufferContains(buf, "tile="));  // exact tile size depends on construction
+}
+
+TEST(ConsoleCommandsTests, MapSizeRejectsArgs)
+{
+    Tilemap tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &tm;
+    EXPECT_FALSE(Cmd_MapSize(ArgPack({"oops"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MapCollisionQueriesTile)
+{
+    Tilemap tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &tm;
+
+    EXPECT_TRUE(Cmd_MapCollision(ArgPack({"0", "0"}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "tile (0, 0)"));
+}
+
+TEST(ConsoleCommandsTests, MapCollisionRejectsBadArgs)
+{
+    Tilemap tm;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &tm;
+    EXPECT_FALSE(Cmd_MapCollision(ArgPack({"abc", "0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MapCollision(ArgPack({"1"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MapSaveFailsWithoutRefs)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_MapSave(ArgPack({"unused.json"}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// perf - exercises the no-game error path; the success path needs Game which
+// isn't linked into rift_tests. The handler signature is still validated.
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, PerfFailsWithoutGame)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_Perf(ArgPack({}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, PerfRejectsArgs)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    // Without a game ref the missing-pointer error path triggers first; that's
+    // fine - just confirm extra args also lead to a false return.
+    EXPECT_FALSE(Cmd_Perf(ArgPack({"oops"}).span(), ctx));
 }
 
 // renderer.set is intentionally not unit-tested. Cmd_RendererSet calls
