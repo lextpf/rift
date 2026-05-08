@@ -55,7 +55,7 @@ struct ParticleBehavior
 template <>
 struct ParticleBehavior<ParticleType::Firefly>
 {
-    static constexpr float SpawnRate = 3.0f;
+    static constexpr float SpawnRate = 5.0f;
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
@@ -123,7 +123,7 @@ struct ParticleBehavior<ParticleType::Firefly>
             p.color = glm::vec4(0.8f + ctx.dist(ctx.rng) * 0.15f, 0.4f, 1.0f, 0.0f);  // Purple
         }
 
-        p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.size = 3.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 4.0f + ctx.dist(ctx.rng) * 5.0f;
         p.maxLifetime = p.lifetime;
         p.phase = ctx.dist(ctx.rng) * 6.28f;
@@ -388,7 +388,7 @@ struct ParticleBehavior<ParticleType::Sparkles>
 template <>
 struct ParticleBehavior<ParticleType::Wisp>
 {
-    static constexpr float SpawnRate = 4.0f;
+    static constexpr float SpawnRate = 7.0f;
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
@@ -484,7 +484,7 @@ struct ParticleBehavior<ParticleType::Wisp>
                                 0.0f);  // Crimson
         }
 
-        p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.size = 3.0f + ctx.dist(ctx.rng) * 2.0f;
         p.lifetime = 4.0f + ctx.dist(ctx.rng) * 3.0f;
         p.maxLifetime = p.lifetime;
         p.phase = ctx.dist(ctx.rng) * 6.28f;
@@ -700,21 +700,21 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
         float leafChoice = ctx.dist(ctx.rng);
-        if (leafChoice < 0.18f)
+        if (leafChoice < 0.10f)
         {
             p.color = glm::vec4(0.35f + ctx.dist(ctx.rng) * 0.20f,
                                 0.65f + ctx.dist(ctx.rng) * 0.25f,
                                 0.20f + ctx.dist(ctx.rng) * 0.20f,
                                 0.0f);  // Green (fresh)
         }
-        else if (leafChoice < 0.33f)
+        else if (leafChoice < 0.28f)
         {
             p.color = glm::vec4(0.50f + ctx.dist(ctx.rng) * 0.20f,
                                 0.25f + ctx.dist(ctx.rng) * 0.20f,
                                 0.10f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Brown (dead)
         }
-        else if (leafChoice < 0.51f)
+        else if (leafChoice < 0.48f)
         {
             p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.15f,
                                 0.65f + ctx.dist(ctx.rng) * 0.20f,
@@ -728,21 +728,21 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
                                 0.15f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Red (maple)
         }
-        else if (leafChoice < 0.73f)
+        else if (leafChoice < 0.71f)
         {
             p.color = glm::vec4(0.60f + ctx.dist(ctx.rng) * 0.15f,
                                 0.85f + ctx.dist(ctx.rng) * 0.15f,
                                 0.30f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Yellow-green
         }
-        else if (leafChoice < 0.83f)
+        else if (leafChoice < 0.84f)
         {
             p.color = glm::vec4(0.95f + ctx.dist(ctx.rng) * 0.05f,
                                 0.50f + ctx.dist(ctx.rng) * 0.15f,
                                 0.15f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Orange (pumpkin)
         }
-        else if (leafChoice < 0.92f)
+        else if (leafChoice < 0.93f)
         {
             p.color = glm::vec4(0.55f + ctx.dist(ctx.rng) * 0.20f,
                                 0.15f + ctx.dist(ctx.rng) * 0.15f,
@@ -756,10 +756,10 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
                                 0.15f + ctx.dist(ctx.rng) * 0.10f,
                                 0.0f);  // Amber (copper)
         }
-        p.size = 6.0f + ctx.dist(ctx.rng) * 4.0f;
+        p.size = 4.5f + ctx.dist(ctx.rng) * 2.5f;
         p.lifetime = 10.0f + ctx.dist(ctx.rng) * 5.0f;
         p.maxLifetime = p.lifetime;
-        p.additive = true;
+        p.additive = false;
         ctx.particles.push_back(p);
     }
 };
@@ -796,64 +796,26 @@ struct ParticleBehavior<ParticleType::DustMote>
         p.velocity = glm::vec2(0.0f);
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
-        float tintChoice = ctx.dist(ctx.rng);
-        if (tintChoice < 0.22f)
+        // DustMote is dust caught in light - strictly neutral. R == G == B for
+        // every spawn so the palette never drifts into colored territory.
+        // Spread across white/light-grey/mid-grey buckets; pure-black is
+        // skipped because additive blending would render it invisible.
+        const float greyChoice = ctx.dist(ctx.rng);
+        float grey;
+        if (greyChoice < 0.45f)
         {
-            p.color = glm::vec4(1.0f,
-                                0.90f + ctx.dist(ctx.rng) * 0.05f,
-                                0.55f + ctx.dist(ctx.rng) * 0.15f,
-                                0.0f);  // Warm gold
+            grey = 0.92f + ctx.dist(ctx.rng) * 0.08f;  // Bright white
         }
-        else if (tintChoice < 0.36f)
+        else if (greyChoice < 0.80f)
         {
-            p.color = glm::vec4(0.90f + ctx.dist(ctx.rng) * 0.10f,
-                                0.92f + ctx.dist(ctx.rng) * 0.08f,
-                                1.0f,
-                                0.0f);  // Pale silver
-        }
-        else if (tintChoice < 0.48f)
-        {
-            p.color = glm::vec4(1.0f,
-                                0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                0.30f + ctx.dist(ctx.rng) * 0.15f,
-                                0.0f);  // Amber (rust)
-        }
-        else if (tintChoice < 0.60f)
-        {
-            p.color = glm::vec4(1.0f,
-                                0.75f + ctx.dist(ctx.rng) * 0.10f,
-                                0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                0.0f);  // Soft peach
-        }
-        else if (tintChoice < 0.72f)
-        {
-            p.color = glm::vec4(0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                0.85f + ctx.dist(ctx.rng) * 0.10f,
-                                1.0f,
-                                0.0f);  // Sky blue
-        }
-        else if (tintChoice < 0.82f)
-        {
-            p.color = glm::vec4(1.0f,
-                                0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                0.80f + ctx.dist(ctx.rng) * 0.15f,
-                                0.0f);  // Rose pink
-        }
-        else if (tintChoice < 0.92f)
-        {
-            p.color = glm::vec4(0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                1.0f,
-                                0.75f + ctx.dist(ctx.rng) * 0.15f,
-                                0.0f);  // Mint
+            grey = 0.65f + ctx.dist(ctx.rng) * 0.15f;  // Light grey
         }
         else
         {
-            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.10f,
-                                0.65f + ctx.dist(ctx.rng) * 0.15f,
-                                1.0f,
-                                0.0f);  // Pale violet
+            grey = 0.40f + ctx.dist(ctx.rng) * 0.15f;  // Mid grey (dim mote)
         }
-        p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.color = glm::vec4(grey, grey, grey, 0.0f);
+        p.size = 3.0f + ctx.dist(ctx.rng) * 1.5f;
         p.lifetime = 6.0f + ctx.dist(ctx.rng) * 4.0f;
         p.maxLifetime = p.lifetime;
         p.additive = true;
@@ -893,50 +855,45 @@ struct ParticleBehavior<ParticleType::Pollen>
         p.velocity = glm::vec2(0.0f);
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        // Pollen is the chromatic ambient palette - the white/grey range is
+        // owned by DustMote, so dandelion white is intentionally absent here.
         float speciesChoice = ctx.dist(ctx.rng);
-        if (speciesChoice < 0.22f)
+        if (speciesChoice < 0.26f)
         {
             p.color = glm::vec4(1.0f,
                                 0.95f + ctx.dist(ctx.rng) * 0.05f,
                                 0.50f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Yellow
         }
-        else if (speciesChoice < 0.40f)
+        else if (speciesChoice < 0.48f)
         {
             p.color = glm::vec4(1.0f,
                                 0.70f + ctx.dist(ctx.rng) * 0.15f,
                                 0.80f + ctx.dist(ctx.rng) * 0.10f,
                                 0.0f);  // Pink (cherry blossom)
         }
-        else if (speciesChoice < 0.56f)
-        {
-            p.color = glm::vec4(0.95f + ctx.dist(ctx.rng) * 0.05f,
-                                0.95f + ctx.dist(ctx.rng) * 0.05f,
-                                0.95f + ctx.dist(ctx.rng) * 0.05f,
-                                0.0f);  // White (dandelion)
-        }
-        else if (speciesChoice < 0.68f)
+        else if (speciesChoice < 0.62f)
         {
             p.color = glm::vec4(0.80f + ctx.dist(ctx.rng) * 0.15f,
                                 1.0f,
                                 0.65f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Pale green
         }
-        else if (speciesChoice < 0.78f)
+        else if (speciesChoice < 0.74f)
         {
             p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.10f,
                                 0.70f + ctx.dist(ctx.rng) * 0.15f,
                                 1.0f,
                                 0.0f);  // Lavender
         }
-        else if (speciesChoice < 0.88f)
+        else if (speciesChoice < 0.86f)
         {
             p.color = glm::vec4(1.0f,
                                 0.65f + ctx.dist(ctx.rng) * 0.10f,
                                 0.30f + ctx.dist(ctx.rng) * 0.15f,
                                 0.0f);  // Orange (marigold)
         }
-        else if (speciesChoice < 0.95f)
+        else if (speciesChoice < 0.94f)
         {
             p.color = glm::vec4(1.0f,
                                 0.55f + ctx.dist(ctx.rng) * 0.15f,
@@ -950,55 +907,10 @@ struct ParticleBehavior<ParticleType::Pollen>
                                 0.85f + ctx.dist(ctx.rng) * 0.10f,
                                 0.0f);  // Magenta
         }
-        p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.size = 3.0f + ctx.dist(ctx.rng) * 1.5f;
         p.lifetime = 7.0f + ctx.dist(ctx.rng) * 5.0f;
         p.maxLifetime = p.lifetime;
         p.additive = true;
-        ctx.particles.push_back(p);
-    }
-};
-
-// ---------------------------------------------------------------------------
-// Smoke (zone-spawned chimney smoke: low alpha, slow rise, sine-modulated drift)
-// ---------------------------------------------------------------------------
-
-template <>
-struct ParticleBehavior<ParticleType::Smoke>
-{
-    static constexpr float SpawnRate = 1.5f;
-
-    static void Update(Particle& p, const ParticleUpdateContext& ctx)
-    {
-        // Slow rise + gentle horizontal sine drift; size grows slightly as smoke rises.
-        p.position.y -= ambience::SMOKE_RISE_SPEED * ctx.deltaTime;
-        p.position.x +=
-            std::sin(ctx.time * 0.8f + p.phase) * ambience::SMOKE_DRIFT_AMPLITUDE * ctx.deltaTime;
-        p.size += 4.0f * ctx.deltaTime;
-
-        // Fade in fast, fade out over second half of lifetime.
-        float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 0.4f);
-        float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.6f));
-        p.color.a = fadeIn * lifeFade * ambience::SMOKE_ALPHA_CAP;
-    }
-
-    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
-    {
-        Particle p;
-        p.zoneIndex = zoneIndex;
-        p.type = ParticleType::Smoke;
-        p.noProjection = zone.noProjection;
-        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
-        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
-        p.velocity = glm::vec2(0.0f);
-        p.color = glm::vec4(0.55f, 0.55f, 0.55f, 0.0f);
-        p.size = ambience::SMOKE_BASE_SIZE_PX + ctx.dist(ctx.rng) * 4.0f;
-        p.lifetime =
-            ambience::SMOKE_LIFETIME_MIN +
-            ctx.dist(ctx.rng) * (ambience::SMOKE_LIFETIME_MAX - ambience::SMOKE_LIFETIME_MIN);
-        p.maxLifetime = p.lifetime;
-        p.phase = ctx.dist(ctx.rng) * 6.28f;
-        p.rotation = ctx.dist(ctx.rng) * 360.0f;
-        p.additive = false;
         ctx.particles.push_back(p);
     }
 };
@@ -1078,8 +990,8 @@ void ParticleSystem::UploadTextures(IRenderer& renderer)
 
 void ParticleSystem::BuildAtlas()
 {
-    // Particle texture sources: 9 files + 2 procedural; Smoke aliases Fog post-pack.
-    // We'll pack them in a 512x512 atlas with a simple row layout.
+    // Particle texture sources: 9 files + 2 procedural, packed into a 512-wide
+    // atlas with a simple row layout. Indexed by ParticleType enum value.
 
     struct TextureSource
     {
@@ -1088,8 +1000,7 @@ void ParticleSystem::BuildAtlas()
         int height = 0;
     };
 
-    // Indexed by ParticleType enum value. Smoke (=11) aliases Fog after packing.
-    constexpr int kAtlasSourceCount = 11;
+    constexpr int kAtlasSourceCount = static_cast<int>(EnumTraits<ParticleType>::Count);
     TextureSource sources[kAtlasSourceCount];
     const char* filePaths[6] = {
         "assets/particles/304502d7-426b-4abc-a608-ff01a185df96.png",  // Firefly
@@ -1268,11 +1179,6 @@ void ParticleSystem::BuildAtlas()
         rowHeight = std::max(rowHeight, h);
     }
 
-    // Smoke does not have its own atlas slot - it reuses Fog's pixel data.
-    // Per-particle color in the spawn step tints it gray.
-    m_AtlasRegions[static_cast<int>(ParticleType::Smoke)] =
-        m_AtlasRegions[static_cast<int>(ParticleType::Fog)];
-
     // Create the atlas texture
     m_AtlasTexture.LoadFromData(atlasPixels.data(), atlasWidth, atlasHeight, 4, false);
 
@@ -1367,14 +1273,6 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
 
     const ParticleUpdateContext updateCtx{m_Time, deltaTime, m_NightFactor, m_Zones, hasZones};
 
-    // Ambient cozy particles (DriftingLeaf/DustMote/Pollen) are spawned globally
-    // with zoneIndex = -1 and must survive the orphan check below.
-    auto isAmbient = [](ParticleType t)
-    {
-        return t == ParticleType::DriftingLeaf || t == ParticleType::DustMote ||
-               t == ParticleType::Pollen;
-    };
-
     // Update existing particles (mark dead ones, remove in bulk afterward)
     for (auto& p : m_Particles)
     {
@@ -1385,10 +1283,11 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
             continue;
         }
 
-        // Mark particle for removal if its zone no longer exists. Ambient
-        // (zoneless) particles are exempt - they manage their own lifecycle.
-        if (!isAmbient(p.type) &&
-            (!hasZones || p.zoneIndex < 0 || p.zoneIndex >= static_cast<int>(m_Zones->size())))
+        // Kill particles whose zone has gone away (e.g., map reloaded, zone
+        // deleted). zoneIndex == -1 means "deliberately zoneless" - ambient
+        // cozy spawns and the console's particle.spawn - and must be left
+        // alone so it lives out its natural lifetime.
+        if (p.zoneIndex >= 0 && (!hasZones || p.zoneIndex >= static_cast<int>(m_Zones->size())))
         {
             p.lifetime = 0.0f;
             continue;
@@ -1593,6 +1492,21 @@ void ParticleSystem::SpawnAmbientParticle(ParticleType type,
     ParticleZone fakeZone;
     fakeZone.position = cameraPos - glm::vec2(margin);
     fakeZone.size = viewSize + glm::vec2(margin * 2.0f);
+    fakeZone.type = type;
+    fakeZone.enabled = true;
+    fakeZone.noProjection = false;
+    SpawnParticleInZone(-1, fakeZone);
+}
+
+void ParticleSystem::SpawnOne(ParticleType type, glm::vec2 worldPos)
+{
+    // 1x1 ad-hoc zone at the requested world position; the per-type spawn
+    // initialiser samples a position inside the zone so the particle lands
+    // (within sub-pixel jitter) on @p worldPos. zoneIndex = -1 keeps it out
+    // of the orphan-cleanup pass when zones get added or removed later.
+    ParticleZone fakeZone;
+    fakeZone.position = worldPos;
+    fakeZone.size = glm::vec2(1.0f, 1.0f);
     fakeZone.type = type;
     fakeZone.enabled = true;
     fakeZone.noProjection = false;

@@ -33,22 +33,21 @@ enum class ParticleType
     Firefly = 0,       ///< Pulsing yellow-green glow, gentle drift
     Rain = 1,          ///< Fast falling droplets, slight angle
     Snow = 2,          ///< Slow falling flakes with side drift
-    Fog = 3,           ///< Large translucent patches, very slow
+    Fog = 3,           ///< Large translucent patches, very slow (also used for chimney smoke)
     Sparkles = 4,      ///< Brief bright flashes, stationary
     Wisp = 5,          ///< Magical spiraling orbs, color variety
     Lantern = 6,       ///< Warm glow, night-only visibility
     Sunshine = 7,      ///< Sun rays (day=yellow) / moon beams (night=blue)
     DriftingLeaf = 8,  ///< Ambient cozy: small green/yellow leaf drifting on wind
     DustMote = 9,      ///< Ambient cozy: tiny golden mote in sunbeams
-    Pollen = 10,       ///< Ambient cozy: yellow pollen during golden hour
-    Smoke = 11         ///< Zone-spawned chimney smoke: low alpha, slow rise
+    Pollen = 10        ///< Ambient cozy: yellow pollen during golden hour
 };
 
 /// Compile-time reflection for ParticleType.
 template <>
 struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
-    static constexpr size_t Count = 12;
+    static constexpr size_t Count = 11;
     static constexpr std::string_view Names[] = {"Firefly",
                                                  "Rain",
                                                  "Snow",
@@ -59,10 +58,9 @@ struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<Partic
                                                  "Sunshine",
                                                  "DriftingLeaf",
                                                  "DustMote",
-                                                 "Pollen",
-                                                 "Smoke"};
+                                                 "Pollen"};
 
-    static_assert(std::to_underlying(ParticleType::Smoke) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::Pollen) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
 };
 
@@ -87,7 +85,7 @@ struct Particle
     float rotation;      ///< Sprite rotation (degrees).
     bool additive;       ///< Use additive blending for glow.
     bool noProjection;   ///< Render without perspective distortion.
-    int zoneIndex;       ///< Spawning zone index (-1 for orphaned).
+    int zoneIndex;       ///< Spawning zone index, or -1 for zoneless one-shots/ambient.
     ParticleType type;   ///< Particle behavior type.
 };
 
@@ -327,6 +325,20 @@ public:
     void Clear() { m_Particles.clear(); }
 
     /**
+     * @brief Spawn a single one-shot particle of @p type at @p worldPos.
+     *
+     * Bypasses the zone system: builds a 1x1 ad-hoc zone at the requested
+     * position and runs the same per-type initializer used by zone spawns,
+     * then tags the resulting particle with @c zoneIndex = -1 so the
+     * orphan-cleanup pass leaves it alone. Intended for the developer
+     * console's `particle.spawn` command.
+     *
+     * @param type     Particle type to spawn.
+     * @param worldPos World pixel position for the spawn.
+     */
+    void SpawnOne(ParticleType type, glm::vec2 worldPos);
+
+    /**
      * @brief Handle zone deletion by cleaning up orphaned particles.
      *
      * Removes particles belonging to the deleted zone and adjusts
@@ -409,7 +421,7 @@ private:
     };
 
     Texture m_AtlasTexture;          ///< Combined particle texture atlas.
-    AtlasRegion m_AtlasRegions[12];  ///< UV regions indexed by ParticleType.
+    AtlasRegion m_AtlasRegions[11];  ///< UV regions indexed by ParticleType.
     bool m_TexturesLoaded;           ///< Whether LoadTextures() succeeded.
 
     /**
