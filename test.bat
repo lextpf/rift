@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM test.bat - Run Rift Engine unit tests using Google Test
+REM test.bat - Run Rift unit tests using Google Test
 REM ============================================================================
 REM This script:
 REM   1. Configures CMake if needed
@@ -11,7 +11,7 @@ REM ============================================================================
 setlocal
 
 echo ============================================================================
-echo                          RIFT ENGINE TEST RUNNER
+echo                             RIFT TEST RUNNER
 echo ============================================================================
 echo.
 
