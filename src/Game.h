@@ -262,6 +262,69 @@ public:
     RendererAPI GetRendererAPI() const { return m_RendererAPI; }
 
     /**
+     * @brief Force-close any active dialogue (simple or tree).
+     *
+     * Closes whichever dialogue path is currently active and clears the
+     * snap-alignment state. Safe to call when no dialogue is active.
+     * Used by the developer console's `dialogue.end` command.
+     *
+     * @note Defined inline so the symbol exists in every TU that includes
+     * Game.h, including the test target (which does not link GameInput.cpp).
+     * The body intentionally inlines the parts of ForceCloseTreeDialogue /
+     * CloseSimpleDialogue / ReleaseDialogueNPC that it needs rather than
+     * calling them, since those are defined in GameInput.cpp.
+     */
+    void EndAnyDialogue()
+    {
+        const bool treeActive = m_DialogueManager.IsActive();
+        if (treeActive)
+        {
+            m_DialogueManager.EndDialogue();
+            m_DialoguePage = 0;
+        }
+        if (m_InDialogue)
+        {
+            m_InDialogue = false;
+            m_DialogueText.clear();
+        }
+        if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
+        {
+            m_NPCs[static_cast<std::size_t>(m_DialogueNPCIndex)].SetStopped(false);
+        }
+        m_DialogueNPCIndex = -1;
+        m_DialogueSnap.active = false;
+    }
+
+    /**
+     * @brief Path the project's manifest configured for save/load JSON.
+     * @return Const reference to @c m_SaveMapPath.
+     */
+    const std::string& GetSaveMapPath() const { return m_SaveMapPath; }
+
+    /**
+     * @brief Snapshot of the engine's frame-rate / draw-call counters.
+     * @return Const reference to the live FPSCounter struct.
+     */
+    const FPSCounter& GetFPSCounter() const { return m_Fps; }
+
+    /**
+     * @brief Whether a simple (non-tree) dialogue is currently active.
+     *
+     * Read by the developer console's `dialogue.active` command and used
+     * by `npc.despawn` to refuse despawning the speaker mid-conversation.
+     */
+    bool IsInSimpleDialogue() const { return m_InDialogue; }
+
+    /// @brief Current simple-dialogue text (empty when no simple dialogue active).
+    const std::string& GetSimpleDialogueText() const { return m_DialogueText; }
+
+    /**
+     * @brief Index into m_NPCs of the NPC currently in dialogue.
+     * @return Vector index, or -1 if no NPC is currently the speaker.
+     */
+    int GetDialogueNPCIndex() const { return m_DialogueNPCIndex; }
+
+    /**
      * @brief GLFW scroll callback for tile picker navigation.
      *
      * Static callback registered with GLFW to handle mouse wheel events.
