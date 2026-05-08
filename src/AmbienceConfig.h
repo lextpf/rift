@@ -167,26 +167,6 @@ constexpr glm::vec2 CLOUD_SHADOW_WIND_DIR{-1.0f, 0.0f};
 constexpr float CLOUD_SHADOW_DRIFT_SPEED = 3.0f;
 
 // =============================================================================
-// Smoke (zone-spawned particle, low alpha, slow rise)
-// =============================================================================
-
-/// Maximum alpha for smoke particles.
-constexpr float SMOKE_ALPHA_CAP = 0.30f;
-
-/// Rise speed in pixels per second.
-constexpr float SMOKE_RISE_SPEED = 16.0f;
-
-/// Horizontal drift amplitude (sine-modulated, gentle).
-constexpr float SMOKE_DRIFT_AMPLITUDE = 6.0f;
-
-/// Smoke particle base size in pixels.
-constexpr float SMOKE_BASE_SIZE_PX = 12.0f;
-
-/// Smoke lifetime range (seconds).
-constexpr float SMOKE_LIFETIME_MIN = 3.0f;
-constexpr float SMOKE_LIFETIME_MAX = 5.0f;
-
-// =============================================================================
 // Dialogue easing
 // =============================================================================
 
