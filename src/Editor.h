@@ -514,6 +514,8 @@ private:
         float placementCameraZoom = 1.0f;
         bool isPlacing = false;
         int rotation = 0;
+        bool flipX = false;  ///< Brush mirror around vertical axis (toggled by F).
+        bool flipY = false;  ///< Brush mirror around horizontal axis (toggled by Shift+F).
     };
     MultiTileState m_MultiTile;
     /// @}

@@ -1425,10 +1425,20 @@ void Editor::RenderEditorHUD(const EditorContext& ctx)
     float actionX =
         actionText.empty() ? screenW - margin : std::max(x, screenW - margin - actionWidth);
 
+    std::string flipText;
+    if (m_MultiTile.flipX && m_MultiTile.flipY)
+        flipText = "XY";
+    else if (m_MultiTile.flipX)
+        flipText = "X";
+    else if (m_MultiTile.flipY)
+        flipText = "Y";
+    else
+        flipText = "-";
+
     std::string rowText =
         "Tool: " + toolLabel() + " | Lyr: " + LayerLabel(ctx.tilemap, m_CurrentLayer) +
         " | Tile: " + TileLabel(ctx.tilemap, selectedTileID) +
-        " | Rot: " + std::to_string(m_MultiTile.rotation) +
+        " | Rot: " + std::to_string(m_MultiTile.rotation) + " | Flip: " + flipText +
         " | Elev: " + std::to_string(m_CurrentElevation) + " | Cur: " + cursorText +
         " | Sel: " + selectionText + " | NPC: " + npcText + " | FX: " + particleText +
         " | Struct: " + structureText;
@@ -1592,7 +1602,9 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
                     texSize,
                     tileRotation,
                     glm::vec3(1.0f, 1.0f, 0.5f),
-                    flipY);
+                    flipY,
+                    m_MultiTile.flipX,
+                    m_MultiTile.flipY);
 
                 // Render outline
                 ctx.renderer.DrawColoredRect(tilePos,
@@ -1640,7 +1652,9 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
                 texSize,
                 tileRotation,
                 glm::vec3(1.0f, 1.0f, 0.5f),
-                flipY);
+                flipY,
+                m_MultiTile.flipX,
+                m_MultiTile.flipY);
 
             // Render outline
             ctx.renderer.DrawColoredRect(tilePos,

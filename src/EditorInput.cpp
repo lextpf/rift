@@ -1,5 +1,6 @@
 #include "Dialogues.h"
 #include "Editor.h"
+#include "EditorBrushTransform.h"
 #include "EditorCommands.h"
 #include "Logger.h"
 
@@ -825,11 +826,13 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_R] = false;
     }
 
-    // F (X-reflect) / Shift+F (Y-reflect): mirror the current selection
-    // around its center. Mirrors the R-rotate selection contract: rectangle
-    // selection acts on all 10 layers; otherwise the tile under the cursor
-    // is flipped on m_CurrentLayer. Gated outside ParticleZone mode where F
-    // is reserved for the per-zone noProjection toggle.
+    // F (X-reflect) / Shift+F (Y-reflect): toggle the brush's flip flag AND
+    // reflect the current selection. The brush flip mirrors the R-rotate
+    // brush contract (R rotates the upcoming stamp; F mirrors it). The
+    // selection-reflect leg also runs so a Ctrl+drag rectangle or the tile
+    // under the cursor still gets reflected on the same press. Gated outside
+    // ParticleZone mode where F is reserved for the per-zone noProjection
+    // toggle.
     if (m_Active && !m_ShowTilePicker && m_EditMode != EditMode::ParticleZone &&
         glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_F])
     {
@@ -837,6 +840,15 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                                glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
         const bool flipXAxis = !shiftHeld;
         const char axisName = flipXAxis ? 'X' : 'Y';
+
+        if (flipXAxis)
+            m_MultiTile.flipX = !m_MultiTile.flipX;
+        else
+            m_MultiTile.flipY = !m_MultiTile.flipY;
+        Logger::InfoF(LOG_SUBSYSTEM,
+                      "Brush flip: X={} Y={}",
+                      m_MultiTile.flipX ? "on" : "off",
+                      m_MultiTile.flipY ? "on" : "off");
 
         if (m_MapSelection.active)
         {
@@ -1557,7 +1569,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     // but do not change the world camera or zoom.
                     m_MultiTile.selectionMode = true;
                     m_MultiTile.isPlacing = true;
-                    m_MultiTile.rotation = 0;  // Reset rotation for new selection
+                    m_MultiTile.rotation = 0;
+                    m_MultiTile.flipX = false;
+                    m_MultiTile.flipY = false;
                     Logger::Info(LOG_SUBSYSTEM, "=== MULTI-TILE SELECTION ===");
                     Logger::InfoF(LOG_SUBSYSTEM, "Start tile ID: {}", m_MultiTile.selectedStartID);
                     Logger::InfoF(
@@ -1567,7 +1581,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 {
                     m_MultiTile.selectionMode = false;
                     m_MultiTile.isPlacing = false;
-                    m_MultiTile.rotation = 0;  // Reset rotation
+                    m_MultiTile.rotation = 0;
+                    m_MultiTile.flipX = false;
+                    m_MultiTile.flipY = false;
                     Logger::Info(LOG_SUBSYSTEM, "=== SINGLE TILE SELECTION ===");
                     Logger::InfoF(LOG_SUBSYSTEM, "Tile ID: {}", m_MultiTile.selectedStartID);
                 }
@@ -2077,8 +2093,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         if (placeX >= 0 && placeX < ctx.tilemap.GetMapWidth() && placeY >= 0 &&
                             placeY < ctx.tilemap.GetMapHeight())
                         {
-                            // Multi-tile place preserves any existing flip state at
-                            // each destination cell; place-stamps do not flip.
+                            // Multi-tile stamp writes the brush's flip state onto each
+                            // destination cell. The brush flip is uniform across the
+                            // stamp; column/row remapping happens in CalculateRotatedSourceTile.
                             const bool oldFlipX =
                                 ctx.tilemap.GetLayerFlipX(placeX, placeY, m_CurrentLayer);
                             const bool oldFlipY =
@@ -2093,9 +2110,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                             e.newTileId = sourceTileID;
                             e.newRotation = tileRotation;
                             e.oldFlipX = oldFlipX;
-                            e.newFlipX = oldFlipX;
+                            e.newFlipX = m_MultiTile.flipX;
                             e.oldFlipY = oldFlipY;
-                            e.newFlipY = oldFlipY;
+                            e.newFlipY = m_MultiTile.flipY;
                             entries.push_back(e);
                         }
                     }
@@ -2145,10 +2162,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                        m_MultiTile.selectedStartID,
                                        tileRotation,
                                        oldFlipX,
-                                       oldFlipY);
+                                       oldFlipY,
+                                       m_MultiTile.flipX,
+                                       m_MultiTile.flipY);
                     ctx.tilemap.SetLayerTile(
                         tileX, tileY, m_CurrentLayer, m_MultiTile.selectedStartID);
                     ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, tileRotation);
+                    ctx.tilemap.SetLayerFlipX(tileX, tileY, m_CurrentLayer, m_MultiTile.flipX);
+                    ctx.tilemap.SetLayerFlipY(tileX, tileY, m_CurrentLayer, m_MultiTile.flipY);
                     MarkDirty();
 
                     m_Mouse.lastPlacedTileX = tileX;
@@ -2341,26 +2362,15 @@ void Editor::HandleScroll(double yoffset, const EditorContext& ctx)
 
 void Editor::CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const
 {
-    if (m_MultiTile.rotation == 0)
-    {
-        sourceDx = dx;
-        sourceDy = dy;
-    }
-    else if (m_MultiTile.rotation == 90)
-    {
-        sourceDx = m_MultiTile.width - 1 - dy;
-        sourceDy = dx;
-    }
-    else if (m_MultiTile.rotation == 180)
-    {
-        sourceDx = m_MultiTile.width - 1 - dx;
-        sourceDy = m_MultiTile.height - 1 - dy;
-    }
-    else  // 270 degrees
-    {
-        sourceDx = dy;
-        sourceDy = m_MultiTile.height - 1 - dx;
-    }
+    BrushSourceCoord c = CalculateBrushSourceTile(dx,
+                                                  dy,
+                                                  BrushTransform{m_MultiTile.width,
+                                                                 m_MultiTile.height,
+                                                                 m_MultiTile.rotation,
+                                                                 m_MultiTile.flipX,
+                                                                 m_MultiTile.flipY});
+    sourceDx = c.sourceDx;
+    sourceDy = c.sourceDy;
 }
 
 float Editor::GetCompensatedTileRotation() const

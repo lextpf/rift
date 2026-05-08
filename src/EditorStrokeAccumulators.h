@@ -84,7 +84,9 @@ struct TilePlaceStrokeAccum
                int newId,
                float newRot,
                bool oldFlipX = false,
-               bool oldFlipY = false)
+               bool oldFlipY = false,
+               bool newFlipX = false,
+               bool newFlipY = false)
     {
         if (!active)
             return;
@@ -92,8 +94,6 @@ struct TilePlaceStrokeAccum
         auto it = indexOf.find(key);
         if (it == indexOf.end())
         {
-            // A place-stroke does not modify flip flags; preserve them so undo/redo
-            // restores the user's existing flip state intact.
             indexOf.emplace(key, entries.size());
             PlaceTilesCmd::Entry e{};
             e.tileX = x;
@@ -104,15 +104,17 @@ struct TilePlaceStrokeAccum
             e.newTileId = newId;
             e.newRotation = newRot;
             e.oldFlipX = oldFlipX;
-            e.newFlipX = oldFlipX;
+            e.newFlipX = newFlipX;
             e.oldFlipY = oldFlipY;
-            e.newFlipY = oldFlipY;
+            e.newFlipY = newFlipY;
             entries.push_back(e);
         }
         else
         {
             entries[it->second].newTileId = newId;
             entries[it->second].newRotation = newRot;
+            entries[it->second].newFlipX = newFlipX;
+            entries[it->second].newFlipY = newFlipY;
         }
     }
 
