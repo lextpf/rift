@@ -257,6 +257,12 @@ public:
     bool IsBicycling() const { return m_IsBicycling; }
 
     /**
+     * @brief Check if running mode is enabled.
+     * @return true if running flag is set (note: bicycle takes visible precedence).
+     */
+    bool IsRunning() const { return m_IsRunning; }
+
+    /**
      * @brief Toggle no-clip mode (bypass tile and NPC collision).
      *
      * When enabled, Game::ProcessPlayerMovement passes nullptr for the
