@@ -360,15 +360,16 @@ void Console::OnChar(std::uint32_t codepoint)
     {
         return;
     }
-    // Suppress toggle-key glyphs across keyboard layouts. Game::CharCallback
-    // catches the case where the GRAVE_ACCENT physical key produces a char
-    // while still held, but on layouts where the same key is a dead key
-    // (German / French / Polish: ^), the char event fires only when the
-    // next key is pressed - by which time the toggle key is released. This
-    // codepoint filter catches that delayed emission.
-    //   US layout:        ` (grave) and ~ (Shift+grave)
-    //   German / Polish:  ^ (caret) and degree symbol (Shift+caret)
-    if (codepoint == '`' || codepoint == '~' || codepoint == '^' || codepoint == 0x00B0)
+    // Suppress toggle-key glyphs across keyboard layouts. Sole filter for
+    // the GLFW_KEY_GRAVE_ACCENT toggle: a physical-key gate in Game::CharCallback
+    // would also drop dead-key compositions like German `^` + `e` -> `e-circumflex`
+    // when the user types the next character before fully releasing `^`,
+    // eating the first real keystroke after the console opens.
+    //   US layout:        `  (grave)               ~ (Shift+grave)
+    //   German / Polish:  ^  (caret, dead)         U+00B0 (Shift+caret)
+    //   French AZERTY:    U+00B2 (superscript two) U+00B3 (Shift+U+00B2)
+    if (codepoint == '`' || codepoint == '~' || codepoint == '^' || codepoint == 0x00B0 ||
+        codepoint == 0x00B2 || codepoint == 0x00B3)
     {
         return;
     }

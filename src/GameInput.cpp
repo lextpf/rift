@@ -733,13 +733,11 @@ void Game::CharCallback(GLFWwindow* window, unsigned int codepoint)
     {
         return;
     }
-    // Filter by physical key, not character: layouts that map GRAVE_ACCENT
-    // to '^' / 'degree symbol' / accented glyphs would otherwise leak the toggle key
-    // into the console buffer (e.g. "^help" on open or "noclip^" on close).
-    if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS)
-    {
-        return;
-    }
+    // Filtering happens by codepoint inside Console::OnChar. Don't gate on
+    // glfwGetKey(GRAVE_ACCENT) here: on dead-key layouts (German ^, French
+    // U+00B2, Polish ^) the next key's CHAR event composes with the dead key
+    // and arrives while the toggle key is still physically held, which
+    // would otherwise eat the user's first real keystroke after toggling.
     game->m_Console.OnChar(codepoint);
 }
 
