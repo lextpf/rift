@@ -94,8 +94,8 @@ If no manifest is found, the default path remains `rift.save.json`.
 |----------------|--------|
 | `1`-`0`        | Switch to layer 1-10 for tile placement, no-projection, y-sort, etc. |
 | `R`            | Rotate the selected tile (or multi-tile selection) by 90 degrees. |
-| `F`            | Reflect selection along X (mirror around vertical axis). Acts on the Ctrl+drag rectangle if one is active, else on the tile under the cursor on the current layer. Toggles per-tile `flipX` and negates rotation. Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
-| `Shift+F`      | Reflect selection along Y (mirror around horizontal axis). Same selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
+| `F`            | Toggle brush `flipX` (the upcoming stamp paints mirrored around the vertical axis) AND reflect the active selection along X. Selection target is the Ctrl+drag rectangle if active, else the tile under the cursor on the current layer (toggles per-tile `flipX` and negates rotation). Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
+| `Shift+F`      | Toggle brush `flipY` AND reflect the active selection along Y. Same selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
 | Arrow keys     | Pan the camera (or the tile picker when it's open). |
 | `Shift+arrows` | Fast-pan (2.5x speed). |
 | `Esc`          | Cancel the current operation (anchor placement, selection, animation frames). |
