@@ -125,13 +125,19 @@ bool ParseRendererAPI(std::string_view text, RendererAPI& out)
 
 bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
-    if (ctx.registry == nullptr)
+    // Bind ctx.out to a local reference up-front so the static analyzer
+    // tracks it independently of the path-sensitive null-state of
+    // ctx.registry below (otherwise it pessimistically flags the PrintError
+    // call as a "Called C++ object pointer is null").
+    ConsoleBuffer& out = ctx.out;
+    const ConsoleCommandRegistry* registry = ctx.registry;
+    if (registry == nullptr)
     {
-        ctx.out.PrintError("help: registry unavailable");
+        out.PrintError("help: registry unavailable");
         return false;
     }
-    ctx.out.Print("Commands:");
-    for (const auto& [name, cmd] : ctx.registry->All())
+    out.Print("Commands:");
+    for (const auto& [name, cmd] : registry->All())
     {
         std::string line = "  " + name;
         if (!cmd.aliases.empty())
@@ -148,7 +154,7 @@ bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
             line += ")";
         }
         line += " - " + cmd.description;
-        ctx.out.Print(line);
+        out.Print(line);
     }
     return true;
 }

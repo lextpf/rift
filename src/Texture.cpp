@@ -51,9 +51,20 @@ bool ExpandToRgba(const unsigned char* src,
     if (!src || width <= 0 || height <= 0 || srcChannels < 1 || srcChannels > 4)
         return false;
 
-    size_t expectedSrcSize = 0;
-    if (!TryComputeImageByteSize(width, height, srcChannels, expectedSrcSize))
+    // Inlined size computation: keeps the relationship between srcSize,
+    // pixelCount, and channels visible to the static analyzer so it can
+    // verify srcBase = i * channels < pixelCount * channels <= srcSize for
+    // every iteration of the loop below.
+    const size_t w = static_cast<size_t>(width);
+    const size_t h = static_cast<size_t>(height);
+    if (w > std::numeric_limits<size_t>::max() / h)
         return false;
+    const size_t pixelCount = w * h;
+
+    const size_t channels = static_cast<size_t>(srcChannels);
+    if (pixelCount > std::numeric_limits<size_t>::max() / channels)
+        return false;
+    const size_t expectedSrcSize = pixelCount * channels;
     if (srcSize < expectedSrcSize)
         return false;
 
@@ -62,10 +73,9 @@ bool ExpandToRgba(const unsigned char* src,
         return false;
 
     outRgba.resize(rgbaSize);
-    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
     for (size_t i = 0; i < pixelCount; ++i)
     {
-        const size_t srcBase = i * static_cast<size_t>(srcChannels);
+        const size_t srcBase = i * channels;
         const size_t dstBase = i * 4;
 
         unsigned char r = 255;
