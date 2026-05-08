@@ -60,6 +60,12 @@ struct ManifestValidationResult
 struct PlayerCharacterManifest
 {
     std::map<std::string, std::string> sprites;  ///< Sprite role name to relative asset path.
+
+    PlayerCharacterManifest() = default;
+    PlayerCharacterManifest(const PlayerCharacterManifest&) = default;
+    PlayerCharacterManifest(PlayerCharacterManifest&&) noexcept = default;
+    PlayerCharacterManifest& operator=(const PlayerCharacterManifest&) = default;
+    PlayerCharacterManifest& operator=(PlayerCharacterManifest&&) noexcept = default;
 };
 
 /**
@@ -93,6 +99,12 @@ struct ProjectManifest
     std::vector<std::string> npcSprites;  ///< NPC sprite paths used by map loading and editor.
     std::vector<std::string> fonts;       ///< Project font candidates tried before fallbacks.
     std::map<std::string, PlayerCharacterManifest> playerCharacters;  ///< CharacterType to sprites.
+
+    ProjectManifest() = default;
+    ProjectManifest(const ProjectManifest&) = default;
+    ProjectManifest(ProjectManifest&&) noexcept = default;
+    ProjectManifest& operator=(const ProjectManifest&) = default;
+    ProjectManifest& operator=(ProjectManifest&&) noexcept = default;
 
     /// @brief Resolve a manifest-relative path against baseDirectory.
     /// @return Absolute or base-directory-relative filesystem path.
