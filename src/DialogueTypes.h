@@ -294,6 +294,11 @@ struct DialogueTree
     {
     }
 
+    DialogueTree(const DialogueTree&) = default;
+    DialogueTree(DialogueTree&&) noexcept = default;
+    DialogueTree& operator=(const DialogueTree&) = default;
+    DialogueTree& operator=(DialogueTree&&) noexcept = default;
+
     /**
      * @brief Get a node by ID.
      * @param nodeId The node identifier to look up
