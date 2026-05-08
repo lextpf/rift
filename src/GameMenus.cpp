@@ -261,7 +261,6 @@ void Game::LoadTitleScreenWorld()
             ParticleType::DriftingLeaf,
             ParticleType::DustMote,
             ParticleType::Pollen,
-            ParticleType::Smoke,
         };
 
         for (ParticleType type : TITLE_PARTICLE_TYPES)
