@@ -360,6 +360,10 @@ if(BUILD_TESTS)
         # linker drops it.
         "${CMAKE_SOURCE_DIR}/src/Console.cpp"
         "${CMAKE_SOURCE_DIR}/src/ConsoleCommands.cpp"
+        # DialogueManager: required by Cmd_DialogueSkip's production wrapper
+        # and by ConsoleCommandsTests' DialogueActiveReportsInactive test.
+        # Implementation is renderer-free.
+        "${CMAKE_SOURCE_DIR}/src/DialogueManager.cpp"
         "${CMAKE_SOURCE_DIR}/src/GameStateManager.cpp"
         # Editor + CameraController: needed by ConsoleCommandsTests for the
         # editor / debug.* / globe.* commands. Editor::Render() in Editor.cpp
