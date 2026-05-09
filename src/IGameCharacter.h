@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ElevationAxis.h"
+
 #include <glm/glm.hpp>
 
 /**
@@ -86,6 +88,29 @@ public:
     virtual void SetElevationOffset(float offset) = 0;
     /// @brief Smoothly interpolate elevation toward target over time.
     virtual void UpdateElevation(float deltaTime) = 0;
+
+    /// @brief Get the character's logical elevation plane in pixels.
+    ///
+    /// The plane is the discrete elevation the character is occupying
+    /// (e.g. 0 for ground, 10 for a bridge deck). Used by collision gating.
+    /// Differs from GetElevationOffset(), which is the smoothed visual offset
+    /// that interpolates toward the plane.
+    virtual int GetPlane() const = 0;
+
+    /// @brief Update the logical plane based on a destination tile.
+    ///
+    /// Applies the axis-engagement rule: the plane only tracks the
+    /// destination tile's elevation when the tile's elevation axis
+    /// matches the movement direction (or the tile has no axis), and
+    /// the elevation delta is within MAX_STEP_HEIGHT. Movement
+    /// perpendicular to the axis leaves the plane unchanged so the
+    /// entity walks under (or over) the tile.
+    ///
+    /// @param destTileElev Elevation of the tile being entered (pixels).
+    /// @param tileAxis     Auto-derived axis of the destination tile.
+    /// @param moveDx       Movement X direction sign (-1, 0, +1).
+    /// @param moveDy       Movement Y direction sign (-1, 0, +1).
+    virtual void UpdatePlane(int destTileElev, ElevationAxis tileAxis, int moveDx, int moveDy) = 0;
     /// @}
 
     /// @name Movement
