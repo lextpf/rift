@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <map>
+#include <random>
 #include <string>
 
 namespace
@@ -1445,26 +1446,238 @@ bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx
     }
     if (args.size() != 1)
     {
-        ctx.out.PrintError("time.weather: usage 'time.weather <clear|overcast>'");
+        ctx.out.PrintError("time.weather: usage 'time.weather <name>' (use Tab to list states)");
         return false;
     }
-    WeatherState state{};
-    if (args[0] == "clear" || args[0] == "Clear" || args[0] == "CLEAR")
+    auto parsed = EnumTraits<WeatherState>::FromString(args[0]);
+    if (!parsed.has_value())
     {
-        state = WeatherState::Clear;
-    }
-    else if (args[0] == "overcast" || args[0] == "Overcast" || args[0] == "OVERCAST")
-    {
-        state = WeatherState::Overcast;
-    }
-    else
-    {
-        ctx.out.PrintError("time.weather: usage 'time.weather <clear|overcast>'");
+        ctx.out.PrintError(std::string("time.weather: unknown weather state '") +
+                           std::string(args[0]) + "' (use Tab for valid names)");
         return false;
     }
-    ctx.time->SetWeather(state);
+    ctx.time->SetWeather(*parsed);
     ctx.out.Print(std::string("time.weather: ") +
-                  (state == WeatherState::Clear ? "clear" : "overcast"));
+                  std::string(EnumTraits<WeatherState>::ToString(*parsed)));
+    return true;
+}
+
+bool Cmd_WeatherIntensity(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.intensity: time manager unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("weather.intensity: usage 'weather.intensity <0.0-1.0>'");
+        return false;
+    }
+    float v = 0.0f;
+    if (!ParseFloat(args[0], v) || v < 0.0f || v > 1.0f)
+    {
+        ctx.out.PrintError("weather.intensity: value must be in [0.0, 1.0]");
+        return false;
+    }
+    ctx.time->SetWeatherIntensity(v);
+    char line[64];
+    std::snprintf(line, sizeof(line), "weather.intensity: %.2f", static_cast<double>(v));
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_WeatherNext(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.next: time manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("weather.next: usage 'weather.next' (no args)");
+        return false;
+    }
+    WeatherState next = NextEnum(ctx.time->GetWeather());
+    ctx.time->SetWeather(next);
+    ctx.out.Print(std::string("weather.next: ") +
+                  std::string(EnumTraits<WeatherState>::ToString(next)));
+    return true;
+}
+
+bool Cmd_WeatherRandom(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.random: time manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("weather.random: usage 'weather.random' (no args)");
+        return false;
+    }
+    static std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<int> dist(0,
+                                            static_cast<int>(EnumTraits<WeatherState>::Count) - 1);
+    auto pick = static_cast<WeatherState>(dist(rng));
+    ctx.time->SetWeather(pick);
+    ctx.out.Print(std::string("weather.random: ") +
+                  std::string(EnumTraits<WeatherState>::ToString(pick)));
+    return true;
+}
+
+// ============================================================================
+// light.* - WorldLight registry on the active Tilemap
+// ============================================================================
+
+bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("light.add: tilemap unavailable");
+        return false;
+    }
+    // Accept: x y [r g b] [radius] [schedule]
+    // Forms: 2, 5, 6, or 7 args.
+    if (args.size() != 2 && args.size() != 5 && args.size() != 6 && args.size() != 7)
+    {
+        ctx.out.PrintError("light.add: usage 'light.add <x> <y> [r g b] [radius] [schedule]'");
+        return false;
+    }
+    WorldLight light;
+    if (!ParseFloat(args[0], light.position.x) || !ParseFloat(args[1], light.position.y))
+    {
+        ctx.out.PrintError("light.add: x/y must be finite numbers");
+        return false;
+    }
+    if (args.size() >= 5)
+    {
+        if (!ParseFloat(args[2], light.color.r) || !ParseFloat(args[3], light.color.g) ||
+            !ParseFloat(args[4], light.color.b))
+        {
+            ctx.out.PrintError("light.add: r/g/b must be finite numbers");
+            return false;
+        }
+    }
+    if (args.size() >= 6)
+    {
+        if (!ParseFloat(args[5], light.radius) || light.radius <= 0.0f)
+        {
+            ctx.out.PrintError("light.add: radius must be a positive number");
+            return false;
+        }
+    }
+    if (args.size() == 7)
+    {
+        auto sched = EnumTraits<LightSchedule>::FromString(args[6]);
+        if (!sched.has_value())
+        {
+            ctx.out.PrintError("light.add: schedule must be AlwaysOn, NightOnly, or DuskToDawn");
+            return false;
+        }
+        light.schedule = *sched;
+    }
+    ctx.tilemap->AddLight(light);
+    char line[160];
+    std::snprintf(line,
+                  sizeof(line),
+                  "light.add: #%zu at (%.1f, %.1f) color=(%.2f, %.2f, %.2f) radius=%.1f %s",
+                  ctx.tilemap->GetLights().size() - 1,
+                  static_cast<double>(light.position.x),
+                  static_cast<double>(light.position.y),
+                  static_cast<double>(light.color.r),
+                  static_cast<double>(light.color.g),
+                  static_cast<double>(light.color.b),
+                  static_cast<double>(light.radius),
+                  std::string(EnumTraits<LightSchedule>::ToString(light.schedule)).c_str());
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_LightClear(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("light.clear: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("light.clear: usage 'light.clear' (no args)");
+        return false;
+    }
+    size_t before = ctx.tilemap->GetLights().size();
+    ctx.tilemap->ClearLights();
+    char line[64];
+    std::snprintf(line, sizeof(line), "light.clear: removed %zu light(s)", before);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_LightList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("light.list: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("light.list: usage 'light.list' (no args)");
+        return false;
+    }
+    const auto& lights = ctx.tilemap->GetLights();
+    char header[64];
+    std::snprintf(header, sizeof(header), "light.list: %zu light(s)", lights.size());
+    ctx.out.Print(header);
+    for (size_t i = 0; i < lights.size(); ++i)
+    {
+        const WorldLight& l = lights[i];
+        char line[160];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  #%zu (%.1f, %.1f) color=(%.2f, %.2f, %.2f) radius=%.1f %s",
+                      i,
+                      static_cast<double>(l.position.x),
+                      static_cast<double>(l.position.y),
+                      static_cast<double>(l.color.r),
+                      static_cast<double>(l.color.g),
+                      static_cast<double>(l.color.b),
+                      static_cast<double>(l.radius),
+                      std::string(EnumTraits<LightSchedule>::ToString(l.schedule)).c_str());
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+bool Cmd_LightRemove(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("light.remove: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("light.remove: usage 'light.remove <index>'");
+        return false;
+    }
+    int idx = -1;
+    if (!ParseInt(args[0], idx) || idx < 0)
+    {
+        ctx.out.PrintError("light.remove: index must be a non-negative integer");
+        return false;
+    }
+    if (!ctx.tilemap->RemoveLight(static_cast<size_t>(idx)))
+    {
+        ctx.out.PrintError("light.remove: index out of range");
+        return false;
+    }
+    char line[64];
+    std::snprintf(line, sizeof(line), "light.remove: removed #%d", idx);
+    ctx.out.Print(line);
     return true;
 }
 
@@ -1512,19 +1725,20 @@ bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
             periodName = "LateNight";
             break;
     }
-    const char* weatherName =
-        (ctx.time->GetWeather() == WeatherState::Clear) ? "Clear" : "Overcast";
-    char line[160];
-    std::snprintf(line,
-                  sizeof(line),
-                  "time.status: %.2fh (%s) weather=%s day=%d moonPhase=%d scale=%.2f%s",
-                  static_cast<double>(ctx.time->GetTimeOfDay()),
-                  periodName,
-                  weatherName,
-                  ctx.time->GetDayCount(),
-                  ctx.time->GetMoonPhase(),
-                  static_cast<double>(ctx.time->GetTimeScale()),
-                  ctx.time->IsPaused() ? " [paused]" : "");
+    std::string weatherName{EnumTraits<WeatherState>::ToString(ctx.time->GetWeather())};
+    char line[224];
+    std::snprintf(
+        line,
+        sizeof(line),
+        "time.status: %.2fh (%s) weather=%s intensity=%.2f day=%d moonPhase=%d scale=%.2f%s",
+        static_cast<double>(ctx.time->GetTimeOfDay()),
+        periodName,
+        weatherName.c_str(),
+        static_cast<double>(ctx.time->GetWeatherIntensity()),
+        ctx.time->GetDayCount(),
+        ctx.time->GetMoonPhase(),
+        static_cast<double>(ctx.time->GetTimeScale()),
+        ctx.time->IsPaused() ? " [paused]" : "");
     ctx.out.Print(line);
     return true;
 }
@@ -1548,9 +1762,15 @@ bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& c
     const auto parsed = EnumTraits<ParticleType>::FromString(args[0]);
     if (!parsed.has_value())
     {
+        std::string valid;
+        for (auto name : EnumTraits<ParticleType>::Names)
+        {
+            if (!valid.empty())
+                valid += ' ';
+            valid.append(name);
+        }
         ctx.out.PrintError(std::string("particle.spawn: unknown type '") + std::string(args[0]) +
-                           "' (valid: Firefly Rain Snow Fog Sparkles Wisp Lantern Sunshine "
-                           "DriftingLeaf DustMote Pollen)");
+                           "' (valid: " + valid + ")");
         return false;
     }
     float wx = 0.0f;
@@ -2281,14 +2501,94 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_TimeScale(args, ctx);
                         });
 
-    m_Registry.Register("time.weather",
-                        "<clear|overcast> - set weather state",
+    m_Registry.Register(
+        "time.weather",
+        "<name> - set weather state (Tab to list)",
+        [makeContext](auto args, Console&)
+        {
+            CommandContext ctx = makeContext();
+            (void)Cmd_TimeWeather(args, ctx);
+        },
+        {"weather"},
+        [](std::size_t argIndex) -> std::vector<std::string>
+        {
+            if (argIndex != 0)
+                return {};
+            std::vector<std::string> out;
+            out.reserve(EnumTraits<WeatherState>::Count);
+            for (auto name : EnumTraits<WeatherState>::Names)
+                out.emplace_back(name);
+            return out;
+        });
+
+    m_Registry.Register("weather.intensity",
+                        "<0.0-1.0> - set weather density/effect strength",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
-                            (void)Cmd_TimeWeather(args, ctx);
-                        },
-                        {"weather"});
+                            (void)Cmd_WeatherIntensity(args, ctx);
+                        });
+
+    m_Registry.Register("weather.next",
+                        "cycle to next weather state",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherNext(args, ctx);
+                        });
+
+    m_Registry.Register("weather.random",
+                        "set a random weather state",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherRandom(args, ctx);
+                        });
+
+    m_Registry.Register(
+        "light.add",
+        "<x> <y> [r g b] [radius] [schedule] - place a WorldLight",
+        [makeContext](auto args, Console&)
+        {
+            CommandContext ctx = makeContext();
+            (void)Cmd_LightAdd(args, ctx);
+        },
+        {},
+        [](std::size_t argIndex) -> std::vector<std::string>
+        {
+            // Schedule is the 7th positional arg (index 6) when present.
+            if (argIndex != 6)
+                return {};
+            std::vector<std::string> out;
+            out.reserve(EnumTraits<LightSchedule>::Count);
+            for (auto name : EnumTraits<LightSchedule>::Names)
+                out.emplace_back(name);
+            return out;
+        });
+
+    m_Registry.Register("light.clear",
+                        "remove all WorldLights",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_LightClear(args, ctx);
+                        });
+
+    m_Registry.Register("light.list",
+                        "list all WorldLights with index, position, color, radius, schedule",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_LightList(args, ctx);
+                        });
+
+    m_Registry.Register("light.remove",
+                        "<index> - remove a WorldLight by index",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_LightRemove(args, ctx);
+                        });
 
     m_Registry.Register("time.status",
                         "print time, period, weather, day count, moon phase",
@@ -2298,13 +2598,31 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_TimeStatus(args, ctx);
                         });
 
-    m_Registry.Register("particle.spawn",
-                        "<type> <wx> <wy> - spawn particle at world pixel coords",
-                        [makeContext](auto args, Console&)
-                        {
-                            CommandContext ctx = makeContext();
-                            (void)Cmd_ParticleSpawn(args, ctx);
-                        });
+    m_Registry.Register(
+        "particle.spawn",
+        "<type> <wx> <wy> - spawn particle at world pixel coords",
+        [makeContext](auto args, Console&)
+        {
+            CommandContext ctx = makeContext();
+            (void)Cmd_ParticleSpawn(args, ctx);
+        },
+        {},
+        [](std::size_t argIndex) -> std::vector<std::string>
+        {
+            // Only the first positional arg has canned values
+            // (the particle type); world coords are open-ended.
+            if (argIndex != 0)
+            {
+                return {};
+            }
+            std::vector<std::string> out;
+            out.reserve(EnumTraits<ParticleType>::Count);
+            for (auto name : EnumTraits<ParticleType>::Names)
+            {
+                out.emplace_back(name);
+            }
+            return out;
+        });
 
     m_Registry.Register("particle.list",
                         "count active particles by type, list zones",
