@@ -1363,11 +1363,8 @@ void ParticleSystem::BuildAtlas()
         loadPng(ambientFilePaths[i], sources[static_cast<int>(ParticleType::DriftingLeaf) + i]);
     }
 
-    // Weather-only particle types (CherryBlossom, Ash, Ember, Sand) ship
-    // without bespoke art. Generate distinct procedural textures so each one
-    // has the right shape and soft-edge falloff (a solid white block tinted
-    // by Particle::color reads as an opaque square - that's the bug we're
-    // fixing here). Runtime tinting via Particle::color still applies.
+    // Procedural soft-edge textures for the weather-only particle types
+    // (CherryBlossom, Ash, Ember, Sand) so tinting doesn't read as opaque squares.
 
     // Generic soft circle: a smooth radial alpha falloff used by Ash and Ember.
     auto generateSoftCircle = [](TextureSource& src, int size, float falloffPow)
