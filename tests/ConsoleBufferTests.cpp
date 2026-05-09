@@ -79,21 +79,83 @@ TEST(ConsoleBufferTests, BackspaceAndDelete)
     EXPECT_EQ(buf.CursorPos(), 2u);
 }
 
-TEST(ConsoleBufferTests, OnClearLineEmptiesInputAndResetsCursor)
+TEST(ConsoleBufferTests, OnBackspaceWordDeletesLastWordKeepingPrecedingSpace)
 {
     ConsoleBuffer buf;
-    TypeString(buf, "partial command");
-    buf.OnLeft();
-    buf.OnLeft();  // cursor mid-line
-    buf.OnClearLine();
+    TypeString(buf, "time.weather clear");
+    buf.OnBackspaceWord();
+    // First press eats "clear" and stops at the space - matching the user's
+    // example: "time.weather clear" -> "time.weather ".
+    EXPECT_EQ(buf.Input(), "time.weather ");
+    EXPECT_EQ(buf.CursorPos(), 13u);
+}
+
+TEST(ConsoleBufferTests, OnBackspaceWordWalksDotSegments)
+{
+    ConsoleBuffer buf;
+    TypeString(buf, "npc.freeze");
+    buf.OnBackspaceWord();
+    // Dots are word boundaries: "npc.freeze" -> "npc.".
+    EXPECT_EQ(buf.Input(), "npc.");
+    EXPECT_EQ(buf.CursorPos(), 4u);
+    buf.OnBackspaceWord();
+    // Next press eats the dot and the preceding segment.
     EXPECT_EQ(buf.Input(), "");
     EXPECT_EQ(buf.CursorPos(), 0u);
 }
 
-TEST(ConsoleBufferTests, OnClearLineNoOpOnEmpty)
+TEST(ConsoleBufferTests, OnBackspaceWordWalksMixedDotsAndSpaces)
 {
     ConsoleBuffer buf;
-    buf.OnClearLine();
+    TypeString(buf, "time.weather clear");
+    buf.OnBackspaceWord();  // "time.weather "
+    EXPECT_EQ(buf.Input(), "time.weather ");
+    buf.OnBackspaceWord();  // "time."
+    EXPECT_EQ(buf.Input(), "time.");
+    buf.OnBackspaceWord();  // ""
+    EXPECT_EQ(buf.Input(), "");
+}
+
+TEST(ConsoleBufferTests, OnBackspaceWordOnSingleWordClearsAll)
+{
+    ConsoleBuffer buf;
+    TypeString(buf, "noclip");
+    buf.OnBackspaceWord();
+    EXPECT_EQ(buf.Input(), "");
+    EXPECT_EQ(buf.CursorPos(), 0u);
+}
+
+TEST(ConsoleBufferTests, OnBackspaceWordNoOpOnEmpty)
+{
+    ConsoleBuffer buf;
+    buf.OnBackspaceWord();
+    EXPECT_EQ(buf.Input(), "");
+    EXPECT_EQ(buf.CursorPos(), 0u);
+}
+
+TEST(ConsoleBufferTests, OnBackspaceWordOperatesAtCursorNotEnd)
+{
+    ConsoleBuffer buf;
+    TypeString(buf, "alpha beta gamma");
+    buf.OnLeft();
+    buf.OnLeft();
+    buf.OnLeft();
+    buf.OnLeft();
+    buf.OnLeft();  // cursor between space and 'g' -> position 11
+    EXPECT_EQ(buf.CursorPos(), 11u);
+    buf.OnBackspaceWord();
+    // Eats the space at index 10, then "beta" -> "alpha gamma".
+    EXPECT_EQ(buf.Input(), "alpha gamma");
+    EXPECT_EQ(buf.CursorPos(), 6u);
+}
+
+TEST(ConsoleBufferTests, OnBackspaceWordSkipsRunsOfSpaces)
+{
+    ConsoleBuffer buf;
+    TypeString(buf, "foo   bar");
+    buf.OnBackspaceWord();  // -> "foo   "
+    EXPECT_EQ(buf.Input(), "foo   ");
+    buf.OnBackspaceWord();  // eats all three spaces, then "foo" -> ""
     EXPECT_EQ(buf.Input(), "");
     EXPECT_EQ(buf.CursorPos(), 0u);
 }
