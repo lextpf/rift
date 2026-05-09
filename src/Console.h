@@ -32,7 +32,12 @@ class ConsoleBuffer
 {
 public:
     /// Maximum number of scrollback lines retained. Older lines are dropped.
-    static constexpr std::size_t MAX_LINES = 256;
+    /// Sized large enough to hold a full per-frame draw-call trace dump
+    /// (`renderer.trace dump`) without the head being evicted as later
+    /// events scroll in. ~50 KB at one Line per ~50 chars + small overhead;
+    /// fine for desktop. For multi-frame traces, prefer `renderer.trace file`
+    /// which bypasses the scrollback entirely.
+    static constexpr std::size_t MAX_LINES = 8192;
 
     /// Maximum number of submitted commands retained for Up/Down recall.
     static constexpr std::size_t MAX_HISTORY = 64;

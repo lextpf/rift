@@ -662,11 +662,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
     const float ascent = renderer.GetTextAscent(TEXT_SCALE);
     const float lineH = ascent * LINE_GAP_FACTOR;
 
-    // IRenderer::DrawText treats `position.y` as the glyph baseline (despite
-    // the header doc's "top-left" wording - see OpenGLRenderer::DrawText
-    // computing `ypos = y - bearing.y * scale`). Glyphs extend upward from
-    // the baseline, so we line up text and the cursor rect against the
-    // baseline rather than against an apparent top-left.
+    // IRenderer::DrawText takes y as the glyph baseline (see IRenderer.h).
 
     // ---- Prompt + input + cursor at the bottom of the overlay ----
     const float promptBaseline = overlayH - BOTTOM_PAD;
