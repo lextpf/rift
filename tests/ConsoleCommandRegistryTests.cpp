@@ -115,3 +115,85 @@ TEST(ConsoleCommandRegistryTests, MatchPrefixIncludesAliases)
     EXPECT_EQ(glb[0], "glb.i");
     EXPECT_EQ(glb[1], "glb.r");
 }
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixHonoursMaxCount)
+{
+    ConsoleCommandRegistry r;
+    r.Register("npc.despawn", "", NoOp());
+    r.Register("npc.dialog", "", NoOp());
+    r.Register("npc.freeze", "", NoOp());
+    r.Register("npc.list", "", NoOp());
+    r.Register("npc.spawn", "", NoOp());
+
+    const auto top3 = r.MatchPrefix("npc", 3);
+    ASSERT_EQ(top3.size(), 3u);
+    EXPECT_EQ(top3[0], "npc.despawn");
+    EXPECT_EQ(top3[1], "npc.dialog");
+    EXPECT_EQ(top3[2], "npc.freeze");
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixReturnsFewerWhenLessAvailable)
+{
+    ConsoleCommandRegistry r;
+    r.Register("npc.freeze", "", NoOp());
+    r.Register("teleport", "", NoOp());
+
+    const auto matches = r.MatchPrefix("npc.fre", 3);
+    ASSERT_EQ(matches.size(), 1u);
+    EXPECT_EQ(matches[0], "npc.freeze");
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixZeroMaxReturnsEmpty)
+{
+    ConsoleCommandRegistry r;
+    r.Register("alpha", "", NoOp());
+    r.Register("beta", "", NoOp());
+    EXPECT_TRUE(r.MatchPrefix("", 0).empty());
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixDefaultMaxIsUnlimited)
+{
+    ConsoleCommandRegistry r;
+    for (int i = 0; i < 50; ++i)
+    {
+        r.Register("cmd" + std::to_string(i), "", NoOp());
+    }
+    // Default argument should not truncate.
+    EXPECT_EQ(r.MatchPrefix("cmd").size(), 50u);
+}
+
+TEST(ConsoleCommandRegistryTests, ArgCompletionsAreStoredAndQueryable)
+{
+    ConsoleCommandRegistry r;
+    r.Register("particle.spawn",
+               "",
+               NoOp(),
+               {},
+               [](std::size_t argIndex) -> std::vector<std::string>
+               {
+                   if (argIndex == 0)
+                   {
+                       return {"Firefly", "Rain", "Snow"};
+                   }
+                   return {};
+               });
+
+    const auto* cmd = r.Lookup("particle.spawn");
+    ASSERT_NE(cmd, nullptr);
+    ASSERT_TRUE(static_cast<bool>(cmd->argCompletions));
+    const auto values = cmd->argCompletions(0);
+    ASSERT_EQ(values.size(), 3u);
+    EXPECT_EQ(values[0], "Firefly");
+    EXPECT_EQ(values[1], "Rain");
+    EXPECT_EQ(values[2], "Snow");
+    EXPECT_TRUE(cmd->argCompletions(1).empty());
+}
+
+TEST(ConsoleCommandRegistryTests, ArgCompletionsAreOptional)
+{
+    ConsoleCommandRegistry r;
+    r.Register("plain", "", NoOp());
+    const auto* cmd = r.Lookup("plain");
+    ASSERT_NE(cmd, nullptr);
+    EXPECT_FALSE(static_cast<bool>(cmd->argCompletions));
+}
