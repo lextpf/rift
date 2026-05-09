@@ -101,6 +101,12 @@ public:
      * @param deltaTime Frame time in seconds.
      */
     void UpdateElevation(float deltaTime) override;
+
+    /// @brief Get the logical elevation plane (pixels).
+    int GetPlane() const override { return m_Plane; }
+
+    /// @brief Apply the axis-engagement plane-update rule. See IGameCharacter::UpdatePlane.
+    void UpdatePlane(int destTileElev, ElevationAxis tileAxis, int moveDx, int moveDy) override;
     /// @}
 
     /// @name Movement
@@ -139,6 +145,11 @@ public:
     static constexpr float COLLISION_EPS = 0.05f;          ///< AABB floating-point tolerance
     static constexpr int WALK_SEQUENCE[4] = {1, 0, 2, 0};  ///< Walk cycle frame indices
     static constexpr int WALK_SEQUENCE_LENGTH = 4;         ///< Length of WALK_SEQUENCE
+
+    /// @brief Maximum elevation delta (pixels) the plane can change in one
+    /// step. Larger deltas are rejected by UpdatePlane so that the player
+    /// cannot jump directly from ground onto a deck without using a ramp.
+    static constexpr int MAX_STEP_HEIGHT = 8;
     /// @}
 
 protected:
@@ -153,6 +164,8 @@ protected:
     float m_TargetElevation{0.0f};    ///< Target elevation to interpolate toward
     float m_ElevationStart{0.0f};     ///< Elevation at start of current transition
     float m_ElevationProgress{1.0f};  ///< Interpolation progress (0 = start, 1 = done)
+    int m_Plane{0};                   ///< Logical elevation plane (pixels); drives collision
+                                      ///< gating.
     /// @}
 
     /// @name Direction & Animation State

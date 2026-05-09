@@ -1,5 +1,7 @@
 #include "GameCharacter.h"
 
+#include <cstdlib>
+
 GameCharacter::GameCharacter()
     : m_Position(0.0f, 0.0f),
       m_ElevationOffset(0.0f),
@@ -22,6 +24,38 @@ void GameCharacter::SetElevationOffset(float offset)
         m_TargetElevation = offset;
         m_ElevationProgress = 0.0f;
     }
+}
+
+void GameCharacter::UpdatePlane(int destTileElev, ElevationAxis tileAxis, int moveDx, int moveDy)
+{
+    if (tileAxis == ElevationAxis::None)
+    {
+        // Ground / non-elevated tile: always engage so an entity stepping
+        // off an elevated region snaps back to ground regardless of drop
+        // height. The step gate only protects elevated entries.
+        m_Plane = destTileElev;
+        SetElevationOffset(static_cast<float>(destTileElev));
+        return;
+    }
+
+    bool movementMatchesAxis = (tileAxis == ElevationAxis::X && moveDx != 0) ||
+                               (tileAxis == ElevationAxis::Y && moveDy != 0);
+    if (!movementMatchesAxis)
+    {
+        // Perpendicular crossing — entity passes underneath/over without
+        // engaging the elevation; logical plane stays where it was.
+        return;
+    }
+
+    int delta = destTileElev - m_Plane;
+    if (std::abs(delta) > MAX_STEP_HEIGHT)
+    {
+        // No ramp connecting the two planes — reject the direct jump.
+        return;
+    }
+
+    m_Plane = destTileElev;
+    SetElevationOffset(static_cast<float>(destTileElev));
 }
 
 void GameCharacter::UpdateElevation(float deltaTime)
