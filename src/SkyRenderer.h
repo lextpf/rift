@@ -131,6 +131,24 @@ struct DewSparkle
 };
 
 /**
+ * @struct VisibleStar
+ * @brief Cached per-frame screen data for one rendered foreground star.
+ *
+ * Populated during the compute pass in SkyRenderer::RenderStars and consumed
+ * by two emit passes (glow, then core) so the sprite batch doesn't alternate
+ * between m_StarGlowTexture and m_StarTexture once per star.
+ */
+struct VisibleStar
+{
+    glm::vec2 screenPos;  ///< Camera-relative screen position (top-left of glow/core)
+    glm::vec3 color;      ///< Star tint
+    float size;           ///< Core sprite size in pixels
+    float brightness;     ///< Core alpha multiplier (pre-additive)
+    float glowSize;       ///< Glow sprite size in pixels; <=0 means skip glow this frame
+    float glowAlpha;      ///< Glow alpha multiplier (pre-additive)
+};
+
+/**
  * @class SkyRenderer
  * @brief Renders atmospheric sky effects synchronized with the day/night cycle.
  * @author Alex (https://github.com/lextpf)
@@ -618,12 +636,13 @@ private:
     /// @name Sky Object Arrays
     /// @brief Collections of sky elements to render.
     /// @{
-    std::vector<Star> m_Stars;                  ///< Foreground stars (bright, prominent)
-    std::vector<Star> m_BackgroundStars;        ///< Background stars (dim, distant)
-    std::vector<LightRay> m_SunRays;            ///< Sun god ray configurations
-    std::vector<LightRay> m_MoonRays;           ///< Moon ray configurations
-    std::vector<ShootingStar> m_ShootingStars;  ///< Active shooting stars
-    std::vector<DewSparkle> m_DewSparkles;      ///< Morning dew sparkle points
+    std::vector<Star> m_Stars;                       ///< Foreground stars (bright, prominent)
+    std::vector<Star> m_BackgroundStars;             ///< Background stars (dim, distant)
+    std::vector<VisibleStar> m_VisibleStarsScratch;  ///< Per-frame scratch for two-pass star emit
+    std::vector<LightRay> m_SunRays;                 ///< Sun god ray configurations
+    std::vector<LightRay> m_MoonRays;                ///< Moon ray configurations
+    std::vector<ShootingStar> m_ShootingStars;       ///< Active shooting stars
+    std::vector<DewSparkle> m_DewSparkles;           ///< Morning dew sparkle points
     /// @}
 
     /// @name Animation State

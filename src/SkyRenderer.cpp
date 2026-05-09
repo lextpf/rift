@@ -135,17 +135,9 @@ void SkyRenderer::GenerateLightPoolTexture()
 
 void SkyRenderer::GenerateAuroraCurtainTexture()
 {
-    // Aurora curtain segment: a single ribbon "slice" used to build longer
-    // noodle-shaped curtains by chaining many overlapping copies along a
-    // warped path (see RenderAurora). Designed to be heavily feathered:
-    //
-    //   * Long top + bottom alpha fades so adjacent segments at slightly
-    //     different Y positions blend into a continuous flow without seams.
-    //   * Strong horizontal edge fade so segments tile along X without bands.
-    //   * Subtle vertical striations via a single low-frequency sin, gentle
-    //     enough that they don't dominate the silhouette.
-    //   * Maximum alpha clipped well below 1.0 so the curtain reads as
-    //     translucent gas - never solid.
+    // Curtain segment: heavy top/bottom + horizontal feathering so chained copies
+    // tile seamlessly along a warped path. Max alpha clipped <1 so the curtain
+    // reads as translucent gas rather than a solid ribbon.
     constexpr int kW = 128;
     constexpr int kH = 256;
     std::vector<unsigned char> pixels(kW * kH * 4);
@@ -316,18 +308,9 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                                int screenWidth,
                                int screenHeight)
 {
-    // Multi-layered aurora - anchored to the world plane horizontally with
-    // wrap-around so curtains and wisps stay in fixed world positions and
-    // scroll past the camera as the player walks (parallax = 1.0 horizontally).
-    // Y stays sky-relative (no vertical parallax) so the aurora always sits
-    // in the upper portion of the visible viewport.
-    //
-    //   1. Wide background wash - fills upper sky with shifting hue.
-    //   2. 14 vertical curtains anchored to world X (with wrap), shifting
-    //      colors, breathing wave motion. Brighter curtains get a glow halo.
-    //   3. ~36 floating wisps scattered in world X (with wrap), drawn with
-    //      the hand-painted aurora particle texture. These read as "lights
-    //      floating in the world" - they walk past as the player moves.
+    // World-anchored aurora: full horizontal parallax so curtains/wisps walk past
+    // the player, but Y is sky-relative so the band stays in the upper viewport.
+    // Three layers below: background wash, 14 curtains, ~36 floating wisps.
     const float t = static_cast<float>(m_Time);
     const float sw = static_cast<float>(screenWidth);
     const float sh = static_cast<float>(screenHeight);
@@ -873,14 +856,8 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
     float appearThreshold =
         1.0f - visibility * 2.0f;  // At full night, threshold is -1 (all visible)
 
-    // Stars are anchored to world coordinates across a star-field tile of
-    // (screenWidth x STAR_FIELD_X_PERIODS, screenHeight x STAR_FIELD_Y_PERIODS).
-    // Each star's normalized 0-1 position maps to a fixed world coordinate
-    // inside that tile; std::remainder wraps the world position near the
-    // camera so the visible viewport always shows stars without needing a
-    // separate generator pass per visited region. The result: stars stick
-    // to the world (walking past them feels like real parallax) while
-    // covering the entire map at constant on-screen density.
+    // Stars live in a fixed world-space tile; std::remainder wraps the world
+    // position near the camera so we get parallax without per-region generation.
     const float fieldW = static_cast<float>(screenWidth) * STAR_FIELD_X_PERIODS;
     const float fieldH = static_cast<float>(screenHeight) * STAR_FIELD_Y_PERIODS;
     auto wrap1D = [](float anchor, float ref, float period)
@@ -923,10 +900,23 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         bgCount++;
     }
 
-    // Second pass: Main stars - gradual appearance, sparkly twinkle
-    int starCount = 0;
+    // Second pass: Main stars - gradual appearance, sparkly twinkle.
+    //
+    // Each visible star can produce a glow (m_StarGlowTexture) and a core
+    // (m_StarTexture). Emitting them inline alternates textures per star and
+    // forces the OpenGL particle batch to flush between every pair, so a few
+    // hundred stars become a few hundred draw calls. Instead we collect the
+    // per-star screen data in one compute pass, then emit all glows in one
+    // batch and all cores in another. Both blends are additive, so reordering
+    // the emits does not change the rendered result.
+    m_VisibleStarsScratch.clear();
     int maxStars = static_cast<int>(m_Stars.size() * visibility * 0.6f);
+    if (m_VisibleStarsScratch.capacity() < static_cast<size_t>(maxStars))
+    {
+        m_VisibleStarsScratch.reserve(static_cast<size_t>(maxStars));
+    }
 
+    int starCount = 0;
     for (const auto& star : m_Stars)
     {
         if (starCount >= maxStars)
@@ -959,32 +949,50 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         // World position inside the star-field tile, wrapped near the camera.
         float worldX = wrap1D(star.position.x * fieldW, cameraPos.x, fieldW);
         float worldY = wrap1D(star.position.y * fieldH, cameraPos.y, fieldH);
-        glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
 
-        // Subtle glow on bright sparkle moments
+        VisibleStar v;
+        v.screenPos = glm::vec2(worldX - cameraPos.x, worldY - cameraPos.y);
+        v.color = star.color;
+        v.size = (1.5f + star.size * 3.0f) * (0.5f + brightness * 0.5f);
+        v.brightness = brightness;
         if (brightness > 0.25f && sparkle > 0.3f)
         {
-            float glowSize = (6.0f + star.size * 8.0f);
-            float glowAlpha = (brightness - 0.25f) * 0.1f;
-
-            renderer.DrawSpriteAlpha(m_StarGlowTexture,
-                                     screenPos - glm::vec2(glowSize * 0.5f),
-                                     glm::vec2(glowSize),
-                                     0.0f,
-                                     glm::vec4(star.color, glowAlpha),
-                                     true);
+            v.glowSize = (6.0f + star.size * 8.0f);
+            v.glowAlpha = (brightness - 0.25f) * 0.1f;
         }
-
-        // Main star - small
-        float size = (1.5f + star.size * 3.0f) * (0.5f + brightness * 0.5f);
-
-        renderer.DrawSpriteAlpha(m_StarTexture,
-                                 screenPos - glm::vec2(size * 0.5f),
-                                 glm::vec2(size),
-                                 0.0f,
-                                 glm::vec4(star.color, brightness * 0.7f),
-                                 true);
+        else
+        {
+            v.glowSize = 0.0f;
+            v.glowAlpha = 0.0f;
+        }
+        m_VisibleStarsScratch.push_back(v);
         starCount++;
+    }
+
+    // Emit pass 1: glows for qualifying stars - single m_StarGlowTexture binding.
+    for (const auto& v : m_VisibleStarsScratch)
+    {
+        if (v.glowSize <= 0.0f)
+        {
+            continue;
+        }
+        renderer.DrawSpriteAlpha(m_StarGlowTexture,
+                                 v.screenPos - glm::vec2(v.glowSize * 0.5f),
+                                 glm::vec2(v.glowSize),
+                                 0.0f,
+                                 glm::vec4(v.color, v.glowAlpha),
+                                 true);
+    }
+
+    // Emit pass 2: cores for every visible star - single m_StarTexture binding.
+    for (const auto& v : m_VisibleStarsScratch)
+    {
+        renderer.DrawSpriteAlpha(m_StarTexture,
+                                 v.screenPos - glm::vec2(v.size * 0.5f),
+                                 glm::vec2(v.size),
+                                 0.0f,
+                                 glm::vec4(v.color, v.brightness * 0.7f),
+                                 true);
     }
 }
 
@@ -1527,18 +1535,8 @@ void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Cloud shadows: drift over world (multiplicative-style alpha darkening).
-//
-// Visibility ramps off at night so shadows don't darken already-dim scenes.
-// Implemented via plain alpha blending with black color at low alpha - for the
-// 4-8% intensity we target, this approximates a multiplicative blend without
-// needing a new render-state path.
-// ---------------------------------------------------------------------------
-
-// ComputeCloudShadowPosition is defined inline in SkyRenderer.h so tests can
-// link against it without dragging the full SkyRenderer.cpp (and its
-// IRenderer/Texture stack) into the test binary.
+// Cloud shadows: alpha-blended black at 4-8% approximates a multiplicative
+// dim without a dedicated render-state path. Fades off at night.
 
 void SkyRenderer::RenderCloudShadows(
     IRenderer& renderer, glm::vec2 cameraPos, glm::vec2 viewSize, float time, float nightFactor)
