@@ -1097,16 +1097,24 @@ TEST(ConsoleCommandsTests, TimeScaleSetsAndRejectsNonPositive)
 
 TEST(ConsoleCommandsTests, TimeWeatherSetsClearAndOvercast)
 {
+    // Names are now case-sensitive (canonical EnumTraits spelling). Tab
+    // completion makes the correct casing discoverable.
     TimeManager tm;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.time = &tm;
 
-    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"overcast"}).span(), ctx));
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Overcast"}).span(), ctx));
     EXPECT_EQ(tm.GetWeather(), WeatherState::Overcast);
-    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"clear"}).span(), ctx));
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Clear"}).span(), ctx));
     EXPECT_EQ(tm.GetWeather(), WeatherState::Clear);
-    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"snow"}).span(), ctx));
+    // "Snow" is now a valid weather state (it wasn't before).
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Snow"}).span(), ctx));
+    EXPECT_EQ(tm.GetWeather(), WeatherState::Snow);
+    // Lowercase is rejected.
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"clear"}).span(), ctx));
+    // Garbage still rejected.
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"NotARealState"}).span(), ctx));
 }
 
 TEST(ConsoleCommandsTests, TimeStatusPrintsKeyFields)
