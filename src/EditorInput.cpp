@@ -143,12 +143,6 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             std::max(minOffsetY, std::min(maxOffsetY, m_TilePicker.targetOffsetY));
     }
 
-    // Toggles navigation map editing. When active:
-    //   - Right-click toggles navigation flags on tiles
-    //   - NPC placement mode is disabled (mutually exclusive)
-    //   - Cyan overlay shows navigable tiles in debug view
-    //
-    // Navigation tiles determine where NPCs can walk for pathfinding.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_M) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_M])
     {
         const bool enabling = m_EditMode != EditMode::Navigation;
@@ -163,13 +157,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_M] = false;
     }
 
-    // Toggles NPC placement mode. When active:
-    //   - Left-click places/removes NPCs on navigation tiles
-    //   - Navigation edit mode is disabled (mutually exclusive)
-    //   - Use , and . keys to cycle through available NPC types
-    // N is claimed by NPC mode at the editor-wide scope. The particle-noProjection
-    // override that wants N when ParticleZone is active is now bound to F so it
-    // doesn't lose the race to this handler.
+    // N drives NPC placement at editor scope; the ParticleZone noProjection
+    // override that wanted N is bound to F to avoid losing the dispatch race.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_N) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_N])
     {
         const bool enabling = m_EditMode != EditMode::NPCPlacement;
@@ -391,13 +380,6 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             m_KeyPressed[GLFW_KEY_F] = false;
     }
 
-    // Toggles structure definition mode. When active:
-    //   - Click to place left anchor, click again to place right anchor
-    //   - Enter to create structure from anchors
-    //   - , and . to cycle through existing structures
-    //   - Shift+click to assign tiles to current structure
-    //   - Right-click to clear structure assignment from tiles
-    //   - Delete to remove current structure
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_G) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_G])
     {
         const bool enabling = m_EditMode != EditMode::Structure;
@@ -658,12 +640,6 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         }
     }
 
-    // Saves the current game to the configured map JSON including:
-    //   - All tile layers with rotations
-    //   - Collision map
-    //   - Navigation map
-    //   - NPC positions, dialogues and types
-    //   - Player spawn position and character type
     if (glfwGetKey(ctx.window, GLFW_KEY_S) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_S] && m_Active)
     {
         // Calculate player's current tile for spawn point
@@ -826,13 +802,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_R] = false;
     }
 
-    // F (X-reflect) / Shift+F (Y-reflect): toggle the brush's flip flag AND
-    // reflect the current selection. The brush flip mirrors the R-rotate
-    // brush contract (R rotates the upcoming stamp; F mirrors it). The
-    // selection-reflect leg also runs so a Ctrl+drag rectangle or the tile
-    // under the cursor still gets reflected on the same press. Gated outside
-    // ParticleZone mode where F is reserved for the per-zone noProjection
-    // toggle.
+    // F / Shift+F mirror the brush flip flag (matching R's rotate contract) AND
+    // reflect the current selection on the same press. Gated outside ParticleZone
+    // where F drives the per-zone noProjection toggle.
     if (m_Active && !m_ShowTilePicker && m_EditMode != EditMode::ParticleZone &&
         glfwGetKey(ctx.window, GLFW_KEY_F) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_F])
     {
