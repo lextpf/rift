@@ -246,8 +246,15 @@ TEST_F(AmbientParticleZoneTest, PollenIsNeverWhitish)
     EXPECT_GT(sampled, 0);
 }
 
-TEST(ParticleType, SmokeRemoved)
+TEST(ParticleType, EnumLayoutInvariant)
 {
-    EXPECT_EQ(EnumTraits<ParticleType>::Count, 11u);
+    // Original cozy types stay at their stable indices so saved zones in
+    // existing maps deserialize the right kind. Weather-driven types live
+    // strictly after Pollen.
     EXPECT_EQ(static_cast<int>(ParticleType::Pollen), 10);
+    EXPECT_EQ(static_cast<int>(ParticleType::CherryBlossom), 11);
+    EXPECT_EQ(static_cast<int>(ParticleType::Ash), 12);
+    EXPECT_EQ(static_cast<int>(ParticleType::Ember), 13);
+    EXPECT_EQ(static_cast<int>(ParticleType::Sand), 14);
+    EXPECT_EQ(EnumTraits<ParticleType>::Count, 15u);
 }
