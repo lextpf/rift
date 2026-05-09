@@ -279,12 +279,12 @@
  * - **Gameplay Mode**: Player movement, NPC interaction, collision detection, camera control
  * - **Editor Mode**: Tile placement, collision editing, NPC spawning, navigation editing
  *
- * Open the developer console with **`** (or **F12** on non-US layouts) and run
+ * Open the developer console with **F12** and run
  * `editor on` to enter editor mode.
  *
  * @par Input Priority
  * Input is processed hierarchically. Higher-priority handlers block lower ones:
- * 1. **Console toggle** (\`/F12) - always processed; when open consumes all input
+ * 1. **Console toggle** (F12) - always processed; when open consumes all input
  * 2. **Dialogue** - blocks movement when active (Esc to dismiss)
  * 3. **Editor controls** - only when editor mode is active
  * 4. **Player movement** - only in gameplay mode, outside dialogue
@@ -345,8 +345,8 @@
  * | Ctrl+Scroll  | Zoom                                  |
  *
  * @par Debug and Visual Controls
- * Engine controls are exposed as developer-console commands (open with **\`**
- * or **F12**). The remaining keybindings are gameplay-only.
+ * Engine controls are exposed as developer-console commands (open with **F12**).
+ * The remaining keybindings are gameplay-only.
  *
  * |        Key         |                  Action                     |
  * |--------------------|---------------------------------------------|
