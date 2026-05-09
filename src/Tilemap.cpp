@@ -873,6 +873,74 @@ float Tilemap::GetElevationAtWorldPos(float worldX, float worldY) const
     return static_cast<float>(GetElevation(tileX, tileY));
 }
 
+ElevationAxis Tilemap::GetElevationAxisAt(int x, int y) const
+{
+    int z = GetElevation(x, y);
+    if (z == 0)
+    {
+        // Ground tiles always engage from any direction so the player can
+        // step back onto the ground when leaving an elevated region.
+        return ElevationAxis::None;
+    }
+
+    int eE = GetElevation(x + 1, y);
+    int eW = GetElevation(x - 1, y);
+    int eN = GetElevation(x, y - 1);
+    int eS = GetElevation(x, y + 1);
+
+    // Primary signal: gradient direction. A ramp transitioning E-W has a
+    // strong X gradient and zero (or weak) Y gradient even when the ramp
+    // is multiple tiles tall - same-elevation neighbors on Y do not fool
+    // the gradient the way they fool a continuity-first rule.
+    int dx = std::abs(eE - eW);
+    int dy = std::abs(eN - eS);
+    if (dx > dy)
+    {
+        return ElevationAxis::X;
+    }
+    if (dy > dx)
+    {
+        return ElevationAxis::Y;
+    }
+
+    // Gradient tied (deck interior, isolated platform, or symmetric cross).
+    // Fall back to a bounded extent scan: walk outward in each cardinal
+    // direction and count contiguous elevated cells. The axis with greater
+    // span is the long dimension of the elevated region - that's the bridge
+    // axis and so the engagement axis.
+    constexpr int SCAN_LIMIT = 8;
+    auto scanDir = [&](int sx, int sy)
+    {
+        int count = 0;
+        for (int s = 1; s <= SCAN_LIMIT; ++s)
+        {
+            if (GetElevation(x + s * sx, y + s * sy) > 0)
+            {
+                ++count;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return count;
+    };
+    int spanX = scanDir(1, 0) + scanDir(-1, 0);
+    int spanY = scanDir(0, 1) + scanDir(0, -1);
+    if (spanX > spanY)
+    {
+        return ElevationAxis::X;
+    }
+    if (spanY > spanX)
+    {
+        return ElevationAxis::Y;
+    }
+
+    // Truly ambiguous (e.g. uniform-elevation 3x3 isolated platform):
+    // default to X.
+    return ElevationAxis::X;
+}
+
 bool Tilemap::GetNoProjection(int x, int y, int layer) const
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
@@ -2756,6 +2824,26 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
     }
     j["particleZones"] = particleZonesArray;
 
+    // World Lights (sticky world day/night light pools)
+    if (!m_Lights.empty())
+    {
+        json lightsArray = json::array();
+        for (const auto& light : m_Lights)
+        {
+            json lightJson;
+            lightJson["x"] = light.position.x;
+            lightJson["y"] = light.position.y;
+            lightJson["r"] = light.color.r;
+            lightJson["g"] = light.color.g;
+            lightJson["b"] = light.color.b;
+            lightJson["radius"] = light.radius;
+            lightJson["schedule"] =
+                std::string(EnumTraits<LightSchedule>::ToString(light.schedule));
+            lightsArray.push_back(lightJson);
+        }
+        j["worldLights"] = lightsArray;
+    }
+
     // NPCs
     json npcsArray = json::array();
     if (npcs)
@@ -3269,6 +3357,27 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                 m_ParticleZones.push_back(zone);
             }
             Logger::InfoF(LOG_SUBSYSTEM, "Loaded {} particle zones", m_ParticleZones.size());
+        }
+
+        // Load World Lights (missing key = empty registry, backwards compatible)
+        m_Lights.clear();
+        if (j.contains("worldLights") && j["worldLights"].is_array())
+        {
+            for (const auto& lightJson : j["worldLights"])
+            {
+                WorldLight light;
+                light.position.x = lightJson.value("x", 0.0f);
+                light.position.y = lightJson.value("y", 0.0f);
+                light.color.r = lightJson.value("r", 1.0f);
+                light.color.g = lightJson.value("g", 0.85f);
+                light.color.b = lightJson.value("b", 0.55f);
+                light.radius = lightJson.value("radius", 64.0f);
+                std::string scheduleName = lightJson.value("schedule", "NightOnly");
+                auto sched = EnumTraits<LightSchedule>::FromString(scheduleName);
+                light.schedule = sched.value_or(LightSchedule::NightOnly);
+                m_Lights.push_back(light);
+            }
+            Logger::InfoF(LOG_SUBSYSTEM, "Loaded {} world lights", m_Lights.size());
         }
 
         // Load No-Projection Structures

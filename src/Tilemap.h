@@ -3,10 +3,12 @@
 #include "CollisionMap.h"
 #include "ColumnProxy.h"
 #include "DefaultedVector.h"
+#include "ElevationAxis.h"
 #include "IRenderer.h"
 #include "NavigationMap.h"
 #include "ParticleSystem.h"
 #include "Texture.h"
+#include "WeatherDefinitions.h"
 
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -805,6 +807,44 @@ public:
      * @return Elevation of the mapped tile in pixels.
      */
     float GetElevationAtWorldPos(float worldX, float worldY) const;
+
+    /**
+     * @brief Convert a world-space feet position to (tileX, tileY).
+     *
+     * Uses the bottom-center entity convention: Y is shifted up by half a
+     * tile so a feet position resting on the bottom edge of tile N maps
+     * to tile N (rather than the boundary between N and N+1).
+     */
+    inline void WorldToTileCoord(float worldX, float worldY, int& tileX, int& tileY) const
+    {
+        tileX = static_cast<int>(std::floor(worldX / m_TileWidth));
+        tileY = static_cast<int>(std::floor((worldY - m_TileHeight * 0.5f) / m_TileHeight));
+    }
+
+    /**
+     * @brief Auto-derive the elevation engagement axis for a tile.
+     *
+     * The axis tells GameCharacter::UpdatePlane in which movement direction
+     * the player's logical plane should track this tile's elevation. The
+     * derivation looks at the four orthogonal neighbors:
+     *
+     * - If a neighbor on the X axis shares this tile's elevation but no
+     *   Y neighbor does, the tile lies along an X-extending elevated
+     *   strip (e.g. a horizontal bridge deck) -> returns Axis::X.
+     * - Symmetric for Y.
+     * - If neither (ramp tip, isolated cell) or both (cross junction)
+     *   share elevation, the gradient |dE_x| vs |dE_y| breaks the tie.
+     * - Ground tiles (elevation == 0) always return Axis::None so they
+     *   engage from any direction (falling-off-bridge case).
+     *
+     * Cost: 4 bounded array reads. Safe to call on out-of-bounds tiles.
+     *
+     * @param x Tile X coordinate.
+     * @param y Tile Y coordinate.
+     * @return ElevationAxis::None | X | Y.
+     */
+    ElevationAxis GetElevationAxisAt(int x, int y) const;
+
     /** @} */
 
     /**
@@ -850,6 +890,7 @@ public:
      */
     void RenderSingleTile(
         IRenderer& r, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection = -1);
+
     /** @} */
 
     /**
@@ -993,6 +1034,38 @@ public:
         if (index <= m_ParticleZones.size())
             m_ParticleZones.insert(m_ParticleZones.begin() + index, zone);
     }
+
+    /** @} */
+
+    /** @name World Lights
+     * @brief Persistent point-light sources anchored to world positions.
+     *
+     * Rendered as additive soft-circle sprites in `Game::Render` with intensity
+     * driven by `ComputeLightIntensity(schedule, hour)`. Serialized in the map
+     * JSON's `worldLights` array.
+     * @{
+     */
+
+    /// @brief Read-only access to all world lights.
+    const std::vector<WorldLight>& GetLights() const { return m_Lights; }
+
+    /// @brief Mutable access to all world lights.
+    std::vector<WorldLight>& GetLightsMutable() { return m_Lights; }
+
+    /// @brief Append a light to the registry.
+    void AddLight(const WorldLight& light) { m_Lights.push_back(light); }
+
+    /// @brief Remove a light by index. Returns true on success.
+    bool RemoveLight(size_t index)
+    {
+        if (index >= m_Lights.size())
+            return false;
+        m_Lights.erase(m_Lights.begin() + static_cast<std::ptrdiff_t>(index));
+        return true;
+    }
+
+    /// @brief Remove all lights.
+    void ClearLights() { m_Lights.clear(); }
 
     /** @} */
 
@@ -1239,6 +1312,11 @@ private:
     /// @name Particle Zones
     /// @{
     std::vector<ParticleZone> m_ParticleZones;  ///< Placeable particle emitter zones
+    /// @}
+
+    /// @name World Lights
+    /// @{
+    std::vector<WorldLight> m_Lights;  ///< Persistent point lights (lamps, windows).
     /// @}
 
     /// @name Animated Tiles
