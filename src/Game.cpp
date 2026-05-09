@@ -544,6 +544,10 @@ void Game::Update(float deltaTime)
     // Set night factor for lantern glows and rays
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
+    // Push the active weather into the particle system so it can drive global
+    // weather spawning (rain/snow/ash/etc.) across the visible viewport.
+    m_Particles.SetWeatherState(&GetWeatherDefinition(m_TimeManager.GetWeather()),
+                                m_TimeManager.GetWeatherIntensity());
     m_Particles.Update(deltaTime, particleCullCam, viewSize);
 
     // Advance the post-process time accumulator (drives grain noise + any
@@ -642,9 +646,21 @@ void Game::Update(float deltaTime)
             m_DialogueCharReveal += 35.0f * deltaTime;
     }
 
-    // Update player elevation based on tilemap
-    float elevation = m_Tilemap.GetElevationAtWorldPos(playerPos.x, playerPos.y);
-    m_Player.SetElevationOffset(elevation);
+    // Update player logical plane (z-axis) using axis-aware engagement.
+    // Movement direction comes from this frame's delta against m_PlayerPreviousPosition,
+    // which ProcessPlayerMovement captures right before m_Player.Move().
+    {
+        glm::vec2 movement = playerPos - m_PlayerPreviousPosition;
+        int dx = movement.x > 0.01f ? 1 : (movement.x < -0.01f ? -1 : 0);
+        int dy = movement.y > 0.01f ? 1 : (movement.y < -0.01f ? -1 : 0);
+
+        int playerTileX = 0;
+        int playerTileY = 0;
+        m_Tilemap.WorldToTileCoord(playerPos.x, playerPos.y, playerTileX, playerTileY);
+        int destElev = m_Tilemap.GetElevation(playerTileX, playerTileY);
+        ElevationAxis destAxis = m_Tilemap.GetElevationAxisAt(playerTileX, playerTileY);
+        m_Player.UpdatePlane(destElev, destAxis, dx, dy);
+    }
 
     // Update NPCs
     // During dialogue, freeze the NPC being talked to
@@ -657,12 +673,21 @@ void Game::Update(float deltaTime)
         {
             continue;
         }
+        glm::vec2 npcPosBefore = npc.GetPosition();
         npc.Update(deltaTime, &m_Tilemap, &playerPos);
 
-        // Update NPC elevation based on tilemap
-        glm::vec2 npcPos = npc.GetPosition();
-        float npcElevation = m_Tilemap.GetElevationAtWorldPos(npcPos.x, npcPos.y);
-        npc.SetElevationOffset(npcElevation);
+        // Derive NPC plane the same way as the player.
+        glm::vec2 npcPosAfter = npc.GetPosition();
+        glm::vec2 npcMovement = npcPosAfter - npcPosBefore;
+        int ndx = npcMovement.x > 0.01f ? 1 : (npcMovement.x < -0.01f ? -1 : 0);
+        int ndy = npcMovement.y > 0.01f ? 1 : (npcMovement.y < -0.01f ? -1 : 0);
+
+        int npcTileX = 0;
+        int npcTileY = 0;
+        m_Tilemap.WorldToTileCoord(npcPosAfter.x, npcPosAfter.y, npcTileX, npcTileY);
+        int npcDestElev = m_Tilemap.GetElevation(npcTileX, npcTileY);
+        ElevationAxis npcDestAxis = m_Tilemap.GetElevationAxisAt(npcTileX, npcTileY);
+        npc.UpdatePlane(npcDestElev, npcDestAxis, ndx, ndy);
     }
 
     // Update editor (tile picker smooth panning, etc.)
@@ -1173,13 +1198,40 @@ void Game::Render()
                                      m_PostFXTime,
                                      m_TimeManager.GetStarVisibility());
 
-    // Render ambient light overlay
+    // World-anchored light pools (lamps, lit windows). Drawn under the world
+    // projection with perspective ON so they distort with the world plane and
+    // walk past as the player moves. Only contribute when the scene is dim
+    // enough to read them (ramps with night factor).
+    const float nightFactor = m_TimeManager.GetStarVisibility();
+    if (nightFactor > 0.01f && !m_Tilemap.GetLights().empty())
+    {
+        const float hour = m_TimeManager.GetTimeOfDay();
+        for (const auto& light : m_Tilemap.GetLights())
+        {
+            float intensity = ComputeLightIntensity(light.schedule, hour) * nightFactor;
+            if (intensity < 0.01f)
+                continue;
+            glm::vec2 screenPos = light.position - renderCam;
+            float diameter = light.radius * 2.0f;
+            m_Renderer->DrawSpriteAlpha(m_SkyRenderer.GetLightPoolTexture(),
+                                        screenPos - glm::vec2(light.radius),
+                                        glm::vec2(diameter),
+                                        0.0f,
+                                        glm::vec4(light.color, intensity * 0.6f),
+                                        true);  // additive
+        }
+    }
+
+    // Sky pass: rendered under the WORLD projection (no projection swap).
+    // Sky elements compute their own parallax offset against `cameraPos`, so
+    // they drift slowly with player movement instead of being glued to the
+    // screen. Perspective is suspended so the sky doesn't 3D-distort.
     m_Renderer->SuspendPerspective(true);
-    glm::mat4 screenProjection = glm::ortho(0.0f, worldWidth, worldHeight, 0.0f);
-    m_Renderer->SetProjection(screenProjection);
-    m_SkyRenderer.Render(
-        *m_Renderer, m_TimeManager, static_cast<int>(worldWidth), static_cast<int>(worldHeight));
-    m_Renderer->SetProjection(projection);  // Restore world projection
+    m_SkyRenderer.Render(*m_Renderer,
+                         m_TimeManager,
+                         m_Camera.GetState().position,
+                         static_cast<int>(worldWidth),
+                         static_cast<int>(worldHeight));
     m_Renderer->SuspendPerspective(false);
 
     // Composite the offscreen scene through the post-FX chain (bloom +
@@ -1727,6 +1779,23 @@ void Game::OnFramebufferResized(int width, int height)
     if (m_RendererAPI == RendererAPI::OpenGL)
     {
         glViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
+    }
+
+    // Title-mode camera follows the window: re-anchor the visible rect onto
+    // the map center so the grass + particle backdrop stays centered behind
+    // the menu when the user grows or shrinks the window. Gameplay keeps
+    // its existing follow-the-player camera, which already updates each
+    // frame and doesn't need a resize hook.
+    if (m_GameMode == GameMode::Title && m_Tilemap.GetMapWidth() > 0 &&
+        m_Tilemap.GetMapHeight() > 0)
+    {
+        const float mapCenterX =
+            static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth()) * 0.5f;
+        const float mapCenterY =
+            static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight()) * 0.5f;
+        const float worldW = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
+        const float worldH = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
+        m_Camera.Initialize(glm::vec2(mapCenterX, mapCenterY), worldW, worldH);
     }
 
     // Schedule a snap after resize settles

@@ -129,7 +129,7 @@ struct DialogueSnapState
  * @par Viewport Configuration
  * The game uses a tile-based virtual resolution:
  * - Visible tile counts are derived from current window size.
- * - Default startup target is 17x12 tiles (at 16px per tile = 272x192 virtual pixels).
+ * - Default startup target is 19x10 tiles (at 16px per tile = 304x160 virtual pixels).
  * - Scaled to fit window while maintaining aspect ratio
  *
  * @htmlonly
@@ -552,8 +552,8 @@ private:
     /// @name Window Management
     /// @{
     GLFWwindow* m_Window = nullptr;  ///< GLFW window handle
-    int m_ScreenWidth = 1360;        ///< Window width in pixels
-    int m_ScreenHeight = 960;        ///< Window height in pixels
+    int m_ScreenWidth = 1520;        ///< Window width in pixels (19 tiles * 80 px)
+    int m_ScreenHeight = 800;        ///< Window height in pixels (10 tiles * 80 px)
     bool m_GlfwInitialized = false;  ///< Whether glfwInit() succeeded (for safe Shutdown)
     /// @}
 
@@ -565,8 +565,8 @@ private:
      * window size snapped to tile boundaries (16 pixel increments) for clean rendering.
      * @{
      */
-    int m_TilesVisibleWidth = 17;   ///< Tiles visible horizontally (based on window width)
-    int m_TilesVisibleHeight = 12;  ///< Tiles visible vertically (based on window height)
+    int m_TilesVisibleWidth = 19;   ///< Tiles visible horizontally (based on window width)
+    int m_TilesVisibleHeight = 10;  ///< Tiles visible vertically (based on window height)
     static constexpr int TILE_PIXEL_SIZE = 16;  ///< Size of a tile in pixels
     static constexpr int PIXEL_SCALE = 5;       ///< Scale factor for rendering (5x)
     float m_ResizeSnapTimer = 0.0f;             ///< Timer for deferred window snap after resize
@@ -702,11 +702,8 @@ private:
     /// `appearance.copy` / `appearance.restore`).
     KeyToggle<GLFW_KEY_X> m_KeyX;
     KeyToggle<GLFW_KEY_F> m_KeyF;
-    /// Toggles the developer console. GRAVE_ACCENT is the physical key
-    /// under Esc on US ANSI; on non-US layouts (e.g. German QWERTZ) that
-    /// physical key produces a different glyph, so F12 is offered as a
-    /// layout-independent fallback.
-    KeyToggle<GLFW_KEY_GRAVE_ACCENT, GLFW_KEY_F12> m_KeyConsole;
+    /// Toggles the developer console. F12 is layout-independent.
+    KeyToggle<GLFW_KEY_F12> m_KeyConsole;
 
     // Dialogue-mode input toggles
     KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> m_KeyDialogueUp;
@@ -736,8 +733,15 @@ private:
     MenuLogic::ItemList m_PauseMenu;           ///< Pause menu (2 items).
     bool m_ConfirmOverwriteShown = false;      ///< New-Game-with-save modal visible.
     MenuLogic::ConfirmPrompt m_ConfirmPrompt;  ///< State of the modal.
-    int m_DefaultMapWidth = 64;                ///< Cached from manifest for ResetWorldToDefaults.
-    int m_DefaultMapHeight = 48;               ///< Cached from manifest for ResetWorldToDefaults.
+    /// Mouse cursor + click state for menu hit-testing. Hover only updates
+    /// the selected item when the cursor actually moved this frame, so
+    /// keyboard nav isn't fought by a stationary cursor. Left-click edge
+    /// (down this frame, up last frame) triggers confirm on the hovered item.
+    double m_MenuLastMouseX = -1.0;
+    double m_MenuLastMouseY = -1.0;
+    bool m_MenuMouseLeftPrev = false;
+    int m_DefaultMapWidth = 64;   ///< Cached from manifest for ResetWorldToDefaults.
+    int m_DefaultMapHeight = 48;  ///< Cached from manifest for ResetWorldToDefaults.
     /// Player character types declared in the project manifest, in
     /// declaration order. Cached during Initialize() so LoadGameWorld can
     /// pick a default character without re-reading the manifest.
@@ -752,6 +756,10 @@ private:
     /// path in ProcessInput when the console has focus.
     void PumpConsoleKeys();
 
-    Console m_Console{*this};  ///< In-game developer REPL toggled with `~`.
+    Console m_Console{*this};  ///< In-game developer REPL toggled with F12.
+    /// Edge-detection state for mouse clicks while the console is open. The
+    /// console eats clicks that land on the suggestion dropdown; this tracks
+    /// the previous-frame button state so we only fire on the press edge.
+    bool m_ConsoleMouseLeftPrev = false;
     /// @}
 };
