@@ -5,6 +5,7 @@
 #include "Game.h"
 
 #include "AmbienceConfig.h"
+#include "DrawTracer.h"
 #include "Logger.h"
 #include "ParticleSystem.h"
 #include "PostFXParams.h"
@@ -134,17 +135,8 @@ glm::vec3 MenuItemColor(bool selected, bool enabled)
     return selected ? TITLE_HIGHLIGHT_COLOR : TITLE_DIM_COLOR;
 }
 
-// --- Mouse hit-testing ------------------------------------------------------
-// Each helper mirrors the matching renderer's layout exactly so the click
-// rect lines up with what the user sees. Layout drift between input and
-// render would mean cursor selection lies about which item it's hovering.
-//
-// Critical detail: IRenderer::DrawText treats position.y as the *glyph
-// baseline* (despite the header docstring's "top-left" wording). Glyphs
-// extend upward from the baseline, so the visible row spans
-// [baseline - ascent, baseline + (lineHeight - ascent)]. Hit-testing against
-// [baseline, baseline + lineHeight] would land one row low - the cursor
-// over "Continue" would actually fall inside "New Game"'s rect.
+// Hit-testing matches the renderer layout exactly. Note: IRenderer::DrawText
+// takes y as the glyph baseline (despite "top-left" wording in the header).
 
 /// Item index under the cursor for the title menu, or -1.
 int TitleMenuHitTest(
@@ -772,6 +764,8 @@ void Game::RenderTitleFrame()
     m_Renderer->BeginFrame();
     m_Renderer->BeginScene();
 
+    DrawTracer::Mark("== title frame ==", m_Renderer->GetDrawCallCount());
+
     // Clear with the title world's sky color (deep blue at night).
     glm::vec3 skyColor = m_TimeManager.GetSkyColor();
     m_Renderer->Clear(skyColor.r, skyColor.g, skyColor.b, 1.0f);
@@ -791,15 +785,19 @@ void Game::RenderTitleFrame()
 
     const glm::vec2 renderCam = m_Camera.GetState().position;
     const glm::vec2 renderSize(zoomedWidth, zoomedHeight);
+    DrawTracer::Mark("section: BackgroundLayers", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderBackgroundLayers(*m_Renderer, renderCam, renderSize, renderCam, renderSize);
+    DrawTracer::Mark("section: ForegroundLayers", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderForegroundLayers(*m_Renderer, renderCam, renderSize, renderCam, renderSize);
 
     // Fireflies + ambient particles, drawn on top of the world.
+    DrawTracer::Mark("section: Particles", m_Renderer->GetDrawCallCount());
     m_Particles.Render(*m_Renderer, renderCam, /*noProjection=*/false, /*additive=*/false);
 
     // Atmospheric sky overlay: stars at night, moon, dawn glow, etc. Renders
     // under the world projection with parallax driven by the menu's renderCam,
     // matching the gameplay path.
+    DrawTracer::Mark("section: Sky", m_Renderer->GetDrawCallCount());
     m_Renderer->SuspendPerspective(true);
     m_SkyRenderer.Render(*m_Renderer,
                          m_TimeManager,
@@ -832,7 +830,10 @@ void Game::RenderTitleFrame()
         // (postFXEnabled=false) is the real off-switch; these zeroes are a
         // defensive fallback in case the uniform fails to bind.
     }
+    DrawTracer::Mark("section: PostFX", m_Renderer->GetDrawCallCount());
     m_Renderer->EndSceneApplyPostFX(postFX);
+
+    DrawTracer::Mark("section: UI overlays", m_Renderer->GetDrawCallCount());
 
     // UI overlays draw straight to swapchain after PostFX.
     RenderTitleContent();
@@ -860,9 +861,11 @@ void Game::RenderTitleFrame()
                                             1.0f);
         m_Renderer->SetProjection(uiProjection);
 
-        // Left column: FPS only (no player position / tile to show).
+        // Left column: FPS only (no player position / tile to show). Integer
+        // readout - matches the gameplay overlay.
         char fpsText[32];
-        std::snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", m_Fps.currentFps);
+        std::snprintf(
+            fpsText, sizeof(fpsText), "FPS: %d", static_cast<int>(m_Fps.currentFps + 0.5f));
         m_Renderer->DrawText(fpsText, glm::vec2(kMargin, 32.0f), 1.0f, kFpsColor, 2.0f, 0.85f);
 
         // Right column: renderer / resolution / frame time / zoom / draws.
