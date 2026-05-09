@@ -20,7 +20,7 @@ constexpr float TILE_POSITION_EPS = 0.1f;    ///< Epsilon for tile coordinate ca
 
 void Game::ProcessInput(float deltaTime)
 {
-    // Console toggle is checked unconditionally so `~` can both open and
+    // Console toggle is checked unconditionally so F12 can both open and
     // close it. When the console is open it consumes all subsequent input.
     if (m_KeyConsole.JustPressed(m_Window))
     {
@@ -56,6 +56,12 @@ void Game::ProcessInput(float deltaTime)
             m_GameMode = GameMode::Paused;
             m_PauseMenu.enabled.assign(2, true);
             m_PauseMenu.selected = 0;
+            // Reset menu-mouse state on entry so the first pause frame
+            // ignores a stale cursor parked over a menu item, and a held
+            // click doesn't immediately fire confirm.
+            m_MenuLastMouseX = -1.0;
+            m_MenuLastMouseY = -1.0;
+            m_MenuMouseLeftPrev = true;
             return;
         }
     }
@@ -678,7 +684,16 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
     // Console takes scroll exclusively while open (scrollback navigation).
     if (game->m_Console.IsOpen())
     {
-        game->m_Console.OnScroll(yoffset);
+        // Suggestion dropdown gets first crack at the wheel: if the cursor
+        // is over the dropdown, the wheel scrolls suggestions instead of
+        // scrollback.
+        double mx = 0.0;
+        double my = 0.0;
+        glfwGetCursorPos(window, &mx, &my);
+        if (!game->m_Console.TryScrollDropdown(mx, my, yoffset))
+        {
+            game->m_Console.OnScroll(yoffset);
+        }
         return;
     }
 
@@ -733,11 +748,6 @@ void Game::CharCallback(GLFWwindow* window, unsigned int codepoint)
     {
         return;
     }
-    // Filtering happens by codepoint inside Console::OnChar. Don't gate on
-    // glfwGetKey(GRAVE_ACCENT) here: on dead-key layouts (German ^, French
-    // U+00B2, Polish ^) the next key's CHAR event composes with the dead key
-    // and arrives while the toggle key is still physically held, which
-    // would otherwise eat the user's first real keystroke after toggling.
     game->m_Console.OnChar(codepoint);
 }
 
@@ -765,7 +775,7 @@ void Game::PumpConsoleKeys()
         const bool ctrl = glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                           glfwGetKey(m_Window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
         if (ctrl)
-            m_Console.OnClearLine();
+            m_Console.OnBackspaceWord();
         else
             m_Console.OnBackspace();
     }
@@ -787,6 +797,20 @@ void Game::PumpConsoleKeys()
         m_Console.OnEnd();
     if (kEscape.JustPressed(m_Window))
         m_Console.OnEscape();
+
+    // Mouse hover/click on the suggestion dropdown. Hover keeps highlight
+    // synced with the cursor; click splices the chosen suggestion into the
+    // input (same path as Tab on the highlighted row).
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(m_Window, &mouseX, &mouseY);
+    m_Console.OnMouseHover(mouseX, mouseY);
+    const bool mouseDown = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    if (mouseDown && !m_ConsoleMouseLeftPrev)
+    {
+        m_Console.OnMouseClick(mouseX, mouseY);
+    }
+    m_ConsoleMouseLeftPrev = mouseDown;
 }
 
 void Game::ReleaseDialogueNPC()
