@@ -19,7 +19,13 @@ void TimeManager::Initialize()
     m_TimeScale = 1.0f;
     m_DayDuration = 24.0f;
     m_Weather = WeatherState::Clear;
+    m_WeatherIntensity = 1.0f;
     m_Paused = false;
+}
+
+void TimeManager::SetWeatherIntensity(float value)
+{
+    m_WeatherIntensity = std::clamp(value, 0.0f, 1.0f);
 }
 
 void TimeManager::Update(float deltaTime)
@@ -114,9 +120,6 @@ int TimeManager::GetMoonPhase() const
 
 glm::vec3 TimeManager::GetAmbientColor() const
 {
-    // Weather affects ambient lighting
-    float weatherDim = (m_Weather == WeatherState::Overcast) ? 0.7f : 1.0f;
-
     float t = m_CurrentTime;
 
     // Define ambient colors for different times - subtle, not too bright
@@ -194,7 +197,12 @@ glm::vec3 TimeManager::GetAmbientColor() const
         result = LerpColor(nightColor, lateNightColor, factor);
     }
 
-    return result * weatherDim;
+    // Weather modulates ambient color. Intensity scales the effect:
+    // intensity 0 -> no weather tint; intensity 1 -> full tint.
+    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
+    glm::vec3 weatherTint =
+        glm::mix(glm::vec3(1.0f), def.ambientTintMultiplier, m_WeatherIntensity);
+    return result * weatherTint;
 }
 
 glm::vec3 TimeManager::GetSkyColor() const
@@ -210,11 +218,37 @@ glm::vec3 TimeManager::GetSkyColor() const
     glm::vec3 eveningSky(0.12f, 0.12f, 0.28f);    // Dark blue
     glm::vec3 nightSky(0.04f, 0.04f, 0.12f);      // Near black
 
-    // Weather affects sky
-    if (m_Weather == WeatherState::Overcast)
+    // Weather override (skyColorOverride.x < 0 means "no override").
+    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
+    if (def.skyColorOverride.x >= 0.0f)
     {
-        glm::vec3 overcastSky(0.5f, 0.5f, 0.55f);
-        return overcastSky * (IsDay() ? 1.0f : 0.3f);
+        glm::vec3 overrideSky = def.skyColorOverride * (IsDay() ? 1.0f : 0.3f);
+        // Blend toward override by intensity so a low-intensity Overcast
+        // doesn't fully wash out the natural sky.
+        // Compute the natural sky first, then mix.
+        glm::vec3 natural;
+        if (t >= NIGHT_END && t < DAWN_START)
+            natural = LerpColor(nightSky, dawnSky, GetTransitionFactor(t, NIGHT_END, DAWN_START));
+        else if (t >= DAWN_START && t < DAWN_END)
+            natural = LerpColor(dawnSky, morningSky, GetTransitionFactor(t, DAWN_START, DAWN_END));
+        else if (t >= DAWN_END && t < MORNING_END)
+            natural =
+                LerpColor(morningSky, middaySky, GetTransitionFactor(t, DAWN_END, MORNING_END));
+        else if (t >= MORNING_END && t < MIDDAY_END)
+            natural = middaySky;
+        else if (t >= MIDDAY_END && t < AFTERNOON_END)
+            natural = LerpColor(
+                middaySky, afternoonSky, GetTransitionFactor(t, MIDDAY_END, AFTERNOON_END));
+        else if (t >= AFTERNOON_END && t < DUSK_END)
+            natural =
+                LerpColor(afternoonSky, duskSky, GetTransitionFactor(t, AFTERNOON_END, DUSK_END));
+        else if (t >= DUSK_END && t < EVENING_END)
+            natural = LerpColor(duskSky, eveningSky, GetTransitionFactor(t, DUSK_END, EVENING_END));
+        else if (t >= EVENING_END)
+            natural = LerpColor(eveningSky, nightSky, GetTransitionFactor(t, EVENING_END, 24.0f));
+        else
+            natural = nightSky;
+        return glm::mix(natural, overrideSky, m_WeatherIntensity);
     }
 
     // Smooth transitions
@@ -297,33 +331,30 @@ glm::vec3 TimeManager::GetSunColor() const
 
 float TimeManager::GetStarVisibility() const
 {
-    // Stars not visible in overcast weather
-    if (m_Weather == WeatherState::Overcast)
-        return 0.0f;
-
+    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
     float t = m_CurrentTime;
 
     // Stars fade in during dusk (18:00 - 20:00)
     // Stars fully visible at night (20:00 - 5:00)
     // Stars fade out during dawn (5:00 - 7:00)
 
+    float natural;
     if (t >= AFTERNOON_END && t < DUSK_END)
-    {
-        // Fading in during dusk
-        return GetTransitionFactor(t, AFTERNOON_END, DUSK_END);
-    }
+        natural = GetTransitionFactor(t, AFTERNOON_END, DUSK_END);
     else if (t >= DUSK_END || t < DAWN_START)
-    {
-        // Fully visible at night
-        return 1.0f;
-    }
+        natural = 1.0f;
     else if (t >= DAWN_START && t < DAWN_END)
-    {
-        // Fading out during dawn
-        return 1.0f - GetTransitionFactor(t, DAWN_START, DAWN_END);
-    }
+        natural = 1.0f - GetTransitionFactor(t, DAWN_START, DAWN_END);
+    else
+        natural = 0.0f;
 
-    return 0.0f;  // Daytime - no stars
+    // Weather override: blend natural visibility toward override by intensity.
+    if (def.starVisibilityOverride >= 0.0f)
+    {
+        return std::clamp(
+            std::lerp(natural, def.starVisibilityOverride, m_WeatherIntensity), 0.0f, 1.0f);
+    }
+    return natural;
 }
 
 void TimeManager::SetTime(float hours)

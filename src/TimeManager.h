@@ -1,5 +1,7 @@
 #pragma once
 
+#include "WeatherDefinitions.h"
+
 #include <glm/glm.hpp>
 
 /**
@@ -31,21 +33,6 @@ enum class TimePeriod
     Evening,    ///< 20:00-22:00 - Early night
     Night,      ///< 22:00-04:00 - Deep night
     LateNight   ///< 04:00-05:00 - Pre-dawn darkness
-};
-
-/**
- * @enum WeatherState
- * @brief Weather conditions affecting lighting and sky rendering.
- * @author Alex (https://github.com/lextpf)
- * @ingroup Effects
- *
- * Weather modifies how time-of-day lighting is applied and controls
- * visibility of celestial objects.
- */
-enum class WeatherState
-{
-    Clear,    ///< Full sun/moon visibility, stars visible at night
-    Overcast  ///< Dimmed lighting, no celestial bodies, no stars
 };
 
 /**
@@ -353,10 +340,29 @@ public:
      * - Celestial visibility (sun/moon/stars)
      * - Ambient lighting intensity
      * - Sky colors
+     * - Weather particle spawning (rain, snow, ash, etc.)
      *
      * @param weather New weather state.
      */
     void SetWeather(WeatherState weather) { m_Weather = weather; }
+
+    /**
+     * @brief Get the current weather intensity scalar.
+     * @return Multiplier in [0, 1] applied to weather particle spawn rate
+     *         and effect strength.
+     */
+    float GetWeatherIntensity() const { return m_WeatherIntensity; }
+
+    /**
+     * @brief Set the weather intensity scalar.
+     *
+     * Drives particle density and effect strength independent of which
+     * WeatherState is active. Boolean flags (lightning on/off, aurora,
+     * celestial-body visibility) are not affected by intensity.
+     *
+     * @param value Intensity in [0, 1] (clamped).
+     */
+    void SetWeatherIntensity(float value);
 
     /// @}
 
@@ -464,12 +470,13 @@ private:
 
     /// @name State
     /// @{
-    float m_CurrentTime;     ///< Current time in hours (0.0-24.0)
-    int m_DayCount;          ///< Days elapsed (for moon phases)
-    float m_TimeScale;       ///< Time progression multiplier (1.0 = normal)
-    float m_DayDuration;     ///< Real seconds per game day
-    WeatherState m_Weather;  ///< Current weather condition
-    bool m_Paused{false};    ///< Whether time progression is paused
+    float m_CurrentTime;             ///< Current time in hours (0.0-24.0)
+    int m_DayCount;                  ///< Days elapsed (for moon phases)
+    float m_TimeScale;               ///< Time progression multiplier (1.0 = normal)
+    float m_DayDuration;             ///< Real seconds per game day
+    WeatherState m_Weather;          ///< Current weather condition
+    float m_WeatherIntensity{1.0f};  ///< Particle/effect density 0-1.
+    bool m_Paused{false};            ///< Whether time progression is paused
     /// @}
 
     /// @name Time Period Boundaries
