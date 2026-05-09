@@ -247,14 +247,30 @@ public:
      * @brief Render all sky effects for the current frame.
      *
      * Renders effects in correct order based on current time of day.
-     * Effects automatically fade in/out based on TimeManager state.
+     * Sky elements are positioned via layered distant parallax: each
+     * category subtracts `cameraPos * SKY_PARALLAX_*` from its sky-frame
+     * neutral position, so player movement drifts the sky slowly without
+     * making it appear walkable-past.
      *
      * @param renderer     Renderer interface for draw calls.
      * @param time         TimeManager for time-based visibility.
+     * @param cameraPos    World-space camera position (top-left of viewport).
      * @param screenWidth  Current screen width in pixels.
      * @param screenHeight Current screen height in pixels.
      */
-    void Render(IRenderer& renderer, const TimeManager& time, int screenWidth, int screenHeight);
+    void Render(IRenderer& renderer,
+                const TimeManager& time,
+                glm::vec2 cameraPos,
+                int screenWidth,
+                int screenHeight);
+
+    /**
+     * @brief Get the procedural soft-circle texture used for world light pools.
+     *
+     * Generated in Initialize() and re-uploaded by UploadTextures(). Used by
+     * Game::Render to draw additive light pools at WorldLight positions.
+     */
+    const Texture& GetLightPoolTexture() const { return m_LightPoolTexture; }
 
     /**
      * @brief Render slowly-drifting cloud shadows on the world (multiplicative-style darkening).
@@ -430,6 +446,7 @@ private:
      */
     void RenderStars(IRenderer& renderer,
                      const TimeManager& time,
+                     glm::vec2 cameraPos,
                      int screenWidth,
                      int screenHeight);
 
@@ -438,13 +455,27 @@ private:
      *
      * @param renderer     Renderer interface.
      * @param time         TimeManager for visibility.
+     * @param cameraPos    World-space camera position for parallax offset.
      * @param screenWidth  Screen width.
      * @param screenHeight Screen height.
      */
     void RenderShootingStars(IRenderer& renderer,
                              const TimeManager& time,
+                             glm::vec2 cameraPos,
                              int screenWidth,
                              int screenHeight);
+
+    /**
+     * @brief Render shimmering aurora bands in the upper sky.
+     *
+     * Active when the current weather is AuroraNight. Bands are drawn with
+     * the world projection (no swap), parallax factor SKY_PARALLAX_AURORA.
+     */
+    void RenderAurora(IRenderer& renderer,
+                      const TimeManager& time,
+                      glm::vec2 cameraPos,
+                      int screenWidth,
+                      int screenHeight);
 
     /**
      * @brief Render subtle nighttime atmospheric glow.
@@ -475,6 +506,7 @@ private:
      */
     void RenderSunRays(IRenderer& renderer,
                        const TimeManager& time,
+                       glm::vec2 cameraPos,
                        int screenWidth,
                        int screenHeight);
 
@@ -490,6 +522,7 @@ private:
      */
     void RenderMoonRays(IRenderer& renderer,
                         const TimeManager& time,
+                        glm::vec2 cameraPos,
                         int screenWidth,
                         int screenHeight);
 
@@ -561,18 +594,25 @@ private:
      * @param screenHeight Screen height for position calculation.
      * @return Screen-space position of light source.
      */
-    glm::vec2 GetLightSourcePosition(float arc, int screenWidth, int screenHeight) const;
+    glm::vec2 GetLightSourcePosition(float arc,
+                                     int screenWidth,
+                                     int screenHeight,
+                                     glm::vec2 cameraPos,
+                                     float parallaxFactor) const;
 
     /// @}
 
     /// @name Procedural Textures
     /// @brief GPU textures generated at initialization.
     /// @{
-    Texture m_RayTexture;           ///< Vertical gradient for light rays
-    Texture m_StarTexture;          ///< Small soft circle for stars
-    Texture m_StarGlowTexture;      ///< Larger glow behind bright stars
-    Texture m_ShootingStarTexture;  ///< Elongated streak for meteors
-    Texture m_GlowTexture;          ///< Large soft glow for atmosphere
+    Texture m_RayTexture;            ///< Vertical gradient for light rays
+    Texture m_StarTexture;           ///< Small soft circle for stars
+    Texture m_StarGlowTexture;       ///< Larger glow behind bright stars
+    Texture m_ShootingStarTexture;   ///< Elongated streak for meteors
+    Texture m_GlowTexture;           ///< Large soft glow for atmosphere
+    Texture m_LightPoolTexture;      ///< Soft circle for WorldLight pools
+    Texture m_AuroraCurtainTexture;  ///< Vertical streaked curtain for aurora bands
+    Texture m_AuroraSmallTexture;    ///< Hand-painted small aurora particle for wisps
     /// @}
 
     /// @name Sky Object Arrays
@@ -595,6 +635,15 @@ private:
     float m_LastScreenHeight;   ///< Cached screen height for resize detection
     /// @}
 
+    /// @name Weather-driven sky state
+    /// @brief Cached weather data refreshed each Update.
+    /// @{
+    float m_LightningTimer{0.0f};        ///< Countdown to next lightning flash (s).
+    float m_LightningFlashTimer{0.0f};   ///< Remaining flash visibility (s).
+    bool m_AuroraVisible{false};         ///< True when current weather wants aurora.
+    float m_MeteorRateMultiplier{1.0f};  ///< Shooting-star spawn rate multiplier.
+    /// @}
+
     /// @name Texture Size Constants
     /// @brief Dimensions for procedurally generated textures.
     /// @{
@@ -608,8 +657,11 @@ private:
     /// @name Rendering Constants
     /// @brief Configuration for effect counts and sizes.
     /// @{
-    static constexpr int STAR_COUNT = 600;             ///< Number of foreground stars
-    static constexpr int BACKGROUND_STAR_COUNT = 400;  ///< Number of background stars
+    // Star arrays cover a star-field 3 viewports wide x 2 tall (the wrap
+    // window in RenderStars). Counts are scaled up so per-viewport density
+    // stays roughly the same as the original 600/400 single-viewport layout.
+    static constexpr int STAR_COUNT = 1800;             ///< Number of foreground stars
+    static constexpr int BACKGROUND_STAR_COUNT = 1200;  ///< Number of background stars
     static constexpr int SUN_RAY_COUNT = 3;   ///< Number of sun rays (spread across ~2/3 of screen)
     static constexpr int MOON_RAY_COUNT = 3;  ///< Number of moon rays (very subtle)
     static constexpr int DEW_SPARKLE_COUNT = 4;       ///< Number of dew sparkles
@@ -619,7 +671,36 @@ private:
         120.0f;  ///< Total fan spread angle in degrees (~2/3 screen)
     static constexpr float SUN_BAND_WIDTH =
         0.35f;  ///< Width of sun origin band (fraction of screen width)
+
+    /// @name World Parallax (full world anchoring)
+    /// @brief Per-element fraction of camera movement applied to sky positions.
+    ///
+    /// 0.0 = locked to screen, 1.0 = locked to world. Sky elements are now
+    /// anchored to world coordinates so they cover the entire map and walk
+    /// past as the player moves, instead of feeling like a screen overlay.
+    /// Stars and shooting stars use a wrap-around field (see RenderStars)
+    /// so they always remain visible in the upper sky regardless of where
+    /// the camera is.
+    /// @{
+    static constexpr float SKY_PARALLAX_STARS_BG = 1.0f;  ///< Background stars (world)
+    static constexpr float SKY_PARALLAX_STARS_FG = 1.0f;  ///< Foreground stars (world)
+    static constexpr float SKY_PARALLAX_SUN = 1.0f;       ///< Sun + sun rays (world)
+    static constexpr float SKY_PARALLAX_MOON = 1.0f;      ///< Moon + moon rays (world)
+    static constexpr float SKY_PARALLAX_AURORA = 1.0f;    ///< Aurora bands (world)
+
+    /// Width of the star-field tile (in viewports). Stars wrap around the
+    /// camera modulo this period so the whole map gets stars without
+    /// requiring a per-tile generation pass.
+    static constexpr float STAR_FIELD_X_PERIODS = 3.0f;
+    static constexpr float STAR_FIELD_Y_PERIODS = 2.0f;
     /// @}
+    /// @}
+
+    /// @brief Generate the procedural soft-circle texture for WorldLights.
+    void GenerateLightPoolTexture();
+
+    /// @brief Generate the procedural aurora curtain texture (vertical streaks).
+    void GenerateAuroraCurtainTexture();
 
     bool m_Initialized;  ///< True after Initialize() completes successfully
     std::mt19937 m_Rng;  ///< Shared RNG for all procedural generation
