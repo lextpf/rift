@@ -454,15 +454,6 @@ void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
     else if (m_Channels == 4)
         format = GL_RGBA;
 
-    // Upload pixel data to GPU. Parameters:
-    // - target: GL_TEXTURE_2D (standard 2D texture)
-    // - level: 0 (base mipmap level, we're not using mipmaps)
-    // - internal format: how GPU stores it (same as format for simplicity)
-    // - width, height: texture dimensions
-    // - border: 0 (must be 0 in modern GL)
-    // - format: pixel data format
-    // - type: GL_UNSIGNED_BYTE (8 bits per channel)
-    // - data: pointer to pixel data
     glTexImage2D(GL_TEXTURE_2D, 0, format, m_Width, m_Height, 0, format, GL_UNSIGNED_BYTE, data);
 
     // Texture wrapping - clamp to edge prevents sampling artifacts at borders
@@ -641,13 +632,6 @@ void Texture::CreateVulkanTexture(VkDevice device,
                                   VkCommandPool commandPool,
                                   VkQueue queue) const
 {
-    // Vulkan texture creation is more complex than OpenGL because we must:
-    // 1. Create the image object (describes the texture properties)
-    // 2. Allocate GPU memory for the image
-    // 3. Create an image view (how shaders see the image)
-    // 4. Create a sampler (how to filter/wrap the texture)
-    // 5. Upload pixel data via a staging buffer
-
     if (m_ImageData.empty())
     {
         Logger::Error(LOG_SUBSYSTEM, "Cannot create Vulkan texture: no image data");
