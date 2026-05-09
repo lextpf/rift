@@ -270,19 +270,9 @@ bool CollisionResolver::ShouldAllowCornerCut(const TileOverlapContext& ctx,
     auto tileBlocked = [&](int x, int y)
     { return !inBounds(x, y) || tilemap->GetTileCollision(x, y); };
 
-    // ========== Corner Cutting Algorithm ==========
-    // Allows smooth movement around convex corners of collision tiles.
-    //
-    // A "true corner" exists when a blocking tile has two adjacent empty
-    // tiles (e.g., empty above AND empty left = top-left corner exposed).
-    //
-    // When the player clips a true corner with small overlap (<20% hitbox),
-    // we check if there's an "escape route" - open space perpendicular to
-    // movement direction. If so, allow the overlap to enable smooth sliding.
-    //
-    // This prevents the "stuck on corners" problem common in tile-based games
-    // while still preventing players from clipping through solid walls.
-    // ================================================
+    // Corner cutting: when the player clips a true corner with <20% overlap, allow
+    // the overlap if open space exists perpendicular to motion. Stops "stuck on
+    // corner" without letting the player phase through walls.
 
     // Check adjacent tiles to identify exposed corners
     bool emptyAbove = !tileBlocked(ctx.tx, ctx.ty - 1);
