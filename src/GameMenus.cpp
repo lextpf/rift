@@ -75,6 +75,14 @@ constexpr float TITLE_WORLD_TIME_OF_DAY = 23.0f;  // 23:00 = deep night.
 // non-empty entry is grass; adjust here if your tileset orders things
 // differently.
 constexpr int TITLE_WORLD_GRASS_TILE_ID = 1;
+// Per-zone particle cap during the title screen. Bumped above the gameplay
+// default (50, set in Game::Initialize) because the title world has only
+// one zone per type and they all span the whole map, so a denser pool reads
+// as a populated backdrop instead of a sparse trickle.
+constexpr size_t TITLE_PARTICLES_PER_ZONE = 160;
+// Per-zone cap used during gameplay; restored when LoadGameWorld runs so
+// the title bump doesn't leak into the player's actual world.
+constexpr size_t GAMEPLAY_PARTICLES_PER_ZONE = 50;
 
 // --- Title menu items -------------------------------------------------------
 enum TitleItem : int
@@ -124,6 +132,111 @@ glm::vec3 MenuItemColor(bool selected, bool enabled)
         return TITLE_DISABLED_COLOR;
     }
     return selected ? TITLE_HIGHLIGHT_COLOR : TITLE_DIM_COLOR;
+}
+
+// --- Mouse hit-testing ------------------------------------------------------
+// Each helper mirrors the matching renderer's layout exactly so the click
+// rect lines up with what the user sees. Layout drift between input and
+// render would mean cursor selection lies about which item it's hovering.
+//
+// Critical detail: IRenderer::DrawText treats position.y as the *glyph
+// baseline* (despite the header docstring's "top-left" wording). Glyphs
+// extend upward from the baseline, so the visible row spans
+// [baseline - ascent, baseline + (lineHeight - ascent)]. Hit-testing against
+// [baseline, baseline + lineHeight] would land one row low - the cursor
+// over "Continue" would actually fall inside "New Game"'s rect.
+
+/// Item index under the cursor for the title menu, or -1.
+int TitleMenuHitTest(
+    IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
+{
+    const float screenW = static_cast<float>(screenWidth);
+    const float screenH = static_cast<float>(screenHeight);
+    const float menuTopY = std::floor(screenH * 0.50f);
+    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE);
+    constexpr float HIT_PAD_X = 24.0f;
+
+    for (int i = 0; i < TITLE_ITEM_COUNT; ++i)
+    {
+        // Hit against the unselected width: the "> " vs "  " prefix shift is
+        // small relative to HIT_PAD_X, so this stays comfortable as the user
+        // moves the cursor across items.
+        const std::string display = std::string("  ") + TITLE_LABELS[i];
+        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE);
+        const float x = std::floor((screenW - w) * 0.5f);
+        const float baselineY = menuTopY + i * MENU_LINE_HEIGHT;
+        const float topY = baselineY - ascent;
+        if (mouseX >= x - HIT_PAD_X && mouseX <= x + w + HIT_PAD_X && mouseY >= topY &&
+            mouseY <= topY + MENU_LINE_HEIGHT)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// Item index under the cursor for the pause menu, or -1.
+int PauseMenuHitTest(
+    IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
+{
+    const float screenW = static_cast<float>(screenWidth);
+    const float screenH = static_cast<float>(screenHeight);
+    const float menuTopY = std::floor(screenH * 0.52f);
+    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE);
+    constexpr float HIT_PAD_X = 24.0f;
+
+    for (int i = 0; i < PAUSE_ITEM_COUNT; ++i)
+    {
+        const std::string display = std::string("  ") + PAUSE_LABELS[i];
+        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE);
+        const float x = std::floor((screenW - w) * 0.5f);
+        const float baselineY = menuTopY + i * MENU_LINE_HEIGHT;
+        const float topY = baselineY - ascent;
+        if (mouseX >= x - HIT_PAD_X && mouseX <= x + w + HIT_PAD_X && mouseY >= topY &&
+            mouseY <= topY + MENU_LINE_HEIGHT)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// Confirm-overwrite modal hit test. 0 = Cancel, 1 = New Game, -1 = neither.
+int ConfirmPromptHitTest(
+    IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
+{
+    const float screenW = static_cast<float>(screenWidth);
+    const float screenH = static_cast<float>(screenHeight);
+    const float boxW = std::floor(screenW * 0.55f);
+    const float boxH = std::floor(screenH * 0.30f);
+    const float boxX = std::floor((screenW - boxW) * 0.5f);
+    const float boxY = std::floor((screenH - boxH) * 0.5f);
+
+    constexpr float buttonScale = 1.1f;
+    const std::string cancelDisplay = std::string("  ") + "Cancel";
+    const std::string confirmDisplay = std::string("  ") + "New Game";
+    const float cancelW = renderer.GetTextWidth(cancelDisplay, buttonScale);
+    const float confirmW = renderer.GetTextWidth(confirmDisplay, buttonScale);
+    const float ascent = renderer.GetTextAscent(buttonScale);
+    const float buttonBaselineY = boxY + boxH * 0.72f;
+    const float cancelX = std::floor(boxX + boxW * 0.30f - cancelW * 0.5f);
+    const float confirmX = std::floor(boxX + boxW * 0.70f - confirmW * 0.5f);
+
+    constexpr float HIT_PAD_X = 16.0f;
+    constexpr float HIT_PAD_Y = 8.0f;
+    const float topY = buttonBaselineY - ascent - HIT_PAD_Y;
+    const float rowH = ascent + 2.0f * HIT_PAD_Y;
+    if (mouseX >= cancelX - HIT_PAD_X && mouseX <= cancelX + cancelW + HIT_PAD_X &&
+        mouseY >= topY && mouseY <= topY + rowH)
+    {
+        return 0;
+    }
+    if (mouseX >= confirmX - HIT_PAD_X && mouseX <= confirmX + confirmW + HIT_PAD_X &&
+        mouseY >= topY && mouseY <= topY + rowH)
+    {
+        return 1;
+    }
+    return -1;
 }
 
 }  // namespace
@@ -206,6 +319,10 @@ void Game::LoadGameWorld(bool loadSave)
     // Particle zones are tied to the live tilemap; refresh after a (re)load.
     m_Particles.SetZones(m_Tilemap.GetParticleZones());
     m_Particles.SetTilemap(&m_Tilemap);
+
+    // Restore the gameplay per-zone cap in case we're returning from the
+    // title screen, which bumps it for a denser backdrop.
+    m_Particles.SetMaxParticlesPerZone(GAMEPLAY_PARTICLES_PER_ZONE);
 }
 
 void Game::LoadTitleScreenWorld()
@@ -261,6 +378,9 @@ void Game::LoadTitleScreenWorld()
             ParticleType::DriftingLeaf,
             ParticleType::DustMote,
             ParticleType::Pollen,
+            // Showcase the hand-painted blossom asset on the title screen so
+            // pink petals drift across the menu alongside the night ambience.
+            ParticleType::CherryBlossom,
         };
 
         for (ParticleType type : TITLE_PARTICLE_TYPES)
@@ -295,11 +415,41 @@ void Game::LoadTitleScreenWorld()
     // this value holds until the user picks Continue / New Game.
     m_TimeManager.Initialize();
     m_TimeManager.SetTime(TITLE_WORLD_TIME_OF_DAY);
+    // Title screen showcases AuroraNight: the SkyRenderer reads the weather
+    // each frame, so this turns on the aurora curtains + floating wisps.
+    // Cherry blossom particles still drift across the menu via the title
+    // particle zone for ParticleType::CherryBlossom.
+    m_TimeManager.SetWeather(WeatherState::AuroraNight);
 
     // Refresh the particle system's zone pointer (zones vector reference is
     // stored across the system) and tilemap pointer.
     m_Particles.SetZones(m_Tilemap.GetParticleZones());
     m_Particles.SetTilemap(&m_Tilemap);
+
+    // Title-screen zones span the whole map and only have one zone per type,
+    // so bump the per-zone cap above the gameplay default for a denser
+    // backdrop. Reset back to the gameplay value when a real game world
+    // loads.
+    m_Particles.SetMaxParticlesPerZone(TITLE_PARTICLES_PER_ZONE);
+
+    // Pre-warm the particle pool so the menu doesn't open onto an empty
+    // screen. Step the simulation forward a few seconds in fixed sub-frame
+    // steps; that reaches steady state for the fast types (rain, sparkles)
+    // and a near-cap count for the slower ones (firefly, fog). Time of day
+    // and night factor must be set before stepping or zone particles whose
+    // spawn rules read those (e.g. lantern day-skip) make the wrong choice.
+    m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
+    m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
+    m_Particles.Clear();
+    const glm::vec2 prewarmCam = m_Camera.GetState().position;
+    const glm::vec2 prewarmView(camWorldWidth, camWorldHeight);
+    constexpr float PREWARM_DURATION_S = 5.0f;
+    constexpr float PREWARM_STEP_S = 1.0f / 60.0f;
+    constexpr int PREWARM_STEPS = static_cast<int>(PREWARM_DURATION_S / PREWARM_STEP_S);
+    for (int s = 0; s < PREWARM_STEPS; ++s)
+    {
+        m_Particles.Update(PREWARM_STEP_S, prewarmCam, prewarmView);
+    }
 }
 
 void Game::ResetWorldToDefaults()
@@ -340,6 +490,14 @@ void Game::RebuildTitleMenu()
 
     m_ConfirmOverwriteShown = false;
     m_ConfirmPrompt.selected = MenuLogic::ConfirmChoice::Cancel;
+
+    // Reset mouse-tracking sentinel so the first frame in title mode skips
+    // the move-detection (a stale cursor over a menu item shouldn't yank
+    // selection away from the default). Suppress any in-flight click so
+    // entering with the mouse held doesn't fire a phantom confirm.
+    m_MenuLastMouseX = -1.0;
+    m_MenuLastMouseY = -1.0;
+    m_MenuMouseLeftPrev = true;
 }
 
 // =============================================================================
@@ -364,9 +522,44 @@ void Game::ProcessTitleInput()
     bool confirm = m_KeyMenuConfirm.JustPressed(m_Window);
     bool esc = m_KeyEscape.JustPressed(m_Window);
 
+    // Mouse: cursor hover updates selection (only when the cursor actually
+    // moved, so a parked cursor doesn't override keyboard nav each frame),
+    // and a left-click edge confirms the hovered item. The negative sentinel
+    // on m_MenuLastMouseX skips move-detection on the first frame after
+    // entering the menu, so a stale cursor over an item doesn't yank the
+    // default selection from underneath the keyboard user.
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(m_Window, &mouseX, &mouseY);
+    const bool firstMouseFrame = (m_MenuLastMouseX < 0.0);
+    const bool mouseMoved =
+        !firstMouseFrame && ((mouseX != m_MenuLastMouseX) || (mouseY != m_MenuLastMouseY));
+    m_MenuLastMouseX = mouseX;
+    m_MenuLastMouseY = mouseY;
+    const bool mouseDown = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    const bool mouseClicked = mouseDown && !m_MenuMouseLeftPrev;
+    m_MenuMouseLeftPrev = mouseDown;
+
     // Confirm-overwrite modal owns input while shown.
     if (m_ConfirmOverwriteShown)
     {
+        const int modalHit =
+            ConfirmPromptHitTest(*m_Renderer, m_ScreenWidth, m_ScreenHeight, mouseX, mouseY);
+        if (modalHit >= 0)
+        {
+            const auto target = (modalHit == 0) ? MenuLogic::ConfirmChoice::Cancel
+                                                : MenuLogic::ConfirmChoice::Confirm;
+            if (mouseMoved)
+            {
+                m_ConfirmPrompt.selected = target;
+            }
+            if (mouseClicked)
+            {
+                m_ConfirmPrompt.selected = target;
+                confirm = true;
+            }
+        }
+
         if (esc)
         {
             m_ConfirmOverwriteShown = false;
@@ -394,7 +587,24 @@ void Game::ProcessTitleInput()
         return;
     }
 
-    // Top-level title menu navigation.
+    // Top-level title menu navigation. Mouse hover/click goes first so the
+    // cursor can override keyboard selection on the same frame, and so the
+    // confirm path below sees the click as a confirm.
+    const int titleHit =
+        TitleMenuHitTest(*m_Renderer, m_ScreenWidth, m_ScreenHeight, mouseX, mouseY);
+    if (titleHit >= 0 && m_TitleMenu.enabled[titleHit])
+    {
+        if (mouseMoved)
+        {
+            m_TitleMenu.selected = titleHit;
+        }
+        if (mouseClicked)
+        {
+            m_TitleMenu.selected = titleHit;
+            confirm = true;
+        }
+    }
+
     if (up)
     {
         MenuLogic::NavigateUp(m_TitleMenu);
@@ -477,10 +687,39 @@ void Game::ProcessPauseInput()
     bool confirm = m_KeyMenuConfirm.JustPressed(m_Window);
     bool esc = m_KeyEscape.JustPressed(m_Window);
 
+    // Mouse hover/click on pause menu items - same pattern as title menu.
+    // See ProcessTitleInput for the sentinel-based first-frame skip.
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(m_Window, &mouseX, &mouseY);
+    const bool firstMouseFrame = (m_MenuLastMouseX < 0.0);
+    const bool mouseMoved =
+        !firstMouseFrame && ((mouseX != m_MenuLastMouseX) || (mouseY != m_MenuLastMouseY));
+    m_MenuLastMouseX = mouseX;
+    m_MenuLastMouseY = mouseY;
+    const bool mouseDown = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    const bool mouseClicked = mouseDown && !m_MenuMouseLeftPrev;
+    m_MenuMouseLeftPrev = mouseDown;
+
     if (esc)
     {
         m_GameMode = GameMode::Playing;
         return;
+    }
+
+    const int pauseHit =
+        PauseMenuHitTest(*m_Renderer, m_ScreenWidth, m_ScreenHeight, mouseX, mouseY);
+    if (pauseHit >= 0)
+    {
+        if (mouseMoved)
+        {
+            m_PauseMenu.selected = pauseHit;
+        }
+        if (mouseClicked)
+        {
+            m_PauseMenu.selected = pauseHit;
+            confirm = true;
+        }
     }
 
     if (up)
@@ -558,14 +797,15 @@ void Game::RenderTitleFrame()
     // Fireflies + ambient particles, drawn on top of the world.
     m_Particles.Render(*m_Renderer, renderCam, /*noProjection=*/false, /*additive=*/false);
 
-    // Atmospheric sky overlay: stars at night, moon, dawn glow, etc. Drawn
-    // in a screen-space orthographic projection (mirrors the gameplay path).
+    // Atmospheric sky overlay: stars at night, moon, dawn glow, etc. Renders
+    // under the world projection with parallax driven by the menu's renderCam,
+    // matching the gameplay path.
     m_Renderer->SuspendPerspective(true);
-    glm::mat4 screenProjection = glm::ortho(0.0f, worldWidth, worldHeight, 0.0f);
-    m_Renderer->SetProjection(screenProjection);
-    m_SkyRenderer.Render(
-        *m_Renderer, m_TimeManager, static_cast<int>(worldWidth), static_cast<int>(worldHeight));
-    m_Renderer->SetProjection(projection);
+    m_SkyRenderer.Render(*m_Renderer,
+                         m_TimeManager,
+                         renderCam,
+                         static_cast<int>(worldWidth),
+                         static_cast<int>(worldHeight));
     m_Renderer->SuspendPerspective(false);
 
     // Composite the scene through PostFX. Keep bloom modest so fireflies
@@ -599,6 +839,86 @@ void Game::RenderTitleFrame()
     if (m_ConfirmOverwriteShown)
     {
         RenderConfirmOverwritePrompt();
+    }
+
+    // Perf overlay (F4 toggle, same as gameplay): FPS / frame time / draws +
+    // renderer / resolution / zoom on the right. Player position and quests
+    // are intentionally omitted - neither applies on the title screen.
+    if (m_Editor.IsShowDebugInfo())
+    {
+        constexpr float kMargin = 12.0f;
+        constexpr float kCharWidth = 12.0f;
+        constexpr float kLineHeight = 28.0f;
+        const glm::vec3 kFpsColor(1.0f, 1.0f, 0.0f);
+        const glm::vec3 kRightColor(1.0f, 0.3f, 0.3f);
+
+        glm::mat4 uiProjection = glm::ortho(0.0f,
+                                            static_cast<float>(m_ScreenWidth),
+                                            static_cast<float>(m_ScreenHeight),
+                                            0.0f,
+                                            -1.0f,
+                                            1.0f);
+        m_Renderer->SetProjection(uiProjection);
+
+        // Left column: FPS only (no player position / tile to show).
+        char fpsText[32];
+        std::snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", m_Fps.currentFps);
+        m_Renderer->DrawText(fpsText, glm::vec2(kMargin, 32.0f), 1.0f, kFpsColor, 2.0f, 0.85f);
+
+        // Right column: renderer / resolution / frame time / zoom / draws.
+        const char* rendererName = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
+        float rightMargin = static_cast<float>(m_ScreenWidth) - kMargin;
+
+        char rendererText[32];
+        std::snprintf(rendererText, sizeof(rendererText), "%s", rendererName);
+        float textWidth = strnlen(rendererText, sizeof(rendererText)) * kCharWidth;
+        m_Renderer->DrawText(rendererText,
+                             glm::vec2(rightMargin - textWidth, 32.0f),
+                             1.0f,
+                             kRightColor,
+                             2.0f,
+                             0.85f);
+
+        char resText[32];
+        std::snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
+        textWidth = strnlen(resText, sizeof(resText)) * kCharWidth;
+        m_Renderer->DrawText(resText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight),
+                             1.0f,
+                             kRightColor,
+                             2.0f,
+                             0.85f);
+
+        char frameTimeText[32];
+        float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
+        std::snprintf(frameTimeText, sizeof(frameTimeText), "%.2fms", frameTimeMs);
+        textWidth = strnlen(frameTimeText, sizeof(frameTimeText)) * kCharWidth;
+        m_Renderer->DrawText(frameTimeText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight * 2),
+                             1.0f,
+                             kRightColor,
+                             2.0f,
+                             0.85f);
+
+        char zoomText[32];
+        std::snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.GetState().zoom);
+        textWidth = strnlen(zoomText, sizeof(zoomText)) * kCharWidth;
+        m_Renderer->DrawText(zoomText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight * 3),
+                             1.0f,
+                             kRightColor,
+                             2.0f,
+                             0.85f);
+
+        char drawCallText[32];
+        std::snprintf(drawCallText, sizeof(drawCallText), "Draws: %d", m_Fps.currentDrawCalls);
+        textWidth = m_Renderer->GetTextWidth(drawCallText, 1.0f);
+        m_Renderer->DrawText(drawCallText,
+                             glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight * 4),
+                             1.0f,
+                             kRightColor,
+                             2.0f,
+                             0.85f);
     }
 
     m_Console.Render(*m_Renderer, m_ScreenWidth, m_ScreenHeight);
