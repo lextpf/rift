@@ -106,12 +106,6 @@ void Game::ProcessInput(float deltaTime)
         m_Editor.ProcessInput(deltaTime, MakeEditorContext());
     }
 
-    // --- Remainder of ProcessInput: keys that stay in Game ---
-    // The following sections handle: Z, F6, Space, B, X (debug-only corner cut), F,
-    // dialogue, player movement.
-    // Engine controls (editor toggle, renderer switch, debug overlays, time-of-day,
-    // 3D globe, character cycle, NPC appearance copy) are exposed as console commands.
-
     // Resets camera zoom to 1.0x and recenters on player.
     // In editor mode, also resets tile picker zoom and pan.
     if (m_KeyZ.JustPressed(m_Window))
