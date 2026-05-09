@@ -113,6 +113,13 @@ bool CollisionResolver::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos
             if (!inBounds(tx, ty) || !tilemap->GetTileCollision(tx, ty))
                 continue;
 
+            // Z-aware skip: a collision tile only blocks the character when
+            // its elevation is at-or-below the character's logical plane.
+            // Tiles above the plane (e.g. a bridge railing while the player
+            // is at ground level) are non-blocking — the player walks under.
+            if (tilemap->GetElevation(tx, ty) > m_Player->GetPlane())
+                continue;
+
             float tileMinX = tx * TILE_W, tileMaxX = (tx + 1) * TILE_W;
             float tileMinY = ty * TILE_H, tileMaxY = (ty + 1) * TILE_H;
             float overlapW = std::max(0.0f, std::min(maxX, tileMaxX) - std::max(minX, tileMinX));
