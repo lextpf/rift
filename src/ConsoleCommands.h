@@ -117,4 +117,6 @@ bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx);
 /// @}

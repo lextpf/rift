@@ -4,6 +4,7 @@
 #include "Console.h"
 #include "DialogueManager.h"
 #include "DialogueTypes.h"
+#include "DrawTracer.h"
 #include "Editor.h"
 #include "EnumTraits.h"
 #include "Game.h"
@@ -14,6 +15,8 @@
 #include "PlayerCharacter.h"
 #include "Tilemap.h"
 #include "TimeManager.h"
+
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <charconv>
@@ -2101,6 +2104,141 @@ bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ct
 // perf - print FPS, frame time, draw calls
 // ============================================================================
 
+// ============================================================================
+// console.copy - put the entire scrollback buffer onto the OS clipboard
+// ============================================================================
+
+bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("console.copy: usage 'console.copy' (no args)");
+        return false;
+    }
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("console.copy: game unavailable (cannot reach window)");
+        return false;
+    }
+    GLFWwindow* window = ctx.game->GetWindow();
+    if (window == nullptr)
+    {
+        ctx.out.PrintError("console.copy: window unavailable");
+        return false;
+    }
+
+    // Concatenate every line in the scrollback buffer with newlines so the
+    // clipboard text reads as the user saw it in the console.
+    const auto& lines = ctx.out.Lines();
+    std::string blob;
+    size_t reserveSize = 0;
+    for (const auto& line : lines)
+        reserveSize += line.text.size() + 1;
+    blob.reserve(reserveSize);
+    for (const auto& line : lines)
+    {
+        blob.append(line.text);
+        blob.push_back('\n');
+    }
+
+    glfwSetClipboardString(window, blob.c_str());
+
+    char status[96];
+    std::snprintf(status,
+                  sizeof(status),
+                  "console.copy: %zu lines (%zu chars) copied to clipboard",
+                  lines.size(),
+                  blob.size());
+    ctx.out.Print(status);
+    return true;
+}
+
+// ============================================================================
+// renderer.trace - capture and dump per-frame draw-call trace
+// ============================================================================
+
+bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (args.size() > 1)
+    {
+        ctx.out.PrintError("renderer.trace: usage 'renderer.trace [on|off|dump|clear]'");
+        return false;
+    }
+
+    auto printStatus = [&]
+    {
+        char line[96];
+        std::snprintf(line,
+                      sizeof(line),
+                      "renderer.trace: capture=%s, last frame events=%zu",
+                      DrawTracer::IsEnabled() ? "ON" : "off",
+                      DrawTracer::LastFrameEvents().size());
+        ctx.out.Print(line);
+    };
+
+    auto dump = [&]
+    {
+        const auto& events = DrawTracer::LastFrameEvents();
+        if (events.empty())
+        {
+            ctx.out.Print(
+                "renderer.trace: no events captured. Enable with 'renderer.trace on' "
+                "and wait one frame, then re-run.");
+            return;
+        }
+        char header[64];
+        std::snprintf(header, sizeof(header), "-- last frame: %zu events --", events.size());
+        ctx.out.Print(header);
+        int prevDraws = 0;
+        for (size_t i = 0; i < events.size(); ++i)
+        {
+            const auto& e = events[i];
+            int delta = e.drawCount - prevDraws;
+            char line[256];
+            std::snprintf(
+                line, sizeof(line), "[%4d draws +%d] %s", e.drawCount, delta, e.label.c_str());
+            ctx.out.Print(line);
+            prevDraws = e.drawCount;
+        }
+    };
+
+    if (args.empty())
+    {
+        // No-arg form: print status + dump if anything captured.
+        printStatus();
+        if (!DrawTracer::LastFrameEvents().empty())
+            dump();
+        return true;
+    }
+
+    const std::string_view sub = args[0];
+    if (sub == "on")
+    {
+        DrawTracer::SetEnabled(true);
+        ctx.out.Print("renderer.trace: capture ON (run 'renderer.trace dump' next frame)");
+        return true;
+    }
+    if (sub == "off")
+    {
+        DrawTracer::SetEnabled(false);
+        ctx.out.Print("renderer.trace: capture off, buffers cleared");
+        return true;
+    }
+    if (sub == "dump")
+    {
+        dump();
+        return true;
+    }
+    if (sub == "clear")
+    {
+        DrawTracer::Clear();
+        ctx.out.Print("renderer.trace: cleared");
+        return true;
+    }
+    ctx.out.PrintError("renderer.trace: unknown subcommand (try on|off|dump|clear)");
+    return false;
+}
+
 bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -2705,4 +2843,22 @@ void Console::RegisterDefaultCommands()
                             CommandContext ctx = makeContext();
                             (void)Cmd_Perf(args, ctx);
                         });
+
+    m_Registry.Register("renderer.trace",
+                        "[on|off|dump|clear] - capture and dump per-frame draw-call trace",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_RendererTrace(args, ctx);
+                        },
+                        {"draws.trace"});
+
+    m_Registry.Register("console.copy",
+                        "copy entire console scrollback to OS clipboard",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ConsoleCopy(args, ctx);
+                        },
+                        {"copy"});
 }
