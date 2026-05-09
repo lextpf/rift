@@ -233,19 +233,6 @@ Tilemap::Tilemap()
     m_CollisionMap.Resize(m_MapWidth, m_MapHeight);
     m_NavigationMap.Resize(m_MapWidth, m_MapHeight);
 
-    // Initialize 10 dynamic layers with proper render order:
-    // Background layers (rendered before player/NPCs):
-    //   Layer 0: Ground (renderOrder 0)
-    //   Layer 1: Ground Detail (renderOrder 10)
-    //   Layer 2: Objects (renderOrder 20)
-    //   Layer 3: Objects2 (renderOrder 30)
-    //   Layer 4: Objects3 (renderOrder 40)
-    // Foreground layers (rendered after player/NPCs):
-    //   Layer 5: Foreground (renderOrder 100)
-    //   Layer 6: Foreground2 (renderOrder 110)
-    //   Layer 7: Overlay (renderOrder 120)
-    //   Layer 8: Overlay2 (renderOrder 130)
-    //   Layer 9: Overlay3 (renderOrder 140)
     m_Layers.clear();
     m_Layers.emplace_back("Ground", 0, true);
     m_Layers.emplace_back("Ground Detail", 10, true);
