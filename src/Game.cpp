@@ -5,6 +5,7 @@
 #include "Game.h"
 
 #include "AmbienceConfig.h"
+#include "DrawTracer.h"
 #include "Logger.h"
 #include "MathConstants.h"
 #include "MathUtils.h"
@@ -367,14 +368,19 @@ void Game::Run()
     {
         while (!glfwWindowShouldClose(m_Window))
         {
-            // Poll events first so ProcessInput sees this frame's key/mouse
-            // state rather than last frame's (GLFW only updates cached state
-            // during glfwPollEvents).
-            glfwPollEvents();
-
+            // Sample the frame start before polling so the FPS limiter's
+            // deadline covers event processing. Otherwise the next frame's
+            // glfwPollEvents() runs after the current deadline expires but
+            // before the next frameStartTime is taken, pushing the actual
+            // frame-to-frame interval above target by the poll cost and
+            // jittering FPS with input-event volume.
             double frameStartTime = glfwGetTime();
             float deltaTime = static_cast<float>(frameStartTime) - m_LastFrameTime;
             m_LastFrameTime = static_cast<float>(frameStartTime);
+
+            // Poll events before ProcessInput so input sees this frame's
+            // key/mouse state (GLFW only updates cached state during poll).
+            glfwPollEvents();
 
             // Clamp deltaTime to prevent physics explosions after debugger pauses or window drag
             // stalls
@@ -853,17 +859,7 @@ void Game::Render()
         return;
     }
 
-    // Render order (back to front):
-    // 1. Sky color (clear)
-    // 2. Background tilemap layers (ground, ground detail, objects)
-    // 3. No-projection background tiles (buildings that stay upright)
-    // 4. Y-sorted pass: tiles + NPCs + player interleaved by Y coordinate
-    // 5. No-projection foreground tiles
-    // 6. No-projection particles (e.g., fireflies in buildings)
-    // 7. Foreground tilemap layers (overlay tiles)
-    // 8. Regular particles
-    // 9. Sky effects (sun rays, stars)
-    // 10. UI overlays (editor, debug info, dialogue)
+    // Render order: see docs/RENDERING.md (also summarized in CLAUDE.md).
 
     // Debug draw sleep: pauses after each draw call for visual debugging
     if (IsDebugDrawSleepEnabled())
@@ -879,6 +875,8 @@ void Game::Render()
     // film grain. UI passes (editor, dialogue, debug) draw directly to the
     // swapchain after EndSceneApplyPostFX, keeping text sharp and ungrained.
     m_Renderer->BeginScene();
+
+    DrawTracer::Mark("== gameplay frame ==", m_Renderer->GetDrawCallCount());
 
     // Use sky color from TimeManager for clear color
     glm::vec3 skyColor = m_TimeManager.GetSkyColor();
@@ -956,6 +954,7 @@ void Game::Render()
     // 3. Foreground layers (Foreground, Foreground2, Overlay, Overlay2)
 
     // Render background layers - Y-sorted and no-projection tiles are skipped
+    DrawTracer::Mark("section: BackgroundLayers", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderBackgroundLayers(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Suspend perspective for character rendering
@@ -963,6 +962,7 @@ void Game::Render()
 
     // Render no-projection tiles from background layers (buildings & entities that should appear
     // upright)
+    DrawTracer::Mark("section: BackgroundLayersNoProjection", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderBackgroundLayersNoProjection(
         *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
@@ -1065,23 +1065,9 @@ void Game::Render()
         }
     }
 
-    // Sort by Y coordinate ascending (lower Y = further from camera = render first).
-    // Three code paths handle different item pairings:
-    //
-    // 1. Y-sort-minus tile vs entity: These tiles (e.g. tall trees) have their
-    //    anchor at their top, so without adjustment they'd sort behind characters
-    //    standing at their base. The 8px offset shifts the tile's sort position
-    //    down by half a tile, making the character render behind the tile until
-    //    the character walks far enough past. The tight 0.1px epsilon prevents
-    //    flicker at the exact transition boundary.
-    //
-    // 2. Normal items: The 1px epsilon band prevents z-fighting flicker when
-    //    items are within a pixel of each other vertically.
-    //
-    // 3. Tiebreaker (within epsilon): Higher enum value renders first (behind).
-    //    TILE(4) > PLAYER(0), so tiles go behind characters at the same Y.
-    //    This is intentionally reversed from the enum ordering so that at equal
-    //    depth, entities appear in front of terrain.
+    // Lower Y renders first. Y-sort-minus tiles (anchor at top) get a half-tile
+    // offset; tight epsilon avoids transition flicker. On ties higher enum wins
+    // (TILE > PLAYER) so entities sit in front of terrain at equal depth.
     // Half-tile offset for Y-sort-minus tiles (tall features anchored at their top)
     constexpr float YSORT_MINUS_OFFSET = 8.0f;
     // Sub-pixel epsilon for Y-sort-minus vs entity tiebreaking
@@ -1119,42 +1105,36 @@ void Game::Render()
             return a.type > b.type;
         });
 
-    // Render sorted list
+    // Render sorted list. Perspective state is sticky across iterations:
+    // tiles want perspective enabled, entities want it suspended. Flip only
+    // on transitions so contiguous runs of either stay in one sprite batch.
+    // Pre/post-loop contract: enter and leave with perspective suspended.
+    {
+        char ysortLabel[64];
+        std::snprintf(ysortLabel,
+                      sizeof(ysortLabel),
+                      "section: Y-sorted pass (%zu items)",
+                      m_RenderList.size());
+        DrawTracer::Mark(ysortLabel, m_Renderer->GetDrawCallCount());
+    }
+    bool ySortSuspended = true;
     for (const auto& item : m_RenderList)
     {
+        bool wantSuspend = (item.type != RenderItem::TILE);
+        if (ySortSuspended != wantSuspend)
+        {
+            m_Renderer->SuspendPerspective(wantSuspend);
+            ySortSuspended = wantSuspend;
+        }
         switch (item.type)
         {
             case RenderItem::TILE:
-                // No-projection tiles render with perspective suspended (upright)
-                // Normal tiles render with perspective enabled
-                // Pass explicit flag to avoid RenderSingleTile re-reading from layer
-                if (item.tile.noProjection)
-                {
-                    // Allow perspective during no-projection tile rendering so structures can
-                    // use warped-quad grounding in globe mode.
-                    m_Renderer->SuspendPerspective(false);
-                    m_Tilemap.RenderSingleTile(*m_Renderer,
-                                               item.tile.x,
-                                               item.tile.y,
-                                               item.tile.layer,
-                                               m_Camera.GetState().position,
-                                               1);
-                    // Suspend perspective again for subsequent entities
-                    m_Renderer->SuspendPerspective(true);
-                }
-                else
-                {
-                    // Resume perspective for normal tile rendering
-                    m_Renderer->SuspendPerspective(false);
-                    m_Tilemap.RenderSingleTile(*m_Renderer,
-                                               item.tile.x,
-                                               item.tile.y,
-                                               item.tile.layer,
-                                               m_Camera.GetState().position,
-                                               0);
-                    // Suspend perspective again for subsequent entities
-                    m_Renderer->SuspendPerspective(true);
-                }
+                m_Tilemap.RenderSingleTile(*m_Renderer,
+                                           item.tile.x,
+                                           item.tile.y,
+                                           item.tile.layer,
+                                           m_Camera.GetState().position,
+                                           item.tile.noProjection ? 1 : 0);
                 break;
             case RenderItem::NPC_BOTTOM:
                 item.npc->RenderBottomHalf(*m_Renderer, m_Camera.GetState().position);
@@ -1170,12 +1150,18 @@ void Game::Render()
                 break;
         }
     }
+    if (!ySortSuspended)
+    {
+        m_Renderer->SuspendPerspective(true);
+    }
 
     // Render no-projection tiles from foreground layers
+    DrawTracer::Mark("section: ForegroundLayersNoProjection", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderForegroundLayersNoProjection(
         *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Render noProjection particles, particle system handles suspend internally
+    DrawTracer::Mark("section: Particles(noProjection)", m_Renderer->GetDrawCallCount());
     m_Particles.Render(*m_Renderer, m_Camera.GetState().position, true, false);
 
     // Resume perspective for normal foreground rendering
@@ -1184,14 +1170,17 @@ void Game::Render()
     m_Renderer->SuspendPerspective(false);
 
     // Render foreground layers, Y-sorted and no-projection tiles are skipped
+    DrawTracer::Mark("section: ForegroundLayers", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderForegroundLayers(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Render regular particles on top of world
+    DrawTracer::Mark("section: Particles(world)", m_Renderer->GetDrawCallCount());
     m_Particles.Render(*m_Renderer, m_Camera.GetState().position, false, false);
 
     // Cloud shadows drift across the world (multiplicative-style darkening).
     // Rendered BEFORE the screen-space sky overlay so shadows darken ground
     // tiles + entities but don't dim sun rays / stars / atmospheric glow.
+    DrawTracer::Mark("section: CloudShadows", m_Renderer->GetDrawCallCount());
     m_SkyRenderer.RenderCloudShadows(*m_Renderer,
                                      m_Camera.GetState().position,
                                      glm::vec2(zoomedWidth, zoomedHeight),
@@ -1202,6 +1191,7 @@ void Game::Render()
     // projection with perspective ON so they distort with the world plane and
     // walk past as the player moves. Only contribute when the scene is dim
     // enough to read them (ramps with night factor).
+    DrawTracer::Mark("section: WorldLights", m_Renderer->GetDrawCallCount());
     const float nightFactor = m_TimeManager.GetStarVisibility();
     if (nightFactor > 0.01f && !m_Tilemap.GetLights().empty())
     {
@@ -1226,6 +1216,7 @@ void Game::Render()
     // Sky elements compute their own parallax offset against `cameraPos`, so
     // they drift slowly with player movement instead of being glued to the
     // screen. Perspective is suspended so the sky doesn't 3D-distort.
+    DrawTracer::Mark("section: Sky", m_Renderer->GetDrawCallCount());
     m_Renderer->SuspendPerspective(true);
     m_SkyRenderer.Render(*m_Renderer,
                          m_TimeManager,
@@ -1262,8 +1253,11 @@ void Game::Render()
             // these zeroes are a defensive fallback in case the uniform fails to bind.
         }
 
+        DrawTracer::Mark("section: PostFX", m_Renderer->GetDrawCallCount());
         m_Renderer->EndSceneApplyPostFX(postFX);
     }
+
+    DrawTracer::Mark("section: UI overlays", m_Renderer->GetDrawCallCount());
 
     // Render editor overlays and tile picker
     if (m_Editor.IsActive() || m_Editor.IsDebugMode())
@@ -1302,9 +1296,10 @@ void Game::Render()
                                             1.0f);
         m_Renderer->SetProjection(uiProjection);
 
-        // Format FPS text
+        // Format FPS text - integer only; the perf command exposes the
+        // float value if a precise readout is needed.
         char fpsText[32];
-        snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", m_Fps.currentFps);
+        snprintf(fpsText, sizeof(fpsText), "FPS: %d", static_cast<int>(m_Fps.currentFps + 0.5f));
 
         // Get player position and tile
         glm::vec2 playerPos = m_Player.GetPosition();
@@ -1474,8 +1469,11 @@ void Game::Render()
         m_Renderer->SetProjection(projection);
     }
 
-    // Render no-projection anchors on top of everything
-    if (m_Editor.IsShowNoProjectionAnchors())
+    // Render no-projection anchors on top of everything - but only outside
+    // the editor. The editor draws its own structure manipulation visuals,
+    // so layering the debug-mode anchor markers on top of it just clutters
+    // the active edit view.
+    if (m_Editor.IsShowNoProjectionAnchors() && !m_Editor.IsActive())
     {
         IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
         m_Editor.RenderNoProjectionAnchors(MakeEditorContext());
