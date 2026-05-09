@@ -339,6 +339,10 @@ if(BUILD_TESTS)
     set(TEST_LIB_SOURCES
         "${CMAKE_SOURCE_DIR}/src/Logger.cpp"
         "${CMAKE_SOURCE_DIR}/src/TimeManager.cpp"
+        # WeatherDefinitions: pure data table + light-intensity math.
+        # No renderer dependency; tests exercise GetWeatherDefinition and
+        # ComputeLightIntensity directly.
+        "${CMAKE_SOURCE_DIR}/src/WeatherDefinitions.cpp"
         "${CMAKE_SOURCE_DIR}/src/CollisionResolver.cpp"
         "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
         "${CMAKE_SOURCE_DIR}/src/NonPlayerCharacter.cpp"
