@@ -377,6 +377,20 @@ private:
     int m_DrawCallCount = 0;     ///< Number of draw calls this frame (for debug display).
     bool m_Initialized = false;  ///< True after Init() completes successfully.
 
+    /// @brief Reason string for the next batch flush, or nullptr.
+    ///
+    /// Set by call sites just before invoking Flush*Batch (see PrepFlushReason
+    /// helper). Read and cleared by the flush methods when DrawTracer is
+    /// enabled, so the trace records why each GPU submission happened
+    /// (texture change, batch full, projection swap, end of pass, etc.)
+    /// without changing the FlushBatch signature.
+    const char* m_PendingFlushReason = nullptr;
+
+    /// @brief Stamp the next flush(es) with a reason. No-op when DrawTracer
+    /// is disabled, so call sites can sprinkle these freely without
+    /// per-frame cost when tracing is off.
+    inline void PrepFlushReason(const char* reason) { m_PendingFlushReason = reason; }
+
     /// @}
 
     /// @name Shader Loading

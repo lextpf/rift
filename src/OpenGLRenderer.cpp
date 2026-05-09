@@ -1,5 +1,6 @@
 #include "OpenGLRenderer.h"
 
+#include "DrawTracer.h"
 #include "Logger.h"
 
 #include <GLFW/glfw3.h>
@@ -515,8 +516,11 @@ void OpenGLRenderer::BeginScene()
 
     // Flush any straggling batch state from the previous frame's UI before
     // switching render targets.
+    PrepFlushReason("BeginScene");
     FlushBatch();
+    PrepFlushReason("BeginScene");
     FlushRectBatch();
+    PrepFlushReason("BeginScene");
     FlushParticleBatch();
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_SceneFBO);
@@ -595,8 +599,11 @@ void OpenGLRenderer::EndSceneApplyPostFX(const PostFXParams& params)
 
     // Ensure all world rendering inside the scene FBO has flushed before we
     // start sampling from the color attachment.
+    PrepFlushReason("EndScene");
     FlushBatch();
+    PrepFlushReason("EndScene");
     FlushRectBatch();
+    PrepFlushReason("EndScene");
     FlushParticleBatch();
 
     RunBloomPrep();
@@ -805,13 +812,21 @@ void OpenGLRenderer::BeginFrame()
     m_ParticleBatchVertices.clear();
     m_CurrentParticleTexture = 0;
     m_DrawCallCount = 0;
+
+    // Roll the draw-call trace forward: stash the just-finished frame's
+    // events in the "last frame" slot so the renderer.trace command can
+    // dump them, and clear the live buffer for the new frame.
+    DrawTracer::BeginFrame();
 }
 
 void OpenGLRenderer::EndFrame()
 {
     // Flush any remaining batched sprites, rects, and particles
+    PrepFlushReason("EndFrame");
     FlushBatch();
+    PrepFlushReason("EndFrame");
     FlushRectBatch();
+    PrepFlushReason("EndFrame");
     FlushParticleBatch();
 }
 
@@ -819,8 +834,11 @@ void OpenGLRenderer::SetProjection(const glm::mat4& projection)
 {
     // Flush any pending batches before changing projection
     // This prevents world-space sprites from being drawn with UI projection (or vice versa)
+    PrepFlushReason("SetProjection");
     FlushBatch();
+    PrepFlushReason("SetProjection");
     FlushRectBatch();
+    PrepFlushReason("SetProjection");
     FlushParticleBatch();
     m_Projection = projection;
 }
@@ -838,8 +856,11 @@ void OpenGLRenderer::SetViewport(int x, int y, int width, int height)
 void OpenGLRenderer::SetVanishingPointPerspective(
     bool enabled, float horizonY, float horizonScale, float viewWidth, float viewHeight)
 {
+    PrepFlushReason("SetVanishingPointPerspective");
     FlushBatch();
+    PrepFlushReason("SetVanishingPointPerspective");
     FlushRectBatch();
+    PrepFlushReason("SetVanishingPointPerspective");
     FlushParticleBatch();
     IRenderer::SetVanishingPointPerspective(enabled, horizonY, horizonScale, viewWidth, viewHeight);
 }
@@ -849,8 +870,11 @@ void OpenGLRenderer::SetGlobePerspective(bool enabled,
                                          float viewWidth,
                                          float viewHeight)
 {
+    PrepFlushReason("SetGlobePerspective");
     FlushBatch();
+    PrepFlushReason("SetGlobePerspective");
     FlushRectBatch();
+    PrepFlushReason("SetGlobePerspective");
     FlushParticleBatch();
     IRenderer::SetGlobePerspective(enabled, sphereRadius, viewWidth, viewHeight);
 }
@@ -862,8 +886,11 @@ void OpenGLRenderer::SetFisheyePerspective(bool enabled,
                                            float viewWidth,
                                            float viewHeight)
 {
+    PrepFlushReason("SetFisheyePerspective");
     FlushBatch();
+    PrepFlushReason("SetFisheyePerspective");
     FlushRectBatch();
+    PrepFlushReason("SetFisheyePerspective");
     FlushParticleBatch();
     IRenderer::SetFisheyePerspective(
         enabled, sphereRadius, horizonY, horizonScale, viewWidth, viewHeight);
@@ -871,8 +898,18 @@ void OpenGLRenderer::SetFisheyePerspective(bool enabled,
 
 void OpenGLRenderer::SuspendPerspective(bool suspend)
 {
+    // Skip the flush when state already matches: redundant calls would split
+    // active sprite batches into separate draw calls.
+    if (m_PerspectiveSuspended == suspend)
+    {
+        return;
+    }
+    const char* reason = suspend ? "SuspendPerspective(on)" : "SuspendPerspective(off)";
+    PrepFlushReason(reason);
     FlushBatch();
+    PrepFlushReason(reason);
     FlushRectBatch();
+    PrepFlushReason(reason);
     FlushParticleBatch();
     IRenderer::SuspendPerspective(suspend);
 }
@@ -1038,10 +1075,34 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
                                       bool tileFlipX,
                                       bool tileFlipY)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[160];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw spriteRegion tex=%dx%d pos=(%.1f,%.1f) size=(%.1f,%.1f) "
+                      "uv=(%.0f,%.0f)+%.0fx%.0f rot=%.1f%s%s",
+                      texture.GetWidth(),
+                      texture.GetHeight(),
+                      position.x,
+                      position.y,
+                      size.x,
+                      size.y,
+                      texCoord.x,
+                      texCoord.y,
+                      texSize.x,
+                      texSize.y,
+                      rotation,
+                      tileFlipX ? " flipX" : "",
+                      tileFlipY ? " flipY" : "");
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+
     // Batching requires all sprites in a batch to share the same texture.
     // When switching between batch types (rect vs sprite) or textures, flush first.
     if (!m_RectBatchVertices.empty())
     {
+        PrepFlushReason("BatchTypeChange(sprite<-rect)");
         FlushRectBatch();
     }
 
@@ -1054,12 +1115,14 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
     // texture ID (0) cannot contaminate subsequent sprites in the same batch.
     if (!m_BatchVertices.empty() && m_CurrentBatchTexture != texID)
     {
+        PrepFlushReason("TextureChange");
         FlushBatch();
     }
 
     // Batch full, flush and start new batch
     if (m_BatchVertices.size() >= MAX_BATCH_SPRITES * VERTICES_PER_SPRITE)
     {
+        PrepFlushReason("BatchFull");
         FlushBatch();
     }
 
@@ -1164,13 +1227,44 @@ void OpenGLRenderer::DrawSpriteAtlas(const Texture& texture,
                                      glm::vec4 color,
                                      bool additive)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[176];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw spriteAtlas tex=%dx%d pos=(%.1f,%.1f) size=(%.1f,%.1f) "
+                      "uv=[%.2f,%.2f]-[%.2f,%.2f] rgba=(%.2f,%.2f,%.2f,%.2f) %s",
+                      texture.GetWidth(),
+                      texture.GetHeight(),
+                      position.x,
+                      position.y,
+                      size.x,
+                      size.y,
+                      uvMin.x,
+                      uvMin.y,
+                      uvMax.x,
+                      uvMax.y,
+                      color.r,
+                      color.g,
+                      color.b,
+                      color.a,
+                      additive ? "additive" : "alpha");
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+
     // Atlas version of DrawSpriteAlpha - uses custom UV coordinates instead of full texture
 
     // Must flush other batch types before adding to particle batch
     if (!m_BatchVertices.empty())
+    {
+        PrepFlushReason("BatchTypeChange(particle<-sprite)");
         FlushBatch();
+    }
     if (!m_RectBatchVertices.empty())
+    {
+        PrepFlushReason("BatchTypeChange(particle<-rect)");
         FlushRectBatch();
+    }
 
     unsigned int texID = EnsureTextureReady(texture);
     if (texID == 0)
@@ -1182,12 +1276,14 @@ void OpenGLRenderer::DrawSpriteAtlas(const Texture& texture,
     if (!m_ParticleBatchVertices.empty() &&
         (m_CurrentParticleTexture != texID || m_ParticleBatchAdditive != additive))
     {
+        PrepFlushReason((m_CurrentParticleTexture != texID) ? "TextureChange" : "BlendChange");
         FlushParticleBatch();
     }
 
     // Check batch capacity
     if (m_ParticleBatchVertices.size() >= MAX_BATCH_SPRITES * VERTICES_PER_SPRITE)
     {
+        PrepFlushReason("BatchFull");
         FlushParticleBatch();
     }
 
@@ -1292,10 +1388,25 @@ void OpenGLRenderer::FlushBatch()
 
     // Single draw call for all sprites in batch (main performance benefit of batching!)
     glBindVertexArray(m_BatchVAO);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_BatchVertices.size()));
-    DebugAfterDraw("SpriteBatch", static_cast<int>(m_BatchVertices.size()));
+    const size_t spriteVertCount = m_BatchVertices.size();
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(spriteVertCount));
+    DebugAfterDraw("SpriteBatch", static_cast<int>(spriteVertCount));
     glBindVertexArray(0);
     ++m_DrawCallCount;
+
+    if (DrawTracer::IsEnabled())
+    {
+        const char* reason = m_PendingFlushReason ? m_PendingFlushReason : "explicit";
+        char buf[96];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "flush sprite (%s) %zu verts tex=%u",
+                      reason,
+                      spriteVertCount,
+                      m_CurrentBatchTexture);
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+    m_PendingFlushReason = nullptr;
 
     // Reset for next batch, clearing texture forces explicit rebind to prevent stale state
     m_BatchVertices.clear();
@@ -1327,15 +1438,36 @@ void OpenGLRenderer::DrawColoredRect(glm::vec2 position,
                                      glm::vec4 color,
                                      bool additive)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[128];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw rect pos=(%.1f,%.1f) size=(%.1f,%.1f) "
+                      "rgba=(%.2f,%.2f,%.2f,%.2f) %s",
+                      position.x,
+                      position.y,
+                      size.x,
+                      size.y,
+                      color.r,
+                      color.g,
+                      color.b,
+                      color.a,
+                      additive ? "additive" : "alpha");
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+
     // If switching from sprite to rect mode, flush sprites first
     if (!m_BatchVertices.empty())
     {
+        PrepFlushReason("BatchTypeChange(rect<-sprite)");
         FlushBatch();
     }
 
     // If blend mode changed, flush current batch first
     if (!m_RectBatchVertices.empty() && m_RectBatchAdditive != additive)
     {
+        PrepFlushReason("BlendChange");
         FlushRectBatch();
     }
     m_RectBatchAdditive = additive;
@@ -1343,6 +1475,7 @@ void OpenGLRenderer::DrawColoredRect(glm::vec2 position,
     // Check batch capacity
     if (m_RectBatchVertices.size() >= MAX_BATCH_SPRITES * VERTICES_PER_SPRITE)
     {
+        PrepFlushReason("BatchFull");
         FlushRectBatch();
     }
 
@@ -1376,14 +1509,40 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
                                     bool tileFlipX,
                                     bool tileFlipY)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[176];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw warpedQuad tex=%dx%d corners=[(%.1f,%.1f),(%.1f,%.1f),"
+                      "(%.1f,%.1f),(%.1f,%.1f)]",
+                      texture.GetWidth(),
+                      texture.GetHeight(),
+                      corners[0].x,
+                      corners[0].y,
+                      corners[1].x,
+                      corners[1].y,
+                      corners[2].x,
+                      corners[2].y,
+                      corners[3].x,
+                      corners[3].y);
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+
     // Warped quads are pre-transformed by the caller (sphere projection already applied)
     // We add them directly to the sprite batch without additional perspective transformation
 
     // Flush other batch types first
     if (!m_RectBatchVertices.empty())
+    {
+        PrepFlushReason("BatchTypeChange(warpedQuad<-rect)");
         FlushRectBatch();
+    }
     if (!m_ParticleBatchVertices.empty())
+    {
+        PrepFlushReason("BatchTypeChange(warpedQuad<-particle)");
         FlushParticleBatch();
+    }
 
     unsigned int texID = EnsureTextureReady(texture);
     if (texID == 0)
@@ -1393,12 +1552,14 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
     // Do not special-case texture 0, or stale/invalid IDs can leak into the batch.
     if (!m_BatchVertices.empty() && m_CurrentBatchTexture != texID)
     {
+        PrepFlushReason("TextureChange(warpedQuad)");
         FlushBatch();
     }
 
     // Check batch capacity
     if (m_BatchVertices.size() >= MAX_BATCH_SPRITES * VERTICES_PER_SPRITE)
     {
+        PrepFlushReason("BatchFull(warpedQuad)");
         FlushBatch();
     }
 
@@ -1514,10 +1675,20 @@ void OpenGLRenderer::FlushRectBatch()
 
     // Single draw call for all rectangles
     glBindVertexArray(m_RectBatchVAO);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_RectBatchVertices.size()));
-    DebugAfterDraw("RectBatch", static_cast<int>(m_RectBatchVertices.size()));
+    const size_t rectVertCount = m_RectBatchVertices.size();
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(rectVertCount));
+    DebugAfterDraw("RectBatch", static_cast<int>(rectVertCount));
     glBindVertexArray(0);
     ++m_DrawCallCount;
+
+    if (DrawTracer::IsEnabled())
+    {
+        const char* reason = m_PendingFlushReason ? m_PendingFlushReason : "explicit";
+        char buf[80];
+        std::snprintf(buf, sizeof(buf), "flush rect (%s) %zu verts", reason, rectVertCount);
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+    m_PendingFlushReason = nullptr;
 
     // No state restoration needed; the next Flush* sets what it wants at entry.
     m_RectBatchVertices.clear();
@@ -1584,10 +1755,26 @@ void OpenGLRenderer::FlushParticleBatch()
 
     // Single draw call for entire particle batch
     glBindVertexArray(m_RectBatchVAO);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_ParticleBatchVertices.size()));
-    DebugAfterDraw("ParticleBatch", static_cast<int>(m_ParticleBatchVertices.size()));
+    const size_t particleVertCount = m_ParticleBatchVertices.size();
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(particleVertCount));
+    DebugAfterDraw("ParticleBatch", static_cast<int>(particleVertCount));
     glBindVertexArray(0);
     ++m_DrawCallCount;
+
+    if (DrawTracer::IsEnabled())
+    {
+        const char* reason = m_PendingFlushReason ? m_PendingFlushReason : "explicit";
+        char buf[112];
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "flush particle (%s) %zu verts tex=%u %s",
+                      reason,
+                      particleVertCount,
+                      m_CurrentParticleTexture,
+                      m_ParticleBatchAdditive ? "additive" : "alpha");
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
+    m_PendingFlushReason = nullptr;
 
     // No state restoration needed; the next Flush* sets what it wants at entry.
     m_ParticleBatchVertices.clear();
@@ -1897,6 +2084,21 @@ void OpenGLRenderer::DrawText(const std::string& text,
                               float outlineSize,
                               float alpha)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[160];
+        const std::string preview = text.size() > 32 ? text.substr(0, 32) + "..." : text;
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw text \"%s\" pos=(%.1f,%.1f) scale=%.2f outline=%.1f alpha=%.2f",
+                      preview.c_str(),
+                      position.x,
+                      position.y,
+                      scale,
+                      outlineSize,
+                      alpha);
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
     DrawTextImpl(
         text, position, scale, color, outlineSize, alpha, m_Characters, m_FontAtlasTexture);
 }
@@ -1908,6 +2110,20 @@ void OpenGLRenderer::DrawTextLarge(const std::string& text,
                                    float outlineSize,
                                    float alpha)
 {
+    if (DrawTracer::IsEnabled())
+    {
+        char buf[160];
+        const std::string preview = text.size() > 32 ? text.substr(0, 32) + "..." : text;
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "draw textLarge \"%s\" pos=(%.1f,%.1f) scale=%.2f outline=%.1f",
+                      preview.c_str(),
+                      position.x,
+                      position.y,
+                      scale,
+                      outlineSize);
+        DrawTracer::Mark(buf, m_DrawCallCount);
+    }
     if (m_HeadlineCharacters.empty() || m_HeadlineFontAtlasTexture == 0)
     {
         // Headline atlas not available: fall back to scaled body atlas so the
