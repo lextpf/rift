@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <span>
@@ -60,10 +61,11 @@ public:
     /// Erase the character before the cursor (no-op if at start).
     void OnBackspace();
 
-    /// Clear the entire input line and reset the cursor to position 0.
-    /// Used by the Ctrl+Backspace shortcut. Does not affect history or
-    /// scrollback.
-    void OnClearLine();
+    /// Delete the word before the cursor: first eat any contiguous spaces
+    /// immediately preceding the cursor, then eat one contiguous run of
+    /// non-space characters. Repeated calls walk back word-by-word until the
+    /// line is empty. Bound to Ctrl+Backspace.
+    void OnBackspaceWord();
 
     /// Erase the character at the cursor (no-op if at end).
     void OnDelete();
@@ -147,6 +149,14 @@ class ConsoleCommandRegistry
 public:
     using Handler = std::function<void(std::span<const std::string_view> args, Console& console)>;
 
+    /// Returns the set of valid values for the @p argIndex'th positional
+    /// argument (0 = first arg after the verb). Used by the autocomplete
+    /// dropdown to suggest parameter values; return an empty vector when no
+    /// completion is available for that slot. The callback is invoked with
+    /// arbitrary indices as the user types, so it must handle out-of-range
+    /// indices gracefully.
+    using ArgCompletionProvider = std::function<std::vector<std::string>(std::size_t argIndex)>;
+
     struct Command
     {
         std::string name;
@@ -156,16 +166,22 @@ public:
         /// handler. Lookup checks aliases when the canonical name doesn't
         /// match, and tab-completion offers them alongside canonical names.
         std::vector<std::string> aliases;
+        /// Optional callback that supplies dropdown suggestions for positional
+        /// arguments (e.g. enum values). May be null.
+        ArgCompletionProvider argCompletions;
     };
 
     /// Register or replace a command. Empty names are rejected.
     /// @p aliases are alternate names that resolve to the same handler.
     /// Aliases are not stored as separate commands in the map; they're
     /// kept on the canonical entry so `help` can show them inline.
+    /// @p argCompletions provides per-arg autocomplete values; pass nullptr
+    /// (the default) when arguments have no canned completions.
     void Register(std::string name,
                   std::string description,
                   Handler handler,
-                  std::vector<std::string> aliases = {});
+                  std::vector<std::string> aliases = {},
+                  ArgCompletionProvider argCompletions = nullptr);
 
     /// Look up a command by canonical name or by alias. Returns nullptr if
     /// no match. Canonical names are O(log n); aliases are a linear fallback.
@@ -173,7 +189,11 @@ public:
 
     /// All command names (canonical + aliases) whose key starts with
     /// @p prefix, in alphabetical order. Empty prefix returns every name.
-    [[nodiscard]] std::vector<std::string> MatchPrefix(std::string_view prefix) const;
+    /// @p maxCount caps the result length (the alphabetically-earliest matches
+    /// are kept). Used by the autocomplete dropdown to fetch up to N hints.
+    [[nodiscard]] std::vector<std::string> MatchPrefix(
+        std::string_view prefix,
+        std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
     /// Read access to the underlying ordered map.
     [[nodiscard]] const std::map<std::string, Command>& All() const { return m_Commands; }
@@ -184,7 +204,7 @@ private:
 
 /**
  * @class Console
- * @brief In-game developer REPL toggled with `~`.
+ * @brief In-game developer REPL toggled with F12.
  * @ingroup Core
  *
  * The Console binds a ConsoleBuffer + ConsoleCommandRegistry to a Game and
@@ -200,23 +220,36 @@ private:
 class Console
 {
 public:
+    /// Visibility / size state. The toggle hotkey advances `Closed -> Half ->
+    /// Full -> Closed`. `Half` is the legacy top-50% overlay (world visible
+    /// underneath); `Full` covers the entire framebuffer for longer ops
+    /// sessions.
+    enum class State : std::uint8_t
+    {
+        Closed,
+        Half,
+        Full
+    };
+
     /// Construct, take a Game reference, and register the default command set.
     explicit Console(Game& game);
 
-    [[nodiscard]] bool IsOpen() const { return m_Open; }
+    [[nodiscard]] bool IsOpen() const { return m_State != State::Closed; }
+    [[nodiscard]] bool IsFullscreen() const { return m_State == State::Full; }
+    [[nodiscard]] State GetState() const { return m_State; }
     void Toggle();
     void Open();
     void Close();
 
     // ---------------- Input event entry points ----------------
 
-    /// GLFW char callback path. Filters out the toggle-key glyphs (tilde and
-    /// grave accent) so opening the console doesn't insert the toggle character.
+    /// GLFW char callback path. Inserts the typed glyph into the input buffer
+    /// while the console is open; no-op otherwise.
     void OnChar(std::uint32_t codepoint);
 
     void OnEnter();
     void OnBackspace();
-    void OnClearLine();
+    void OnBackspaceWord();
     void OnDelete();
     void OnTab();
     void OnUp();
@@ -249,21 +282,101 @@ public:
     [[nodiscard]] Game& GetGame() { return m_Game; }
     [[nodiscard]] const ConsoleCommandRegistry& Registry() const { return m_Registry; }
 
-private:
-    /// Reset the multi-press tab cycle state.
-    void ResetTabState();
+    /// One round of suggestion computation. `items` holds the prefix-matched
+    /// candidates (alphabetical, capped to the requested count). `wordStart`
+    /// is the index in the input where the partial word begins, so callers
+    /// can splice a chosen suggestion in: `input.substr(0, wordStart) + items[i]`.
+    struct SuggestionResult
+    {
+        std::vector<std::string> items;
+        std::size_t wordStart = 0;
+    };
 
+    /// Mouse cursor moved over the suggestion dropdown. If the cursor is
+    /// inside the box, snap @c m_SuggestionIndex to the row under the cursor
+    /// so hover-to-highlight matches what a click would commit.
+    void OnMouseHover(double mouseX, double mouseY);
+
+    /// Left-click at @p mouseX,mouseY. If the click landed inside the
+    /// dropdown box, splice the clicked suggestion into the input (same path
+    /// as Tab) and return true so the caller can swallow the click.
+    bool OnMouseClick(double mouseX, double mouseY);
+
+    /// Mouse wheel hit-routing: if the cursor sits over the dropdown and the
+    /// suggestion list overflows the visible window, scroll the dropdown and
+    /// return true. Caller falls through to scrollback navigation otherwise.
+    bool TryScrollDropdown(double mouseX, double mouseY, double yoffset);
+
+private:
     /// Wire the eight built-in commands. Defined in ConsoleCommands.cpp.
     void RegisterDefaultCommands();
+
+    /// Compute the up-to-@p maxCount autocomplete suggestions for the current
+    /// input line. Suggests command names while typing the verb, and falls
+    /// back to the verb's `argCompletions` callback when typing positional
+    /// arguments. Used by both the dropdown renderer and Tab completion so
+    /// the visible list and the chosen completion stay in lockstep.
+    [[nodiscard]] SuggestionResult ComputeSuggestions(std::size_t maxCount) const;
+
+    /// Slide @c m_SuggestionScroll so @c m_SuggestionIndex stays inside the
+    /// visible window, then clamp the scroll to a valid range. Called any
+    /// time the index or item count changes.
+    void ClampSuggestionScroll(std::size_t itemCount);
+
+    /// Hard cap on suggestions so a degenerate prefix can't blow up the box.
+    /// Larger than any realistic command list; raise if completion sources
+    /// ever return more.
+    static constexpr std::size_t kMaxSuggestions = 64;
+
+    /// Maximum rows shown in the dropdown box at once. Items beyond this
+    /// scroll behind the visible window.
+    static constexpr std::size_t kMaxVisibleSuggestions = 8;
 
     Game& m_Game;
     ConsoleBuffer m_Buffer;
     ConsoleCommandRegistry m_Registry;
-    bool m_Open = false;
-
-    // ---------------- Tab completion cycle state ----------------
-    bool m_TabActive = false;               ///< True after first Tab, until any other key
-    std::vector<std::string> m_TabMatches;  ///< Captured matches when cycle began
-    int m_TabIndex = -1;                    ///< -1 = showing common prefix; >=0 = matches[i]
-    std::string m_TabBase;                  ///< Original input when cycle began
+    State m_State = State::Closed;
+    /// Index of the highlighted entry in the current dropdown (across the
+    /// full item list, not just the visible window). Reset to 0 on any
+    /// input modification; clamped to the suggestion count when read.
+    std::size_t m_SuggestionIndex = 0;
+    /// First visible row in the dropdown's sliding window. Adjusted via
+    /// arrow-key navigation, mouse wheel, and ClampSuggestionScroll.
+    std::size_t m_SuggestionScroll = 0;
+    /// Geometry cached during Render() so input handlers (mouse hover,
+    /// click, wheel) can hit-test the dropdown without their own copy of
+    /// the layout math. Refreshed every frame; @c visible is false when
+    /// the dropdown isn't drawn this frame.
+    struct DropdownRect
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float w = 0.0f;
+        float h = 0.0f;
+        float rowH = 0.0f;
+        float padTop = 0.0f;
+        std::size_t topRow = 0;       ///< first visible item index
+        std::size_t visibleRows = 0;  ///< rows currently drawn
+        std::size_t totalItems = 0;   ///< full suggestion count
+        bool visible = false;
+    };
+    DropdownRect m_LastDropdown;
 };
+
+/// Pure transition function for the console toggle cycle. Exposed as a free
+/// function (and made `constexpr`) so unit tests can validate the cycle
+/// without constructing a Console + Game pair, which would require a GL
+/// context per the test-suite constraints.
+[[nodiscard]] constexpr Console::State NextConsoleState(Console::State s) noexcept
+{
+    switch (s)
+    {
+        case Console::State::Closed:
+            return Console::State::Half;
+        case Console::State::Half:
+            return Console::State::Full;
+        case Console::State::Full:
+            return Console::State::Closed;
+    }
+    return Console::State::Closed;
+}
