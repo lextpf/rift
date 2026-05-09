@@ -42,7 +42,7 @@ void GameCharacter::UpdatePlane(int destTileElev, ElevationAxis tileAxis, int mo
                                (tileAxis == ElevationAxis::Y && moveDy != 0);
     if (!movementMatchesAxis)
     {
-        // Perpendicular crossing — entity passes underneath/over without
+        // Perpendicular crossing - entity passes underneath/over without
         // engaging the elevation; logical plane stays where it was.
         return;
     }
@@ -50,7 +50,7 @@ void GameCharacter::UpdatePlane(int destTileElev, ElevationAxis tileAxis, int mo
     int delta = destTileElev - m_Plane;
     if (std::abs(delta) > MAX_STEP_HEIGHT)
     {
-        // No ramp connecting the two planes — reject the direct jump.
+        // No ramp connecting the two planes - reject the direct jump.
         return;
     }
 

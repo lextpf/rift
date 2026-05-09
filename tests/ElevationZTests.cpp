@@ -1,6 +1,6 @@
 // Tests for the z-axis elevation system: auto-derived elevation axis,
 // GameCharacter plane update with axis-engagement + step-gate, and the
-// z-aware skip in CollisionResolver. Pure data paths — no GL/Vulkan
+// z-aware skip in CollisionResolver. Pure data paths - no GL/Vulkan
 // context is created (per CMakeLists.txt:352-355).
 
 #include <gtest/gtest.h>
@@ -87,7 +87,7 @@ TEST(ElevationAxisDerive, MultiRowDeckCenterReturnsXViaExtentScan)
 {
     // 3-row-tall, 5-column-wide horizontal deck at elev 10. Deck-center has
     // all four neighbors at elev 10 so both gradients are zero. The bounded
-    // extent scan walks ±X (long bridge axis) further than ±Y (3 rows tall),
+    // extent scan walks +/-X (long bridge axis) further than +/-Y (3 rows tall),
     // so the axis must resolve to X.
     Tilemap tm = MakeTilemap();
     for (int dy = -1; dy <= 1; ++dy)
@@ -182,7 +182,7 @@ TEST(UpdatePlane, DirectGroundToDeckJumpRejected)
 TEST(UpdatePlane, GroundTileAlwaysEngages)
 {
     // Player at plane 10 (on deck) steps onto axis=None ground. The step
-    // gate must not block this — falling-off-bridge needs to work even
+    // gate must not block this - falling-off-bridge needs to work even
     // when the drop exceeds MAX_STEP_HEIGHT.
     PlayerCharacter player;
     // Bring plane up: small ramp (4) then deck (10).
@@ -252,7 +252,7 @@ TEST(CollisionZSkip, GroundWallBlocksAtAnyPlane)
     // elev defaults to 0
 
     PlayerCharacter player;
-    // Plane stays 0 by default — wall blocks at same plane.
+    // Plane stays 0 by default - wall blocks at same plane.
     bool blocked =
         player.GetCollision().CollidesWithTilesStrict(FeetAtTile(5, 5), &tm, 0, 0, false);
     EXPECT_TRUE(blocked);

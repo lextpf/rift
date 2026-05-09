@@ -116,7 +116,7 @@ bool CollisionResolver::CollidesWithTilesStrict(const glm::vec2& bottomCenterPos
             // Z-aware skip: a collision tile only blocks the character when
             // its elevation is at-or-below the character's logical plane.
             // Tiles above the plane (e.g. a bridge railing while the player
-            // is at ground level) are non-blocking — the player walks under.
+            // is at ground level) are non-blocking - the player walks under.
             if (tilemap->GetElevation(tx, ty) > m_Player->GetPlane())
                 continue;
 

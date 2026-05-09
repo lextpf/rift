@@ -842,8 +842,7 @@ glm::vec2 SkyRenderer::GetLightSourcePosition(
     // camera while still being world-anchored - walking past it as the player
     // moves, but never permanently scrolling out of reach.
     const float bandWidth = static_cast<float>(screenWidth) * 3.0f;
-    const float bandLeftWorld =
-        std::floor(cameraPos.x / bandWidth) * bandWidth - bandWidth * 0.5f;
+    const float bandLeftWorld = std::floor(cameraPos.x / bandWidth) * bandWidth - bandWidth * 0.5f;
     float worldX = bandLeftWorld + (1.0f - arc) * bandWidth;
 
     // Y is sky-relative (above the viewport) - celestial bodies don't
@@ -853,8 +852,7 @@ glm::vec2 SkyRenderer::GetLightSourcePosition(
 
     // Apply the parallax factor (1.0 = full world stick) by subtracting the
     // appropriate fraction of camera position from the world anchor.
-    return glm::vec2(worldX - cameraPos.x * parallaxFactor,
-                     worldY - cameraPos.y * parallaxFactor);
+    return glm::vec2(worldX - cameraPos.x * parallaxFactor, worldY - cameraPos.y * parallaxFactor);
 }
 
 void SkyRenderer::RenderStars(IRenderer& renderer,
