@@ -5,6 +5,7 @@
 #include "MathConstants.h"
 #include "ProceduralTexture.h"
 #include "Tilemap.h"
+#include "WeatherDefinitions.h"
 
 #include <algorithm>
 #include <array>
@@ -916,6 +917,287 @@ struct ParticleBehavior<ParticleType::Pollen>
 };
 
 // ---------------------------------------------------------------------------
+// CherryBlossom - drifting pink petals, gentle spiral, additive blend
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::CherryBlossom>
+{
+    static constexpr float SpawnRate = 8.0f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Per-particle drift amplitude/frequency derived from phase so each
+        // blossom flutters with its own personality.
+        float ampX = 14.0f + 10.0f * std::abs(std::sin(p.phase * 0.7f));
+        float ampY = 4.0f + 6.0f * std::abs(std::cos(p.phase * 0.9f));
+        float freqX = 0.6f + 0.4f * std::sin(p.phase * 1.3f);
+        float freqY = 0.4f + 0.3f * std::cos(p.phase * 1.7f);
+
+        float driftX = std::sin(ctx.time * (0.7f + freqX) + p.phase) * ampX;
+        float driftY = std::cos(ctx.time * (0.5f + freqY) + p.phase * 1.4f) * ampY;
+        p.position.x += driftX * ctx.deltaTime;
+        // Net downward drift varies (some blossoms fall faster than others).
+        float fallSpeed = 14.0f + 14.0f * std::abs(std::sin(p.phase * 2.1f));
+        p.position.y += (fallSpeed + driftY) * ctx.deltaTime;
+
+        // Per-particle rotation rate (-65..+65 deg/s) derived from phase.
+        float rotSpeed = (15.0f + 50.0f * std::abs(std::sin(p.phase * 1.7f))) *
+                         (std::cos(p.phase * 0.9f) > 0.0f ? 1.0f : -1.0f);
+        p.rotation += rotSpeed * ctx.deltaTime;
+
+        // Fade in/out for smooth lifetime endings. Peak alpha is encoded in
+        // the X velocity (re-purposed as a static per-particle scalar - the
+        // Update path never reads velocity for CherryBlossom). A subtle
+        // shimmer pulse layered on top adds life.
+        float peak = std::clamp(p.velocity.x, 0.2f, 1.0f);
+        float fade = std::min(p.lifetime / 1.2f, (p.maxLifetime - p.lifetime) / 0.7f);
+        float shimmer = 0.85f + 0.15f * std::sin(ctx.time * 1.8f + p.phase * 2.3f);
+        p.color.a = std::clamp(fade, 0.0f, 1.0f) * peak * shimmer;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        // Tiered spawning gives blossoms variety in size, hue, and presence.
+        // 60%: small background petals (subtle, pale)
+        // 30%: medium showcase petals (mid-pink)
+        // 10%: large glow petals (hot pink, with halo halo spawn).
+        float tierRoll = ctx.dist(ctx.rng);
+
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::CherryBlossom;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        // velocity.x stores the per-particle peak alpha (read by Update);
+        // velocity.y stays 0 since Update applies its own fall speed.
+        p.velocity = glm::vec2(0.0f);
+        p.lifetime = 8.0f + ctx.dist(ctx.rng) * 7.0f;
+        p.maxLifetime = p.lifetime;
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = ctx.dist(ctx.rng) * 360.0f;
+        p.additive = true;
+
+        // Pink-forward palette: the bulk of petals are saturated sakura pink
+        // and hot pink. Pale and white variants are deliberately rare so the
+        // overall flurry reads as a confident pink wash, not washed-out.
+        float hueRoll = ctx.dist(ctx.rng);
+        if (hueRoll < 0.40f)
+        {
+            // Saturated sakura pink - primary, vivid hue.
+            p.color = glm::vec4(
+                1.00f, 0.55f + ctx.dist(ctx.rng) * 0.10f, 0.78f + ctx.dist(ctx.rng) * 0.06f, 0.0f);
+        }
+        else if (hueRoll < 0.65f)
+        {
+            // Hot pink / deep magenta accent.
+            p.color = glm::vec4(
+                1.00f, 0.40f + ctx.dist(ctx.rng) * 0.10f, 0.70f + ctx.dist(ctx.rng) * 0.08f, 0.0f);
+        }
+        else if (hueRoll < 0.80f)
+        {
+            // Soft pale pink - supporting hue, less common than before.
+            p.color = glm::vec4(
+                1.00f, 0.78f + ctx.dist(ctx.rng) * 0.08f, 0.86f + ctx.dist(ctx.rng) * 0.05f, 0.0f);
+        }
+        else if (hueRoll < 0.88f)
+        {
+            // Peachy blush - warm coral accent.
+            p.color = glm::vec4(
+                1.00f, 0.72f + ctx.dist(ctx.rng) * 0.05f, 0.66f + ctx.dist(ctx.rng) * 0.06f, 0.0f);
+        }
+        else if (hueRoll < 0.94f)
+        {
+            // Deep crimson red - dramatic accent.
+            p.color = glm::vec4(
+                1.00f, 0.28f + ctx.dist(ctx.rng) * 0.10f, 0.45f + ctx.dist(ctx.rng) * 0.10f, 0.0f);
+        }
+        else if (hueRoll < 0.98f)
+        {
+            // Violet/purple - rare cool accent.
+            p.color = glm::vec4(0.85f + ctx.dist(ctx.rng) * 0.08f,
+                                0.50f + ctx.dist(ctx.rng) * 0.08f,
+                                0.95f + ctx.dist(ctx.rng) * 0.05f,
+                                0.0f);
+        }
+        else
+        {
+            // Almost-white highlight - very rare, used as visual punctuation.
+            p.color = glm::vec4(
+                1.00f, 0.92f + ctx.dist(ctx.rng) * 0.05f, 0.94f + ctx.dist(ctx.rng) * 0.04f, 0.0f);
+        }
+
+        // Halo defaults to a saturated pink so the bloom amplifies the petal's
+        // hue. For crimson and violet variants we tilt the halo toward those
+        // families so the bloom complements rather than fights the petal.
+        glm::vec4 haloColor = glm::vec4(1.00f, 0.55f, 0.78f, 0.0f);  // pink halo
+        if (hueRoll >= 0.88f && hueRoll < 0.94f)
+            haloColor = glm::vec4(1.00f, 0.40f, 0.55f, 0.0f);  // pink-red halo
+        else if (hueRoll >= 0.94f && hueRoll < 0.98f)
+            haloColor = glm::vec4(0.85f, 0.55f, 1.00f, 0.0f);  // violet halo
+
+        // Shared helper: append a halo particle behind @p source for the
+        // "shine glow" look. Halo is larger, dimmer, additive, with phase
+        // offset so its shimmer doesn't lockstep with the petal.
+        auto appendHalo = [&](const Particle& source, float sizeMul, float peakAlpha)
+        {
+            Particle halo = source;
+            halo.size = source.size * sizeMul;
+            halo.velocity.x = peakAlpha;
+            halo.color = haloColor;
+            halo.phase = source.phase + 0.7f;
+            ctx.particles.push_back(halo);
+        };
+
+        if (tierRoll < 0.55f)
+        {
+            // Background petal: small but bright enough to read.
+            p.size = 1.6f + ctx.dist(ctx.rng) * 1.6f;
+            p.velocity.x = 0.65f + ctx.dist(ctx.rng) * 0.20f;  // Peak alpha 0.65-0.85.
+            ctx.particles.push_back(p);
+        }
+        else if (tierRoll < 0.88f)
+        {
+            // Mid-tier showcase petal: gets a soft shine glow.
+            p.size = 2.8f + ctx.dist(ctx.rng) * 1.8f;
+            p.velocity.x = 0.85f + ctx.dist(ctx.rng) * 0.12f;  // Peak alpha 0.85-0.97.
+            ctx.particles.push_back(p);
+            appendHalo(p, 1.7f, 0.15f + ctx.dist(ctx.rng) * 0.08f);
+        }
+        else
+        {
+            // Premium glow petal: brightest core + a stronger shine halo.
+            p.size = 4.5f + ctx.dist(ctx.rng) * 2.5f;
+            p.velocity.x = 0.95f + ctx.dist(ctx.rng) * 0.05f;  // Peak alpha 0.95-1.00.
+            ctx.particles.push_back(p);
+            appendHalo(p, 2.2f, 0.25f + ctx.dist(ctx.rng) * 0.12f);
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Ash - gray particles, slow fall + horizontal flutter, alpha blend
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::Ash>
+{
+    static constexpr float SpawnRate = 5.0f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        float flutter = std::sin(ctx.time * 1.2f + p.phase) * 8.0f;
+        p.position.x += flutter * ctx.deltaTime;
+        // velocity.y is set at spawn for a slow constant fall.
+
+        float fade = std::min(p.lifetime / 2.0f, (p.maxLifetime - p.lifetime) / 1.0f);
+        p.color.a = std::clamp(fade, 0.0f, 1.0f) * 0.75f;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::Ash;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity.x = 0.0f;
+        p.velocity.y = 12.0f + ctx.dist(ctx.rng) * 10.0f;  // Slow, steady fall.
+        p.color = glm::vec4(0.70f, 0.70f, 0.72f + ctx.dist(ctx.rng) * 0.05f, 0.0f);
+        p.size = 2.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.lifetime = 10.0f + ctx.dist(ctx.rng) * 10.0f;
+        p.maxLifetime = p.lifetime;
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = 0.0f;
+        p.additive = false;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Ember - orange particles rising upward, additive flicker
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::Ember>
+{
+    static constexpr float SpawnRate = 7.0f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // Slight horizontal wobble.
+        float wobble = std::sin(ctx.time * 4.0f + p.phase) * 4.0f;
+        p.position.x += wobble * ctx.deltaTime;
+
+        // Rapid alpha flicker simulating a glowing ember.
+        float flicker = 0.6f + 0.4f * std::sin(ctx.time * 12.0f + p.phase * 2.0f);
+        float life = std::min(p.lifetime / 0.6f, (p.maxLifetime - p.lifetime) / 0.3f);
+        p.color.a = std::clamp(life, 0.0f, 1.0f) * flicker * 0.9f;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::Ember;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        p.velocity.x = (ctx.dist(ctx.rng) - 0.5f) * 8.0f;
+        p.velocity.y = -(30.0f + ctx.dist(ctx.rng) * 30.0f);  // Rises (Y- is up).
+        p.color = glm::vec4(
+            0.95f, 0.45f + ctx.dist(ctx.rng) * 0.15f, 0.15f + ctx.dist(ctx.rng) * 0.10f, 0.0f);
+        p.size = 4.0f + ctx.dist(ctx.rng) * 2.0f;
+        p.lifetime = 1.5f + ctx.dist(ctx.rng) * 1.5f;
+        p.maxLifetime = p.lifetime;
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = 0.0f;
+        p.additive = true;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Sand - fast horizontal wind-driven streaks, alpha blend
+// ---------------------------------------------------------------------------
+
+template <>
+struct ParticleBehavior<ParticleType::Sand>
+{
+    static constexpr float SpawnRate = 25.0f;
+
+    static void Update(Particle& p, const ParticleUpdateContext& ctx)
+    {
+        // velocity is set at spawn; just fade.
+        float fade = std::min(p.lifetime / 0.2f, (p.maxLifetime - p.lifetime) / 0.1f);
+        p.color.a = std::clamp(fade, 0.0f, 1.0f) * 0.6f;
+    }
+
+    static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
+    {
+        Particle p;
+        p.zoneIndex = zoneIndex;
+        p.type = ParticleType::Sand;
+        p.noProjection = zone.noProjection;
+        p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
+        p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
+        // Wind blows right (+X) by default; weather may override at spawn site.
+        p.velocity.x = 100.0f + ctx.dist(ctx.rng) * 100.0f;
+        p.velocity.y = 10.0f + ctx.dist(ctx.rng) * 15.0f;  // Slight downward drift.
+        p.color = glm::vec4(0.85f, 0.72f, 0.45f + ctx.dist(ctx.rng) * 0.10f, 0.0f);
+        p.size = 3.0f + ctx.dist(ctx.rng) * 3.0f;
+        p.lifetime = 0.3f + ctx.dist(ctx.rng) * 0.5f;
+        p.maxLifetime = p.lifetime;
+        p.phase = ctx.dist(ctx.rng) * 6.28f;
+        p.rotation = 0.0f;
+        p.additive = false;
+        ctx.particles.push_back(p);
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Dispatch tables - auto-generated from ParticleBehavior specializations
 // ---------------------------------------------------------------------------
 
@@ -970,7 +1252,9 @@ ParticleSystem::ParticleSystem()
       m_Dist01(0.0f, 1.0f),           // Uniform distribution for random values
       m_TexturesLoaded(false)         // Lazy-load flag for particle sprites
 {
-    m_Particles.reserve(500);  // Pre-allocate to reduce reallocations
+    // Reserve enough for heavy weather (Thunderstorm: 800 rain particles)
+    // plus ambient + zone particles, without reallocating on the fast path.
+    m_Particles.reserve(1000);
 }
 
 bool ParticleSystem::LoadTextures()
@@ -1077,6 +1361,82 @@ void ParticleSystem::BuildAtlas()
     for (int i = 0; i < 3; i++)
     {
         loadPng(ambientFilePaths[i], sources[static_cast<int>(ParticleType::DriftingLeaf) + i]);
+    }
+
+    // Weather-only particle types (CherryBlossom, Ash, Ember, Sand) ship
+    // without bespoke art. Generate distinct procedural textures so each one
+    // has the right shape and soft-edge falloff (a solid white block tinted
+    // by Particle::color reads as an opaque square - that's the bug we're
+    // fixing here). Runtime tinting via Particle::color still applies.
+
+    // Generic soft circle: a smooth radial alpha falloff used by Ash and Ember.
+    auto generateSoftCircle = [](TextureSource& src, int size, float falloffPow)
+    {
+        src.width = size;
+        src.height = size;
+        GeneratePixels(src.pixels,
+                       size,
+                       size,
+                       [falloffPow](int x, int y, int w, int h) -> Pixel
+                       {
+                           float cx = w * 0.5f;
+                           float cy = h * 0.5f;
+                           float dx = (x - cx) / cx;
+                           float dy = (y - cy) / cy;
+                           float dist = std::sqrt(dx * dx + dy * dy);
+                           float a = std::pow(std::max(0.0f, 1.0f - dist), falloffPow);
+                           auto alpha = static_cast<uint8_t>(std::clamp(a, 0.0f, 1.0f) * 255.0f);
+                           return Pixel{255, 255, 255, alpha};
+                       });
+    };
+
+    // Sand: elongated horizontal soft streak - wind-driven look.
+    auto generateStreak = [](TextureSource& src)
+    {
+        constexpr int kW = 32;
+        constexpr int kH = 8;
+        src.width = kW;
+        src.height = kH;
+        GeneratePixels(src.pixels,
+                       kW,
+                       kH,
+                       [](int x, int y, int w, int h) -> Pixel
+                       {
+                           float cx = w * 0.5f;
+                           float cy = h * 0.5f;
+                           float nx = (x - cx) / cx;  // -1..1 along streak
+                           float ny = (y - cy) / cy;  // -1..1 across streak
+                           // Tighter falloff across (vertical), looser along (horizontal).
+                           float along = std::pow(std::max(0.0f, 1.0f - std::abs(nx)), 1.4f);
+                           float across = std::exp(-ny * ny * 4.0f);
+                           float a = std::clamp(along * across, 0.0f, 1.0f);
+                           auto alpha = static_cast<uint8_t>(a * 255.0f);
+                           return Pixel{255, 255, 255, alpha};
+                       });
+    };
+
+    {
+        const int blossomIdx = static_cast<int>(ParticleType::CherryBlossom);
+        const int ashIdx = static_cast<int>(ParticleType::Ash);
+        const int emberIdx = static_cast<int>(ParticleType::Ember);
+        const int sandIdx = static_cast<int>(ParticleType::Sand);
+        // Cherry blossom uses a hand-painted PNG asset; loadPng falls back to
+        // a 16x16 white texture if the asset is missing, then the soft-circle
+        // belt-and-braces below replaces that with a soft-edged sprite.
+        loadPng("assets/particles/f21d2941-7f0f-4bcd-9aa5-fa90696f816a.png", sources[blossomIdx]);
+        generateSoftCircle(sources[ashIdx], 24, 1.6f);    // Soft, ash-like puff.
+        generateSoftCircle(sources[emberIdx], 24, 2.4f);  // Tight bright dot for additive glow.
+        generateStreak(sources[sandIdx]);
+    }
+
+    // Belt-and-braces: any source still empty (e.g. a future ParticleType added
+    // without a generator) gets a soft fallback rather than an opaque square.
+    for (int i = 0; i < kAtlasSourceCount; ++i)
+    {
+        if (sources[i].width == 0 || sources[i].height == 0 || sources[i].pixels.empty())
+        {
+            generateSoftCircle(sources[i], 16, 1.5f);
+        }
     }
 
     // Calculate atlas layout - simple horizontal packing with rows.
@@ -1327,6 +1687,9 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
     // Maintain global ambient population (independent of zones).
     UpdateAmbientSpawning(deltaTime, cameraPos, viewSize);
 
+    // Maintain weather-driven particle population (rain, snow, ash, etc.).
+    UpdateWeatherSpawning(deltaTime, cameraPos, viewSize);
+
     if (!hasZones)
     {
         return;
@@ -1511,6 +1874,169 @@ void ParticleSystem::SpawnOne(ParticleType type, glm::vec2 worldPos)
     fakeZone.enabled = true;
     fakeZone.noProjection = false;
     SpawnParticleInZone(-1, fakeZone);
+}
+
+void ParticleSystem::SetWeatherState(const WeatherDefinition* def, float intensity)
+{
+    m_CurrentWeatherDef = def;
+    m_WeatherIntensity = std::clamp(intensity, 0.0f, 1.0f);
+}
+
+namespace
+{
+/// Map WeatherParticleType -> concrete ParticleType. Returns nullopt for None.
+std::optional<ParticleType> ResolveWeatherParticle(WeatherParticleType wpt)
+{
+    switch (wpt)
+    {
+        case WeatherParticleType::None:
+            return std::nullopt;
+        case WeatherParticleType::Rain:
+            return ParticleType::Rain;
+        case WeatherParticleType::Snow:
+            return ParticleType::Snow;
+        case WeatherParticleType::Fog:
+            return ParticleType::Fog;
+        case WeatherParticleType::Leaf:
+            return ParticleType::DriftingLeaf;
+        case WeatherParticleType::Blossom:
+            return ParticleType::CherryBlossom;
+        case WeatherParticleType::Pollen:
+            return ParticleType::Pollen;
+        case WeatherParticleType::Ash:
+            return ParticleType::Ash;
+        case WeatherParticleType::Ember:
+            return ParticleType::Ember;
+        case WeatherParticleType::Sand:
+            return ParticleType::Sand;
+        case WeatherParticleType::Firefly:
+            return ParticleType::Firefly;
+    }
+    return std::nullopt;
+}
+}  // namespace
+
+void ParticleSystem::UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize)
+{
+    if (m_CurrentWeatherDef == nullptr)
+        return;
+    auto particleTypeOpt = ResolveWeatherParticle(m_CurrentWeatherDef->particleType);
+    if (!particleTypeOpt.has_value())
+        return;
+
+    // Scale base rate by visible-area ratio so density per visible pixel stays
+    // roughly constant as the player zooms in or out. Reference viewport is the
+    // typical pixel-art window (320x180 world px at zoom=1). When zoomed in,
+    // viewSize shrinks and the rate drops; when zoomed out, the rate rises so
+    // a downpour still feels like a downpour.
+    constexpr float kReferenceArea = 320.0f * 180.0f;
+    const float visibleArea = std::max(1.0f, viewSize.x * viewSize.y);
+    const float zoomScale = std::clamp(visibleArea / kReferenceArea, 0.25f, 4.0f);
+    float effectiveRate = m_CurrentWeatherDef->baseSpawnRate * m_WeatherIntensity * zoomScale;
+    if (effectiveRate <= 0.0f)
+        return;
+
+    // Hard cap on weather particles in flight.
+    int maxWeather = m_CurrentWeatherDef->maxWeatherParticles;
+    if (maxWeather > 0)
+    {
+        int liveCount = 0;
+        for (const auto& p : m_Particles)
+        {
+            if (p.zoneIndex == WEATHER_ZONE_INDEX)
+                ++liveCount;
+        }
+        if (liveCount >= maxWeather)
+        {
+            m_WeatherSpawnTimer = 0.0f;  // Throttle until population drops.
+            return;
+        }
+    }
+
+    m_WeatherSpawnTimer += deltaTime;
+    float interval = 1.0f / effectiveRate;
+    while (m_WeatherSpawnTimer >= interval)
+    {
+        m_WeatherSpawnTimer -= interval;
+        SpawnWeatherParticle(*particleTypeOpt, cameraPos, viewSize);
+        if (maxWeather > 0)
+        {
+            // Recompute live count cheaply: at most one new particle per loop.
+            int liveCount = 0;
+            for (const auto& p : m_Particles)
+            {
+                if (p.zoneIndex == WEATHER_ZONE_INDEX)
+                    ++liveCount;
+            }
+            if (liveCount >= maxWeather)
+                break;
+        }
+    }
+}
+
+void ParticleSystem::SpawnWeatherParticle(ParticleType type,
+                                          glm::vec2 cameraPos,
+                                          glm::vec2 viewSize)
+{
+    // Spawn rect: viewport with 20% overspray. Bias by particle type.
+    const float overspray = 0.20f;
+    glm::vec2 rectPos = cameraPos - viewSize * overspray;
+    glm::vec2 rectSize = viewSize * (1.0f + 2.0f * overspray);
+
+    // Type-specific spawn-edge bias.
+    switch (type)
+    {
+        case ParticleType::Rain:
+        case ParticleType::Snow:
+        case ParticleType::Ash:
+            // Spawn in the top 10% of the rect so particles fall into view.
+            rectSize.y *= 0.10f;
+            break;
+        case ParticleType::Sand:
+            // Wind blows right by default; spawn at the upwind (left) edge.
+            rectSize.x *= 0.10f;
+            break;
+        case ParticleType::Ember:
+            // Embers rise from the bottom 20% so they enter from below.
+            rectPos.y += rectSize.y * 0.80f;
+            rectSize.y *= 0.20f;
+            break;
+        case ParticleType::Fog:
+        case ParticleType::CherryBlossom:
+        case ParticleType::DriftingLeaf:
+        case ParticleType::Pollen:
+        case ParticleType::Firefly:
+        default:
+            // Spawn anywhere in the visible rect.
+            break;
+    }
+
+    ParticleZone fakeZone;
+    fakeZone.position = rectPos;
+    fakeZone.size = rectSize;
+    fakeZone.type = type;
+    fakeZone.enabled = true;
+    fakeZone.noProjection = false;
+
+    int typeIndex = static_cast<int>(type);
+    if (typeIndex < 0 || typeIndex >= static_cast<int>(kSpawnDispatch.size()))
+        return;
+    ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles};
+    size_t before = m_Particles.size();
+    kSpawnDispatch[typeIndex](WEATHER_ZONE_INDEX, fakeZone, ctx);
+
+    // Apply weather size scale to anything the type's Spawn just appended.
+    // Allows per-weather "make it bigger" tuning without modifying per-type
+    // spawn defaults (used for atmosphere weathers that need denser/larger
+    // fog blobs and swarm weathers that benefit from chunkier sprites).
+    const float sizeScale = m_CurrentWeatherDef ? m_CurrentWeatherDef->particleSizeScale : 1.0f;
+    if (sizeScale != 1.0f)
+    {
+        for (size_t i = before; i < m_Particles.size(); ++i)
+        {
+            m_Particles[i].size *= sizeScale;
+        }
+    }
 }
 
 void ParticleSystem::Render(IRenderer& renderer,

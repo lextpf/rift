@@ -9,6 +9,7 @@
 #include <vector>
 
 class Tilemap;
+struct WeatherDefinition;
 
 /**
  * @enum ParticleType
@@ -30,24 +31,28 @@ class Tilemap;
  */
 enum class ParticleType
 {
-    Firefly = 0,       ///< Pulsing yellow-green glow, gentle drift
-    Rain = 1,          ///< Fast falling droplets, slight angle
-    Snow = 2,          ///< Slow falling flakes with side drift
-    Fog = 3,           ///< Large translucent patches, very slow (also used for chimney smoke)
-    Sparkles = 4,      ///< Brief bright flashes, stationary
-    Wisp = 5,          ///< Magical spiraling orbs, color variety
-    Lantern = 6,       ///< Warm glow, night-only visibility
-    Sunshine = 7,      ///< Sun rays (day=yellow) / moon beams (night=blue)
-    DriftingLeaf = 8,  ///< Ambient cozy: small green/yellow leaf drifting on wind
-    DustMote = 9,      ///< Ambient cozy: tiny golden mote in sunbeams
-    Pollen = 10        ///< Ambient cozy: yellow pollen during golden hour
+    Firefly = 0,         ///< Pulsing yellow-green glow, gentle drift
+    Rain = 1,            ///< Fast falling droplets, slight angle
+    Snow = 2,            ///< Slow falling flakes with side drift
+    Fog = 3,             ///< Large translucent patches, very slow (also used for chimney smoke)
+    Sparkles = 4,        ///< Brief bright flashes, stationary
+    Wisp = 5,            ///< Magical spiraling orbs, color variety
+    Lantern = 6,         ///< Warm glow, night-only visibility
+    Sunshine = 7,        ///< Sun rays (day=yellow) / moon beams (night=blue)
+    DriftingLeaf = 8,    ///< Ambient cozy: small green/yellow leaf drifting on wind
+    DustMote = 9,        ///< Ambient cozy: tiny golden mote in sunbeams
+    Pollen = 10,         ///< Ambient cozy: yellow pollen during golden hour
+    CherryBlossom = 11,  ///< Weather: drifting pink petals, gentle spiral
+    Ash = 12,            ///< Weather: gray-white particles, slow fall + flutter
+    Ember = 13,          ///< Weather: orange particles rising upward, additive flicker
+    Sand = 14            ///< Weather: tan-gold particles, fast horizontal wind
 };
 
 /// Compile-time reflection for ParticleType.
 template <>
 struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
-    static constexpr size_t Count = 11;
+    static constexpr size_t Count = 15;
     static constexpr std::string_view Names[] = {"Firefly",
                                                  "Rain",
                                                  "Snow",
@@ -58,9 +63,13 @@ struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<Partic
                                                  "Sunshine",
                                                  "DriftingLeaf",
                                                  "DustMote",
-                                                 "Pollen"};
+                                                 "Pollen",
+                                                 "CherryBlossom",
+                                                 "Ash",
+                                                 "Ember",
+                                                 "Sand"};
 
-    static_assert(std::to_underlying(ParticleType::Pollen) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::Sand) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
 };
 
@@ -358,6 +367,20 @@ public:
      */
     void SetTimeOfDay(float timeOfDay) { m_TimeOfDay = timeOfDay; }
 
+    /**
+     * @brief Set the active weather definition used for global particle spawning.
+     *
+     * Drives the per-frame "weather emitter" that spawns rain, snow, ash, etc.
+     * across the visible viewport at `def->baseSpawnRate * intensity`. Pass
+     * `nullptr` to disable weather spawning.
+     *
+     * @param def       Pointer to a stable WeatherDefinition (e.g. from
+     *                  GetWeatherDefinition). Lifetime must outlive the next
+     *                  Update call.
+     * @param intensity Density multiplier in [0, 1].
+     */
+    void SetWeatherState(const WeatherDefinition* def, float intensity);
+
 private:
     void SpawnParticleInZone(int zoneIndex, const ParticleZone& zone);
 
@@ -370,6 +393,19 @@ private:
 
     /// @brief Spawn one global (zoneIndex = -1) ambient particle of the given type.
     void SpawnAmbientParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
+
+    /// @brief Maintain weather-driven particle spawning (rain/snow/ash/etc.)
+    /// across the visible viewport. Spawned particles are tagged with
+    /// zoneIndex = WEATHER_ZONE_INDEX (-2) so they coexist with zone particles.
+    void UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize);
+
+    /// @brief Spawn one weather particle. Implementation chooses spawn rect
+    /// edge based on the weather particle type (top for precipitation,
+    /// upwind edge for sand, anywhere for fog/ash).
+    void SpawnWeatherParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
+
+    /// Sentinel zoneIndex for weather-spawned particles.
+    static constexpr int WEATHER_ZONE_INDEX = -2;
 
     /// @name Particle Pool
     /// @{
@@ -393,8 +429,16 @@ private:
     std::vector<size_t> m_ZoneParticleCounts;  ///< Per-zone active particle counts.
 
     /// Per-type ambient spawn timers (only DriftingLeaf, DustMote, Pollen used).
-    /// Indexed by ParticleType enum value.
-    float m_AmbientSpawnTimers[12] = {};
+    /// Indexed by ParticleType enum value. Sized via EnumTraits to auto-grow
+    /// when new ParticleType values are added.
+    float m_AmbientSpawnTimers[EnumTraits<ParticleType>::Count] = {};
+
+    /// @name Weather Spawning
+    /// @{
+    const WeatherDefinition* m_CurrentWeatherDef{nullptr};  ///< Active weather (or null).
+    float m_WeatherIntensity{1.0f};                         ///< 0-1 density scalar.
+    float m_WeatherSpawnTimer{0.0f};                        ///< Spawn rate accumulator.
+    /// @}
 
     /// @}
 
@@ -420,9 +464,9 @@ private:
         glm::vec2 uvMax;  ///< Bottom-right UV coordinate.
     };
 
-    Texture m_AtlasTexture;          ///< Combined particle texture atlas.
-    AtlasRegion m_AtlasRegions[11];  ///< UV regions indexed by ParticleType.
-    bool m_TexturesLoaded;           ///< Whether LoadTextures() succeeded.
+    Texture m_AtlasTexture;  ///< Combined particle texture atlas.
+    AtlasRegion m_AtlasRegions[EnumTraits<ParticleType>::Count];  ///< UV per ParticleType.
+    bool m_TexturesLoaded;  ///< Whether LoadTextures() succeeded.
 
     /**
      * @brief Build the texture atlas from individual particle textures.
