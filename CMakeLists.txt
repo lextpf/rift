@@ -343,6 +343,9 @@ if(BUILD_TESTS)
         # No renderer dependency; tests exercise GetWeatherDefinition and
         # ComputeLightIntensity directly.
         "${CMAKE_SOURCE_DIR}/src/WeatherDefinitions.cpp"
+        # DrawTracer: tiny per-frame event log; renderer-free. Linked here
+        # so ConsoleCommands.cpp's Cmd_RendererTrace resolves at test link.
+        "${CMAKE_SOURCE_DIR}/src/DrawTracer.cpp"
         "${CMAKE_SOURCE_DIR}/src/CollisionResolver.cpp"
         "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
         "${CMAKE_SOURCE_DIR}/src/NonPlayerCharacter.cpp"
