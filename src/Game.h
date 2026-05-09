@@ -308,6 +308,13 @@ public:
     const FPSCounter& GetFPSCounter() const { return m_Fps; }
 
     /**
+     * @brief Raw GLFW window handle for code paths that must call GLFW
+     * directly (e.g. clipboard get/set). Returns nullptr before the window
+     * is created or after shutdown.
+     */
+    GLFWwindow* GetWindow() const { return m_Window; }
+
+    /**
      * @brief Whether a simple (non-tree) dialogue is currently active.
      *
      * Read by the developer console's `dialogue.active` command and used
