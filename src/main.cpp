@@ -182,8 +182,9 @@ int main()
         // Run the main game loop
         try
         {
-            // Cap frame rate to 244 FPS
-            game.SetTargetFps(244.0f);
+            // Target slightly above 244 so spin overshoot and small jitter
+            // don't drop the displayed reading to 243.
+            game.SetTargetFps(244.5f);
             game.Run();
         }
         catch (const std::exception& e)
