@@ -95,18 +95,22 @@ enum class LogLevel : std::uint8_t
  * @endcode
  *
  * @par Failure Semantics
- * If `Initialize()` cannot open the file or enable virtual-terminal processing,
- * it returns `false` but leaves Logger in a working state: subsequent calls
- * are dropped silently rather than throwing. Crashes still produce output
- * because the signal handlers do not depend on Logger state.
+ * If `Initialize()` cannot open the file, it returns `false` but still marks
+ * Logger initialized for console output. Virtual-terminal setup only controls
+ * whether ANSI colors are emitted. Log calls are dropped only before
+ * `Initialize()` or after `Shutdown()`. Crashes still produce output because
+ * the signal handlers do not depend on Logger state.
  *
  * @see LogLevel
  */
 class Logger
 {
 public:
+    /// Static-only utility; no Logger instances may be created.
     Logger() = delete;
+    /// Static-only utility; copying is not meaningful.
     Logger(const Logger&) = delete;
+    /// Static-only utility; assignment is not meaningful.
     Logger& operator=(const Logger&) = delete;
 
     /// @name Constants
@@ -133,7 +137,7 @@ public:
      * be omitted from console output).
      *
      * @return true if the file was opened successfully, false otherwise.
-     *         Either way, subsequent log calls are safe.
+     *         Either way, subsequent log calls are safe and still emit to console.
      */
     static bool Initialize();
 
@@ -166,8 +170,9 @@ public:
     static LogLevel GetMinLevel();
 
     /**
-     * @brief Check whether Logger has been initialized successfully.
-     * @return true if Initialize() returned true and Shutdown() has not run.
+     * @brief Check whether Logger has been initialized for log emission.
+     * @return true after Initialize() has been called and before Shutdown(),
+     *         even if the log file failed to open.
      */
     static bool IsInitialized();
 
