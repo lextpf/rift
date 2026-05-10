@@ -350,6 +350,9 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
         "${CMAKE_SOURCE_DIR}/src/NonPlayerCharacter.cpp"
         "${CMAKE_SOURCE_DIR}/src/PatrolRoute.cpp"
+        # Pathfinding: free-function BFS over Tilemap navigation; renderer-free.
+        # Used by Cmd_NavPath / Cmd_NavReachable.
+        "${CMAKE_SOURCE_DIR}/src/Pathfinding.cpp"
         "${CMAKE_SOURCE_DIR}/src/GameCharacter.cpp"
         "${CMAKE_SOURCE_DIR}/src/Tilemap.cpp"
         "${CMAKE_SOURCE_DIR}/src/Texture.cpp"
