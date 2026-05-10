@@ -12,9 +12,11 @@
 #include "IRenderer.h"
 #include "NonPlayerCharacter.h"
 #include "ParticleSystem.h"
+#include "Pathfinding.h"
 #include "PlayerCharacter.h"
 #include "Tilemap.h"
 #include "TimeManager.h"
+#include "Version.h"
 
 #include <GLFW/glfw3.h>
 
@@ -23,6 +25,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <random>
 #include <string>
@@ -2288,6 +2291,1219 @@ bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
 }
 
 // ============================================================================
+// layers.list
+// ============================================================================
+
+bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("layers.list: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("layers.list: usage 'layers.list'");
+        return false;
+    }
+    char header[64];
+    std::snprintf(header,
+                  sizeof(header),
+                  "layers.list: %zu layers",
+                  static_cast<std::size_t>(ctx.tilemap->GetLayerCount()));
+    ctx.out.Print(header);
+    for (std::size_t i = 0; i < ctx.tilemap->GetLayerCount(); ++i)
+    {
+        const TileLayer& L = ctx.tilemap->GetLayer(i);
+        std::size_t tileCount = 0;
+        std::size_t animCount = 0;
+        for (std::size_t k = 0; k < L.tiles.size(); ++k)
+        {
+            if (L.tiles[k] != -1)
+            {
+                ++tileCount;
+            }
+            if (L.animationMap[k] != -1)
+            {
+                ++animCount;
+            }
+        }
+        char line[192];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  [%zu] \"%s\" order=%d bg=%s tiles=%zu animated=%zu",
+                      i,
+                      L.name.c_str(),
+                      L.renderOrder,
+                      L.isBackground ? "y" : "n",
+                      tileCount,
+                      animCount);
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// tile.info <tx> <ty>
+// ============================================================================
+
+bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("tile.info: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 2)
+    {
+        ctx.out.PrintError("tile.info: usage 'tile.info <tx> <ty>'");
+        return false;
+    }
+    int tx = 0, ty = 0;
+    if (!ParseInt(args[0], tx) || !ParseInt(args[1], ty))
+    {
+        ctx.out.PrintError("tile.info: tile coords must be non-negative integers");
+        return false;
+    }
+    if (tx < 0 || ty < 0 || tx >= ctx.tilemap->GetMapWidth() || ty >= ctx.tilemap->GetMapHeight())
+    {
+        ctx.out.PrintError("tile.info: tile out of bounds");
+        return false;
+    }
+    char header[128];
+    std::snprintf(header,
+                  sizeof(header),
+                  "tile (%d,%d): collision=%s nav=%s elev=%d",
+                  tx,
+                  ty,
+                  ctx.tilemap->GetTileCollision(tx, ty) ? "y" : "n",
+                  ctx.tilemap->GetNavigation(tx, ty) ? "y" : "n",
+                  ctx.tilemap->GetElevation(tx, ty));
+    ctx.out.Print(header);
+    for (std::size_t L = 0; L < ctx.tilemap->GetLayerCount(); ++L)
+    {
+        int id = ctx.tilemap->GetLayerTile(tx, ty, L);
+        if (id == -1)
+        {
+            continue;
+        }
+        char line[224];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  L%zu id=%d rot=%.0f flags=[%s%s%s%s%s] struct=%d anim=%d",
+                      L,
+                      id,
+                      static_cast<double>(ctx.tilemap->GetLayerRotation(tx, ty, L)),
+                      ctx.tilemap->GetLayerNoProjection(tx, ty, L) ? "noProj," : "",
+                      ctx.tilemap->GetLayerFlipX(tx, ty, L) ? "flipX," : "",
+                      ctx.tilemap->GetLayerFlipY(tx, ty, L) ? "flipY," : "",
+                      ctx.tilemap->GetLayerYSortPlus(tx, ty, L) ? "ySort+," : "",
+                      ctx.tilemap->GetLayerYSortMinus(tx, ty, L) ? "ySort-," : "",
+                      ctx.tilemap->GetTileStructureId(tx, ty, static_cast<int>(L)),
+                      ctx.tilemap->GetTileAnimation(tx, ty, static_cast<int>(L)));
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// tile.find <tileID> [layer]
+// ============================================================================
+
+bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("tile.find: tilemap unavailable");
+        return false;
+    }
+    if (args.empty() || args.size() > 2)
+    {
+        ctx.out.PrintError("tile.find: usage 'tile.find <tileID> [layer]'");
+        return false;
+    }
+    int targetID = 0;
+    if (!ParseInt(args[0], targetID))
+    {
+        ctx.out.PrintError("tile.find: tileID must be an integer");
+        return false;
+    }
+    int filterLayer = -1;
+    if (args.size() == 2 && !ParseInt(args[1], filterLayer))
+    {
+        ctx.out.PrintError("tile.find: layer must be a non-negative integer");
+        return false;
+    }
+    constexpr std::size_t kMaxPrint = 256;
+    std::size_t printed = 0;
+    std::size_t total = 0;
+    for (std::size_t L = 0; L < ctx.tilemap->GetLayerCount(); ++L)
+    {
+        if (filterLayer >= 0 && static_cast<std::size_t>(filterLayer) != L)
+        {
+            continue;
+        }
+        for (int y = 0; y < ctx.tilemap->GetMapHeight(); ++y)
+        {
+            for (int x = 0; x < ctx.tilemap->GetMapWidth(); ++x)
+            {
+                if (ctx.tilemap->GetLayerTile(x, y, L) != targetID)
+                {
+                    continue;
+                }
+                ++total;
+                if (printed < kMaxPrint)
+                {
+                    char line[64];
+                    std::snprintf(line, sizeof(line), "  (%d,%d) L%zu", x, y, L);
+                    ctx.out.Print(line);
+                    ++printed;
+                }
+            }
+        }
+    }
+    char summary[96];
+    if (total > kMaxPrint)
+    {
+        std::snprintf(summary,
+                      sizeof(summary),
+                      "tile.find: %zu matches (showing first %zu)",
+                      total,
+                      kMaxPrint);
+    }
+    else
+    {
+        std::snprintf(summary, sizeof(summary), "tile.find: %zu matches", total);
+    }
+    ctx.out.Print(summary);
+    return true;
+}
+
+// ============================================================================
+// map.stats
+// ============================================================================
+
+bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("map.stats: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("map.stats: usage 'map.stats'");
+        return false;
+    }
+    const Tilemap& m = *ctx.tilemap;
+    const std::size_t cells = m.MapCellCount();
+    std::size_t collisionCount = 0, navCount = 0;
+    for (int y = 0; y < m.GetMapHeight(); ++y)
+    {
+        for (int x = 0; x < m.GetMapWidth(); ++x)
+        {
+            if (m.GetTileCollision(x, y))
+            {
+                ++collisionCount;
+            }
+            if (m.GetNavigation(x, y))
+            {
+                ++navCount;
+            }
+        }
+    }
+    auto pct = [&](std::size_t n) -> double
+    { return cells > 0 ? (100.0 * static_cast<double>(n) / static_cast<double>(cells)) : 0.0; };
+    char line[224];
+    std::snprintf(
+        line,
+        sizeof(line),
+        "map.stats: size=%dx%d (%zu cells), collision=%zu (%.1f%%), navigable=%zu (%.1f%%)",
+        m.GetMapWidth(),
+        m.GetMapHeight(),
+        cells,
+        collisionCount,
+        pct(collisionCount),
+        navCount,
+        pct(navCount));
+    ctx.out.Print(line);
+    std::snprintf(line,
+                  sizeof(line),
+                  "  layers=%zu, structures=%zu, lights=%zu, particle zones=%zu, npcs=%zu",
+                  m.GetLayerCount(),
+                  m.GetNoProjectionStructureCount(),
+                  m.GetLights().size(),
+                  m.GetParticleZones() ? m.GetParticleZones()->size() : 0u,
+                  ctx.npcs ? ctx.npcs->size() : 0u);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// tileset.info
+// ============================================================================
+
+bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("tileset.info: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("tileset.info: usage 'tileset.info'");
+        return false;
+    }
+    const Tilemap& m = *ctx.tilemap;
+    char line[160];
+    std::snprintf(line,
+                  sizeof(line),
+                  "tileset.info: image=%dx%d px, tile=%dx%d px, perRow=%d",
+                  m.GetTilesetDataWidth(),
+                  m.GetTilesetDataHeight(),
+                  m.GetTileWidth(),
+                  m.GetTileHeight(),
+                  m.GetTilesPerRow());
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// anim.list
+// ============================================================================
+
+bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("anim.list: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("anim.list: usage 'anim.list'");
+        return false;
+    }
+    const Tilemap& m = *ctx.tilemap;
+    std::size_t total = 0;
+    for (int id = 0;; ++id)
+    {
+        const AnimatedTile* a = m.GetAnimatedTile(id);
+        if (!a)
+        {
+            break;
+        }
+        ++total;
+    }
+    char header[64];
+    std::snprintf(header, sizeof(header), "anim.list: %zu animations", total);
+    ctx.out.Print(header);
+    for (int id = 0;; ++id)
+    {
+        const AnimatedTile* a = m.GetAnimatedTile(id);
+        if (!a)
+        {
+            break;
+        }
+        std::size_t uses = 0;
+        for (std::size_t L = 0; L < m.GetLayerCount(); ++L)
+        {
+            for (int y = 0; y < m.GetMapHeight(); ++y)
+            {
+                for (int x = 0; x < m.GetMapWidth(); ++x)
+                {
+                    if (m.GetTileAnimation(x, y, static_cast<int>(L)) == id)
+                    {
+                        ++uses;
+                    }
+                }
+            }
+        }
+        char line[128];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  [%d] frames=%zu dur=%.3fs uses=%zu",
+                      id,
+                      a->frames.size(),
+                      static_cast<double>(a->frameDuration),
+                      uses);
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// CameraSnapTo helper for the *.goto family
+// ============================================================================
+
+namespace
+{
+void CameraSnapTo(CameraController& cam, glm::vec2 worldPos)
+{
+    CameraState& s = cam.GetState();
+    s.freeMode = true;
+    s.position = worldPos;
+    s.followTarget = worldPos;
+    s.hasFollowTarget = false;
+}
+}  // namespace
+
+// ============================================================================
+// struct.list / struct.info <id> / struct.goto <id>
+// ============================================================================
+
+bool Cmd_StructList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("struct.list: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("struct.list: usage 'struct.list'");
+        return false;
+    }
+    const auto& list = ctx.tilemap->GetNoProjectionStructures();
+    char header[64];
+    std::snprintf(header, sizeof(header), "struct.list: %zu structures", list.size());
+    ctx.out.Print(header);
+    for (const auto& s : list)
+    {
+        char line[224];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  [%d] \"%s\" left=(%.0f,%.0f) right=(%.0f,%.0f)",
+                      s.id,
+                      s.name.c_str(),
+                      static_cast<double>(s.leftAnchor.x),
+                      static_cast<double>(s.leftAnchor.y),
+                      static_cast<double>(s.rightAnchor.x),
+                      static_cast<double>(s.rightAnchor.y));
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+bool Cmd_StructInfo(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("struct.info: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("struct.info: usage 'struct.info <id>'");
+        return false;
+    }
+    int id = -1;
+    if (!ParseInt(args[0], id))
+    {
+        ctx.out.PrintError("struct.info: id must be a non-negative integer");
+        return false;
+    }
+    const auto* s = ctx.tilemap->GetNoProjectionStructure(id);
+    if (s == nullptr)
+    {
+        ctx.out.PrintError("struct.info: id out of range");
+        return false;
+    }
+    char header[224];
+    std::snprintf(header,
+                  sizeof(header),
+                  "struct[%d] \"%s\" left=(%.0f,%.0f) right=(%.0f,%.0f)",
+                  s->id,
+                  s->name.c_str(),
+                  static_cast<double>(s->leftAnchor.x),
+                  static_cast<double>(s->leftAnchor.y),
+                  static_cast<double>(s->rightAnchor.x),
+                  static_cast<double>(s->rightAnchor.y));
+    ctx.out.Print(header);
+    return true;
+}
+
+bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr || ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("struct.goto: tilemap or camera unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("struct.goto: usage 'struct.goto <id>'");
+        return false;
+    }
+    int id = -1;
+    if (!ParseInt(args[0], id))
+    {
+        ctx.out.PrintError("struct.goto: id must be a non-negative integer");
+        return false;
+    }
+    const auto* s = ctx.tilemap->GetNoProjectionStructure(id);
+    if (s == nullptr)
+    {
+        ctx.out.PrintError("struct.goto: id out of range");
+        return false;
+    }
+    glm::vec2 center = (s->leftAnchor + s->rightAnchor) * 0.5f;
+    CameraSnapTo(*ctx.camera, center);
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "struct.goto: camera -> (%.0f,%.0f)",
+                  static_cast<double>(center.x),
+                  static_cast<double>(center.y));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// zone.list / zone.goto <idx> / light.goto <idx>
+// ============================================================================
+
+bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("zone.list: tilemap unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("zone.list: usage 'zone.list'");
+        return false;
+    }
+    const auto* zones = ctx.tilemap->GetParticleZones();
+    std::size_t n = zones ? zones->size() : 0u;
+    char header[64];
+    std::snprintf(header, sizeof(header), "zone.list: %zu zones", n);
+    ctx.out.Print(header);
+    if (zones != nullptr)
+    {
+        for (std::size_t i = 0; i < zones->size(); ++i)
+        {
+            const auto& z = (*zones)[i];
+            char line[160];
+            std::snprintf(line,
+                          sizeof(line),
+                          "  [%zu] type=%d pos=(%.0f,%.0f) size=(%.0f,%.0f) noProj=%s",
+                          i,
+                          static_cast<int>(z.type),
+                          static_cast<double>(z.position.x),
+                          static_cast<double>(z.position.y),
+                          static_cast<double>(z.size.x),
+                          static_cast<double>(z.size.y),
+                          z.noProjection ? "y" : "n");
+            ctx.out.Print(line);
+        }
+    }
+    return true;
+}
+
+bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr || ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("zone.goto: tilemap or camera unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("zone.goto: usage 'zone.goto <idx>'");
+        return false;
+    }
+    int idx = -1;
+    if (!ParseInt(args[0], idx))
+    {
+        ctx.out.PrintError("zone.goto: idx must be a non-negative integer");
+        return false;
+    }
+    const auto* zones = ctx.tilemap->GetParticleZones();
+    if (zones == nullptr || idx < 0 || static_cast<std::size_t>(idx) >= zones->size())
+    {
+        ctx.out.PrintError("zone.goto: idx out of range");
+        return false;
+    }
+    const auto& z = (*zones)[static_cast<std::size_t>(idx)];
+    glm::vec2 center = z.position + z.size * 0.5f;
+    CameraSnapTo(*ctx.camera, center);
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "zone.goto: camera -> (%.0f,%.0f)",
+                  static_cast<double>(center.x),
+                  static_cast<double>(center.y));
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr || ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("light.goto: tilemap or camera unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("light.goto: usage 'light.goto <idx>'");
+        return false;
+    }
+    int idx = -1;
+    if (!ParseInt(args[0], idx))
+    {
+        ctx.out.PrintError("light.goto: idx must be a non-negative integer");
+        return false;
+    }
+    const auto& lights = ctx.tilemap->GetLights();
+    if (idx < 0 || static_cast<std::size_t>(idx) >= lights.size())
+    {
+        ctx.out.PrintError("light.goto: idx out of range");
+        return false;
+    }
+    glm::vec2 pos = lights[static_cast<std::size_t>(idx)].position;
+    CameraSnapTo(*ctx.camera, pos);
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "light.goto: camera -> (%.0f,%.0f)",
+                  static_cast<double>(pos.x),
+                  static_cast<double>(pos.y));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// nav.path <fx> <fy> <tx> <ty>
+// ============================================================================
+
+bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("nav.path: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 4)
+    {
+        ctx.out.PrintError("nav.path: usage 'nav.path <fx> <fy> <tx> <ty>'");
+        return false;
+    }
+    int fx = 0, fy = 0, tx = 0, ty = 0;
+    if (!ParseInt(args[0], fx) || !ParseInt(args[1], fy) || !ParseInt(args[2], tx) ||
+        !ParseInt(args[3], ty))
+    {
+        ctx.out.PrintError("nav.path: coords must be non-negative integers");
+        return false;
+    }
+    auto path = Pathfinding::FindPath(*ctx.tilemap, {fx, fy}, {tx, ty});
+    if (path.empty())
+    {
+        char line[96];
+        std::snprintf(
+            line, sizeof(line), "nav.path: unreachable from (%d,%d) to (%d,%d)", fx, fy, tx, ty);
+        ctx.out.Print(line);
+        return true;
+    }
+    char header[64];
+    std::snprintf(header, sizeof(header), "nav.path: length=%zu", path.size());
+    ctx.out.Print(header);
+    constexpr std::size_t kMaxPrint = 32;
+    std::string row;
+    for (std::size_t i = 0; i < path.size() && i < kMaxPrint; ++i)
+    {
+        if (!row.empty())
+        {
+            row += " -> ";
+        }
+        char tmp[24];
+        std::snprintf(tmp, sizeof(tmp), "(%d,%d)", path[i].x, path[i].y);
+        row += tmp;
+    }
+    if (path.size() > kMaxPrint)
+    {
+        char tmp[48];
+        std::snprintf(tmp, sizeof(tmp), " ... and %zu more", path.size() - kMaxPrint);
+        row += tmp;
+    }
+    ctx.out.Print(row);
+    return true;
+}
+
+// ============================================================================
+// nav.reachable <tx> <ty>
+// ============================================================================
+
+bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.tilemap == nullptr)
+    {
+        ctx.out.PrintError("nav.reachable: tilemap unavailable");
+        return false;
+    }
+    if (args.size() != 2)
+    {
+        ctx.out.PrintError("nav.reachable: usage 'nav.reachable <tx> <ty>'");
+        return false;
+    }
+    int tx = 0, ty = 0;
+    if (!ParseInt(args[0], tx) || !ParseInt(args[1], ty))
+    {
+        ctx.out.PrintError("nav.reachable: coords must be non-negative integers");
+        return false;
+    }
+    glm::ivec2 mn{}, mx{};
+    auto count = Pathfinding::FloodReachable(*ctx.tilemap, {tx, ty}, mn, mx);
+    if (count == 0)
+    {
+        char line[96];
+        std::snprintf(line,
+                      sizeof(line),
+                      "nav.reachable: 0 tiles from (%d,%d) (start non-navigable?)",
+                      tx,
+                      ty);
+        ctx.out.Print(line);
+        return true;
+    }
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "nav.reachable: %zu tiles, bounds (%d,%d)-(%d,%d)",
+                  count,
+                  mn.x,
+                  mn.y,
+                  mx.x,
+                  mx.y);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// npc.path <idx>
+// ============================================================================
+
+bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("npc.path: npc list unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("npc.path: usage 'npc.path <idx>'");
+        return false;
+    }
+    int idx = -1;
+    if (!ParseInt(args[0], idx))
+    {
+        ctx.out.PrintError("npc.path: idx must be a non-negative integer");
+        return false;
+    }
+    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    {
+        ctx.out.PrintError("npc.path: idx out of range");
+        return false;
+    }
+    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(idx)];
+    const auto& wp = npc.GetPatrolRoute().GetWaypoints();
+    char header[96];
+    std::snprintf(header,
+                  sizeof(header),
+                  "npc.path: [%d] %s, %zu waypoints, %s",
+                  idx,
+                  npc.GetPatrolRoute().IsClosed() ? "closed" : "pingpong",
+                  wp.size(),
+                  npc.GetPatrolRoute().IsValid() ? "valid" : "no route");
+    ctx.out.Print(header);
+    constexpr std::size_t kMaxPrint = 24;
+    for (std::size_t i = 0; i < wp.size() && i < kMaxPrint; ++i)
+    {
+        char line[48];
+        std::snprintf(line, sizeof(line), "  %zu: (%d,%d)", i, wp[i].x, wp[i].y);
+        ctx.out.Print(line);
+    }
+    if (wp.size() > kMaxPrint)
+    {
+        char line[48];
+        std::snprintf(line, sizeof(line), "  ... and %zu more", wp.size() - kMaxPrint);
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// npc.goto <idx>
+// ============================================================================
+
+bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr || ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("npc.goto: npc list or camera unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("npc.goto: usage 'npc.goto <idx>'");
+        return false;
+    }
+    int idx = -1;
+    if (!ParseInt(args[0], idx))
+    {
+        ctx.out.PrintError("npc.goto: idx must be a non-negative integer");
+        return false;
+    }
+    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    {
+        ctx.out.PrintError("npc.goto: idx out of range");
+        return false;
+    }
+    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(idx)];
+    glm::vec2 pos = npc.GetPosition();
+    CameraSnapTo(*ctx.camera, pos);
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "npc.goto: [%d] %s -> (%.0f,%.0f)",
+                  idx,
+                  npc.GetType().c_str(),
+                  static_cast<double>(pos.x),
+                  static_cast<double>(pos.y));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// npc.nearest
+// ============================================================================
+
+bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.npcs == nullptr || ctx.player == nullptr)
+    {
+        ctx.out.PrintError("npc.nearest: npc list or player unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("npc.nearest: usage 'npc.nearest'");
+        return false;
+    }
+    if (ctx.npcs->empty())
+    {
+        ctx.out.Print("npc.nearest: no NPCs");
+        return true;
+    }
+    // Players use bottom-center anchoring: subtract half a tile from Y to
+    // recover the occupied tile (mirrors Tilemap::WorldToTileCoord).
+    glm::vec2 ppos = ctx.player->GetPosition();
+    int ptx = static_cast<int>(std::floor(ppos.x / static_cast<float>(CONSOLE_TILE_SIZE)));
+    int pty = static_cast<int>(
+        std::floor((ppos.y - CONSOLE_TILE_SIZE * 0.5f) / static_cast<float>(CONSOLE_TILE_SIZE)));
+    int bestIdx = -1;
+    int bestDist = std::numeric_limits<int>::max();
+    for (std::size_t i = 0; i < ctx.npcs->size(); ++i)
+    {
+        const auto& npc = (*ctx.npcs)[i];
+        int d = std::abs(npc.GetTileX() - ptx) + std::abs(npc.GetTileY() - pty);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            bestIdx = static_cast<int>(i);
+        }
+    }
+    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(bestIdx)];
+    char line[160];
+    std::snprintf(line,
+                  sizeof(line),
+                  "npc.nearest: [%d] \"%s\" tile=(%d,%d) dist=%d",
+                  bestIdx,
+                  npc.GetName().c_str(),
+                  npc.GetTileX(),
+                  npc.GetTileY(),
+                  bestDist);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// quest.list
+// ============================================================================
+
+bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.gameState == nullptr)
+    {
+        ctx.out.PrintError("quest.list: game state unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("quest.list: usage 'quest.list'");
+        return false;
+    }
+    auto active = ctx.gameState->GetActiveQuests();
+    char header[64];
+    std::snprintf(header, sizeof(header), "quest.list: %zu active", active.size());
+    ctx.out.Print(header);
+    for (const auto& name : active)
+    {
+        char line[224];
+        std::snprintf(line,
+                      sizeof(line),
+                      "  [ACTIVE] %s: %s",
+                      name.c_str(),
+                      ctx.gameState->GetQuestDescription(name).c_str());
+        ctx.out.Print(line);
+    }
+    for (const auto& [k, v] : ctx.gameState->GetAllFlags())
+    {
+        constexpr std::string_view kPrefix = "completed_";
+        if (k.size() <= kPrefix.size() || k.compare(0, kPrefix.size(), kPrefix) != 0)
+        {
+            continue;
+        }
+        char line[160];
+        std::snprintf(line, sizeof(line), "  [DONE] %s", k.c_str() + kPrefix.size());
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// quest.give <name> [description...]
+// ============================================================================
+
+bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.gameState == nullptr)
+    {
+        ctx.out.PrintError("quest.give: game state unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        ctx.out.PrintError("quest.give: usage 'quest.give <name> [description...]'");
+        return false;
+    }
+    std::string name(args[0]);
+    std::string desc;
+    for (std::size_t i = 1; i < args.size(); ++i)
+    {
+        if (i > 1)
+        {
+            desc.push_back(' ');
+        }
+        desc.append(args[i]);
+    }
+    if (desc.empty())
+    {
+        desc = "(no description)";
+    }
+    ctx.gameState->AcceptQuest(name, desc);
+    char line[224];
+    std::snprintf(line, sizeof(line), "quest.give: %s = %s", name.c_str(), desc.c_str());
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// quest.complete <name>
+// ============================================================================
+
+bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.gameState == nullptr)
+    {
+        ctx.out.PrintError("quest.complete: game state unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("quest.complete: usage 'quest.complete <name>'");
+        return false;
+    }
+    std::string name(args[0]);
+    ctx.gameState->CompleteQuest(name);
+    char line[128];
+    std::snprintf(line, sizeof(line), "quest.complete: %s", name.c_str());
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// version
+// ============================================================================
+
+bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("version: usage 'version'");
+        return false;
+    }
+#ifdef NDEBUG
+    constexpr const char* kBuild = "Release";
+#else
+    constexpr const char* kBuild = "Debug";
+#endif
+    char line[224];
+    std::snprintf(line,
+                  sizeof(line),
+                  "rift %s (%s, built %s %s, c++%ld)",
+                  RIFT_VERSION,
+                  kBuild,
+                  __DATE__,
+                  __TIME__,
+                  static_cast<long>(__cplusplus));
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// renderer.info
+// ============================================================================
+
+bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.renderer == nullptr)
+    {
+        ctx.out.PrintError("renderer.info: renderer unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("renderer.info: usage 'renderer.info'");
+        return false;
+    }
+    RendererInfo info = ctx.renderer->GetBackendInfo();
+    char line[256];
+    std::snprintf(line,
+                  sizeof(line),
+                  "renderer.info: %s | %s",
+                  info.backendName.c_str(),
+                  info.apiVersion.c_str());
+    ctx.out.Print(line);
+    std::snprintf(line, sizeof(line), "  vendor: %s", info.vendor.c_str());
+    ctx.out.Print(line);
+    std::snprintf(line, sizeof(line), "  device: %s", info.device.c_str());
+    ctx.out.Print(line);
+    std::snprintf(line, sizeof(line), "  driver: %s", info.driverVersion.c_str());
+    ctx.out.Print(line);
+    std::snprintf(line, sizeof(line), "  maxTextureSize: %d", info.maxTextureSize);
+    ctx.out.Print(line);
+    return true;
+}
+
+// ============================================================================
+// mem.stats
+// ============================================================================
+
+bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("mem.stats: usage 'mem.stats'");
+        return false;
+    }
+    char line[224];
+    std::size_t tilemapBytes = 0;
+    if (ctx.tilemap != nullptr)
+    {
+        const std::size_t cells = ctx.tilemap->MapCellCount();
+        // Approximation: per cell, the per-tile fields total ~24 bytes
+        // (int id + float rot + 5 bools + int struct + int anim).
+        const std::size_t perCellBytes =
+            sizeof(int) + sizeof(float) + sizeof(bool) * 5 + sizeof(int) + sizeof(int);
+        tilemapBytes = ctx.tilemap->GetLayerCount() * cells * perCellBytes;
+    }
+    std::snprintf(line, sizeof(line), "mem.stats: tilemap ~%zu bytes", tilemapBytes);
+    ctx.out.Print(line);
+    std::snprintf(line,
+                  sizeof(line),
+                  "  npcs=%zu, scrollback=%zu lines",
+                  ctx.npcs ? ctx.npcs->size() : 0u,
+                  ctx.out.Lines().size());
+    ctx.out.Print(line);
+    if (ctx.tilemap != nullptr)
+    {
+        std::snprintf(line,
+                      sizeof(line),
+                      "  structs=%zu, lights=%zu",
+                      ctx.tilemap->GetNoProjectionStructureCount(),
+                      ctx.tilemap->GetLights().size());
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// config.dump - emit script-style lines reproducing current toggle state
+// ============================================================================
+
+bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("config.dump: usage 'config.dump'");
+        return false;
+    }
+    char line[160];
+    if (ctx.time != nullptr)
+    {
+        std::snprintf(
+            line, sizeof(line), "time.set %.3f", static_cast<double>(ctx.time->GetTimeOfDay()));
+        ctx.out.Print(line);
+        std::snprintf(
+            line, sizeof(line), "time.scale %.3f", static_cast<double>(ctx.time->GetTimeScale()));
+        ctx.out.Print(line);
+        std::snprintf(line, sizeof(line), "time.freeze %s", ctx.time->IsPaused() ? "on" : "off");
+        ctx.out.Print(line);
+        std::snprintf(
+            line, sizeof(line), "time.weather %d", static_cast<int>(ctx.time->GetWeather()));
+        ctx.out.Print(line);
+        std::snprintf(line,
+                      sizeof(line),
+                      "weather.intensity %.3f",
+                      static_cast<double>(ctx.time->GetWeatherIntensity()));
+        ctx.out.Print(line);
+    }
+    if (ctx.camera != nullptr)
+    {
+        const CameraState& s = ctx.camera->GetState();
+        std::snprintf(line, sizeof(line), "globe %s", s.enable3DEffect ? "on" : "off");
+        ctx.out.Print(line);
+        std::snprintf(
+            line, sizeof(line), "globe.radius %.0f", static_cast<double>(s.globeSphereRadius));
+        ctx.out.Print(line);
+        std::snprintf(line, sizeof(line), "globe.tilt %.3f", static_cast<double>(s.tilt));
+        ctx.out.Print(line);
+    }
+    if (ctx.editor != nullptr)
+    {
+        std::snprintf(line, sizeof(line), "editor %s", ctx.editor->IsActive() ? "on" : "off");
+        ctx.out.Print(line);
+        std::snprintf(
+            line, sizeof(line), "debug.overlays %s", ctx.editor->IsDebugMode() ? "on" : "off");
+        ctx.out.Print(line);
+        std::snprintf(
+            line, sizeof(line), "debug.info %s", ctx.editor->IsShowDebugInfo() ? "on" : "off");
+        ctx.out.Print(line);
+    }
+    if (ctx.postFXEnabled != nullptr)
+    {
+        std::snprintf(line, sizeof(line), "postfx %s", *ctx.postFXEnabled ? "on" : "off");
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
+// bookmark.set <name> / bookmark.tp <name> / bookmark.list
+// ============================================================================
+
+bool Cmd_BookmarkSet(std::span<const std::string_view> args,
+                     CommandContext& ctx,
+                     std::unordered_map<std::string, glm::ivec2>& bookmarks)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("bookmark.set: player unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("bookmark.set: usage 'bookmark.set <name>'");
+        return false;
+    }
+    // Players use bottom-center anchoring: m_Position.y is the feet edge, so
+    // recover the tile by subtracting half a tile (mirrors Tilemap::WorldToTileCoord).
+    glm::vec2 pos = ctx.player->GetPosition();
+    glm::ivec2 tile{static_cast<int>(std::floor(pos.x / static_cast<float>(CONSOLE_TILE_SIZE))),
+                    static_cast<int>(std::floor((pos.y - CONSOLE_TILE_SIZE * 0.5f) /
+                                                static_cast<float>(CONSOLE_TILE_SIZE)))};
+    std::string name(args[0]);
+    bookmarks[name] = tile;
+    char line[128];
+    std::snprintf(line, sizeof(line), "bookmark.set: '%s' = (%d,%d)", name.c_str(), tile.x, tile.y);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_BookmarkTp(std::span<const std::string_view> args,
+                    CommandContext& ctx,
+                    std::unordered_map<std::string, glm::ivec2>& bookmarks)
+{
+    if (ctx.player == nullptr)
+    {
+        ctx.out.PrintError("bookmark.tp: player unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("bookmark.tp: usage 'bookmark.tp <name>'");
+        return false;
+    }
+    std::string name(args[0]);
+    auto it = bookmarks.find(name);
+    if (it == bookmarks.end())
+    {
+        char err[128];
+        std::snprintf(err, sizeof(err), "bookmark.tp: '%s' not found", name.c_str());
+        ctx.out.PrintError(err);
+        return false;
+    }
+    ctx.player->SetTilePosition(it->second.x, it->second.y);
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "bookmark.tp: -> '%s' (%d,%d)",
+                  name.c_str(),
+                  it->second.x,
+                  it->second.y);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_BookmarkList(std::span<const std::string_view> args,
+                      CommandContext& ctx,
+                      const std::unordered_map<std::string, glm::ivec2>& bookmarks)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("bookmark.list: usage 'bookmark.list'");
+        return false;
+    }
+    if (bookmarks.empty())
+    {
+        ctx.out.Print("bookmark.list: no bookmarks");
+        return true;
+    }
+    char header[64];
+    std::snprintf(header, sizeof(header), "bookmark.list: %zu bookmarks", bookmarks.size());
+    ctx.out.Print(header);
+    std::vector<std::string> names;
+    names.reserve(bookmarks.size());
+    for (const auto& [k, v] : bookmarks)
+    {
+        names.push_back(k);
+    }
+    std::sort(names.begin(), names.end());
+    for (const auto& n : names)
+    {
+        const auto& v = bookmarks.at(n);
+        char line[128];
+        std::snprintf(line, sizeof(line), "  '%s' = (%d,%d)", n.c_str(), v.x, v.y);
+        ctx.out.Print(line);
+    }
+    return true;
+}
+
+// ============================================================================
 // Console::RegisterDefaultCommands - production wiring. Lives here so all
 // the default commands and their bindings are in one translation unit.
 // ============================================================================
@@ -2891,4 +4107,249 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_ConsoleCopy(args, ctx);
                         },
                         {"copy"});
+
+    // --- Wave 1 introspection commands -------------------------------------
+
+    m_Registry.Register("layers.list",
+                        "list every tilemap layer (name, order, fill, animations)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_LayersList(args, ctx);
+                        },
+                        {"ll"});
+
+    m_Registry.Register("tile.info",
+                        "tile.info <tx> <ty> - inspect a tile across all layers",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TileInfo(args, ctx);
+                        },
+                        {"ti"});
+
+    m_Registry.Register("tile.find",
+                        "tile.find <tileID> [layer] - find tiles by ID",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TileFind(args, ctx);
+                        },
+                        {"tf"});
+
+    m_Registry.Register("map.stats",
+                        "summary stats: cells, collision %, nav %, layer/struct/light counts",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MapStats(args, ctx);
+                        },
+                        {"ms"});
+
+    m_Registry.Register("tileset.info",
+                        "tileset texture/tile dimensions",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TilesetInfo(args, ctx);
+                        },
+                        {"tsi"});
+
+    m_Registry.Register("anim.list",
+                        "list all animated tile defs and their use counts",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_AnimList(args, ctx);
+                        },
+                        {"al"});
+
+    m_Registry.Register("struct.list",
+                        "list all no-projection structures",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_StructList(args, ctx);
+                        },
+                        {"sl"});
+
+    m_Registry.Register("struct.info",
+                        "struct.info <id> - structure detail",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_StructInfo(args, ctx);
+                        },
+                        {"si"});
+
+    m_Registry.Register("struct.goto",
+                        "struct.goto <id> - snap camera to structure",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_StructGoto(args, ctx);
+                        },
+                        {"sg"});
+
+    m_Registry.Register("zone.list",
+                        "list particle zones",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ZoneList(args, ctx);
+                        },
+                        {"zl"});
+
+    m_Registry.Register("zone.goto",
+                        "zone.goto <idx> - snap camera to zone center",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ZoneGoto(args, ctx);
+                        },
+                        {"zg"});
+
+    m_Registry.Register("light.goto",
+                        "light.goto <idx> - snap camera to a world light",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_LightGoto(args, ctx);
+                        },
+                        {"lg"});
+
+    m_Registry.Register("nav.path",
+                        "nav.path <fx> <fy> <tx> <ty> - BFS shortest path on nav grid",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NavPath(args, ctx);
+                        },
+                        {"np"});
+
+    m_Registry.Register("nav.reachable",
+                        "nav.reachable <tx> <ty> - count nav-reachable tiles + bounds",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NavReachable(args, ctx);
+                        },
+                        {"nr"});
+
+    m_Registry.Register("npc.path",
+                        "npc.path <idx> - print an NPC's patrol waypoints",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcPath(args, ctx);
+                        },
+                        {"npa"});
+
+    m_Registry.Register("npc.goto",
+                        "npc.goto <idx> - snap camera to an NPC",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcGoto(args, ctx);
+                        },
+                        {"ng"});
+
+    m_Registry.Register("npc.nearest",
+                        "find NPC nearest to player by tile distance",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_NpcNearest(args, ctx);
+                        },
+                        {"nn"});
+
+    m_Registry.Register("quest.list",
+                        "list active and completed quests",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_QuestList(args, ctx);
+                        },
+                        {"ql"});
+
+    m_Registry.Register("quest.give",
+                        "quest.give <name> [description...] - accept a quest",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_QuestGive(args, ctx);
+                        },
+                        {"qg"});
+
+    m_Registry.Register("quest.complete",
+                        "quest.complete <name> - mark quest complete",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_QuestComplete(args, ctx);
+                        },
+                        {"qc"});
+
+    m_Registry.Register("version",
+                        "print engine version, build config, build date",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_Version(args, ctx);
+                        },
+                        {"ver"});
+
+    m_Registry.Register("renderer.info",
+                        "print active backend + GPU vendor/device/driver",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_RendererInfo(args, ctx);
+                        },
+                        {"ri"});
+
+    m_Registry.Register("mem.stats",
+                        "print approximate memory usage",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MemStats(args, ctx);
+                        },
+                        {"mem"});
+
+    m_Registry.Register("config.dump",
+                        "emit current toggles as a script-style command list",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ConfigDump(args, ctx);
+                        },
+                        {"cd"});
+
+    m_Registry.Register("bookmark.set",
+                        "bookmark.set <name> - save player's current tile",
+                        [makeContext, this](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_BookmarkSet(args, ctx, m_Bookmarks);
+                        },
+                        {"bs"});
+
+    m_Registry.Register("bookmark.tp",
+                        "bookmark.tp <name> - teleport to a saved bookmark",
+                        [makeContext, this](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_BookmarkTp(args, ctx, m_Bookmarks);
+                        },
+                        {"bt"});
+
+    m_Registry.Register("bookmark.list",
+                        "list saved bookmarks (alphabetical)",
+                        [makeContext, this](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_BookmarkList(args, ctx, m_Bookmarks);
+                        },
+                        {"bl"});
 }

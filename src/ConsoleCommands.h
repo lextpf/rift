@@ -1,7 +1,11 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include <span>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 class CameraController;
@@ -119,4 +123,50 @@ bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ct
 bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx);
+
+// --- Wave 1 introspection commands ----------------------------------------
+
+// World inspection
+bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_StructList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_StructInfo(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx);
+
+// Navigation
+bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx);
+
+// Quests
+bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& ctx);
+
+// Engine info
+bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx);
+
+// Bookmarks (the bookmark map is owned by Console; passed in as an extra
+// parameter so the free functions remain trivially testable without a Console).
+bool Cmd_BookmarkSet(std::span<const std::string_view> args,
+                     CommandContext& ctx,
+                     std::unordered_map<std::string, glm::ivec2>& bookmarks);
+bool Cmd_BookmarkTp(std::span<const std::string_view> args,
+                    CommandContext& ctx,
+                    std::unordered_map<std::string, glm::ivec2>& bookmarks);
+bool Cmd_BookmarkList(std::span<const std::string_view> args,
+                      CommandContext& ctx,
+                      const std::unordered_map<std::string, glm::ivec2>& bookmarks);
 /// @}
