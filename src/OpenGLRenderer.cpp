@@ -2290,6 +2290,7 @@ void OpenGLRenderer::DrawTextImpl(const std::string& text,
         glUniform3f(m_ColorLoc, 0.0f, 0.0f, 0.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(outlineVertexCount));
         DebugAfterDraw("TextOutline", static_cast<int>(outlineVertexCount));
+        ++m_DrawCallCount;
     }
 
     // Draw main text on top (user-specified color)
@@ -2301,6 +2302,7 @@ void OpenGLRenderer::DrawTextImpl(const std::string& text,
                      static_cast<GLint>(outlineVertexCount),
                      static_cast<GLsizei>(mainVertexCount));
         DebugAfterDraw("TextMain", static_cast<int>(mainVertexCount));
+        ++m_DrawCallCount;
     }
 
     // Restore uniforms and VAO that we consumed. The next Flush* will set its
