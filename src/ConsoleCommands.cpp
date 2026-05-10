@@ -707,6 +707,28 @@ bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& c
 }
 
 // ============================================================================
+// fps.cap [on|off|toggle]
+// ============================================================================
+
+bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("fps.cap: game unavailable");
+        return false;
+    }
+    const bool currentlyCapped = ctx.game->GetFPSCounter().targetFps > 0.0f;
+    bool target = false;
+    if (!ParseToggleArg(args, currentlyCapped, "fps.cap", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.game->SetTargetFps(target ? 500.0f : 0.0f);
+    ctx.out.Print(std::string("fps.cap: ") + (target ? "ON (500)" : "OFF (uncapped)"));
+    return true;
+}
+
+// ============================================================================
 // globe [on|off|toggle]
 // ============================================================================
 
@@ -2449,6 +2471,14 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_DebugOverlays(args, ctx);
                         },
                         {"dbg.overlays", "dbg"});
+
+    m_Registry.Register("fps.cap",
+                        "[on|off|toggle] - cap FPS at 500 (off = uncapped)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_FpsCap(args, ctx);
+                        });
 
     m_Registry.Register("globe",
                         "[on|off|toggle] - toggle 3D globe perspective",
