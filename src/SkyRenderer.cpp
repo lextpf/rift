@@ -286,18 +286,21 @@ void SkyRenderer::Render(IRenderer& renderer,
         RenderMoonRays(renderer, time, cameraPos, screenWidth, screenHeight);
     }
 
-    // Lightning flash overlay - full-screen white, no parallax.
+    // Lightning flash overlay - soft cool-white, no parallax. Tinted slightly
+    // toward blue (1.0, 1.0, 1.1) so the flash reads as electric / atmospheric
+    // rather than a flat white blow-out, and capped at 0.25 alpha so the flash
+    // illuminates the sky without strobing the player's eyes.
     if (m_LightningFlashTimer > 0.0f)
     {
         constexpr float kFlashDuration = 0.08f;
-        float alpha = (m_LightningFlashTimer / kFlashDuration) * 0.45f;
+        float alpha = (m_LightningFlashTimer / kFlashDuration) * 0.25f;
         renderer.DrawSpriteAlpha(m_GlowTexture,
                                  glm::vec2(-static_cast<float>(screenWidth) * 0.5f,
                                            -static_cast<float>(screenHeight) * 0.5f),
                                  glm::vec2(static_cast<float>(screenWidth) * 2.0f,
                                            static_cast<float>(screenHeight) * 2.0f),
                                  0.0f,
-                                 glm::vec4(1.0f, 1.0f, 1.0f, alpha),
+                                 glm::vec4(0.92f, 0.95f, 1.0f, alpha),
                                  true);
     }
 }
@@ -344,29 +347,30 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
     auto wrapNearCamera = [](float anchorX, float cameraX, float period)
     { return cameraX + std::remainder(anchorX - cameraX, period); };
 
-    // ---- Layer 1: background wash ----
-    // The wash is broad and screen-anchored (very subtle parallax) so the
-    // sky always glows even when no individual curtains are nearby.
-    {
-        glm::vec3 wash = auroraColor(t * 0.05f);
-        glm::vec2 washPos = glm::vec2(-sw * 0.25f, sh * 0.04f) - cameraPos * 0.02f;
-        renderer.DrawSpriteAlpha(m_GlowTexture,
-                                 washPos,
-                                 glm::vec2(sw * 1.5f, sh * 0.55f),
-                                 0.0f,
-                                 glm::vec4(wash, 0.14f),
-                                 true);
-    }
+    // (Previously a giant screen-anchored "wash" sprite was drawn here as a
+    // soft sky glow; removed because it read as a fixed oval pinned to the
+    // top of the viewport and broke the world-anchored feel of the curtains.)
 
-    // ---- Layer 2: world-anchored noodle curtains ----
+    // ---- Layer 1: world-anchored noodle curtains ----
     // Each "curtain" is a horizontal aurora ribbon built from a varying
     // number of overlapping curtain-texture slices. Every ribbon is unique:
     // segment count, segment size, ribbon height, baseline Y, X jitter, wave
     // amplitude, wave frequency, drift speed, and tilt are all driven by
     // per-curtain seeds so no two read the same.
-    constexpr int kCurtainCount = 9;
+    //
+    // BOTH X and Y are now world-anchored (previously Y was screen-relative).
+    // Curtains tile across world X and world Y via wrapNearCamera; as the
+    // camera pans, individual curtains scroll naturally and rebound through
+    // the wrap rather than being pinned to the upper viewport.
+    constexpr int kCurtainCount = 12;
     const float curtainPeriod = sw * 6.5f;
     const float curtainSpacing = curtainPeriod / static_cast<float>(kCurtainCount);
+    // Vertical wrap. A ~1-screen period keeps the wrap subtle during normal
+    // play while still tiling correctly under free-cam pans. The wrap is
+    // biased toward the upper third of the visible area so most curtains
+    // still land in the sky portion of the screen at any camera position.
+    const float curtainYPeriod = sh * 1.0f;
+    const float curtainYWrapCenter = cameraPos.y + sh * 0.30f;
     for (int i = 0; i < kCurtainCount; ++i)
     {
         float c = static_cast<float>(i);
@@ -390,8 +394,13 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         float anchorWorldX = c * curtainSpacing + (r4 - 0.5f) * curtainSpacing * 0.5f;
         float worldCenterX = wrapNearCamera(anchorWorldX, cameraPos.x, curtainPeriod);
 
-        // Wide Y range: anywhere from very top down to ~half the sky.
-        float baseY = sh * (0.04f + r5 * 0.50f);
+        // Y anchor: per-curtain world Y wrapped near the camera so curtains
+        // tile across world Y. The wrap center sits 30% down the screen so
+        // wrapped values cluster in the upper portion of the visible area.
+        float anchorWorldY = (c + 0.5f) * (curtainYPeriod / static_cast<float>(kCurtainCount)) +
+                             (r5 - 0.5f) * curtainYPeriod * 0.3f;
+        float worldCenterYBase =
+            curtainYWrapCenter + std::remainder(anchorWorldY - curtainYWrapCenter, curtainYPeriod);
         // Slight overall tilt so the ribbon leans up or down across its span.
         float ribbonTilt = (r3 - 0.5f) * sh * 0.10f;
         // Curtain height varies - some thin ribbons, some tall sheets.
@@ -413,75 +422,102 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         float pulseFreq = 0.20f + r3 * 0.20f;
         float ribbonPulse = 0.5f + 0.5f * std::sin(t * pulseFreq + ti * 1.7f);
 
-        for (int s = 0; s < segments; ++s)
+        // Render this curtain at 3 vertically-wrapped copies (-1, 0, +1
+        // periods). When the camera moves and one copy exits the top of the
+        // screen, the +1 copy below is already drawn, so the field tiles
+        // continuously - the player sees curtains scroll naturally past in
+        // world coords rather than "snap" or "disappear" at wrap boundaries.
+        const float maxAmp = ampMajor + ampMid + ampMicro + std::abs(ribbonTilt) + curtainH * 0.5f;
+        for (int wrapDy = -1; wrapDy <= 1; ++wrapDy)
         {
-            float fs = static_cast<float>(s);
-            float segNorm = fs / static_cast<float>(segments - 1);  // 0..1 along ribbon
-            float segOffset = fs * segSpacing - ribbonSpan * 0.5f;
-            float screenX = (worldCenterX - cameraPos.x) + segOffset;
+            float baseY =
+                (worldCenterYBase + static_cast<float>(wrapDy) * curtainYPeriod) - cameraPos.y;
+            // Cull: skip entirely off-screen copies. The curtain spans roughly
+            // baseY..baseY+curtainH after wave warp; allow maxAmp slack on
+            // both sides for warp/tilt before skipping.
+            if (baseY + curtainH + maxAmp < 0.0f || baseY - maxAmp > sh)
+            {
+                continue;
+            }
 
-            // Multi-frequency Y warp using per-curtain spatial frequency,
-            // amplitude, and time-drift speed.
-            float waveT = fs * waveSpatial + ti + t * waveSpeed;
-            float yWarp = std::sin(waveT) * ampMajor + std::sin(waveT * midMul + ti) * ampMid +
-                          std::sin(waveT * microMul + ti * 0.5f) * ampMicro;
-            float tilt = (segNorm - 0.5f) * 2.0f * ribbonTilt;
-            float xJitter = std::sin(waveT * 1.9f + ti * 0.7f) * 6.0f;
-            float segY = baseY + yWarp + tilt;
-
-            // Color shifts gently along the noodle so different sections glow
-            // different aurora hues.
-            float colorPhase = t * 0.06f + ti * 0.20f + fs * 0.04f;
-            glm::vec3 color = auroraColor(colorPhase);
-
-            // Per-segment alpha: ribbonPulse x segment-local pulse x ends fade.
-            // Translucent (max ~0.30 per segment); overlap stacks but never
-            // becomes opaque.
-            float segPulse = 0.5f + 0.5f * std::sin(waveT * 1.3f);
-            float endsFade = 1.0f - std::abs(segNorm - 0.5f) * 1.7f;
-            endsFade = std::clamp(endsFade, 0.0f, 1.0f);
-            float alpha = (0.08f + 0.22f * segPulse) * (0.55f + 0.45f * ribbonPulse) * endsFade;
-
-            renderer.DrawSpriteAlpha(m_AuroraCurtainTexture,
-                                     glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
-                                     glm::vec2(segWidth, curtainH),
-                                     0.0f,
-                                     glm::vec4(color, alpha),
-                                     true);
-        }
-
-        // Soft glow halo following the warped path during bright pulses so
-        // bloom hugs the noodle rather than a flat rectangle.
-        if (ribbonPulse > 0.55f)
-        {
-            for (int s = 2; s < segments - 2; s += 4)
+            for (int s = 0; s < segments; ++s)
             {
                 float fs = static_cast<float>(s);
-                float segNorm = fs / static_cast<float>(segments - 1);
+                float segNorm = fs / static_cast<float>(segments - 1);  // 0..1 along ribbon
+                float segOffset = fs * segSpacing - ribbonSpan * 0.5f;
+                float screenX = (worldCenterX - cameraPos.x) + segOffset;
+
+                // Multi-frequency Y warp using per-curtain spatial frequency,
+                // amplitude, and time-drift speed.
                 float waveT = fs * waveSpatial + ti + t * waveSpeed;
-                float yWarp = std::sin(waveT) * ampMajor + std::sin(waveT * midMul + ti) * ampMid;
+                float yWarp = std::sin(waveT) * ampMajor + std::sin(waveT * midMul + ti) * ampMid +
+                              std::sin(waveT * microMul + ti * 0.5f) * ampMicro;
                 float tilt = (segNorm - 0.5f) * 2.0f * ribbonTilt;
-                float screenX = (worldCenterX - cameraPos.x) + fs * segSpacing - ribbonSpan * 0.5f;
+                float xJitter = std::sin(waveT * 1.9f + ti * 0.7f) * 6.0f;
                 float segY = baseY + yWarp + tilt;
-                glm::vec3 color = auroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
-                float glowSize = curtainH * 1.3f;
-                renderer.DrawSpriteAlpha(
-                    m_GlowTexture,
-                    glm::vec2(screenX - glowSize * 0.5f, segY - curtainH * 0.10f),
-                    glm::vec2(glowSize, glowSize * 0.85f),
-                    0.0f,
-                    glm::vec4(color, (ribbonPulse - 0.55f) * 0.30f),
-                    true);
+
+                // Color shifts gently along the noodle so different sections glow
+                // different aurora hues.
+                float colorPhase = t * 0.06f + ti * 0.20f + fs * 0.04f;
+                glm::vec3 color = auroraColor(colorPhase);
+
+                // Per-segment alpha: ribbonPulse x segment-local pulse x ends fade.
+                // Translucent (max ~0.40 per segment); overlap stacks but never
+                // becomes opaque. Bumped from 0.08+0.22 -> 0.13+0.27 for stronger
+                // ribbons during AuroraNight.
+                float segPulse = 0.5f + 0.5f * std::sin(waveT * 1.3f);
+                float endsFade = 1.0f - std::abs(segNorm - 0.5f) * 1.7f;
+                endsFade = std::clamp(endsFade, 0.0f, 1.0f);
+                float alpha = (0.13f + 0.27f * segPulse) * (0.55f + 0.45f * ribbonPulse) * endsFade;
+
+                renderer.DrawSpriteAlpha(m_AuroraCurtainTexture,
+                                         glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
+                                         glm::vec2(segWidth, curtainH),
+                                         0.0f,
+                                         glm::vec4(color, alpha),
+                                         true);
+            }
+
+            // Soft glow halo following the warped path during bright pulses so
+            // bloom hugs the noodle rather than a flat rectangle.
+            if (ribbonPulse > 0.55f)
+            {
+                for (int s = 2; s < segments - 2; s += 4)
+                {
+                    float fs = static_cast<float>(s);
+                    float segNorm = fs / static_cast<float>(segments - 1);
+                    float waveT = fs * waveSpatial + ti + t * waveSpeed;
+                    float yWarp =
+                        std::sin(waveT) * ampMajor + std::sin(waveT * midMul + ti) * ampMid;
+                    float tilt = (segNorm - 0.5f) * 2.0f * ribbonTilt;
+                    float screenX =
+                        (worldCenterX - cameraPos.x) + fs * segSpacing - ribbonSpan * 0.5f;
+                    float segY = baseY + yWarp + tilt;
+                    glm::vec3 color = auroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
+                    float glowSize = curtainH * 1.3f;
+                    renderer.DrawSpriteAlpha(
+                        m_GlowTexture,
+                        glm::vec2(screenX - glowSize * 0.5f, segY - curtainH * 0.10f),
+                        glm::vec2(glowSize, glowSize * 0.85f),
+                        0.0f,
+                        glm::vec4(color, (ribbonPulse - 0.55f) * 0.40f),
+                        true);
+                }
             }
         }
     }
 
-    // ---- Layer 3: floating wisps (world-anchored, hand-painted texture) ----
+    // ---- Layer 2: floating wisps (world-anchored, hand-painted texture) ----
     // Smaller and lighter accents - used to be 22-60 px which dominated the
-    // sky; now 6-22 px so they read as sparks framing the ribbons.
-    constexpr int kWispCount = 36;
+    // sky; now 6-22 px so they read as sparks framing the ribbons. Wisp count
+    // bumped to 48 for a denser sparkle field. Each wisp also renders at 3
+    // wrapped Y positions (-1, 0, +1 periods) so the field tiles continuously
+    // - wisps don't snap or vanish when the camera moves vertically past them.
+    constexpr int kWispCount = 48;
     const float wispPeriod = sw * 4.0f;
     const float wispSpacing = wispPeriod / static_cast<float>(kWispCount);
+    const float wispYPeriod = sh * 1.0f;
+    const float wispYWrapCenter = cameraPos.y + sh * 0.25f;
     for (int i = 0; i < kWispCount; ++i)
     {
         float wi = static_cast<float>(i);
@@ -504,10 +540,12 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         float orbitY = std::cos(t * driftSpeedY + seed * 1.3f) * sh * 0.20f +
                        std::cos(t * 0.05f + seed * 1.7f) * sh * 0.09f;
 
-        // Anchor Y in the upper portion of the sky, varied per wisp.
-        float anchorY = sh * (0.04f + std::fmod(seed * 3.71f, 1.0f) * 0.40f);
-
-        glm::vec2 pos(worldX - cameraPos.x + orbitX, anchorY + orbitY);
+        // Y anchor: per-wisp world Y wrapped near the camera so wisps tile
+        // across world Y, mirroring the X tiling above.
+        float anchorWorldY = (wi + 0.5f) * (wispYPeriod / static_cast<float>(kWispCount)) +
+                             (std::fmod(seed * 3.71f, 1.0f) - 0.5f) * wispYPeriod * 0.4f;
+        float worldYBase =
+            wispYWrapCenter + std::remainder(anchorWorldY - wispYWrapCenter, wispYPeriod);
 
         // Lifecycle pulse - slow ~6-8s cycle with a sharp peak. pow(1.8)
         // means each wisp spends most of its cycle invisible (alpha=0) and
@@ -532,17 +570,29 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         float colorPhase = t * 0.20f + seed * 0.61f;
         glm::vec3 color = auroraColor(colorPhase);
 
-        // Alpha fully fades to 0 at troughs, peaks ~0.65 at bloom.
-        float alpha = life * 0.65f;
+        // Alpha fully fades to 0 at troughs, peaks ~0.85 at bloom (was 0.65).
+        float alpha = life * 0.85f;
         if (alpha < 0.005f)
             continue;
 
-        renderer.DrawSpriteAlpha(m_AuroraSmallTexture,
-                                 pos - glm::vec2(wispSize * 0.5f),
-                                 glm::vec2(wispSize),
-                                 0.0f,
-                                 glm::vec4(color, alpha),
-                                 true);
+        for (int wrapDy = -1; wrapDy <= 1; ++wrapDy)
+        {
+            float anchorY = (worldYBase + static_cast<float>(wrapDy) * wispYPeriod) - cameraPos.y;
+            glm::vec2 pos(worldX - cameraPos.x + orbitX, anchorY + orbitY);
+            // Cull copies that drift entirely off-screen (orbitY can land them
+            // far from anchorY, so check the actual draw position with a small
+            // wispSize-based margin).
+            if (pos.y + wispSize < 0.0f || pos.y > sh)
+            {
+                continue;
+            }
+            renderer.DrawSpriteAlpha(m_AuroraSmallTexture,
+                                     pos - glm::vec2(wispSize * 0.5f),
+                                     glm::vec2(wispSize),
+                                     0.0f,
+                                     glm::vec4(color, alpha),
+                                     true);
+        }
     }
 }
 
@@ -1308,16 +1358,23 @@ void SkyRenderer::SpawnShootingStar(int screenWidth, int screenHeight)
         star.position.y = posDist(m_Rng) * fieldH * 0.4f;
     }
 
-    // Diagonal downward velocity
-    float speed = 350.0f + posDist(m_Rng) * 250.0f;
+    // Diagonal downward velocity. During MeteorShower (multiplier > 2) speed up
+    // and lengthen the streak so individual meteors actually register; the base
+    // (Clear-weather) values stay subtle.
+    const bool isMeteorShower = m_MeteorRateMultiplier > 2.0f;
+    const float speedBoost = isMeteorShower ? 1.4f : 1.0f;
+    float speed = (350.0f + posDist(m_Rng) * 250.0f) * speedBoost;
     float angle = 0.4f + posDist(m_Rng) * 0.7f;
     star.velocity.x = -std::cos(angle) * speed;
     star.velocity.y = std::sin(angle) * speed;
 
-    star.lifetime = 0.3f + posDist(m_Rng) * 0.35f;
+    star.lifetime = (isMeteorShower ? 0.55f : 0.3f) + posDist(m_Rng) * 0.4f;
     star.maxLifetime = star.lifetime;
-    star.brightness = 0.3f + posDist(m_Rng) * 0.35f;
-    star.length = 50.0f + posDist(m_Rng) * 50.0f;
+    // Brightness peaks higher and the dim end is lifted so even short-lived
+    // streaks are clearly visible against a busy sky during MeteorShower.
+    star.brightness =
+        isMeteorShower ? 0.65f + posDist(m_Rng) * 0.35f : 0.3f + posDist(m_Rng) * 0.35f;
+    star.length = (isMeteorShower ? 110.0f : 50.0f) + posDist(m_Rng) * 70.0f;
 
     m_ShootingStars.push_back(star);
 }
@@ -1351,7 +1408,9 @@ void SkyRenderer::RenderShootingStars(IRenderer& renderer,
 
         float angle =
             std::atan2(star.velocity.y, star.velocity.x) * 180.0f / static_cast<float>(rift::Pi);
-        glm::vec2 size(star.length, 3.0f);
+        // Thicker trail during MeteorShower so streaks read against the sky.
+        const float trailThickness = (m_MeteorRateMultiplier > 2.0f) ? 6.0f : 3.0f;
+        glm::vec2 size(star.length, trailThickness);
 
         // star.position is its world coordinate inside the star-field tile.
         float worldX = wrap1D(star.position.x, cameraPos.x, fieldW);
