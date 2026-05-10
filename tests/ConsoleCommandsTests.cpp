@@ -13,8 +13,8 @@
 #include "../src/NonPlayerCharacter.h"
 #include "../src/ParticleSystem.h"
 #include "../src/PlayerCharacter.h"
-#include "../src/TimeManager.h"
 #include "../src/Tilemap.h"
+#include "../src/TimeManager.h"
 
 #include <string>
 #include <string_view>
@@ -895,8 +895,7 @@ TEST(ConsoleCommandsTests, NpcSpawnRejectsBadArgsAndUnknownType)
     EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({}).span(), ctx));
     EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({"BW1_NPC1", "abc", "1"}).span(), ctx));
     // Unknown type with no asset on disk: Load() fails, command returns false.
-    EXPECT_FALSE(
-        Cmd_NpcSpawn(ArgPack({"definitely_not_a_real_npc_type", "5", "5"}).span(), ctx));
+    EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({"definitely_not_a_real_npc_type", "5", "5"}).span(), ctx));
     EXPECT_TRUE(npcs.empty());
 }
 
@@ -1359,3 +1358,469 @@ TEST(ConsoleCommandsTests, PerfRejectsArgs)
 // Game::SwitchRenderer, whose definition lives in Game.cpp (not in the test
 // link). The success path requires a live Game + GLFW window + renderer
 // factory, so this command is integration-only.
+
+// ===========================================================================
+// Wave 1 introspection commands
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// layers.list
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, LayersListPrintsAllLayers)
+{
+    Tilemap m;
+    m.SetTilemapSize(8, 8, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_LayersList(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "Ground"));
+}
+
+TEST(ConsoleCommandsTests, LayersListFailsWithoutTilemap)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({});
+    EXPECT_FALSE(Cmd_LayersList(args.span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// tile.info
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, TileInfoOutOfBoundsRejected)
+{
+    Tilemap m;
+    m.SetTilemapSize(5, 5, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"99", "99"});
+    EXPECT_FALSE(Cmd_TileInfo(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, TileInfoReportsLayerData)
+{
+    Tilemap m;
+    m.SetTilemapSize(8, 8, /*generateMap=*/false);
+    m.SetLayerTile(3, 4, /*layer=*/2, /*tileID=*/42);
+    m.SetTileCollision(3, 4, true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"3", "4"});
+    EXPECT_TRUE(Cmd_TileInfo(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "L2"));
+    EXPECT_TRUE(BufferContains(buf, "id=42"));
+    EXPECT_TRUE(BufferContains(buf, "collision=y"));
+}
+
+// ---------------------------------------------------------------------------
+// tile.find
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, TileFindReturnsAllMatches)
+{
+    Tilemap m;
+    m.SetTilemapSize(5, 5, /*generateMap=*/false);
+    m.SetLayerTile(1, 1, 0, 7);
+    m.SetLayerTile(2, 3, 0, 7);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"7"});
+    EXPECT_TRUE(Cmd_TileFind(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "(1,1)"));
+    EXPECT_TRUE(BufferContains(buf, "(2,3)"));
+}
+
+TEST(ConsoleCommandsTests, TileFindLayerFilter)
+{
+    Tilemap m;
+    m.SetTilemapSize(5, 5, /*generateMap=*/false);
+    m.SetLayerTile(1, 1, 0, 9);
+    m.SetLayerTile(2, 2, 5, 9);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"9", "5"});
+    EXPECT_TRUE(Cmd_TileFind(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "(2,2)"));
+    EXPECT_FALSE(BufferContains(buf, "(1,1)"));
+}
+
+// ---------------------------------------------------------------------------
+// map.stats
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, MapStatsPrintsLabels)
+{
+    Tilemap m;
+    m.SetTilemapSize(8, 8, /*generateMap=*/false);
+    m.SetTileCollision(0, 0, true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_MapStats(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "size"));
+    EXPECT_TRUE(BufferContains(buf, "collision"));
+    EXPECT_TRUE(BufferContains(buf, "navigable"));
+}
+
+// ---------------------------------------------------------------------------
+// tileset.info
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, TilesetInfoPrintsDimensions)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_TilesetInfo(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "tile"));
+}
+
+// ---------------------------------------------------------------------------
+// anim.list
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, AnimListEmptyByDefault)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_AnimList(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "0 animations"));
+}
+
+// ---------------------------------------------------------------------------
+// struct.list / struct.info / struct.goto
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, StructListEmptyByDefault)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_StructList(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "0 structures"));
+}
+
+TEST(ConsoleCommandsTests, StructInfoInvalidIdRejected)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"99"});
+    EXPECT_FALSE(Cmd_StructInfo(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, StructGotoInvalidIdRejected)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ctx.camera = &cam;
+    ArgPack args({"99"});
+    EXPECT_FALSE(Cmd_StructGoto(args.span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// zone.list / zone.goto / light.goto
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, ZoneListEmptyByDefault)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_ZoneList(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "0 zones"));
+}
+
+TEST(ConsoleCommandsTests, ZoneGotoInvalidIdxRejected)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ctx.camera = &cam;
+    ArgPack args({"99"});
+    EXPECT_FALSE(Cmd_ZoneGoto(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, LightGotoInvalidIdxRejected)
+{
+    Tilemap m;
+    m.SetTilemapSize(4, 4, /*generateMap=*/false);
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ctx.camera = &cam;
+    ArgPack args({"99"});
+    EXPECT_FALSE(Cmd_LightGoto(args.span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// nav.path / nav.reachable
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, NavPathStraightLine)
+{
+    Tilemap m;
+    m.SetTilemapSize(10, 10, /*generateMap=*/false);
+    for (int y = 0; y < 10; ++y)
+    {
+        for (int x = 0; x < 10; ++x)
+        {
+            m.SetNavigation(x, y, true);
+        }
+    }
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"0", "0", "0", "4"});
+    EXPECT_TRUE(Cmd_NavPath(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "length=5"));
+}
+
+TEST(ConsoleCommandsTests, NavPathUnreachable)
+{
+    Tilemap m;
+    m.SetTilemapSize(5, 5, /*generateMap=*/false);
+    m.SetNavigation(0, 0, true);
+    m.SetNavigation(4, 4, true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"0", "0", "4", "4"});
+    EXPECT_TRUE(Cmd_NavPath(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "unreachable"));
+}
+
+TEST(ConsoleCommandsTests, NavReachableCount)
+{
+    Tilemap m;
+    m.SetTilemapSize(5, 5, /*generateMap=*/false);
+    for (int y = 0; y < 3; ++y)
+    {
+        for (int x = 0; x < 3; ++x)
+        {
+            m.SetNavigation(x, y, true);
+        }
+    }
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ArgPack args({"0", "0"});
+    EXPECT_TRUE(Cmd_NavReachable(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "9 tiles"));
+}
+
+// ---------------------------------------------------------------------------
+// npc.path / npc.goto / npc.nearest
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, NpcPathInvalidIdxRejected)
+{
+    std::vector<NonPlayerCharacter> npcs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+    ArgPack args({"0"});
+    EXPECT_FALSE(Cmd_NpcPath(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, NpcGotoInvalidIdxRejected)
+{
+    std::vector<NonPlayerCharacter> npcs;
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+    ctx.camera = &cam;
+    ArgPack args({"0"});
+    EXPECT_FALSE(Cmd_NpcGoto(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, NpcNearestEmptyList)
+{
+    std::vector<NonPlayerCharacter> npcs;
+    PlayerCharacter player;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &npcs;
+    ctx.player = &player;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_NpcNearest(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "no NPCs"));
+}
+
+// ---------------------------------------------------------------------------
+// quest.list / quest.give / quest.complete
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, QuestGiveStores)
+{
+    GameStateManager gs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &gs;
+    ArgPack args({"ufo", "Find", "Anna's", "brother"});
+    EXPECT_TRUE(Cmd_QuestGive(args.span(), ctx));
+    EXPECT_TRUE(gs.IsQuestActive("ufo"));
+    EXPECT_EQ(gs.GetQuestDescription("ufo"), "Find Anna's brother");
+}
+
+TEST(ConsoleCommandsTests, QuestCompleteSetsFlag)
+{
+    GameStateManager gs;
+    gs.AcceptQuest("ufo", "x");
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &gs;
+    ArgPack args({"ufo"});
+    EXPECT_TRUE(Cmd_QuestComplete(args.span(), ctx));
+    EXPECT_TRUE(gs.IsQuestCompleted("ufo"));
+}
+
+TEST(ConsoleCommandsTests, QuestListShowsActiveAndCompleted)
+{
+    // GetActiveQuests requires the "accepted_<name>_quest" naming convention,
+    // so quest names must end in "_quest" for this code path to recognise them.
+    GameStateManager gs;
+    gs.AcceptQuest("a_quest", "do A");
+    gs.AcceptQuest("b_quest", "do B");
+    gs.CompleteQuest("b_quest");
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &gs;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_QuestList(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "[ACTIVE]"));
+    EXPECT_TRUE(BufferContains(buf, "[DONE]"));
+}
+
+// ---------------------------------------------------------------------------
+// version / renderer.info / mem.stats / config.dump
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, VersionPrintsExpectedString)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_Version(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "rift"));
+}
+
+TEST(ConsoleCommandsTests, RendererInfoFailsWithoutRenderer)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({});
+    EXPECT_FALSE(Cmd_RendererInfo(args.span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MemStatsPrintsLabels)
+{
+    Tilemap m;
+    m.SetTilemapSize(8, 8, /*generateMap=*/false);
+    std::vector<NonPlayerCharacter> npcs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.tilemap = &m;
+    ctx.npcs = &npcs;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_MemStats(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "tilemap"));
+    EXPECT_TRUE(BufferContains(buf, "npcs"));
+}
+
+TEST(ConsoleCommandsTests, ConfigDumpProducesScriptableLines)
+{
+    TimeManager time;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_ConfigDump(args.span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "time.set"));
+    EXPECT_TRUE(BufferContains(buf, "time.scale"));
+}
+
+// ---------------------------------------------------------------------------
+// bookmark.set / bookmark.tp / bookmark.list
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, BookmarkSetStoresPlayerTile)
+{
+    PlayerCharacter player;
+    player.SetTilePosition(7, 11);
+    std::unordered_map<std::string, glm::ivec2> bookmarks;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+    ArgPack args({"home"});
+    EXPECT_TRUE(Cmd_BookmarkSet(args.span(), ctx, bookmarks));
+    ASSERT_TRUE(bookmarks.count("home"));
+    EXPECT_EQ(bookmarks.at("home"), glm::ivec2(7, 11));
+}
+
+TEST(ConsoleCommandsTests, BookmarkTpUnknownNameRejected)
+{
+    PlayerCharacter player;
+    std::unordered_map<std::string, glm::ivec2> bookmarks;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.player = &player;
+    ArgPack args({"ghost"});
+    EXPECT_FALSE(Cmd_BookmarkTp(args.span(), ctx, bookmarks));
+}
+
+TEST(ConsoleCommandsTests, BookmarkListSortedAlphabetically)
+{
+    std::unordered_map<std::string, glm::ivec2> bookmarks{
+        {"charlie", {1, 1}}, {"alpha", {2, 2}}, {"bravo", {3, 3}}};
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ArgPack args({});
+    EXPECT_TRUE(Cmd_BookmarkList(args.span(), ctx, bookmarks));
+    auto pos = [&](std::string_view needle) -> std::size_t
+    {
+        for (std::size_t i = 0; i < buf.Lines().size(); ++i)
+        {
+            if (buf.Lines()[i].text.find(needle) != std::string::npos)
+            {
+                return i;
+            }
+        }
+        return SIZE_MAX;
+    };
+    EXPECT_LT(pos("alpha"), pos("bravo"));
+    EXPECT_LT(pos("bravo"), pos("charlie"));
+}
