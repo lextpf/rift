@@ -80,9 +80,12 @@ struct DialogueSnapState
  * Uses a simple variable-timestep loop:
  * @code
  * while (!shouldClose) {
- *     float deltaTime = currentTime - lastTime;
- *     ProcessInput(deltaTime);
- *     Update(deltaTime);
+ *
+ * float deltaTime = currentTime - lastTime;
+ *     glfwPollEvents();
+ * ProcessInput(deltaTime);
+ *
+ * Update(deltaTime);
  *     Render();
  * }
  * @endcode
@@ -100,7 +103,9 @@ struct DialogueSnapState
  * | Dialogue | W/S or Up/Down | Conversation with NPCs            |
  * | Editor   | Mouse + keys   | Tile placement, collision editing |
  *
- * Toggle editor mode with **E**. Dialogue activates on NPC interaction.
+ * Toggle editor mode from the developer console with
+ * `editor [on|off|toggle]` (alias: `ed`).
+ * Dialogue activates on NPC interaction.
  *
  * @par Camera System
  * The camera follows the player with smooth interpolation:
@@ -112,19 +117,32 @@ struct DialogueSnapState
  * The camera is also clamped to keep the player centered in the viewport.
  *
  * @par Render Order
- * The game renders in this order for correct depth:
- * 1. Background layers (Ground, Ground Detail, Objects, Objects2, Objects3) -
- *    skips Y-sorted/no-projection tiles
- * 2. Background no-projection tiles (buildings rendered upright, perspective suspended)
- * 3. Y-sorted pass: Y-sorted tiles from ALL layers + NPCs + Player (sorted by Y)
- * 4. Foreground no-projection tiles (rendered upright)
- * 5. No-projection particles (perspective suspended)
- * 6. Foreground layers (Foreground, Foreground2, Overlay, Overlay2, Overlay3) -
- *    skips Y-sorted/no-projection tiles
- * 7. Regular particles
- * 8. Sky/ambient overlay (stars, rays, atmospheric effects)
- * 9. Editor UI (if active)
- * 10. Debug overlays (collision, navigation, layer indicators)
+ * The playing render path draws world content into an offscreen scene target,
+ * composites PostFX,
+ * then draws sharp UI directly to the swapchain. Title mode
+ * returns early through
+ * RenderTitleFrame(), which renders a cosmetic title world
+ * plus menu UI without player/NPC
+ * gameplay passes.
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart TD
+ * Begin[BeginFrame]
+ * --> Scene[BeginScene offscreen]
+ *     Scene --> World[Background and no-projection layers]
+ *
+ * World --> Sort[Y-sorted tiles, NPCs, player]
+ *     Sort --> Foreground[Foreground layers and
+ * particles]
+ *     Foreground --> Lighting[Cloud shadows, world lights, sky overlay]
+ * Lighting
+ * --> PostFX[EndSceneApplyPostFX]
+ *     PostFX --> UI[Editor, debug, dialogue, menu, console UI]
+
+ * *     UI --> End[EndFrame]
+ * </pre>
+ * @endhtmlonly
  *
  * @par Viewport Configuration
  * The game uses a tile-based virtual resolution:
@@ -177,27 +195,40 @@ public:
      */
     ~Game();
 
+    /// Game owns the GLFW window and renderer resources; copying is unsupported.
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
+    /// Moving would invalidate GLFW callbacks and subsystem references.
     Game(Game&&) = delete;
     Game& operator=(Game&&) = delete;
 
     /**
      * @brief Initialize all game systems.
      *
-     * Performs the following initialization sequence:
-     * 1. Initialize GLFW and create window
-     * 2. Create renderer (OpenGL, can switch to Vulkan)
-     * 3. Load tileset and create tilemap
-     * 4. Load player character sprites
-     * 5. Load map from JSON (or generate default)
-     * 6. Set up camera position
+     * Performs the startup sequence:
+     * 1. Initialize GLFW and load/validate
+     * `rift.project.json` (or built-in defaults).
+     * 2. Select the startup renderer from the
+     * manifest and create the window.
+     * 3. Create and initialize the renderer, then configure
+     * the initial viewport.
+     * 4. Load tilesets, NPC sprites, fonts, and player character
+     * sprite assets.
+     * 5. Initialize particles, time, sky, dialogue, and editor subsystems.
+
+     * * 6. Set the game day duration to 1200 real seconds and load the cosmetic
+     * title-screen
+     * world.
      *
      * NPC patrol routes are initialized lazily during NPC update when needed.
+
+     * * The player's save/default gameplay world is not loaded until the user
+     * chooses
+     * Continue or New Game from the title menu.
      *
      * @par Error Handling
      * Returns false if any critical initialization fails.
-     * Error messages are printed to stderr.
+     * Errors are logged via Logger.
      *
      * @return `true` if initialization succeeded.
      */
@@ -215,11 +246,36 @@ public:
      *
      * @par Per-frame execution order
      * Each frame performs the following steps in order:
-     * - Compute @p deltaTime since the previous frame
+ * -
+     * Compute @p deltaTime since the previous frame
+     * - Poll GLFW events via @c
+     * glfwPollEvents()
      * - @ref ProcessInput(float) "ProcessInput(deltaTime)"
-     * - @ref Update(float) "Update(deltaTime)"
+     * - @ref
+     * Update(float) "Update(deltaTime)"
      * - @ref Render() "Render()"
-     * - Poll GLFW events via @c glfwPollEvents()
+     *
+     * @htmlonly
+
+     * * <pre class="mermaid">
+     * sequenceDiagram
+     *     participant Loop as Game::Run
+ *
+     * participant GLFW as GLFW
+     *     participant Input as ProcessInput
+     *     participant
+     * Update as Update
+     *     participant Render as Render
+     *     Loop->>Loop: compute and
+     * clamp deltaTime
+     *     Loop->>GLFW: glfwPollEvents()
+     *     Loop->>Input:
+     * ProcessInput(deltaTime)
+     *     Loop->>Update: Update(deltaTime)
+     *     Loop->>Render:
+     * Render()
+     * </pre>
+     * @endhtmlonly
      *
      * @see ProcessInput(float)
      * @see Update(float)
