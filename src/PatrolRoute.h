@@ -208,6 +208,13 @@ public:
     size_t GetWaypointCount() const { return m_Waypoints.size(); }
 
     /**
+     * @brief Read-only access to the generated waypoint list.
+     *
+     * Used by the developer-console `npc.path` command for inspection.
+     */
+    [[nodiscard]] const std::vector<glm::ivec2>& GetWaypoints() const { return m_Waypoints; }
+
+    /**
      * @brief Clear all waypoints and return the route to an invalid default state.
      */
     void Reset()
