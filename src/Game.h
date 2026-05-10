@@ -701,7 +701,6 @@ private:
     /// @brief Debounced key toggles for one-shot actions (moved from function-local statics).
     /// @{
     KeyToggle<GLFW_KEY_Z> m_KeyZ;
-    KeyToggle<GLFW_KEY_F6> m_KeyF6;
     KeyToggle<GLFW_KEY_SPACE> m_KeySpaceFreeCamera;
     KeyToggle<GLFW_KEY_B> m_KeyB;
     /// X drives the debug-only corner-cut toggle in IsDebugMode (gameplay

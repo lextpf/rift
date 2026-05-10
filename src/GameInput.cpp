@@ -144,21 +144,6 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // Toggle FPS cap (0 = uncapped, 500 = capped)
-    if (m_KeyF6.JustPressed(m_Window))
-    {
-        if (m_Fps.targetFps <= 0.0f)
-        {
-            m_Fps.targetFps = 500.0f;
-            Logger::Info(LOG_SUBSYSTEM, "FPS capped at 500");
-        }
-        else
-        {
-            m_Fps.targetFps = 0.0f;
-            Logger::Info(LOG_SUBSYSTEM, "FPS uncapped");
-        }
-    }
-
     // Toggle free camera mode (Space) - camera stops following player
     // WASD/Arrows can then pan camera while player still moves with WASD
     if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnap.active &&
