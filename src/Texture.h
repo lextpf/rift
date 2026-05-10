@@ -184,14 +184,18 @@ public:
      * @par Pixel Format
      * Data must be packed as consecutive pixels, each with `channels` bytes:
      * - 1 channel: grayscale (R)
+     * - 2 channels: grayscale + alpha (R, A)
      * - 3 channels: RGB
      * - 4 channels: RGBA
+     *
+     * Non-RGBA data is expanded into stored RGBA pixels so OpenGL and Vulkan
+     * share the same CPU-side image buffer.
      *
      * @param data    Pointer to pixel data (not null).
      * @param width   Image width in pixels (must be > 0).
      * @param height  Image height in pixels (must be > 0).
-     * @param channels Number of color channels (must be > 0).
-     *                 Supported formats are 1 (R), 3 (RGB), and 4 (RGBA).
+     * @param channels Number of color channels. Supported formats are 1 (R),
+     *                 2 (grayscale + alpha), 3 (RGB), and 4 (RGBA).
      * @param flipY   If true, flip image vertically for OpenGL coordinates.
      * @return true if loaded successfully, false on invalid parameters.
      */
@@ -332,8 +336,9 @@ public:
     int GetHeight() const { return m_Height; }
 
     /**
-     * @brief Get number of color channels.
-     * @return Channel count: 1 (grayscale), 3 (RGB), or 4 (RGBA).
+     * @brief Get number of stored color channels.
+     * @return Stored channel count. Loaded non-RGBA sources are normalized to
+     *         4 (RGBA), so this may differ from the source file or input buffer.
      */
     int GetChannels() const { return m_Channels; }
 
