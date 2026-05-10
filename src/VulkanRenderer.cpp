@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -164,6 +165,48 @@ bool VulkanRenderer::Init()
         LoadFont();
         CreateCommandBuffers();
 
+        // Populate the RendererInfo cache returned by GetBackendInfo. The
+        // physical device was selected in PickPhysicalDevice() above.
+        {
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+            m_Info.backendName = "Vulkan";
+            char buf[64];
+            std::snprintf(buf,
+                          sizeof(buf),
+                          "%u.%u.%u",
+                          VK_VERSION_MAJOR(props.apiVersion),
+                          VK_VERSION_MINOR(props.apiVersion),
+                          VK_VERSION_PATCH(props.apiVersion));
+            m_Info.apiVersion = buf;
+            switch (props.vendorID)
+            {
+                case 0x10DE:
+                    m_Info.vendor = "NVIDIA";
+                    break;
+                case 0x1002:
+                    m_Info.vendor = "AMD";
+                    break;
+                case 0x8086:
+                    m_Info.vendor = "Intel";
+                    break;
+                case 0x13B5:
+                    m_Info.vendor = "ARM";
+                    break;
+                case 0x5143:
+                    m_Info.vendor = "Qualcomm";
+                    break;
+                default:
+                    std::snprintf(buf, sizeof(buf), "Vendor 0x%04X", props.vendorID);
+                    m_Info.vendor = buf;
+                    break;
+            }
+            m_Info.device = props.deviceName;
+            std::snprintf(buf, sizeof(buf), "%u", props.driverVersion);
+            m_Info.driverVersion = buf;
+            m_Info.maxTextureSize = static_cast<int>(props.limits.maxImageDimension2D);
+        }
+
         Logger::Info(LOG_SUBSYSTEM, "Vulkan renderer initialized successfully!");
         return true;
     }
@@ -177,6 +220,11 @@ bool VulkanRenderer::Init()
         Logger::Error(LOG_SUBSYSTEM, "Unknown exception in VulkanRenderer::Init()");
         return false;
     }
+}
+
+RendererInfo VulkanRenderer::GetBackendInfo() const
+{
+    return m_Info;
 }
 
 void VulkanRenderer::Shutdown()

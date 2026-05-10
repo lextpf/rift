@@ -92,9 +92,16 @@
  * | Text        | m_TextBatchVertices     | Per DrawText call  |
  *
  * @section gl_shaders Shader Architecture
- * Uses a single unified shader program for all 2D rendering:
+ * World sprites and sprite-region draws use the main
+ * sprite shader:
  * - Vertex: Transform quad corners, pass UV coordinates
- * - Fragment: Sample texture, apply color tint and ambient light
+ * - Fragment: Sample
+ * texture, apply color tint and ambient light
+ *
+ * Additional shader programs handle specialized
+ * paths such as batched text,
+ * bloom prefilter/downsample/upsample, and final post-FX
+ * composition.
  *
  * @par Uniform Locations (cached at init)
  * | Uniform      | Type  | Purpose                    |
@@ -181,6 +188,8 @@ public:
     int GetDrawCallCount() const override { return m_DrawCallCount; }
 
 private:
+    RendererInfo m_Info;  ///< Cached at end of Init(); returned by GetBackendInfo().
+
     /// @name Initialization Helpers
     /// @{
 
@@ -488,7 +497,7 @@ private:
     void DestroyBloomFramebuffers();
     /// @brief Compile post-FX shader programs (called once during Init).
     bool InitPostFXShaders();
-    /// @brief Run the bright-pass + separable Gaussian blur sequence into m_BloomTex[0].
+    /// @brief Run saturation/brightness prefilter and mip-chain bloom into m_BloomMipTex[0].
     void RunBloomPrep();
 
     /// @}

@@ -79,4 +79,5 @@
                   float outlineSize,                                                         \
                   float alpha) override;                                                     \
     float GetTextAscent(float scale) const override;                                         \
-    float GetTextWidth(const std::string& text, float scale) const override
+    float GetTextWidth(const std::string& text, float scale) const override;                 \
+    [[nodiscard]] RendererInfo GetBackendInfo() const override

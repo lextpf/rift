@@ -59,8 +59,11 @@
  * flowchart LR
  * W["World Space"]:::space
  * S["Screen Space"]:::space
- * N["Normalized Device Coordinates"]:::space
- * W -->|Camera Transform| S
+ * N["Normalized Device
+ * Coordinates"]:::space
+ * classDef space fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ * W -->|Camera
+ * Transform| S
  * S -->|Projection Matrix| N
  * </pre>
  * @endhtmlonly
@@ -129,6 +132,26 @@
  *
  * @see OpenGLRenderer, VulkanRenderer, Texture
  */
+
+/**
+ * @struct RendererInfo
+ * @brief Backend identity snapshot returned by `IRenderer::GetBackendInfo`.
+ * @ingroup Rendering
+ *
+ * Populated at the end of `Init()` by each backend; consumed by the
+ * developer-console `renderer.info` command. Kept POD-shaped (strings + int)
+ * so it can be returned by value cheaply.
+ */
+struct RendererInfo
+{
+    std::string backendName;    ///< "OpenGL" or "Vulkan".
+    std::string apiVersion;     ///< Driver-reported API version string.
+    std::string vendor;         ///< GPU vendor (e.g. "NVIDIA Corporation").
+    std::string device;         ///< GPU device / renderer string.
+    std::string driverVersion;  ///< Driver version string (Vulkan); empty for GL.
+    int maxTextureSize = 0;     ///< Largest 2D texture dimension supported.
+};
+
 class IRenderer
 {
 public:
@@ -235,12 +258,22 @@ public:
      * @brief Composite the offscreen scene through the post-FX chain into
      *        the swapchain.
      *
-     * Reads the scene texture, optionally extracts a bright pass and runs
-     * separable Gaussian blur into bloom targets, then writes the swapchain
-     * via a full-screen-quad fragment shader that combines:
-     * - Scene + bloom add (intensity from params)
+     * Backend-specific operation:
+     * - OpenGL reads the scene texture, applies a
+     * saturation/brightness prefilter,
+     *   builds and upsamples a bloom mip chain, then
+     * composites via a full-screen quad.
+     * - Vulkan is currently a no-op post-FX path; the
+     * scene has already rendered to
+     *   the swapchain, so this returns without bloom or color
+     * grading.
+     *
+     * The OpenGL composite combines:
+     * - Scene + bloom add (intensity
+     * from params)
      * - Color grading (per-time-of-day RGB tint)
-     * - Vignette (smoothstep falloff from screen center)
+     * - Vignette (smoothstep
+     * falloff from screen center)
      * - Light film grain (low-frequency tiled noise)
      *
      * After this returns, subsequent draws go to the swapchain unmodified
@@ -509,14 +542,32 @@ public:
      * |            Fisheye |        Yes        | Yes             |
      *
      * @par Globe Curvature (Step 1)
-     * Applies spherical distortion from screen center:
+     * Applies the oval radial projection used by
+     * PerspectiveTransform:
      * @f[
-     * x' = center_x + R \cdot \sin\left(\frac{x - center_x}{R}\right)
+     * dx = x - center_x,\quad dy = y - center_y
+     * @f]
+
+     * * @f[
+     * d_n = \sqrt{\left(\frac{dx}{R_x}\right)^2 + \left(\frac{dy}{R_y}\right)^2}
+
+     * * @f]
+     * @f[
+     * q =
+     * \begin{cases}
+     * 1, & d_n \le \varepsilon \\
+     *
+     * \frac{\sin(d_n)}{d_n}, & d_n > \varepsilon
+     * \end{cases}
+     * @f]
+     * @f[
+     * x'
+     * = center_x + dx \cdot q,\quad y' = center_y + dy \cdot q
      * @f]
      *
-     * @par Vanishing Point (Step 2)
-     * Scales point toward the vanishing point @f$ V = (center_x, horizon_y) @f$
-     * based on vertical position. Points near the horizon shrink toward center,
+     * @par
+     * Vanishing Point (Step 2) Scales point toward the vanishing point @f$ V = (center_x,
+     * horizon_y) @f$ based on vertical position. Points near the horizon shrink toward center,
      * points at screen bottom remain at full scale.
      *
      * @f[
@@ -857,6 +908,15 @@ public:
      * @return Number of draw calls this frame.
      */
     virtual int GetDrawCallCount() const = 0;
+
+    /**
+     * @brief Backend identity snapshot for the developer-console
+     *        `renderer.info` command.
+     *
+     * Populated at the end of `Init()`; reading before Init() returns a
+     * default-constructed `RendererInfo` (empty strings, 0 max texture size).
+     */
+    [[nodiscard]] virtual RendererInfo GetBackendInfo() const = 0;
 
 protected:
     /// @name Perspective State (shared by all renderers)

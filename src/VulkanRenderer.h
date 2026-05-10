@@ -120,6 +120,8 @@ public:
     int GetDrawCallCount() const override { return m_DrawCallCount; }
 
 private:
+    RendererInfo m_Info;  ///< Cached at end of Init(); returned by GetBackendInfo().
+
     /// @name Sprite Helpers
     /// @{
 

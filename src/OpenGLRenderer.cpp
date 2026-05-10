@@ -794,8 +794,32 @@ bool OpenGLRenderer::Init()
             "Post-FX shaders failed to compile - rendering will skip the post-process pass");
     }
 
+    // Populate the RendererInfo cache returned by GetBackendInfo. Uses the
+    // current GL context bound by the caller; safe to call at the end of Init.
+    m_Info.backendName = "OpenGL";
+    if (auto* s = reinterpret_cast<const char*>(glGetString(GL_VERSION)); s != nullptr)
+    {
+        m_Info.apiVersion = s;
+    }
+    if (auto* s = reinterpret_cast<const char*>(glGetString(GL_VENDOR)); s != nullptr)
+    {
+        m_Info.vendor = s;
+    }
+    if (auto* s = reinterpret_cast<const char*>(glGetString(GL_RENDERER)); s != nullptr)
+    {
+        m_Info.device = s;
+    }
+    GLint maxTex = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
+    m_Info.maxTextureSize = static_cast<int>(maxTex);
+
     m_Initialized = true;
     return true;
+}
+
+RendererInfo OpenGLRenderer::GetBackendInfo() const
+{
+    return m_Info;
 }
 
 void OpenGLRenderer::SetAmbientColor(const glm::vec3& color)
