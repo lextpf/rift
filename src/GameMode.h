@@ -10,12 +10,15 @@
  *
  * Mutually exclusive top-level state. Editor and dialogue modes are
  * orthogonal sub-states only meaningful when @c GameMode::Playing.
+ * Title mode is not a gameplay simulation, but it still updates and renders
+ * a cosmetic backdrop (sky, particles, animated tiles, and PostFX) behind
+ * the menu.
  *
- * | Mode    | Update simulates world | Render world | Input source            |
- * |---------|------------------------|--------------|-------------------------|
- * | Title   | No                     | No           | Title menu              |
- * | Playing | Yes                    | Yes          | Player + editor/dialogue|
- * | Paused  | No                     | Yes (frozen) | Pause menu              |
+ * | Mode    | Gameplay simulation | Cosmetic update | World render      | Input source |
+ * |---------|---------------------|-----------------|-------------------|--------------------------|
+ * | Title   | No                  | Yes             | Title backdrop    | Title menu | | Playing |
+ * Yes                 | Yes             | Gameplay world    | Player + editor/dialogue | | Paused
+ * | No                  | No              | Frozen world      | Pause menu               |
  */
 enum class GameMode : uint8_t
 {
