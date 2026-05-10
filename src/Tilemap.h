@@ -178,11 +178,22 @@ struct AnimatedTile
  * @ingroup World
  *
  * The Tilemap class is the primary world representation, managing:
- * - **10 tile layers** (5 background, 5 foreground) with configurable depth ordering
- * - **Collision detection** for player movement
+ * - **10 tile layers** (5
+ * background, 5 foreground) with configurable depth ordering
+ * - **Collision detection** for
+ * player movement
  * - **Navigation mesh** for NPC pathfinding
- * - **Per-tile rotation** for visual variety
- * - **JSON serialization** using a `dynamicLayers` format
+ * - **Per-tile rotation** for
+ * visual variety
+ * - **Elevation and corner-cut flags** for ramps, ledges, and collision tuning
+ *
+ * - **No-projection structures** for upright buildings and attached effects
+ * - **Y-sort flags**
+ * for tiles that interleave with entities by screen Y
+ * - **Particle zones, world lights, and
+ * animated tiles** authored by the editor
+ * - **JSON serialization** using a `dynamicLayers`
+ * format
  *
  * @par Layer Architecture
  * The tilemap uses 10 dynamic layers rendered around player/NPC entities:
@@ -520,7 +531,8 @@ public:
 
     /**
      * @name Dynamic Layer System
-     * @brief Manage N layers dynamically instead of fixed 6 layers.
+     * @brief Manage the layer vector dynamically while preserving
+     * the default 10-layer layout.
      * @{
      */
 
@@ -676,10 +688,10 @@ public:
      * @brief Project a world-space point onto a no-projection structure surface.
      *
 
-     * * Uses the same stepped shared-edge mesh math as no-projection structure tile
-     *
-     * rendering so attached effects (for example particles) remain locked to the
-     * structure
+     * * Uses the same stepped shared-edge mesh math as no-projection structure
+     * tile
+     * rendering so attached effects (for example particles) remain locked
+     * to the structure
      * under globe/fisheye projection.
      *
      * @param renderer Active renderer.
@@ -687,9 +699,14 @@ public:
      * worldPos World position in pixels.
      * @param cameraPos Camera world position in pixels.
 
-     * * @param outScreenPos Output projected screen-space position.
-     * @return true when the
-     * point was projected using a no-projection structure.
+     * * @param[out] outScreenPos Output projected screen-space position.
+     * @return `true` when
+     * the point was projected using a matching
+     *         no-projection structure; `false` when
+     * no structure covers the
+     *         point and callers should use normal point
+     * projection/fallback
+     *         placement.
      */
     bool ProjectNoProjectionStructurePoint(IRenderer& renderer,
                                            const glm::vec2& worldPos,
@@ -901,32 +918,97 @@ public:
     /**
      * @brief Save map to JSON file.
      *
-     * Saves all layers, collision, navigation, NPCs, and player position
-     * in a compact sparse format.
+     * Saves all editor-authored map surfaces in a compact sparse format:
+     * dimensions, layer
+     * metadata and per-tile fields, collision, navigation,
+     * elevation, corner-cut masks,
+     * no-projection structures, particle zones,
+     * world lights, animated tile
+     * definitions/placements, NPCs/dialogue, and
+     * optional player spawn state.
+     *
      *
      * @par JSON Structure
+     * Top-level fields are intentionally sparse; per-cell objects use
+     * the
+     * row-major flat index `i = y * width + x`.
      * @code{.json}
      * {
-     *   "width": 64,
+     *
+     * "width": 64,
      *   "height": 64,
      *   "tileWidth": 16,
      *   "tileHeight": 16,
+ *
+     * "collision": [42, 43],
+     *   "navigation": [100, 101],
+     *   "elevation": { "512": 8
+     * },
      *   "dynamicLayers": [
-     *     { "name": "Ground", "renderOrder": 0, "tiles": { "index": tileID, ... } },
-     *     { "name": "Ground Detail", "renderOrder": 10, "tiles": { ... } },
-     *     ...
+     *     {
+     *       "name": "Ground",
+     *
+     * "renderOrder": 0,
+     *       "isBackground": true,
+     *       "tiles": { "42": 15 },
+ *
+     * "rotation": { "42": 90.0 },
+     *       "noProjection": [42],
+     *       "flipX": [42],
+
+     * *       "flipY": [],
+     *       "ySortPlus": [],
+     *       "ySortMinus": [],
+     *
+     * "structureId": { "42": 0 }
+     *     }
      *   ],
-     *   "collision": [index1, index2, ...],
-     *   "navigation": [index1, index2, ...],
-     *   "npcs": [
-     *     { "type": "BW2_NPC1", "tileX": 10, "tileY": 5, "dialogue": "Hello!" }
-     *   ],
-     *   "player": { "tileX": 5, "tileY": 5 }
+     *   "noProjectionStructures": [
+ *
+     * { "id": 0, "name": "Cabin", "leftAnchor": [160, 192], "rightAnchor": [208, 192] }
+     * ],
+
+     * *   "particleZones": [{ "x": 10, "y": 20, "width": 64, "height": 32, "type": 0 }],
+     *
+     * "worldLights": [{ "x": 120, "y": 88, "r": 1.0, "g": 0.85, "b": 0.55,
+     * "radius": 64,
+     * "schedule": "NightOnly" }],
+     *   "animatedTiles": [{ "frames": [1, 2, 3],
+     * "frameDuration": 0.2 }],
+     *   "layerAnimationMaps": [{ "42": 0 }],
+     *
+     * "cornerCutBlocked": { "42": 3 },
+     *   "npcs": [{ "type": "BW2_NPC1", "tileX": 10,
+     * "tileY": 5,
+     *              "name": "Ari", "dialogueTree": { "...": "..." } }],
+     *
+     * "player": { "tileX": 5, "tileY": 5, "characterType": 0 }
      * }
      * @endcode
      *
+
+     * * @htmlonly
+     * <pre class="mermaid">
+     * flowchart LR
+     *     MapJSON["Map JSON"]
+     * --> Layers["dynamicLayers[]"]
+     *     MapJSON --> Grids["collision / navigation /
+     * elevation / cornerCutBlocked"]
+     *     MapJSON --> Structures["noProjectionStructures[]"]
+
+     * *     MapJSON --> Effects["particleZones[] / worldLights[] / animatedTiles[]"]
+     * MapJSON
+     * --> Actors["npcs[] / player"]
+     *     Layers --> PerTile["tiles, rotation, flips, y-sort,
+     * structureId, animationMap"]
+     *     Structures --> PerTile
+     * </pre>
+     *
+     * @endhtmlonly
+     *
      * @param filename Output JSON file path.
-     * @param npcs Optional NPC list to save.
+     * @param npcs Optional
+     * NPC list to save.
      * @param playerTileX Player tile X (-1 to skip).
      * @param playerTileY Player tile Y (-1 to skip).
      * @param characterType Player's character type (-1 to skip).
