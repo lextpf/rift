@@ -3,16 +3,16 @@
 #include <glm/glm.hpp>
 
 /**
- * @file AmbienceConfig.h
- * @brief Centralised tuning constants for subtle "cozy premium" ambience effects.
+ * @namespace ambience
+ * @brief Centralised tuning constants for subtle "cozy premium" ambience
+ * effects.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Effects
- *
- * Every default targets *"you only notice it when it's gone."* All ambience
- * polish - vignette, grain, bloom, color grading, camera breathing, ambient
- * particles, cloud shadows, chimney smoke, dialogue easing - pulls magic
- * numbers from this header. Tuning the world's feel post-launch should
- * require touching only this file.
+ * Every default targets
+ * *"you only notice it when it's gone."* All ambience polish - vignette, grain, bloom, color
+ * grading, camera breathing, ambient particles, cloud shadows, chimney smoke, dialogue easing -
+ * pulls magic numbers from this header. Tuning the world's feel post-launch should require touching
+ * only this file.
  *
  * @par Calibration philosophy
  * Defaults aim for "lowkey arcade neon - color bleed without shine."
