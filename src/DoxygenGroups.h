@@ -46,23 +46,25 @@
  * - **Resource Lifetime**: Manages initialization and shutdown of game resources
  *
  * @par Game Loop Model
- * The game uses a semi-fixed timestep model:
+ * The game uses a variable timestep clamped to a maximum frame delta:
  * @code
- * while (running) {
+ * while (running)
+ * {
  *     float deltaTime = currentTime - lastFrameTime;
- *     ProcessInput(deltaTime);
+ *     glfwPollEvents();
+ *
+ * ProcessInput(deltaTime);
  *     Update(deltaTime);
  *     Render();
  * }
  * @endcode
  *
  * @par Update Order
- * 1. Input processing (keyboard, mouse)
- * 2. Player movement and collision
- * 3. NPC AI and movement
- * 4. Camera following
- * 5. Animation updates
- * 6. Rendering
+ * 1. GLFW event polling
+ * 2. Input processing (keyboard, mouse, console, menus)
+ * 3. World update
+ * (player, NPCs, particles, sky, camera as mode permits)
+ * 4. Rendering
  *
  * @see Game
  */
@@ -258,11 +260,13 @@
  *
  * @par Movement Modes
  * Player supports three movement modes with different speeds:
- * | Mode     | Speed  | Multiplier |
+ * | Mode     | Speed  | Multiplier
+ * |
  * |----------|--------|------------|
- * | Walking  | 80     | 1.0x       |
- * | Running  | 152    | 1.9x       |
- * | Bicycle  | 160    | 2.0x       |
+ * | Walking  | 50.0 px/s  | 1.0x  |
+ * | Running  | 87.5
+ * px/s  | 1.75x |
+ * | Bicycle  | 112.5 px/s | 2.25x |
  *
  * @see PlayerCharacter, NonPlayerCharacter
  */
@@ -293,12 +297,12 @@
  * |      Key      |             Action               |
  * |---------------|----------------------------------|
  * |    W/A/S/D    | Move player (8-directional)      |
- * |     Shift     | Run (1.9x speed)                 |
- * |       B       | Toggle bicycle mode (2.0x speed) |
- * |       F       | Talk to NPC (when facing one)    |
- * |  Ctrl+Scroll  | Zoom camera                      |
- * |  Arrow Keys   | Pan camera (reset when moving)   |
- * |       Z       | Reset zoom to 1.0x               |
+ * |     Shift     | Run (1.75x speed)                |
+ * |       B       | Toggle bicycle mode
+ * (2.25x speed)|
+ * |       F       | Talk to NPC (when facing one)    | |  Ctrl+Scroll  | Zoom
+ * camera                      | |  Arrow Keys   | Pan camera (reset when moving)   | |       Z |
+ * Reset zoom to 1.0x               |
  *
  * @par Dialogue Controls
  * |      Key       |           Action            |
@@ -310,11 +314,12 @@
  * @par Movement Modes
  * |  Mode   |  Speed   |       Collision        |
  * |---------|----------|------------------------|
- * | Walking |  80 px/s | Strict (full hitbox)   |
- * | Running | 152 px/s | Relaxed (center point) |
- * | Bicycle | 160 px/s | Relaxed (center point) |
- *
- * Diagonal movement is normalized to prevent faster speed:
+ * | Walking |  50.0 px/s | Strict full-AABB hitbox |
+ * | Running |  87.5 px/s | Strict full-AABB
+ * hitbox |
+ * | Bicycle | 112.5 px/s | Strict full-AABB hitbox |
+ * Diagonal movement is normalized
+ * to prevent faster speed:
  * @f[
  * \vec{v} = \hat{d} \times speed \times \Delta t
  * @f]
@@ -353,26 +358,38 @@
  * |       Space        | Toggle free camera (gameplay only)          |
  * |         X          | Toggle corner cut blocking (debug mode only)|
  *
- * |  Canonical                  | Aliases               |              Action                  |
- * |-----------------------------|-----------------------|--------------------------------------|
- * | `editor [on\|off\|toggle]`  | `ed`                  | Toggle level editor mode             |
- * | `renderer.set <opengl\|vulkan>` | `rndr.set`, `gfx` | Switch renderer at runtime           |
- * | `debug.info [on\|off]`      | `dbg.info`, `fps`     | Toggle FPS/coords HUD                |
- * | `debug.overlays [on\|off]`  | `dbg.overlays`, `dbg` | Toggle collision/nav/anchor overlays |
- * | `fps.cap [on\|off]`         | (none)                | Cap FPS at 500 (off = uncapped)      |
- * | `globe [on\|off]`           | (none)                | Toggle 3D globe perspective          |
- * | `globe.radius <50..500>`    | `glb.r`, `globe.r`, `gr` | Set globe radius                  |
- * | `globe.tilt <0..1>`         | `glb.t`, `globe.t`, `gt` | Set camera tilt                   |
- * | `globe.intensity <up\|down>`| `glb.i`, `globe.i`, `gi` | Coupled radius+tilt step          |
- * | `time.next`                 | `tm.next`, `tn`       | Advance to next time-of-day preset   |
- * | `teleport <tx> <ty>`        | `tp`                  | Move player to tile coord            |
- * | `time.set <hours>`          | `ts`                  | Set in-game time (0.0-24.0)          |
- * | `noclip [on\|off]`          | `nc`                  | Toggle player tile/NPC collision     |
- * | `character.set <name>`      | `char.set`, `cs`      | Switch player character              |
- * | `character.next`            | `char.next`, `cn`     | Cycle to next player character       |
- * | `appearance.copy`           | `appr.copy`, `mimic`  | Copy appearance from nearest NPC     |
- * | `appearance.restore`        | `appr.restore`, `unmimic` | Restore original appearance      |
- * | `postfx [on\|off\|toggle]`  | `fx`, `pfx`           | Toggle bloom/grading/vignette/grain  |
+ * The authoritative command list is the runtime registry assembled in
+ *
+ * Console::RegisterDefaultCommands(). Use `help` in the developer console
+ * for the complete
+ * current catalog and aliases. Frequently used entry points:
+ *
+ * |  Canonical | Aliases | Action
+ * |
+ *
+ * |---------------------------------|-----------------------|-----------------------------------------|
+
+ * * | `help [prefix]`                 | (none)                | List registered commands |
+ * |
+ * `editor [on\|off\|toggle]`     | `ed`                  | Toggle level editor mode |
+ * |
+ * `renderer.set <opengl\|vulkan>` | `rndr.set`, `gfx`     | Switch renderer at runtime |
+ * |
+ * `debug.info [on\|off]`          | `dbg.info`, `fps`     | Toggle FPS/coords HUD |
+ * |
+ * `debug.overlays [on\|off]`      | `dbg.overlays`, `dbg` | Toggle collision/nav/anchor overlays |
+
+ * * | `time.set <hours>`              | `ts`                  | Set in-game time (0.0-24.0) |
+ * |
+ * `weather.next`                  | (none)                | Cycle weather state |
+ * | `player.pos`
+ * | (none)                | Print player tile/world/facing info     |
+ * | `npc.list` | `npcs` |
+ * List NPCs                               |
+ * | `map.save [path]`               | (none) | Save
+ * map JSON                           |
+ * | `renderer.trace [on\|off\|dump]`| (none) | Capture/dump
+ * draw-call trace events     |
  *
  * @par Key Debouncing
  * Toggle keys use a flag pattern to prevent repeated triggers:
