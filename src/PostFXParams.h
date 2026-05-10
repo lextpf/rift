@@ -7,7 +7,6 @@
 #include <glm/glm.hpp>
 
 /**
- * @file PostFXParams.h
  * @brief Per-frame parameters threaded into the post-processing pass, plus
  *        pure-math helpers shared between the shader and CPU-side tests.
  * @author Alex (https://github.com/lextpf)
