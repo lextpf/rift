@@ -81,7 +81,7 @@ struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<Weathe
  *
  * Decoupled from ParticleSystem's internal `ParticleType` enum so that
  * WeatherDefinitions.h can stay renderer-free and unit-testable.
- * `WeatherSystem` translates this to the concrete ParticleType at spawn time.
+ * ParticleSystem translates this to the concrete ParticleType at spawn time.
  */
 enum class WeatherParticleType
 {
