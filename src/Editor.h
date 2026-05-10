@@ -240,6 +240,8 @@ private:
     void RenderEditorUI(const EditorContext& ctx);
     /// @brief Render persistent editor state HUD.
     void RenderEditorHUD(const EditorContext& ctx);
+    /// @brief Render top-bar keyboard shortcuts reference (modes + actions).
+    void RenderEditorTopBar(const EditorContext& ctx);
     /// @brief Render collision flag overlay.
     void RenderCollisionOverlays(const EditorContext& ctx);
     /// @brief Render navigation walkability overlay.
@@ -430,6 +432,7 @@ private:
     /// @}
 
     static constexpr float EDITOR_HUD_HEIGHT = 40.0f;
+    static constexpr float EDITOR_TOPBAR_HEIGHT = 56.0f;
 
     /// @name Status toast
     /// On-screen transient message (save success/failure, load result). Drawn

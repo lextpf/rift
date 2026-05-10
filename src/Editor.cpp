@@ -326,6 +326,7 @@ void Editor::Render(const EditorContext& ctx)
     if (m_Active)
     {
         IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
+        RenderEditorTopBar(ctx);
         RenderEditorHUD(ctx);
     }
 

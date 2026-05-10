@@ -1460,6 +1460,128 @@ void Editor::RenderEditorHUD(const EditorContext& ctx)
     }
 }
 
+void Editor::RenderEditorTopBar(const EditorContext& ctx)
+{
+    if (ctx.screenWidth <= 0 || ctx.screenHeight <= 0)
+        return;
+
+    glm::mat4 uiProjection = glm::ortho(0.0f,
+                                        static_cast<float>(ctx.screenWidth),
+                                        static_cast<float>(ctx.screenHeight),
+                                        0.0f,
+                                        -1.0f,
+                                        1.0f);
+    ctx.renderer.SetProjection(uiProjection);
+
+    const float screenW = static_cast<float>(ctx.screenWidth);
+    const float margin = 12.0f;
+    const float scale = 0.55f;
+    const float chipGap = 12.0f;
+    const float textY1 = 22.0f;
+    const float textY2 = 42.0f;
+
+    ctx.renderer.DrawColoredRect(glm::vec2(0.0f, 0.0f),
+                                 glm::vec2(screenW, EDITOR_TOPBAR_HEIGHT),
+                                 glm::vec4(0.02f, 0.025f, 0.03f, 0.88f));
+    ctx.renderer.DrawColoredRect(glm::vec2(0.0f, EDITOR_TOPBAR_HEIGHT - 1.0f),
+                                 glm::vec2(screenW, 1.0f),
+                                 glm::vec4(0.55f, 0.7f, 0.75f, 0.65f));
+
+    const glm::vec3 colInactive(0.7f, 0.78f, 0.82f);
+    const glm::vec3 colActive(0.55f, 1.0f, 0.65f);
+    const glm::vec3 colHeader(1.0f, 0.94f, 0.64f);
+
+    auto isActiveKey = [this](char key) -> bool
+    {
+        if (m_ShowTilePicker)
+            return key == 'T';
+        switch (m_EditMode)
+        {
+            case EditMode::Navigation:
+                return key == 'M';
+            case EditMode::Elevation:
+                return key == 'H';
+            case EditMode::NPCPlacement:
+                return key == 'N';
+            case EditMode::NoProjection:
+                return key == 'B';
+            case EditMode::YSortPlus:
+                return key == 'Y';
+            case EditMode::YSortMinus:
+                return key == 'O';
+            case EditMode::ParticleZone:
+                return key == 'J';
+            case EditMode::Structure:
+                return key == 'G';
+            case EditMode::Animation:
+                return key == 'K';
+            case EditMode::None:
+                break;
+        }
+        return false;
+    };
+
+    struct Chip
+    {
+        char key;
+        const char* label;
+    };
+
+    const Chip modeChips[] = {
+        {'T', "[T] Picker"},
+        {'M', "[M] Nav"},
+        {'H', "[H] Elev"},
+        {'B', "[B] No-Proj"},
+        {'Y', "[Y] Y+"},
+        {'O', "[O] Y-"},
+        {'J', "[J] Particle"},
+        {'G', "[G] Struct"},
+        {'K', "[K] Anim"},
+        {'N', "[N] NPC"},
+    };
+
+    const Chip actionChips[] = {
+        {'\0', "[R] Rot"},
+        {'\0', "[F] Flip"},
+        {'\0', "[1-0] Layer"},
+        {'\0', "[Ctrl+Z/Y] Undo/Redo"},
+        {'\0', "[Ctrl+C/V] Copy/Paste"},
+        {'\0', "[S] Save"},
+        {'\0', "[L] Load"},
+        {'\0', "[Esc] Clear"},
+    };
+
+    auto drawRow = [&](const Chip* chips, size_t count, const char* header, float rowY)
+    {
+        float x = margin;
+        ctx.renderer.DrawText(header, glm::vec2(x, rowY), scale, colHeader, 1.0f, 0.95f);
+        x += ctx.renderer.GetTextWidth(header, scale) + chipGap;
+        const float maxX = screenW - margin;
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            const Chip& c = chips[i];
+            const glm::vec3 color = isActiveKey(c.key) ? colActive : colInactive;
+            const std::string label = c.label;
+            const float w = ctx.renderer.GetTextWidth(label, scale);
+
+            if (x + w > maxX)
+            {
+                const std::string fit = FitText(ctx.renderer, label, scale, maxX - x);
+                if (!fit.empty())
+                    ctx.renderer.DrawText(fit, glm::vec2(x, rowY), scale, color, 1.0f, 0.95f);
+                break;
+            }
+
+            ctx.renderer.DrawText(label, glm::vec2(x, rowY), scale, color, 1.0f, 0.95f);
+            x += w + chipGap;
+        }
+    };
+
+    drawRow(modeChips, sizeof(modeChips) / sizeof(modeChips[0]), "Modes:", textY1);
+    drawRow(actionChips, sizeof(actionChips) / sizeof(actionChips[0]), "Actions:", textY2);
+}
+
 void Editor::RenderMapSelectionOverlay(const EditorContext& ctx)
 {
     // Translucent yellow for an active selection rectangle.
