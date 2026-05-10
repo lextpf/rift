@@ -18,26 +18,28 @@
  * @ingroup Editor
  *
  * Used by single-tile placement, multi-tile region placement, and the tile-
- * place stroke accumulator. Each Entry captures both the old and new
- * (tileId, rotation) for a (tileX, tileY, layer) coord so Apply and Revert
- * are symmetric.
+ * place stroke
+ * accumulator. Each Entry captures both the old and new
+ * (tileId, rotation, flipX, flipY) for a
+ * (tileX, tileY, layer) coord so
+ * Apply and Revert are symmetric.
  */
 class PlaceTilesCmd : public EditorCommand
 {
 public:
     struct Entry
     {
-        int tileX;
-        int tileY;
-        std::size_t layer;
-        int oldTileId;
-        float oldRotation;
-        int newTileId;
-        float newRotation;
-        bool oldFlipX = false;
-        bool newFlipX = false;
-        bool oldFlipY = false;
-        bool newFlipY = false;
+        int tileX;              ///< Tile X coordinate.
+        int tileY;              ///< Tile Y coordinate.
+        std::size_t layer;      ///< Dynamic layer index.
+        int oldTileId;          ///< Tile ID before Apply().
+        float oldRotation;      ///< Rotation before Apply(), in degrees.
+        int newTileId;          ///< Tile ID after Apply().
+        float newRotation;      ///< Rotation after Apply(), in degrees.
+        bool oldFlipX = false;  ///< Horizontal flip before Apply().
+        bool newFlipX = false;  ///< Horizontal flip after Apply().
+        bool oldFlipY = false;  ///< Vertical flip before Apply().
+        bool newFlipY = false;  ///< Vertical flip after Apply().
     };
 
     explicit PlaceTilesCmd(std::vector<Entry> entries)
