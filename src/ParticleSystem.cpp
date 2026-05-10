@@ -2034,6 +2034,23 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
             m_Particles[i].size *= sizeScale;
         }
     }
+
+    // Wind-driven velocity boost for Snow. The Snow type's Spawn sets a
+    // gentle base velocity (12-22 px/s fall, +/-6 px/s drift) that reads as
+    // calm flurries. Blizzard (windIntensity = 1.0) multiplies these so the
+    // snow visibly hammers down at an angle - 2.5x fall, 5x horizontal blast.
+    // Regular Snow (windIntensity = 0.3) is below the threshold and stays
+    // gentle. Threshold of 0.7 keeps the boost a deliberate Blizzard-only
+    // effect rather than a smooth ramp.
+    const float windIntensity = m_CurrentWeatherDef ? m_CurrentWeatherDef->windIntensity : 0.0f;
+    if (type == ParticleType::Snow && windIntensity >= 0.7f)
+    {
+        for (size_t i = before; i < m_Particles.size(); ++i)
+        {
+            m_Particles[i].velocity.x *= 5.0f;
+            m_Particles[i].velocity.y *= 2.5f;
+        }
+    }
 }
 
 void ParticleSystem::Render(IRenderer& renderer,
