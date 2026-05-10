@@ -40,7 +40,9 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .showCelestialBodies = false,
         .windIntensity = 0.8f,
     },
-    // Thunderstorm
+    // Thunderstorm: less frequent flashes (was 5s -> 8s) so the lightning
+    // overlay reads as a punctuating event rather than a constant strobe; the
+    // flash alpha itself is tuned in SkyRenderer (see RenderSky).
     WeatherDefinition{
         .ambientTintMultiplier = {0.50f, 0.52f, 0.65f},
         .skyColorOverride = {0.30f, 0.32f, 0.42f},
@@ -49,7 +51,7 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .maxWeatherParticles = 800,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
-        .lightningIntervalSeconds = 5.0f,
+        .lightningIntervalSeconds = 8.0f,
         .windIntensity = 1.0f,
     },
     // Snow
@@ -60,13 +62,16 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .maxWeatherParticles = 300,
         .windIntensity = 0.3f,
     },
-    // Blizzard
+    // Blizzard: heavier and faster than regular Snow. The Snow particle's
+    // base velocity is multiplied per-particle in SpawnWeatherParticles when
+    // windIntensity >= 0.7 so the snow visibly hammers down rather than just
+    // increasing in count.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
         .particleType = WeatherParticleType::Snow,
-        .baseSpawnRate = 100.0f,
-        .maxWeatherParticles = 600,
+        .baseSpawnRate = 150.0f,
+        .maxWeatherParticles = 700,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
@@ -122,8 +127,10 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
     },
     // CherryBlossoms: dense flurry. Per-spawn tier system in the Blossom
     // behavior gives mixed sizes/hues so density doesn't read as uniform.
+    // Pinker tint (R bumped past 1.0, G/B suppressed) reads as a slight pink
+    // wash over the world sprites.
     WeatherDefinition{
-        .ambientTintMultiplier = {1.00f, 0.90f, 0.94f},
+        .ambientTintMultiplier = {1.10f, 0.85f, 0.95f},
         .particleType = WeatherParticleType::Blossom,
         .baseSpawnRate = 60.0f,
         .maxWeatherParticles = 450,
@@ -145,21 +152,24 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .starVisibilityOverride = 0.85f,
         .showAurora = true,
     },
-    // MeteorShower
+    // MeteorShower: more frequent, larger, brighter streaks. Rate bump to 12
+    // collapses the spawn interval (~4s base / 12 = ~0.3s); the per-star size
+    // and brightness boost lives in SkyRenderer::SpawnShootingStar so this
+    // weather actually reads as an event instead of "did I see a star?".
     WeatherDefinition{
         .ambientTintMultiplier = {0.95f, 0.95f, 1.00f},
         .starVisibilityOverride = 1.0f,
-        .meteorRateMultiplier = 8.0f,
+        .meteorRateMultiplier = 12.0f,
     },
-    // FireflySwarm: bigger, denser, brighter than ambient zone fireflies.
-    // particleSizeScale doubles the per-particle size so individual fireflies
-    // pop in the dark.
+    // FireflySwarm: denser and brighter than ambient zone fireflies. Per-particle
+    // size matches the ambient zone default (scale 1.0) - the swarm reads as
+    // "many fireflies" via baseSpawnRate / maxWeatherParticles, not chunkier sprites.
     WeatherDefinition{
         .ambientTintMultiplier = {0.90f, 1.00f, 0.85f},
         .particleType = WeatherParticleType::Firefly,
         .baseSpawnRate = 70.0f,
         .maxWeatherParticles = 450,
-        .particleSizeScale = 2.0f,
+        .particleSizeScale = 1.0f,
     },
     // AshFall
     WeatherDefinition{
