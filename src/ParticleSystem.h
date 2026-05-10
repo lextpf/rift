@@ -157,9 +157,12 @@ struct ParticleZone
  *
  *     Z1[Zone: Firefly]:::zone --> PS[ParticleSystem]:::system
  *     Z2[Zone: Rain]:::zone --> PS
- *     Z3[Zone: Lantern]:::zone --> PS
- *     PS --> P1[Particle Pool]:::particle
- *     P1 --> R[Renderer]
+
+ * *     Z3[Zone: Lantern]:::zone --> PS
+ *     W[Weather state]:::zone --> PS
+ *     A[Ambient
+ * emitters]:::zone --> PS
+ *     PS --> P1[Particle Pool]:::particle P1 --> R[Renderer]
  * </pre>
  * @endhtmlonly
  *
@@ -171,9 +174,24 @@ struct ParticleZone
  * | Snow     | 12/s       | 15s      | 1.5-3px | Slow fall, rotation        |
  * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
  * | Sparkles | 18/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * | Wisp     | 4/s        | 4-7s     | 2-4px   | Spiral movement, colors    |
- * | Lantern  | 0.5/s      | 10-15s   | 4x zone | Night-only glow            |
- * | Sunshine | 0.8/s      | 5-9s     | 40-64px | Angled rays, day/night     |
+ * | Wisp     | 4/s
+ * | 4-7s     | 2-4px   | Spiral movement, colors    |
+ * | Lantern  | 0.5/s      | 10-15s   | 4x
+ * zone | Night-only glow            |
+ * | Sunshine | 0.8/s      | 5-9s     | 40-64px | Angled
+ * rays, day/night     |
+ * | DriftingLeaf | weather | varied   | varied  | Wind-blown leaves |
+ * |
+ * DustMote     | weather | varied   | small   | Ambient dust motes         |
+ * | Pollen       |
+ * weather | varied   | small   | Slow floating pollen       |
+ * | CherryBlossom | weather | varied
+ * | varied  | Blossom petal drift        |
+ * | Ash          | weather | varied   | small   |
+ * Falling ash                |
+ * | Ember        | weather | varied   | small   | Glowing ember
+ * drift        |
+ * | Sand         | weather | varied   | small   | Wind-driven sand           |
  *
  * @section particle_lifecycle Particle Lifecycle
  * @htmlonly
@@ -203,11 +221,18 @@ struct ParticleZone
  *
  * @par Projection Calculation
  * For no-projection particles, the system:
- * 1. Finds the parent structure bounds via `Tilemap::FindNoProjectionStructureBounds()`
- * 2. Projects the structure's base corners
- * 3. Calculates horizontal scale from projected width
- * 4. Applies the same exponential Y offset as tile rendering
- * 5. Positions the particle relative to the projected structure
+ * 1. Asks
+ * `Tilemap::ProjectNoProjectionStructurePoint()` to project particles
+ *    covered by a
+ * no-projection structure.
+ * 2. Uses the returned screen point so particles stay aligned with the
+
+ * *    structure's stepped/projected mesh.
+ * 3. Falls back to regular renderer projection when no
+ * structure covers the
+ *    particle point.
+ * 4. Renders no-projection and regular particles
+ * through separate batches.
  *
  * @section particle_textures Texture System
  * Each particle type has a dedicated texture loaded at initialization.
