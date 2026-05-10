@@ -71,18 +71,32 @@ public:
     /**
      * @brief Load pre-compiled vertex shader SPIR-V from file.
      *
-     * Loads `shaders/Geometry.vert.spv` from the working directory.
+     * Searches for
+     * `shaders/Geometry.vert.spv` relative to the current working
+     * directory, the executable
+     * directory, and parent directories used by
+     * build-tree launches. Rejects empty files,
+     * files over 16 MiB, and files
+     * whose byte size is not 4-byte aligned.
      *
-     * @return SPIR-V bytecode, or empty vector if file not found.
+     *
+     * @return SPIR-V bytecode, or empty vector if file is not found or invalid.
      */
     static std::vector<uint32_t> GetVertexShaderSPIRV();
 
     /**
      * @brief Load pre-compiled fragment shader SPIR-V from file.
      *
-     * Loads `shaders/Geometry.frag.spv` from the working directory.
+     * Searches for
+     * `shaders/Geometry.frag.spv` relative to the current working
+     * directory, the executable
+     * directory, and parent directories used by
+     * build-tree launches. Rejects empty files,
+     * files over 16 MiB, and files
+     * whose byte size is not 4-byte aligned.
      *
-     * @return SPIR-V bytecode, or empty vector if file not found.
+     *
+     * @return SPIR-V bytecode, or empty vector if file is not found or invalid.
      */
     static std::vector<uint32_t> GetFragmentShaderSPIRV();
 };
