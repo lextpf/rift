@@ -231,13 +231,21 @@ public:
      *
      * @par Initialization Steps
      * 1. Generate ray texture (soft vertical gradient)
-     * 2. Generate star textures (point + glow)
-     * 3. Generate shooting star texture (elongated streak)
-     * 4. Generate atmospheric glow texture
-     * 5. Populate star arrays with random positions/properties
-     * 6. Populate light ray arrays for sun and moon
+     * 2.
+     * Generate star textures (point + glow)
+     * 3. Generate shooting star texture (elongated
+     * streak)
+     * 4. Generate atmospheric glow, glow pool, light-pool, and aurora textures
+ * 5.
+     * Populate star arrays with random positions/properties
+     * 6. Populate light ray arrays for
+     * sun and moon
      * 7. Generate dew sparkle positions
-     */
+     *
+     * Safe to call more than
+     * once; generated resources are replaced by the
+     * current run's textures and arrays.
+ */
     void Initialize();
 
     /**
