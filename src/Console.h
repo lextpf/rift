@@ -239,11 +239,17 @@ public:
     /// Construct, take a Game reference, and register the default command set.
     explicit Console(Game& game);
 
+    /// True when the overlay is in Half or Full state.
     [[nodiscard]] bool IsOpen() const { return m_State != State::Closed; }
+    /// True when the overlay covers the full framebuffer.
     [[nodiscard]] bool IsFullscreen() const { return m_State == State::Full; }
+    /// Current visibility/size state.
     [[nodiscard]] State GetState() const { return m_State; }
+    /// Advance Closed -> Half -> Full -> Closed.
     void Toggle();
+    /// Open the console to the default visible state.
     void Open();
+    /// Close the overlay and stop consuming console input.
     void Close();
 
     // ---------------- Input event entry points ----------------
@@ -252,18 +258,31 @@ public:
     /// while the console is open; no-op otherwise.
     void OnChar(std::uint32_t codepoint);
 
+    /// Execute the current line or accept the active autocomplete suggestion.
     void OnEnter();
+    /// Delete one code unit before the cursor.
     void OnBackspace();
+    /// Delete the word before the cursor.
     void OnBackspaceWord();
+    /// Delete one code unit at the cursor.
     void OnDelete();
+    /// Complete or cycle command suggestions.
     void OnTab();
+    /// Navigate command history or suggestions upward.
     void OnUp();
+    /// Navigate command history or suggestions downward.
     void OnDown();
+    /// Move the cursor left.
     void OnLeft();
+    /// Move the cursor right.
     void OnRight();
+    /// Move the cursor to the start of the line.
     void OnHome();
+    /// Move the cursor to the end of the line.
     void OnEnd();
+    /// Close the console or clear suggestion state.
     void OnEscape();
+    /// Scroll console history by the wheel delta.
     void OnScroll(double yoffset);
 
     /// Parse and execute a complete command line. Public for testability.
@@ -282,10 +301,23 @@ public:
 
     // ---------------- Accessors used by command handlers ----------------
 
+    /// Mutable output/input buffer used by command handlers.
     [[nodiscard]] ConsoleBuffer& Buffer() { return m_Buffer; }
+    /// Read-only output/input buffer for render and inspection paths.
     [[nodiscard]] const ConsoleBuffer& Buffer() const { return m_Buffer; }
+    /// Game instance that owns this console.
     [[nodiscard]] Game& GetGame() { return m_Game; }
+    /// Registered command table.
     [[nodiscard]] const ConsoleCommandRegistry& Registry() const { return m_Registry; }
+
+    /// Session-scoped player-position bookmarks driven by `bookmark.set` /
+    /// `bookmark.tp` / `bookmark.list`. Cleared on Console destruction; not
+    /// persisted to disk.
+    [[nodiscard]] std::unordered_map<std::string, glm::ivec2>& Bookmarks() { return m_Bookmarks; }
+    [[nodiscard]] const std::unordered_map<std::string, glm::ivec2>& Bookmarks() const
+    {
+        return m_Bookmarks;
+    }
 
     /// One round of suggestion computation. `items` holds the prefix-matched
     /// candidates (alphabetical, capped to the requested count). `wordStart`
@@ -313,7 +345,7 @@ public:
     bool TryScrollDropdown(double mouseX, double mouseY, double yoffset);
 
 private:
-    /// Wire the eight built-in commands. Defined in ConsoleCommands.cpp.
+    /// Wire the built-in command set. Defined in ConsoleCommands.cpp.
     void RegisterDefaultCommands();
 
     /// Compute the up-to-@p maxCount autocomplete suggestions for the current
@@ -366,6 +398,11 @@ private:
         bool visible = false;
     };
     DropdownRect m_LastDropdown;
+
+    /// Session-scoped bookmark storage. Keyed by user-supplied name; value is
+    /// the player's tile coordinates at the time of `bookmark.set`. Empty by
+    /// default; not persisted across program runs.
+    std::unordered_map<std::string, glm::ivec2> m_Bookmarks;
 };
 
 /// Pure transition function for the console toggle cycle. Exposed as a free
