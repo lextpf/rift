@@ -22,12 +22,30 @@
  * | Fisheye         | Yes             | Yes             |
  *
  * @par Globe Curvature
- * Maps each point onto a virtual sphere of radius @f$ R @f$. A point at
- * distance @f$ d @f$ from the screen center is displaced to:
+ * Maps each point with an oval radial projection around the screen center.
  * @f[
- * d' = R \cdot \sin\!\bigl(\tfrac{d}{R}\bigr)
+ * dx = x -
+ * c_x,\quad dy = y - c_y,\quad
+ * d_n = \sqrt{\left(\frac{dx}{R_x}\right)^2 +
+ * \left(\frac{dy}{R_y}\right)^2}
  * @f]
- * preserving the angle from center while compressing distant points.
+ * @f[
+ * q =
+ * \begin{cases}
+ * 1, & d_n \le \varepsilon
+ * \\
+ * \frac{\sin(d_n)}{d_n}, & d_n > \varepsilon
+ * \end{cases}
+ * @f]
+ * @f[
+ * x' = c_x + dx
+ * \cdot q,\quad y' = c_y + dy \cdot q
+ * @f]
+ * This preserves the radial direction from center
+ * while compressing distant
+ * points; the near-zero branch avoids division by a very small
+ * normalized
+ * distance.
  *
  * @par Vanishing Point Scaling
  * Scales each point toward a horizon line to simulate depth:
