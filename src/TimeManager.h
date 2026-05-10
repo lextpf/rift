@@ -53,7 +53,7 @@ enum class TimePeriod
  * @endcode
  *
  * @par Day/Night Cycle
- * The cycle uses smooth transitions between periods:
+ * The cycle uses continuous linear transitions between periods:
  *
  * @htmlonly
  * <pre class="mermaid">
@@ -106,8 +106,8 @@ enum class TimePeriod
  * @endcode
  *
  * @par Ambient Color Transitions
- * Colors smoothly interpolate between key times:
- * | Time  | Ambient Color       | Description              |
+ * Colors linearly interpolate between key times:
+ * | Time  | Ambient Color       | Description |
  * |-------|---------------------|--------------------------|
  * | 00:00 | (0.30, 0.30, 0.45) | Deep night blue          |
  * | 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn      |
@@ -123,13 +123,16 @@ enum class TimePeriod
  * @f[
  * gameHours = \frac{realSeconds \times 24 \times timeScale}{dayDuration}
  * @f]
- * Default: 24 real seconds = 1 game day.
+ * Class default: 24 real seconds = 1 game day. Rift startup overrides this
+ * to 1200 seconds per
+ * day in Game::Initialize().
  *
  * @par Usage Example
  * @code
  * TimeManager time;
- * time.Initialize();  // Default: 24s per day (fast cycle)
- * time.SetTime(6.0f); // Start at sunrise
+ * time.Initialize();  // Class default: 24s per day (fast cycle)
+ * time.SetTime(6.0f); // Start at
+ * sunrise
  *
  * // In game loop:
  * time.Update(deltaTime);
@@ -157,6 +160,8 @@ public:
      * @brief Construct TimeManager with default values.
      *
      * Initial state: time=12:00, dayDuration=24s, timeScale=1.0, Clear weather.
+     * Game startup
+     * changes dayDuration to 1200s after initialization.
      */
     TimeManager();
 
@@ -168,7 +173,9 @@ public:
     /**
      * @brief Initialize the time manager.
      *
-     * Resets to default starting values. Call once at game start.
+     * Resets to class default starting values. Game::Initialize() applies
+     * Rift's
+     * 1200s-per-day startup setting after this call.
      */
     void Initialize();
 
@@ -272,7 +279,7 @@ public:
      * @brief Get the ambient light color multiplier.
      *
      * Applied to all world sprites to simulate time-of-day lighting.
-     * Transitions smoothly between predefined colors at key times.
+     * Transitions linearly between predefined colors at key times.
      *
      * @return RGB color multiplier (typically 0.0-1.0 per channel).
      */
@@ -455,9 +462,20 @@ private:
     glm::vec3 LerpColor(const glm::vec3& a, const glm::vec3& b, float t) const;
 
     /**
-     * @brief Calculate smooth transition factor between time boundaries.
+     * @brief Calculate a clamped linear transition factor between time boundaries.
      *
-     * Returns 0.0 before start, 1.0 after end, smooth ramp between.
+     *
+     * Returns 0.0 before start, 1.0 after end, and a linear ramp between:
+     * @f[
+     * f(t; a,
+     * b) =
+     * \begin{cases}
+     * 0, & b \le a \\
+     *
+     * \operatorname{clamp}\left(\frac{t-a}{b-a}, 0, 1\right), & b > a
+     * \end{cases}
+     *
+     * @f]
      *
      * @param time Current time.
      * @param start Transition start time.
