@@ -350,7 +350,6 @@
  *
  * |        Key         |                  Action                     |
  * |--------------------|---------------------------------------------|
- * |        F6          | Toggle FPS cap (uncapped / 500)             |
  * |       Space        | Toggle free camera (gameplay only)          |
  * |         X          | Toggle corner cut blocking (debug mode only)|
  *
@@ -360,6 +359,7 @@
  * | `renderer.set <opengl\|vulkan>` | `rndr.set`, `gfx` | Switch renderer at runtime           |
  * | `debug.info [on\|off]`      | `dbg.info`, `fps`     | Toggle FPS/coords HUD                |
  * | `debug.overlays [on\|off]`  | `dbg.overlays`, `dbg` | Toggle collision/nav/anchor overlays |
+ * | `fps.cap [on\|off]`         | (none)                | Cap FPS at 500 (off = uncapped)      |
  * | `globe [on\|off]`           | (none)                | Toggle 3D globe perspective          |
  * | `globe.radius <50..500>`    | `glb.r`, `globe.r`, `gr` | Set globe radius                  |
  * | `globe.tilt <0..1>`         | `glb.t`, `globe.t`, `gt` | Set camera tilt                   |
