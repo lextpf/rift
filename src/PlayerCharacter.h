@@ -382,8 +382,9 @@ public:
      * @name Render Constants
      * @{
      */
-    static constexpr int RENDER_WIDTH = 16;   ///< Sprite width in pixels (1 tile wide)
-    static constexpr int RENDER_HEIGHT = 32;  ///< Sprite height in pixels (2 tiles tall)
+    static constexpr int RENDER_WIDTH =
+        16;  ///< Layout/collision width; sprite sheets draw 32px cells.
+    static constexpr int RENDER_HEIGHT = 32;  ///< Sprite sheet cell/render height in pixels.
     /** @} */
 
     /**
