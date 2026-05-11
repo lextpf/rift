@@ -262,8 +262,7 @@ const ConsoleCommandRegistry::Command* ConsoleCommandRegistry::Lookup(std::strin
 }
 
 std::vector<ConsoleCommandRegistry::MatchEntry> ConsoleCommandRegistry::MatchPrefixDetailed(
-    std::string_view prefix,
-    std::size_t maxCount) const
+    std::string_view prefix, std::size_t maxCount) const
 {
     auto startsWith = [&](std::string_view s)
     { return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix; };
