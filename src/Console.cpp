@@ -353,8 +353,18 @@ Console::SuggestionResult Console::ComputeSuggestions(std::size_t maxCount) cons
 
     if (result.wordStart == 0)
     {
-        // No spaces yet - completing the verb itself.
-        result.items = m_Registry.MatchPrefix(currentWord, maxCount);
+        // No spaces yet - completing the verb itself. Use the detailed
+        // variant so each item carries its canonical command name (empty
+        // for canonical matches; populated for aliases). The dropdown
+        // renderer reads canonicals to draw `alias -> canonical` hints.
+        auto detailed = m_Registry.MatchPrefixDetailed(currentWord, maxCount);
+        result.items.reserve(detailed.size());
+        result.canonicals.reserve(detailed.size());
+        for (auto& entry : detailed)
+        {
+            result.items.push_back(std::move(entry.name));
+            result.canonicals.push_back(std::move(entry.canonical));
+        }
         return result;
     }
 
@@ -390,6 +400,10 @@ Console::SuggestionResult Console::ComputeSuggestions(std::size_t maxCount) cons
     {
         result.items.resize(maxCount);
     }
+    // Argument values aren't aliases, so keep canonicals empty but
+    // length-matched to items so the dropdown renderer can index either
+    // vector by row uniformly.
+    result.canonicals.assign(result.items.size(), std::string{});
     return result;
 }
 
@@ -744,13 +758,21 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
             const std::size_t totalItems = sugg.items.size();
             const std::size_t visibleRows = std::min(kMaxVisibleSuggestions, totalItems);
 
-            // Width is sized to the widest *visible* item. Stable enough -
-            // recomputed every frame so it matches the rows actually shown.
+            // Width is sized to the widest *visible* item, including its
+            // " -> canonical" annotation when the row represents an alias.
+            // Recomputed every frame so it matches the rows actually shown.
+            constexpr std::string_view kAnnotationSep = " -> ";
             float widest = 0.0f;
             for (std::size_t i = 0; i < visibleRows; ++i)
             {
                 const std::size_t idx = m_SuggestionScroll + i;
-                widest = std::max(widest, renderer.GetTextWidth(sugg.items[idx], TEXT_SCALE));
+                float rowW = renderer.GetTextWidth(sugg.items[idx], TEXT_SCALE);
+                if (idx < sugg.canonicals.size() && !sugg.canonicals[idx].empty())
+                {
+                    rowW += renderer.GetTextWidth(
+                        std::string(kAnnotationSep) + sugg.canonicals[idx], TEXT_SCALE);
+                }
+                widest = std::max(widest, rowW);
             }
             constexpr float DROPDOWN_PAD = 6.0f;
             constexpr float DROPDOWN_GAP = 4.0f;
@@ -808,6 +830,20 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
                                   glm::vec2(boxX + LEFT_PAD, baseline),
                                   TEXT_SCALE,
                                   glm::vec3(1.0f));
+                if (idx < sugg.canonicals.size() && !sugg.canonicals[idx].empty())
+                {
+                    // Alias row: append " -> canonical" in a dim color so the
+                    // originating command is always visible. Only the alias
+                    // (sugg.items[idx]) gets spliced into the input on commit;
+                    // this annotation is render-only.
+                    const float itemW = renderer.GetTextWidth(sugg.items[idx], TEXT_SCALE);
+                    const std::string annotation =
+                        std::string(kAnnotationSep) + sugg.canonicals[idx];
+                    renderer.DrawText(annotation,
+                                      glm::vec2(boxX + LEFT_PAD + itemW, baseline),
+                                      TEXT_SCALE,
+                                      glm::vec3(0.55f, 0.60f, 0.75f));
+                }
             }
 
             // Scrollbar showing the current window's position in the full

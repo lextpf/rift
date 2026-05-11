@@ -343,9 +343,14 @@ public:
     /// candidates (alphabetical, capped to the requested count). `wordStart`
     /// is the index in the input where the partial word begins, so callers
     /// can splice a chosen suggestion in: `input.substr(0, wordStart) + items[i]`.
+    /// `canonicals` is parallel to `items`: empty entries denote canonical
+    /// command matches; non-empty entries hold the canonical command that the
+    /// corresponding alias resolves to. Argument-completion items always have
+    /// an empty canonical (alias semantics don't apply to arg values).
     struct SuggestionResult
     {
         std::vector<std::string> items;
+        std::vector<std::string> canonicals;
         std::size_t wordStart = 0;
     };
 
