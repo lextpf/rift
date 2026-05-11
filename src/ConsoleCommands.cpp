@@ -263,6 +263,37 @@ bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+bool Cmd_TimeAdd(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("time.add: time manager unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("time.add: usage 'time.add <hours>'");
+        return false;
+    }
+    float delta = 0.0f;
+    if (!ParseFloat(args[0], delta))
+    {
+        ctx.out.PrintError("time.add: hours must be a finite number");
+        return false;
+    }
+
+    ctx.time->AdvanceTime(delta);
+
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "time.add: %+.2fh -> %.2fh",
+                  static_cast<double>(delta),
+                  static_cast<double>(ctx.time->GetTimeOfDay()));
+    ctx.out.Print(line);
+    return true;
+}
+
 bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -3257,6 +3288,14 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_TimeSet(args, ctx);
                         },
                         {"ts"});
+
+    m_Registry.Register("time.add",
+                        "time.add <hours> - offset time of day (signed, wraps 0..24)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_TimeAdd(args, ctx);
+                        });
 
     m_Registry.Register("time.freeze",
                         "[on|off|toggle] - pause/resume day-night cycle",

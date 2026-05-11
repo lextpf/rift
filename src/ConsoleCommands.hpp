@@ -67,6 +67,7 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_TimeAdd(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_StateDump(std::span<const std::string_view> args, CommandContext& ctx);
