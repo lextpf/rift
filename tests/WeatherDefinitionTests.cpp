@@ -156,3 +156,46 @@ TEST(WeatherDefinitionTests, EnumTraitsCountMatchesEmberStorm)
     EXPECT_EQ(std::to_underlying(WeatherState::EmberStorm),
               EnumTraits<WeatherState>::Count - 1);
 }
+
+TEST(WeatherDefinitionTests, BlizzardHasSecondaryFog)
+{
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::Blizzard);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Snow);
+    EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::Fog);
+    EXPECT_GT(def.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(def.secondaryMaxWeatherParticles, 0);
+    // Blizzard's layered fog should be softer than the base alpha so the
+    // snow remains the dominant visual element.
+    EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
+}
+
+TEST(WeatherDefinitionTests, FogStateSoftensAlpha)
+{
+    EXPECT_NEAR(GetWeatherDefinition(WeatherState::Fog).fogAlphaMultiplier, 0.7f, 0.001f);
+}
+
+TEST(WeatherDefinitionTests, MistSoftensAlphaMore)
+{
+    EXPECT_NEAR(GetWeatherDefinition(WeatherState::Mist).fogAlphaMultiplier, 0.6f, 0.001f);
+}
+
+TEST(WeatherDefinitionTests, NonFogWeathersHaveDefaultMultiplier)
+{
+    EXPECT_FLOAT_EQ(GetWeatherDefinition(WeatherState::Clear).fogAlphaMultiplier, 1.0f);
+    EXPECT_FLOAT_EQ(GetWeatherDefinition(WeatherState::HeavyRain).fogAlphaMultiplier, 1.0f);
+}
+
+TEST(WeatherDefinitionTests, NonBlizzardWeathersHaveNoSecondaryParticle)
+{
+    for (size_t i = 0; i < EnumTraits<WeatherState>::Count; ++i)
+    {
+        auto state = static_cast<WeatherState>(i);
+        if (state == WeatherState::Blizzard)
+        {
+            continue;
+        }
+        EXPECT_EQ(GetWeatherDefinition(state).secondaryParticleType,
+                  WeatherParticleType::None)
+            << "state=" << EnumTraits<WeatherState>::ToString(state);
+    }
+}
