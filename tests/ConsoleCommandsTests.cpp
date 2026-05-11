@@ -688,6 +688,40 @@ TEST(ConsoleCommandsTests, TimeNextRejectsArgs)
     EXPECT_FALSE(Cmd_TimeNext(ArgPack({"now"}).span(), ctx));
 }
 
+TEST(ConsoleCommandsTests, TimeAddOffsetsCurrentTime)
+{
+    TimeManager time;
+    time.SetTime(14.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    EXPECT_TRUE(Cmd_TimeAdd(ArgPack({"0.5"}).span(), ctx));
+
+    EXPECT_FLOAT_EQ(time.GetTimeOfDay(), 14.5f);
+    EXPECT_TRUE(BufferContains(buf, "time.add: +0.50h -> 14.50h"));
+}
+
+TEST(ConsoleCommandsTests, TimeAddRejectsInvalidInputs)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+
+    EXPECT_FALSE(Cmd_TimeAdd(ArgPack({"1"}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "time.add: time manager unavailable"));
+
+    TimeManager time;
+    ctx.time = &time;
+    buf.Clear();
+
+    EXPECT_FALSE(Cmd_TimeAdd(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "time.add: usage 'time.add <hours>'"));
+
+    buf.Clear();
+    EXPECT_FALSE(Cmd_TimeAdd(ArgPack({"soon"}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "time.add: hours must be a finite number"));
+}
+
 // ---------------------------------------------------------------------------
 // character.set / character.next (parse paths only - sprite assets may be
 // missing in the test working dir, so SwitchCharacter success is best-effort)
@@ -1710,8 +1744,6 @@ TEST(ConsoleCommandsTests, QuestCompleteSetsFlag)
 
 TEST(ConsoleCommandsTests, QuestListShowsActiveAndCompleted)
 {
-    // GetActiveQuests requires the "accepted_<name>_quest" naming convention,
-    // so quest names must end in "_quest" for this code path to recognise them.
     GameStateManager gs;
     gs.AcceptQuest("a_quest", "do A");
     gs.AcceptQuest("b_quest", "do B");
@@ -1723,6 +1755,19 @@ TEST(ConsoleCommandsTests, QuestListShowsActiveAndCompleted)
     EXPECT_TRUE(Cmd_QuestList(args.span(), ctx));
     EXPECT_TRUE(BufferContains(buf, "[ACTIVE]"));
     EXPECT_TRUE(BufferContains(buf, "[DONE]"));
+}
+
+TEST(ConsoleCommandsTests, QuestListShowsQuestGiveWithoutQuestSuffix)
+{
+    GameStateManager gs;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.gameState = &gs;
+
+    EXPECT_TRUE(Cmd_QuestGive(ArgPack({"ufo", "investigate"}).span(), ctx));
+    EXPECT_TRUE(Cmd_QuestList(ArgPack({}).span(), ctx));
+
+    EXPECT_TRUE(BufferContains(buf, "[ACTIVE] ufo"));
 }
 
 // ---------------------------------------------------------------------------

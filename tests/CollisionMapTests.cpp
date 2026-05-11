@@ -177,6 +177,15 @@ TEST_F(CollisionMapTest, SetData_InvalidSize_Rejected)
     EXPECT_EQ(map.GetHeight(), 10);
 }
 
+TEST_F(CollisionMapTest, SetData_NegativeDimensions_Rejected)
+{
+    std::vector<bool> data;
+    EXPECT_FALSE(map.SetData(data, -1, 0));
+    EXPECT_FALSE(map.SetData(data, 0, -1));
+    EXPECT_EQ(map.GetWidth(), 10);
+    EXPECT_EQ(map.GetHeight(), 10);
+}
+
 // --- Copy/Move ---
 
 TEST_F(CollisionMapTest, CopyConstructor)

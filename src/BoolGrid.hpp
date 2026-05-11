@@ -198,6 +198,8 @@ public:
      */
     bool SetData(const container_type& data, int width, int height)
     {
+        if (width < 0 || height < 0)
+            return false;
         if (data.size() != static_cast<std::size_t>(width) * static_cast<std::size_t>(height))
             return false;
         m_Width = width;

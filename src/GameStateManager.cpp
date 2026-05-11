@@ -10,10 +10,8 @@ std::vector<std::string> GameStateManager::GetActiveQuests() const
 
     for (const auto& [key, value] : m_Flags)
     {
-        // Match keys that start with "accepted_" and end with "_quest".
-        // Using ends_with() avoids false-matching keys like "accepted_quest_status".
-        if (key.starts_with(kAcceptedPrefix) && key.ends_with("_quest") && !value.empty() &&
-            value != "false" && value != "0")
+        if (key.starts_with(kAcceptedPrefix) && !value.empty() && value != "false" &&
+            value != "0")
         {
             // Extract quest name (remove "accepted_" prefix)
             std::string questName = key.substr(kAcceptedPrefix.size());
