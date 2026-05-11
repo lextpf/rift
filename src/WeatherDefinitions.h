@@ -183,6 +183,24 @@ struct WeatherDefinition
     /// Wind intensity 0-1 - affects horizontal drift of leaf/pollen/ash/sand.
     float windIntensity{0.5f};
 
+    /// Optional secondary weather particle that spawns alongside @ref particleType.
+    /// Default `None` means single-type spawning (current behavior). Used by
+    /// Blizzard to layer Fog particles on top of Snow without losing either.
+    WeatherParticleType secondaryParticleType{WeatherParticleType::None};
+
+    /// Spawn rate (particles/sec) for the secondary particle. Ignored when
+    /// @ref secondaryParticleType is `None`.
+    float secondaryBaseSpawnRate{0.0f};
+
+    /// Hard cap on simultaneously live secondary particles. 0 = unlimited
+    /// (still subject to global ParticleSystem cap).
+    int secondaryMaxWeatherParticles{0};
+
+    /// Multiplier on the Fog particle's render-time base alpha (default 1.0
+    /// = unchanged). Lets fog-bearing weathers soften the fog wall without
+    /// changing density. Read by `ParticleBehavior<ParticleType::Fog>::Update`.
+    float fogAlphaMultiplier{1.0f};
+
     /// Reserved for a future heat-haze post-FX pass; currently unused.
     /// The tint multiplier still applies.
     float hazeAmplitude{0.0f};

@@ -65,7 +65,9 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
     // Blizzard: heavier and faster than regular Snow. The Snow particle's
     // base velocity is multiplied per-particle in SpawnWeatherParticles when
     // windIntensity >= 0.7 so the snow visibly hammers down rather than just
-    // increasing in count.
+    // increasing in count. Layers a low-density Fog secondary on top so the
+    // backdrop reads as low-visibility whiteout; the fog alpha is dialed
+    // down (0.5) so the snow remains the dominant element.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
@@ -75,10 +77,15 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
+        .secondaryParticleType = WeatherParticleType::Fog,
+        .secondaryBaseSpawnRate = 6.0f,
+        .secondaryMaxWeatherParticles = 60,
+        .fogAlphaMultiplier = 0.5f,
     },
 
     // --- Atmosphere --------------------------------------------------------
     // Fog: dense, large slow-drifting blobs that read as a thick fog wall.
+    // Per-puff alpha softened (0.7) so the world stays legible behind the fog.
     WeatherDefinition{
         .ambientTintMultiplier = {0.75f, 0.77f, 0.80f},
         .particleType = WeatherParticleType::Fog,
@@ -88,8 +95,10 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 0.2f,
+        .fogAlphaMultiplier = 0.7f,
     },
-    // Mist: lighter cousin - half the density and smaller blobs.
+    // Mist: lighter cousin - half the density and smaller blobs. Even softer
+    // alpha (0.6) than Fog to preserve the "thinner cousin" relationship.
     WeatherDefinition{
         .ambientTintMultiplier = {0.88f, 0.90f, 0.93f},
         .particleType = WeatherParticleType::Fog,
@@ -97,6 +106,7 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .maxWeatherParticles = 50,
         .particleSizeScale = 1.2f,
         .windIntensity = 0.2f,
+        .fogAlphaMultiplier = 0.6f,
     },
     // HeatHaze (hazeAmplitude is reserved; tint applies today)
     WeatherDefinition{
