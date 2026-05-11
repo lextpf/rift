@@ -3588,7 +3588,7 @@ void Console::RegisterDefaultCommands()
                             CommandContext ctx = makeContext();
                             (void)Cmd_TimeFreeze(args, ctx);
                         },
-                        {"tm.freeze", "tf"});
+                        {"tm.freeze", "tfz"});
 
     m_Registry.Register("map.load",
                         "map.load <filename> - switch maps",
