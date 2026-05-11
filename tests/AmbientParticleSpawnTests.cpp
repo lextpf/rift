@@ -2,6 +2,7 @@
 
 #include "../src/AmbienceConfig.h"
 #include "../src/ParticleSystem.h"
+#include "../src/WeatherDefinitions.h"
 
 #include <glm/glm.hpp>
 
@@ -111,6 +112,25 @@ TEST_F(AmbientParticleSpawnTest, AmbientParticlesDieAndRecycle)
     int count = static_cast<int>(ps.GetParticles().size());
     // Zones not set, so all particles come through the global ambient cap.
     EXPECT_LE(count, ambience::AMBIENT_PARTICLE_TOTAL_CAP);
+}
+
+TEST_F(AmbientParticleSpawnTest, BlizzardSpawnsBothSnowAndFog)
+{
+    // Blizzard layers Fog particles on top of Snow via the secondary
+    // particle slot on WeatherDefinition. Drive several seconds of
+    // simulation at intensity 1.0 and assert both populations exist -
+    // confirms the secondary spawn path is firing alongside the primary
+    // Snow stream. Update() drives both ambient and weather spawning;
+    // ambient is gated by time-of-day (deep-night = none) so we set 2.0
+    // to keep the assertions specifically about weather output.
+    ps.SetTimeOfDay(2.0f);
+    ps.SetWeatherState(&GetWeatherDefinition(WeatherState::Blizzard), 1.0f);
+    for (int i = 0; i < 240; ++i)
+    {
+        ps.Update(1.0f / 60.0f, cameraPos, viewSize);
+    }
+    EXPECT_GT(CountOfType(ParticleType::Snow), 0);
+    EXPECT_GT(CountOfType(ParticleType::Fog), 0);
 }
 
 // --- Editor zone tests: zones placed for ambient types must produce particles
