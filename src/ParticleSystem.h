@@ -10,6 +10,7 @@
 
 class Tilemap;
 struct WeatherDefinition;
+enum class WeatherParticleType;
 
 /**
  * @enum ParticleType
@@ -422,7 +423,22 @@ private:
     /// @brief Maintain weather-driven particle spawning (rain/snow/ash/etc.)
     /// across the visible viewport. Spawned particles are tagged with
     /// zoneIndex = WEATHER_ZONE_INDEX (-2) so they coexist with zone particles.
+    /// Drives both the primary `particleType` and any optional secondary
+    /// declared on the active WeatherDefinition (e.g., Blizzard layers Fog
+    /// on top of Snow).
     void UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize);
+
+    /// @brief Spawn one weather-particle stream. Shared between the primary
+    /// and secondary slots on WeatherDefinition. @p spawnTimer is the
+    /// accumulator for this slot (caller passes a different one per slot
+    /// so the two streams don't share state).
+    void SpawnWeatherType(WeatherParticleType wpt,
+                          float baseSpawnRate,
+                          int maxWeatherParticles,
+                          float& spawnTimer,
+                          float deltaTime,
+                          glm::vec2 cameraPos,
+                          glm::vec2 viewSize);
 
     /// @brief Spawn one weather particle. Implementation chooses spawn rect
     /// edge based on the weather particle type (top for precipitation,
@@ -462,7 +478,8 @@ private:
     /// @{
     const WeatherDefinition* m_CurrentWeatherDef{nullptr};  ///< Active weather (or null).
     float m_WeatherIntensity{1.0f};                         ///< 0-1 density scalar.
-    float m_WeatherSpawnTimer{0.0f};                        ///< Spawn rate accumulator.
+    float m_WeatherSpawnTimer{0.0f};                        ///< Primary spawn accumulator.
+    float m_WeatherSpawnTimerSecondary{0.0f};               ///< Secondary spawn accumulator.
     /// @}
 
     /// @}

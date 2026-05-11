@@ -30,6 +30,9 @@ struct ParticleUpdateContext
     float nightFactor;
     const std::vector<ParticleZone>* zones;
     bool hasZones;
+    /// Per-weather scaling on Fog particle base alpha. 1.0 = unchanged;
+    /// values < 1 soften the fog wall without changing density.
+    float fogAlphaMultiplier;
 };
 
 /// Context passed to per-type Spawn specializations.
@@ -279,10 +282,13 @@ struct ParticleBehavior<ParticleType::Fog>
         float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
         float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 4.0f);
 
-        // More visible during day, significantly less at night
+        // More visible during day, significantly less at night. Per-weather
+        // fogAlphaMultiplier softens the puff (1.0 = unchanged; lower values
+        // make the fog thinner so the world stays legible behind it).
         float dayBoost = 1.0f + (1.0f - ctx.nightFactor) * 0.4f;
         float nightReduce = 1.0f - ctx.nightFactor * 0.6f;
-        p.color.a = pulse * lifeFade * fadeIn * 0.40f * dayBoost * nightReduce;
+        p.color.a =
+            pulse * lifeFade * fadeIn * 0.40f * ctx.fogAlphaMultiplier * dayBoost * nightReduce;
     }
 
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
@@ -1628,7 +1634,9 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         m_ZoneSpawnTimers.resize(m_Zones->size(), 0.0f);
     }
 
-    const ParticleUpdateContext updateCtx{m_Time, deltaTime, m_NightFactor, m_Zones, hasZones};
+    const float fogAlphaMul = m_CurrentWeatherDef ? m_CurrentWeatherDef->fogAlphaMultiplier : 1.0f;
+    const ParticleUpdateContext updateCtx{
+        m_Time, deltaTime, m_NightFactor, m_Zones, hasZones, fogAlphaMul};
 
     // Update existing particles (mark dead ones, remove in bulk afterward)
     for (auto& p : m_Particles)
@@ -1917,7 +1925,31 @@ void ParticleSystem::UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos,
 {
     if (m_CurrentWeatherDef == nullptr)
         return;
-    auto particleTypeOpt = ResolveWeatherParticle(m_CurrentWeatherDef->particleType);
+    SpawnWeatherType(m_CurrentWeatherDef->particleType,
+                     m_CurrentWeatherDef->baseSpawnRate,
+                     m_CurrentWeatherDef->maxWeatherParticles,
+                     m_WeatherSpawnTimer,
+                     deltaTime,
+                     cameraPos,
+                     viewSize);
+    SpawnWeatherType(m_CurrentWeatherDef->secondaryParticleType,
+                     m_CurrentWeatherDef->secondaryBaseSpawnRate,
+                     m_CurrentWeatherDef->secondaryMaxWeatherParticles,
+                     m_WeatherSpawnTimerSecondary,
+                     deltaTime,
+                     cameraPos,
+                     viewSize);
+}
+
+void ParticleSystem::SpawnWeatherType(WeatherParticleType wpt,
+                                      float baseSpawnRate,
+                                      int maxWeatherParticles,
+                                      float& spawnTimer,
+                                      float deltaTime,
+                                      glm::vec2 cameraPos,
+                                      glm::vec2 viewSize)
+{
+    auto particleTypeOpt = ResolveWeatherParticle(wpt);
     if (!particleTypeOpt.has_value())
         return;
 
@@ -1929,45 +1961,37 @@ void ParticleSystem::UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos,
     constexpr float kReferenceArea = 320.0f * 180.0f;
     const float visibleArea = std::max(1.0f, viewSize.x * viewSize.y);
     const float zoomScale = std::clamp(visibleArea / kReferenceArea, 0.25f, 4.0f);
-    float effectiveRate = m_CurrentWeatherDef->baseSpawnRate * m_WeatherIntensity * zoomScale;
+    float effectiveRate = baseSpawnRate * m_WeatherIntensity * zoomScale;
     if (effectiveRate <= 0.0f)
         return;
 
-    // Hard cap on weather particles in flight.
-    int maxWeather = m_CurrentWeatherDef->maxWeatherParticles;
-    if (maxWeather > 0)
+    // Hard cap counts only this slot's own particles (matched by ParticleType)
+    // so primary and secondary streams don't fight each other for the cap.
+    auto liveOfType = [&]()
     {
-        int liveCount = 0;
+        int n = 0;
         for (const auto& p : m_Particles)
         {
-            if (p.zoneIndex == WEATHER_ZONE_INDEX)
-                ++liveCount;
+            if (p.zoneIndex == WEATHER_ZONE_INDEX && p.type == *particleTypeOpt)
+                ++n;
         }
-        if (liveCount >= maxWeather)
-        {
-            m_WeatherSpawnTimer = 0.0f;  // Throttle until population drops.
-            return;
-        }
+        return n;
+    };
+
+    if (maxWeatherParticles > 0 && liveOfType() >= maxWeatherParticles)
+    {
+        spawnTimer = 0.0f;  // Throttle until population drops.
+        return;
     }
 
-    m_WeatherSpawnTimer += deltaTime;
+    spawnTimer += deltaTime;
     float interval = 1.0f / effectiveRate;
-    while (m_WeatherSpawnTimer >= interval)
+    while (spawnTimer >= interval)
     {
-        m_WeatherSpawnTimer -= interval;
+        spawnTimer -= interval;
         SpawnWeatherParticle(*particleTypeOpt, cameraPos, viewSize);
-        if (maxWeather > 0)
-        {
-            // Recompute live count cheaply: at most one new particle per loop.
-            int liveCount = 0;
-            for (const auto& p : m_Particles)
-            {
-                if (p.zoneIndex == WEATHER_ZONE_INDEX)
-                    ++liveCount;
-            }
-            if (liveCount >= maxWeather)
-                break;
-        }
+        if (maxWeatherParticles > 0 && liveOfType() >= maxWeatherParticles)
+            break;
     }
 }
 
