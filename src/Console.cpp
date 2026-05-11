@@ -261,31 +261,48 @@ const ConsoleCommandRegistry::Command* ConsoleCommandRegistry::Lookup(std::strin
     return nullptr;
 }
 
-std::vector<std::string> ConsoleCommandRegistry::MatchPrefix(std::string_view prefix,
-                                                             std::size_t maxCount) const
+std::vector<ConsoleCommandRegistry::MatchEntry> ConsoleCommandRegistry::MatchPrefixDetailed(
+    std::string_view prefix,
+    std::size_t maxCount) const
 {
     auto startsWith = [&](std::string_view s)
     { return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix; };
 
-    std::vector<std::string> out;
+    std::vector<MatchEntry> out;
     for (const auto& [name, cmd] : m_Commands)
     {
         if (startsWith(name))
         {
-            out.push_back(name);
+            // Canonical match: empty canonical signals "this IS the canonical".
+            out.push_back(MatchEntry{name, ""});
         }
         for (const auto& alias : cmd.aliases)
         {
             if (startsWith(alias))
             {
-                out.push_back(alias);
+                out.push_back(MatchEntry{alias, name});
             }
         }
     }
-    std::sort(out.begin(), out.end());
+    std::sort(out.begin(),
+              out.end(),
+              [](const MatchEntry& a, const MatchEntry& b) { return a.name < b.name; });
     if (out.size() > maxCount)
     {
         out.resize(maxCount);
+    }
+    return out;
+}
+
+std::vector<std::string> ConsoleCommandRegistry::MatchPrefix(std::string_view prefix,
+                                                             std::size_t maxCount) const
+{
+    auto detailed = MatchPrefixDetailed(prefix, maxCount);
+    std::vector<std::string> out;
+    out.reserve(detailed.size());
+    for (auto& entry : detailed)
+    {
+        out.push_back(std::move(entry.name));
     }
     return out;
 }

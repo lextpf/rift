@@ -162,6 +162,75 @@ TEST(ConsoleCommandRegistryTests, MatchPrefixDefaultMaxIsUnlimited)
     EXPECT_EQ(r.MatchPrefix("cmd").size(), 50u);
 }
 
+TEST(ConsoleCommandRegistryTests, MatchPrefixDetailedCanonicalHasEmptyCanonical)
+{
+    ConsoleCommandRegistry r;
+    r.Register("time.freeze", "", NoOp(), {"tm.freeze", "tfz"});
+
+    const auto matches = r.MatchPrefixDetailed("time");
+    ASSERT_EQ(matches.size(), 1u);
+    EXPECT_EQ(matches[0].name, "time.freeze");
+    EXPECT_TRUE(matches[0].canonical.empty());
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixDetailedAliasReportsCanonical)
+{
+    ConsoleCommandRegistry r;
+    r.Register("time.freeze", "", NoOp(), {"tm.freeze", "tfz"});
+
+    const auto matches = r.MatchPrefixDetailed("tfz");
+    ASSERT_EQ(matches.size(), 1u);
+    EXPECT_EQ(matches[0].name, "tfz");
+    EXPECT_EQ(matches[0].canonical, "time.freeze");
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixDetailedMixedAlphabetical)
+{
+    ConsoleCommandRegistry r;
+    r.Register("tile.find", "", NoOp(), {"tf"});
+    r.Register("time.freeze", "", NoOp(), {"tm.freeze", "tfz"});
+
+    const auto matches = r.MatchPrefixDetailed("t");
+    ASSERT_EQ(matches.size(), 5u);
+    EXPECT_EQ(matches[0].name, "tf");
+    EXPECT_EQ(matches[0].canonical, "tile.find");
+    EXPECT_EQ(matches[1].name, "tfz");
+    EXPECT_EQ(matches[1].canonical, "time.freeze");
+    EXPECT_EQ(matches[2].name, "tile.find");
+    EXPECT_TRUE(matches[2].canonical.empty());
+    EXPECT_EQ(matches[3].name, "time.freeze");
+    EXPECT_TRUE(matches[3].canonical.empty());
+    EXPECT_EQ(matches[4].name, "tm.freeze");
+    EXPECT_EQ(matches[4].canonical, "time.freeze");
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixDetailedHonoursMaxCount)
+{
+    ConsoleCommandRegistry r;
+    r.Register("npc.despawn", "", NoOp());
+    r.Register("npc.dialog", "", NoOp());
+    r.Register("npc.freeze", "", NoOp());
+
+    const auto top2 = r.MatchPrefixDetailed("npc", 2);
+    ASSERT_EQ(top2.size(), 2u);
+    EXPECT_EQ(top2[0].name, "npc.despawn");
+    EXPECT_EQ(top2[1].name, "npc.dialog");
+}
+
+TEST(ConsoleCommandRegistryTests, MatchPrefixStillReturnsNamesOnly)
+{
+    // Legacy MatchPrefix must keep returning plain names so existing
+    // callers (and existing tests above) are unaffected by the new
+    // detailed variant.
+    ConsoleCommandRegistry r;
+    r.Register("time.freeze", "", NoOp(), {"tfz"});
+
+    const auto names = r.MatchPrefix("t");
+    ASSERT_EQ(names.size(), 2u);
+    EXPECT_EQ(names[0], "tfz");
+    EXPECT_EQ(names[1], "time.freeze");
+}
+
 TEST(ConsoleCommandRegistryTests, ArgCompletionsAreStoredAndQueryable)
 {
     ConsoleCommandRegistry r;

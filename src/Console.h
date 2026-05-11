@@ -200,6 +200,26 @@ public:
         std::string_view prefix,
         std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
+    /// One entry returned by @ref MatchPrefixDetailed: the matched name
+    /// (which may be either a canonical command name or one of its aliases)
+    /// paired with the canonical command it resolves to. @c canonical is
+    /// empty when @c name is itself the canonical name; non-empty when
+    /// @c name is an alias, in which case it holds the canonical to which
+    /// the alias resolves.
+    struct MatchEntry
+    {
+        std::string name;
+        std::string canonical;
+    };
+
+    /// Like @ref MatchPrefix but tags each returned name with its canonical
+    /// command. Used by the autocomplete dropdown to render
+    /// `alias -> canonical` hints so the originating command for an alias
+    /// is always visible.
+    [[nodiscard]] std::vector<MatchEntry> MatchPrefixDetailed(
+        std::string_view prefix,
+        std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
+
     /// Read access to the underlying ordered map.
     [[nodiscard]] const std::map<std::string, Command>& All() const { return m_Commands; }
 
