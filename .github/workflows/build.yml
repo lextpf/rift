@@ -36,10 +36,10 @@ jobs:
           Get-ChildItem -Path src -Include *.cpp,*.h,*.hpp -Recurse | ForEach-Object {
             clang-format -i $_.FullName
           }
-          $diff = git diff --name-only
+          $diff = git diff --name-only -- src/
           if ($diff) {
             Write-Host "::error::clang-format found formatting issues in: $diff"
-            git diff
+            git diff -- src/
             exit 1
           }
           Write-Host "All source files are properly formatted."
