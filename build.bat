@@ -1,13 +1,15 @@
 @echo off
-REM ============================================================================
+REM ===========================================================================================
 REM build.bat - Complete build pipeline for rift
-REM ============================================================================
+REM ===========================================================================================
 REM This script:
-REM   1. Runs clang-format on source files
-REM   2. Builds Debug and Release configurations
-REM      (CMake handles shader compilation and asset/shader copying)
-REM   3. Generates Doxygen documentation
-REM ============================================================================
+REM   1. clang-format - in-place formatting of src/*.cpp / src/*.hpp / src/*.h / src/*.c
+REM   2. cmake        - CMake configure via `cmake --preset default` (vcpkg manifest install)
+REM   3. clang-tidy   - static analysis using a Ninja sidecar (build-cdb/) for a real
+REM                     compile_commands.json. Blocking - the pipeline stops on diagnostics.
+REM   4. build        - release and debug build of the configuration via cmake --build
+REM   5. doxygen      - HTML documentation
+REM ===========================================================================================
 
 setlocal enabledelayedexpansion
 
@@ -23,14 +25,14 @@ echo.
 REM ============================================================================
 REM STEP 1: Run clang-format
 REM ============================================================================
-echo [1/3] Running clang-format...
+echo [1/5] Running clang-format...
 echo ----------------------------------------------------------------------------
 
 where clang-format >nul 2>&1
 if errorlevel 1 (
     echo SKIP: clang-format not found in PATH
 ) else (
-    for %%f in (src\*.cpp src\*.h src\*.hpp src\*.c) do (
+    for %%f in (src\*.cpp src\*.hpp src\*.h src\*.c) do (
         if exist "%%f" clang-format -i "%%f"
     )
     echo Formatting complete.
@@ -38,47 +40,76 @@ if errorlevel 1 (
 echo.
 
 REM ============================================================================
-REM STEP 2: Build Debug and Release
+REM STEP 2: CMake Configuration
 REM ============================================================================
-echo [2/3] Building Debug and Release...
+echo [2/5] Configuring with CMake...
+echo ----------------------------------------------------------------------------
+cmake --preset default
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: CMake configuration failed
+    exit /b %ERRORLEVEL%
+)
+echo.
+
+REM ============================================================================
+REM STEP 3: Run clang-tidy
+REM ============================================================================
+echo [3/5] Running clang-tidy...
 echo ----------------------------------------------------------------------------
 
-if not exist build mkdir build
-cd build
+where clang-tidy >nul 2>&1
+if errorlevel 1 (
+    echo SKIP: clang-tidy not found in PATH
+) else (
+    if not exist "build-cdb\compile_commands.json" (
+        echo   Generating compile_commands.json via Ninja sidecar...
+        cmake --preset compile-db >nul
+        if errorlevel 1 (
+            echo ERROR: compile-db configure failed
+            exit /b 1
+        )
+    )
 
-echo Configuring CMake...
-cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-if %errorlevel% neq 0 (
-    echo ERROR: CMake configuration failed!
-    pause
-    exit /b %errorlevel%
+    for %%f in (src\*.cpp tests\*.cpp) do (
+        if exist "%%f" (
+            echo   tidy: %%f
+            clang-tidy --quiet --header-filter="[/\\]%%~nf\.hpp$" -p build-cdb "%%f"
+            if errorlevel 1 (
+                echo ERROR: clang-tidy reported issues in %%f
+                exit /b 1
+            )
+        )
+    )
+    echo clang-tidy complete.
 )
-
 echo.
+
+REM ============================================================================
+REM STEP 4: Build Debug and Release
+REM ============================================================================
+echo [4/5] Building Debug and Release...
+echo ----------------------------------------------------------------------------
+
 echo Building Debug configuration...
-cmake --build . --config Debug
+cmake --build build --config Debug --target rift
 if %errorlevel% neq 0 (
     echo ERROR: Debug build failed!
-    pause
     exit /b %errorlevel%
 )
 
 echo.
 echo Building Release configuration...
-cmake --build . --config Release
+cmake --build build --config Release --target rift
 if %errorlevel% neq 0 (
     echo ERROR: Release build failed!
-    pause
     exit /b %errorlevel%
 )
-
-cd /d "%SCRIPT_DIR%"
 echo.
 
 REM ============================================================================
-REM STEP 3: Generate Doxygen documentation
+REM STEP 5: Generate Doxygen documentation
 REM ============================================================================
-echo [3/3] Generating Doxygen documentation...
+echo [5/5] Generating Doxygen documentation...
 echo ----------------------------------------------------------------------------
 
 REM Check if doxygen is available
