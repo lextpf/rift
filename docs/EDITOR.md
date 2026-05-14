@@ -106,9 +106,9 @@ Reflection caveat: when reflecting a region that overlaps a no-projection struct
 
 ## Architecture Notes
 
-`Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.h:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.h` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
+`Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.hpp:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.hpp` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
 
-`UndoRedoStack` (`src/UndoRedoStack.h`) holds two deques of `std::unique_ptr<EditorCommand>`. New commands push to the undo stack and clear the redo stack; capacity overflow drops the oldest entry from the front. Stroke accumulators in `src/EditorStrokeAccumulators.h` batch per-frame mutations during a drag-paint into a single composite command at mouse-up.
+`UndoRedoStack` (`src/UndoRedoStack.hpp`) holds two deques of `std::unique_ptr<EditorCommand>`. New commands push to the undo stack and clear the redo stack; capacity overflow drops the oldest entry from the front. Stroke accumulators in `src/EditorStrokeAccumulators.hpp` batch per-frame mutations during a drag-paint into a single composite command at mouse-up.
 
 \htmlonly
 <pre class="mermaid">

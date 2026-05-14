@@ -834,7 +834,7 @@ renderer->DrawSprite(texture, position, size, rotation);
 renderer->DrawColoredRect(position, size, color);
 ```
 
-`RendererFactory.h` provides free helper functions that create the appropriate backend based on
+`RendererFactory.hpp` provides free helper functions that create the appropriate backend based on
 configuration or availability:
 
 ```cpp

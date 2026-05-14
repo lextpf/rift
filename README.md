@@ -403,8 +403,8 @@ doxygen Doxyfile
 rift/
 |-- src/                      # Source code
 |   |-- main.cpp              # Entry point
-|   |-- Game.cpp/h            # Core game loop and systems
-|   |-- IRenderer.h           # Renderer interface
+|   |-- Game.cpp/hpp          # Core game loop and systems
+|   |-- IRenderer.hpp         # Renderer interface
 |   |-- OpenGLRenderer.*      # OpenGL backend
 |   |-- VulkanRenderer.*      # Vulkan backend
 |   |-- Tilemap.*             # World and tile management
