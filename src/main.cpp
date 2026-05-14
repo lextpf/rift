@@ -25,8 +25,8 @@
  *      Repository:   https://github.com/lextpf/rift
  *      License:      MIT
  */
-#include "Game.h"
-#include "Logger.h"
+#include "Game.hpp"
+#include "Logger.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -37,6 +37,18 @@
 #include <io.h>
 #include <signal.h>
 #include <windows.h>
+
+// @author Claude (https://github.com/claude)
+// Everything in this block runs from a context where
+// the C++ runtime may be unsound - SIGABRT can fire mid-destructor, and an
+// SEH access violation can fire with a corrupted heap. Only async-signal-safe
+// operations are allowed here:
+//   * the low-level _open / _write / _close POSIX wrappers
+//   * stack-only buffers (no `new`, no std::string, no streams)
+//   * manual integer-to-string conversion (no printf, no std::format)
+//   * direct termination via _exit(1) (skips C++ destructors and atexit)
+// Adding anything else - even seemingly harmless logging - can deadlock or
+// silently corrupt the crash log we are trying to write.
 
 // Signal-based crash handler for fatal errors.
 // Logs the signal number to rift.project.log before terminating.
