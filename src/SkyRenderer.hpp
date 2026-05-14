@@ -236,8 +236,7 @@ public:
      * 3. Generate shooting star texture (elongated
      * streak)
      * 4. Generate atmospheric glow, glow pool, light-pool, and aurora textures
- * 5.
-     * Populate star arrays with random positions/properties
+     * 5. Populate star arrays with random positions/properties
      * 6. Populate light ray arrays for
      * sun and moon
      * 7. Generate dew sparkle positions
