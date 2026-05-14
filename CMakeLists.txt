@@ -13,11 +13,11 @@ endif()
 
 project(rift)
 
-# Parse version from Version.h
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_major REGEX "#define RIFT_VERSION_MAJOR")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_minor REGEX "#define RIFT_VERSION_MINOR")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_patch REGEX "#define RIFT_VERSION_PATCH")
-file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.h" _ver_release REGEX "#define RIFT_VERSION_RELEASE")
+# Parse version from Version.hpp
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.hpp" _ver_major REGEX "#define RIFT_VERSION_MAJOR")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.hpp" _ver_minor REGEX "#define RIFT_VERSION_MINOR")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.hpp" _ver_patch REGEX "#define RIFT_VERSION_PATCH")
+file(STRINGS "${CMAKE_SOURCE_DIR}/src/Version.hpp" _ver_release REGEX "#define RIFT_VERSION_RELEASE")
 string(REGEX REPLACE ".*#define RIFT_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_MAJOR "${_ver_major}")
 string(REGEX REPLACE ".*#define RIFT_VERSION_MINOR[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_MINOR "${_ver_minor}")
 string(REGEX REPLACE ".*#define RIFT_VERSION_PATCH[ \t]+([0-9]+).*" "\\1" RIFT_VERSION_PATCH "${_ver_patch}")
@@ -31,6 +31,36 @@ configure_file("${CMAKE_SOURCE_DIR}/Doxyfile.in" "${CMAKE_BINARY_DIR}/Doxyfile" 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ============================================================================
+# clang-tidy
+# ============================================================================
+# Three ways to invoke clang-tidy:
+#   * `.\build.bat` step 3 - drives a Ninja sidecar build (build-cdb/) via the
+#     `compile-db` preset to emit a real compile_commands.json, then lints
+#     src/*.cpp and tests/*.cpp per file. Blocking - the pipeline stops on
+#     diagnostics.
+#   * `cmake --build build --target tidy` - lints all project sources using
+#     the main build tree's compile_commands.json (handy for one-off runs).
+#   * `-DRIFT_ENABLE_CLANG_TIDY=ON` at configure time - run clang-tidy as part
+#     of every C++ compilation (much slower; off by default).
+# .clang-tidy at the repo root defines the enabled checks. clang-format still
+# owns formatting; clang-tidy here only does semantic checks.
+option(RIFT_ENABLE_CLANG_TIDY "Run clang-tidy on every C++ compilation (slow)" OFF)
+find_program(RIFT_CLANG_TIDY_EXE NAMES clang-tidy)
+
+if(RIFT_CLANG_TIDY_EXE)
+    if(RIFT_ENABLE_CLANG_TIDY)
+        set(CMAKE_CXX_CLANG_TIDY "${RIFT_CLANG_TIDY_EXE}")
+        message(STATUS "clang-tidy build-time integration enabled: ${RIFT_CLANG_TIDY_EXE}")
+    else()
+        message(STATUS "clang-tidy found: ${RIFT_CLANG_TIDY_EXE}"
+                       " (run `cmake --build ${CMAKE_BINARY_DIR} --target tidy`)")
+    endif()
+else()
+    message(STATUS "clang-tidy not found - static analysis target will no-op."
+                   " Install LLVM to enable.")
+endif()
 
 # MSVC: Enable asynchronous exception handling for SEH translation support
 if(MSVC)
@@ -158,6 +188,25 @@ endif()
 
 # Source files - always include all renderer files
 file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+# Standalone clang-tidy target: runs the configured checks across project
+# sources using the compile_commands.json produced above. Does not rebuild.
+if(RIFT_CLANG_TIDY_EXE)
+    file(GLOB RIFT_TIDY_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+    add_custom_target(tidy
+        COMMAND ${RIFT_CLANG_TIDY_EXE}
+                -p ${CMAKE_BINARY_DIR}
+                --config-file=${CMAKE_SOURCE_DIR}/.clang-tidy
+                ${RIFT_TIDY_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running clang-tidy on src/*.cpp (project headers via HeaderFilterRegex)"
+        VERBATIM)
+else()
+    add_custom_target(tidy
+        COMMAND ${CMAKE_COMMAND} -E echo
+                "clang-tidy not found - skipping static analysis."
+        COMMENT "clang-tidy target (no-op: tool missing)")
+endif()
 
 # Note: stb_image implementation is included directly in Texture.cpp via
 # #define STB_IMAGE_IMPLEMENTATION, so we don't compile external/stb/*.c separately
@@ -303,7 +352,10 @@ endif()
 # ============================================================================
 # Testing Support
 # ============================================================================
-option(BUILD_TESTS "Build unit tests" OFF)
+# Tests are configured into the same `build/` tree as the game so a single
+# `cmake --preset default` covers both. Build a specific target to skip the
+# other; e.g. `cmake --build build --target rift` for game-only iteration.
+option(BUILD_TESTS "Build unit tests" ON)
 
 if(BUILD_TESTS)
     enable_testing()
