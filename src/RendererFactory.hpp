@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IRenderer.h"
-#include "RendererAPI.h"
+#include "IRenderer.hpp"
+#include "RendererAPI.hpp"
 
 #include <memory>
 
