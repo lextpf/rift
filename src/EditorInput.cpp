@@ -1,8 +1,8 @@
-#include "Dialogues.h"
-#include "Editor.h"
-#include "EditorBrushTransform.h"
-#include "EditorCommands.h"
-#include "Logger.h"
+#include "Dialogues.hpp"
+#include "Editor.hpp"
+#include "EditorBrushTransform.hpp"
+#include "EditorCommands.hpp"
+#include "Logger.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -289,11 +289,9 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::YSortMinus;
-            Logger::Info(LOG_SUBSYSTEM, "========================================");
             Logger::InfoF(LOG_SUBSYSTEM, "Y-SORT-1 EDIT MODE: ON (Layer {})", m_CurrentLayer);
             Logger::Info(LOG_SUBSYSTEM, "Click the BOTTOM tile of a structure to mark it");
             Logger::Info(LOG_SUBSYSTEM, "(All tiles above will inherit the setting)");
-            Logger::Info(LOG_SUBSYSTEM, "========================================");
         }
         else
         {
@@ -387,7 +385,6 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (enabling)
         {
             m_EditMode = EditMode::Structure;
-            Logger::Info(LOG_SUBSYSTEM, "========================================");
             Logger::InfoF(LOG_SUBSYSTEM, "STRUCTURE EDIT MODE: ON (Layer {})", m_CurrentLayer + 1);
             Logger::Info(LOG_SUBSYSTEM, "Click = toggle no-projection");
             Logger::Info(LOG_SUBSYSTEM, "Shift+click = flood-fill no-projection");
@@ -396,7 +393,6 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             Logger::Info(LOG_SUBSYSTEM, "Delete = remove selected structure");
             Logger::InfoF(
                 LOG_SUBSYSTEM, "Structures: {}", ctx.tilemap.GetNoProjectionStructureCount());
-            Logger::Info(LOG_SUBSYSTEM, "========================================");
         }
         else
         {
