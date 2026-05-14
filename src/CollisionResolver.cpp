@@ -1,6 +1,37 @@
-#include "CollisionResolver.h"
-#include "PlayerCharacter.h"
-#include "Tilemap.h"
+// CollisionResolver - Player vs. Tilemap / NPC collision pipeline.
+//
+// @author Claude (https://github.com/claude)
+// The tile-overlap test is gated by a short cascade of permissive checks
+// before any "hard" collision is reported. Reading the helpers top-down without
+// this map can be misleading - each phase reasons about a different geometric
+// situation and has its own tolerance budget.
+//
+//                   +--------------------------------------+
+//   moveDx,moveDy   | CollidesWithTilesStrict              |
+//   diagonalInput   |   for each overlapping tile:         |
+//   bottomCenterPos |     1) ShouldSkipDiagonalTile        |--+--> "no
+//                   |        cardinal grazing past corner  |  |     collision"
+//                   |     2) ShouldTolerateWallPenetration |  |
+//                   |        sliding along a wall face     |  |
+//                   |     3) ShouldAllowCornerCut          |  |
+//                   |        through an exposed convex     |  |
+//                   |        corner with escape route      |  |
+//                   |     4) else: report collision        |--+--> "blocked"
+//                   +--------------------------------------+
+//
+// When a strict collision is reported, TrySlideMovement consults
+// GetCornerSlideDirection to project the desired motion onto the nearest
+// open corridor and binary-searches for the largest safe step. m_Player's
+// slide hysteresis fields persist between frames to stop direction flips
+// when the player is jittering near a corner's tie-breaker.
+//
+// The threshold constants below are calibrated for the project's 16 px
+// tile and ~16 px hitbox; changing the tile/hitbox geometry requires
+// re-tuning them rather than scaling proportionally.
+
+#include "CollisionResolver.hpp"
+#include "PlayerCharacter.hpp"
+#include "Tilemap.hpp"
 
 #include <algorithm>
 #include <array>
@@ -509,6 +540,19 @@ bool CollisionResolver::CollidesAt(const glm::vec2& bottomCenterPos,
            CollidesWithNPC(bottomCenterPos, npcPositions);
 }
 
+// @author Codex (https://github.com/codex)
+// Corner here means a blocked tile with a perpendicular opening
+// (open above/below for horizontal, or left/right for vertical).
+// Mid-wall tiles in a long flat wall are explicitly rejected so
+// the player doesn't get pulled sideways along a straight surface.
+// When both perpendicular directions are open, the choice
+// is made in this order:
+//   1. geometric necessity (only one side has open space)  ->  forced
+//   2. player offset from the wall-tile center (>= 4 px)   ->  off-center bias
+//   3. last-frame slide direction / last input axis        ->  hysteresis
+//   4. counter-clockwise relative to forward               ->  deterministic
+// The resulting direction is committed for ~120 ms via m_SlideCommitTimer to
+// stop frame-to-frame oscillation when the player is wedged in a tie-breaker.
 glm::vec2 CollisionResolver::GetCornerSlideDirection(const glm::vec2& testPos,
                                                      const Tilemap* tilemap,
                                                      int /*moveDirX*/,
