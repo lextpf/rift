@@ -32,12 +32,12 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build_tests -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build tests
-        run: cmake --build build_tests --config Release --target rift_tests
+        run: cmake --build build --config Release --target rift_tests
 
       - name: Run tests
         run: |
-          cd build_tests
+          cd build
           ctest -C Release --output-on-failure
