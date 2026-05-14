@@ -68,8 +68,8 @@ CompileFlags:
 
     # vcpkg-installed deps (whichever build tree is configured)
     - -Ibuild/vcpkg_installed/x64-windows/include
-    - -Ibuild_clangd/vcpkg_installed/x64-windows/include
-    - -Ibuild_tests/vcpkg_installed/x64-windows/include
+    - -Ibuild/vcpkg_installed/x64-windows-static-md/include
+    - -Ibuild-cdb/vcpkg_installed/x64-windows-static-md/include
 
     # Vulkan SDK (set by the SDK installer to %VULKAN_SDK%; update if the
     # SDK version changes, or rely on the Ninja build to pick it up).
