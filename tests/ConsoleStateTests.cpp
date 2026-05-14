@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/Console.h"
+#include "../src/Console.hpp"
 
 TEST(ConsoleStateTests, ClosedAdvancesToHalf)
 {

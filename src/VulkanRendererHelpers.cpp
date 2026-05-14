@@ -1,7 +1,7 @@
-#include "Logger.h"
-#include "Texture.h"
-#include "VulkanCommon.h"
-#include "VulkanRenderer.h"
+#include "Logger.hpp"
+#include "Texture.hpp"
+#include "VulkanCommon.hpp"
+#include "VulkanRenderer.hpp"
 
 #include <cstring>
 

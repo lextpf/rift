@@ -1,7 +1,7 @@
-#include "RendererFactory.h"
-#include "Logger.h"
-#include "OpenGLRenderer.h"
-#include "VulkanRenderer.h"
+#include "RendererFactory.hpp"
+#include "Logger.hpp"
+#include "OpenGLRenderer.hpp"
+#include "VulkanRenderer.hpp"
 
 #include <memory>
 

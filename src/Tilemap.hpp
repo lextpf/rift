@@ -1,14 +1,14 @@
 #pragma once
 
-#include "CollisionMap.h"
-#include "ColumnProxy.h"
-#include "DefaultedVector.h"
-#include "ElevationAxis.h"
-#include "IRenderer.h"
-#include "NavigationMap.h"
-#include "ParticleSystem.h"
-#include "Texture.h"
-#include "WeatherDefinitions.h"
+#include "CollisionMap.hpp"
+#include "ColumnProxy.hpp"
+#include "DefaultedVector.hpp"
+#include "ElevationAxis.hpp"
+#include "IRenderer.hpp"
+#include "NavigationMap.hpp"
+#include "ParticleSystem.hpp"
+#include "Texture.hpp"
+#include "WeatherDefinitions.hpp"
 
 #include <cstdint>
 #include <glm/glm.hpp>

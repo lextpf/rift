@@ -3,7 +3,7 @@
 // math runs in shader and CPU, so these tests verify it's monotonic, well-
 // defined on degenerate inputs, and brightness-independent.
 
-#include "PostFXParams.h"
+#include "PostFXParams.hpp"
 
 #include <glm/glm.hpp>
 #include <gtest/gtest.h>

@@ -11,11 +11,11 @@
 #include <excpt.h>
 #endif
 
-#include "Logger.h"
-#include "Texture.h"
-#include "VulkanCommon.h"
-#include "VulkanRenderer.h"
-#include "VulkanShader.h"
+#include "Logger.hpp"
+#include "Texture.hpp"
+#include "VulkanCommon.hpp"
+#include "VulkanRenderer.hpp"
+#include "VulkanShader.hpp"
 
 #include <algorithm>
 #include <cmath>

@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "../src/EnumTraits.h"
-#include "../src/PlayerCharacter.h"
-#include "../src/ProjectManifest.h"
+#include "../src/EnumTraits.hpp"
+#include "../src/PlayerCharacter.hpp"
+#include "../src/ProjectManifest.hpp"
 
 #include <algorithm>
 #include <chrono>

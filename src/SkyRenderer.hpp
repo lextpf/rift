@@ -6,9 +6,9 @@
 #include <random>
 #include <vector>
 
-#include "AmbienceConfig.h"
-#include "IRenderer.h"
-#include "Texture.h"
+#include "AmbienceConfig.hpp"
+#include "IRenderer.hpp"
+#include "Texture.hpp"
 
 class TimeManager;
 

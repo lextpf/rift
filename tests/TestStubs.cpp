@@ -10,9 +10,9 @@
 //   legal because C++ access checks apply at the call site, not the
 //   definition site.
 
-#include "../src/Editor.h"
-#include "../src/Game.h"
-#include "../src/RendererAPI.h"
+#include "../src/Editor.hpp"
+#include "../src/Game.hpp"
+#include "../src/RendererAPI.hpp"
 
 bool Game::SwitchRenderer(RendererAPI /*api*/)
 {

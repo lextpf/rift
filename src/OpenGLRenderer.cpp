@@ -1,7 +1,7 @@
-#include "OpenGLRenderer.h"
+#include "OpenGLRenderer.hpp"
 
-#include "DrawTracer.h"
-#include "Logger.h"
+#include "DrawTracer.hpp"
+#include "Logger.hpp"
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>

@@ -2,8 +2,8 @@
 // drive the post-FX LGG grading uniforms). Verifies the lift/gamma/gain triplet
 // is identity at midday, warm at golden hour, cool at night, and bounded.
 
-#include "AmbienceConfig.h"
-#include "PostFXParams.h"
+#include "AmbienceConfig.hpp"
+#include "PostFXParams.hpp"
 
 #include <gtest/gtest.h>
 

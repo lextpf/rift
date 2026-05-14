@@ -1,4 +1,4 @@
-#include "GameStateManager.h"
+#include "GameStateManager.hpp"
 
 #include <string_view>
 

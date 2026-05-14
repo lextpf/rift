@@ -4,11 +4,11 @@
 #include <map>
 #include <string>
 #include <vector>
-#include "CollisionResolver.h"
-#include "EnumTraits.h"
-#include "GameCharacter.h"
-#include "IRenderer.h"
-#include "Texture.h"
+#include "CollisionResolver.hpp"
+#include "EnumTraits.hpp"
+#include "GameCharacter.hpp"
+#include "IRenderer.hpp"
+#include "Texture.hpp"
 
 /**
  * @enum AnimationType

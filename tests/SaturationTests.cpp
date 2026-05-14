@@ -3,7 +3,7 @@
 // The GLSL applySaturation() in PostFXComposite.frag uses identical math; verifying the
 // C++ side is sufficient (the test build cannot create a GL context).
 
-#include "PostFXParams.h"
+#include "PostFXParams.hpp"
 
 #include <gtest/gtest.h>
 

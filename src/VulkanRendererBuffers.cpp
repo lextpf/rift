@@ -1,5 +1,5 @@
-#include "VulkanCommon.h"
-#include "VulkanRenderer.h"
+#include "VulkanCommon.hpp"
+#include "VulkanRenderer.hpp"
 
 #include <cstring>
 

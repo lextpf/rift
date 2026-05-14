@@ -1,4 +1,4 @@
-#include "Editor.h"
+#include "Editor.hpp"
 
 #include <algorithm>
 #include <cmath>

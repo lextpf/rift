@@ -1,13 +1,13 @@
 #pragma once
 
-#include "EditorCommands.h"
-#include "EditorStrokeAccumulators.h"
-#include "IRenderer.h"
-#include "NonPlayerCharacter.h"
-#include "ParticleSystem.h"
-#include "PlayerCharacter.h"
-#include "Tilemap.h"
-#include "UndoRedoStack.h"
+#include "EditorCommands.hpp"
+#include "EditorStrokeAccumulators.hpp"
+#include "IRenderer.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "ParticleSystem.hpp"
+#include "PlayerCharacter.hpp"
+#include "Tilemap.hpp"
+#include "UndoRedoStack.hpp"
 
 #include <GLFW/glfw3.h>
 #include <bitset>

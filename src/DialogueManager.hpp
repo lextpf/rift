@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DialogueTypes.h"
+#include "DialogueTypes.hpp"
 
 #include <string>
 #include <vector>

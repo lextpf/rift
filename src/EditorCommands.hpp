@@ -1,9 +1,9 @@
 #pragma once
 
-#include "EditorCommand.h"
-#include "NonPlayerCharacter.h"
-#include "ParticleSystem.h"
-#include "Tilemap.h"
+#include "EditorCommand.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "ParticleSystem.hpp"
+#include "Tilemap.hpp"
 
 #include <cstddef>
 #include <memory>

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "PerspectiveTransform.h"
-#include "PostFXParams.h"
-#include "Texture.h"
+#include "PerspectiveTransform.hpp"
+#include "PostFXParams.hpp"
+#include "Texture.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

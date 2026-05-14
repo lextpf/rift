@@ -4,10 +4,10 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/EditorCommand.h"
-#include "../src/EditorCommands.h"
-#include "../src/NonPlayerCharacter.h"
-#include "../src/Tilemap.h"
+#include "../src/EditorCommand.hpp"
+#include "../src/EditorCommands.hpp"
+#include "../src/NonPlayerCharacter.hpp"
+#include "../src/Tilemap.hpp"
 
 #include <cmath>
 #include <memory>

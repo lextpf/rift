@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "../src/AmbienceConfig.h"
-#include "../src/ParticleSystem.h"
-#include "../src/WeatherDefinitions.h"
+#include "../src/AmbienceConfig.hpp"
+#include "../src/ParticleSystem.hpp"
+#include "../src/WeatherDefinitions.hpp"
 
 #include <glm/glm.hpp>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EnumTraits.h"
+#include "EnumTraits.hpp"
 
 #include <glm/glm.hpp>
 #include <utility>

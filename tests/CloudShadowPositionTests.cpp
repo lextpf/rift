@@ -4,8 +4,8 @@
 // is inlined in SkyRenderer.h so we can verify drift behaviour without
 // instantiating SkyRenderer or hitting GL.
 
-#include "AmbienceConfig.h"
-#include "SkyRenderer.h"
+#include "AmbienceConfig.hpp"
+#include "SkyRenderer.hpp"
 
 #include <gtest/gtest.h>
 

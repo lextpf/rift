@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/WeatherDefinitions.h"
-#include "../src/TimeManager.h"
+#include "../src/WeatherDefinitions.hpp"
+#include "../src/TimeManager.hpp"
 
 #include <utility>
 

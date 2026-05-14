@@ -1,11 +1,11 @@
-#include "ParticleSystem.h"
+#include "ParticleSystem.hpp"
 
-#include "AmbienceConfig.h"
-#include "Logger.h"
-#include "MathConstants.h"
-#include "ProceduralTexture.h"
-#include "Tilemap.h"
-#include "WeatherDefinitions.h"
+#include "AmbienceConfig.hpp"
+#include "Logger.hpp"
+#include "MathConstants.hpp"
+#include "ProceduralTexture.hpp"
+#include "Tilemap.hpp"
+#include "WeatherDefinitions.hpp"
 
 #include <algorithm>
 #include <array>

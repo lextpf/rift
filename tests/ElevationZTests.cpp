@@ -7,10 +7,10 @@
 
 #include <glm/glm.hpp>
 
-#include "../src/CollisionResolver.h"
-#include "../src/ElevationAxis.h"
-#include "../src/PlayerCharacter.h"
-#include "../src/Tilemap.h"
+#include "../src/CollisionResolver.hpp"
+#include "../src/ElevationAxis.hpp"
+#include "../src/PlayerCharacter.hpp"
+#include "../src/Tilemap.hpp"
 
 namespace
 {

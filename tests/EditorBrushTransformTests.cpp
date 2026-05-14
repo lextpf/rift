@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/EditorBrushTransform.h"
+#include "../src/EditorBrushTransform.hpp"
 
 namespace
 {

@@ -1,7 +1,7 @@
-#include "PatrolRoute.h"
+#include "PatrolRoute.hpp"
 
-#include "Logger.h"
-#include "Tilemap.h"
+#include "Logger.hpp"
+#include "Tilemap.hpp"
 
 #include <algorithm>
 #include <deque>

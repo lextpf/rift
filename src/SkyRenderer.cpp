@@ -1,10 +1,10 @@
-#include "SkyRenderer.h"
-#include "TimeManager.h"
+#include "SkyRenderer.hpp"
+#include "TimeManager.hpp"
 
-#include "AmbienceConfig.h"
-#include "MathConstants.h"
-#include "ProceduralTexture.h"
-#include "WeatherDefinitions.h"
+#include "AmbienceConfig.hpp"
+#include "MathConstants.hpp"
+#include "ProceduralTexture.hpp"
+#include "WeatherDefinitions.hpp"
 
 #include <algorithm>
 #include <cmath>

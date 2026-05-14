@@ -2,7 +2,7 @@
 // Pure-math, lives inline in PostFXParams.h so the test can call it directly.
 // The shader uses identical math; verifying the C++ side is sufficient.
 
-#include "PostFXParams.h"
+#include "PostFXParams.hpp"
 
 #include <gtest/gtest.h>
 

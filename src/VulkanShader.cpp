@@ -1,6 +1,6 @@
-#include "VulkanShader.h"
+#include "VulkanShader.hpp"
 
-#include "Logger.h"
+#include "Logger.hpp"
 
 #include <algorithm>
 #include <array>

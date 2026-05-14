@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Logger.h"
+#include "Logger.hpp"
 
 #include <vulkan/vulkan.h>
 #include <stdexcept>

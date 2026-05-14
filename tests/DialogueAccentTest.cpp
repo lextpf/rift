@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/NonPlayerCharacter.h"
-#include "../src/Texture.h"
+#include "../src/NonPlayerCharacter.hpp"
+#include "../src/Texture.hpp"
 
 #include <array>
 #include <cmath>

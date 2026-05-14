@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/MenuLogic.h"
+#include "../src/MenuLogic.hpp"
 
 namespace
 {

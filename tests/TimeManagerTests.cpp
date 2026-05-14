@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/TimeManager.h"
+#include "../src/TimeManager.hpp"
 
 class TimeManagerTest : public ::testing::Test
 {

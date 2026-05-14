@@ -1,8 +1,8 @@
-#include "DialogueManager.h"
-#include "DialogueTypes.h"
-#include "Game.h"
+#include "DialogueManager.hpp"
+#include "DialogueTypes.hpp"
+#include "Game.hpp"
 
-#include "AmbienceConfig.h"
+#include "AmbienceConfig.hpp"
 
 #include <algorithm>
 #include <cassert>

@@ -1,4 +1,4 @@
-#include "WeatherDefinitions.h"
+#include "WeatherDefinitions.hpp"
 
 #include <algorithm>
 #include <array>

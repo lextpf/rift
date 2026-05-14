@@ -4,11 +4,11 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/Console.h"
-#include "../src/ConsoleCommands.h"
-#include "../src/TimeManager.h"
-#include "../src/Tilemap.h"
-#include "../src/WeatherDefinitions.h"
+#include "../src/Console.hpp"
+#include "../src/ConsoleCommands.hpp"
+#include "../src/TimeManager.hpp"
+#include "../src/Tilemap.hpp"
+#include "../src/WeatherDefinitions.hpp"
 
 #include <span>
 #include <string>

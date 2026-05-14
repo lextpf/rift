@@ -1,7 +1,7 @@
-#include "Tilemap.h"
+#include "Tilemap.hpp"
 
-#include "Logger.h"
-#include "NonPlayerCharacter.h"
+#include "Logger.hpp"
+#include "NonPlayerCharacter.hpp"
 
 #include <glad/glad.h>
 #include <algorithm>
@@ -20,7 +20,7 @@
 // We just need the header for function declarations
 #include <stb_image.h>
 
-#include "MathConstants.h"
+#include "MathConstants.hpp"
 
 namespace
 {

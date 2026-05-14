@@ -1,8 +1,8 @@
-#include "DialogueManager.h"
+#include "DialogueManager.hpp"
 
-#include "GameStateManager.h"
-#include "Logger.h"
-#include "NonPlayerCharacter.h"
+#include "GameStateManager.hpp"
+#include "Logger.hpp"
+#include "NonPlayerCharacter.hpp"
 
 namespace
 {

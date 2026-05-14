@@ -1,6 +1,6 @@
 #pragma once
 
-#include "WeatherDefinitions.h"
+#include "WeatherDefinitions.hpp"
 
 #include <glm/glm.hpp>
 

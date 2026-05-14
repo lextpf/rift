@@ -1,7 +1,7 @@
 #pragma once
 
-#include "EditorCommands.h"
-#include "UndoRedoStack.h"
+#include "EditorCommands.hpp"
+#include "UndoRedoStack.hpp"
 
 #include <cstddef>
 #include <cstdint>

@@ -1,4 +1,4 @@
-#include "Dialogues.h"
+#include "Dialogues.hpp"
 
 const MysteryDialogueData kMysteryDialogues[] = {
     {"ufo_sighting",

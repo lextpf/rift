@@ -4,17 +4,17 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/CameraController.h"
-#include "../src/Console.h"
-#include "../src/ConsoleCommands.h"
-#include "../src/DialogueManager.h"
-#include "../src/Editor.h"
-#include "../src/GameStateManager.h"
-#include "../src/NonPlayerCharacter.h"
-#include "../src/ParticleSystem.h"
-#include "../src/PlayerCharacter.h"
-#include "../src/Tilemap.h"
-#include "../src/TimeManager.h"
+#include "../src/CameraController.hpp"
+#include "../src/Console.hpp"
+#include "../src/ConsoleCommands.hpp"
+#include "../src/DialogueManager.hpp"
+#include "../src/Editor.hpp"
+#include "../src/GameStateManager.hpp"
+#include "../src/NonPlayerCharacter.hpp"
+#include "../src/ParticleSystem.hpp"
+#include "../src/PlayerCharacter.hpp"
+#include "../src/Tilemap.hpp"
+#include "../src/TimeManager.hpp"
 
 #include <string>
 #include <string_view>

@@ -1,8 +1,8 @@
-#include "EditorCommands.h"
+#include "EditorCommands.hpp"
 
-#include "NavigationRecalc.h"
-#include "NonPlayerCharacter.h"
-#include "Tilemap.h"
+#include "NavigationRecalc.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "Tilemap.hpp"
 
 #include <algorithm>
 #include <cmath>

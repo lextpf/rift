@@ -1,7 +1,7 @@
-#include "NonPlayerCharacter.h"
+#include "NonPlayerCharacter.hpp"
 
-#include "AmbienceConfig.h"
-#include "Logger.h"
+#include "AmbienceConfig.hpp"
+#include "Logger.hpp"
 
 #include <algorithm>
 #include <cctype>

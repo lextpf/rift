@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IRenderer.h"
-#include "MathUtils.h"
+#include "IRenderer.hpp"
+#include "MathUtils.hpp"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>

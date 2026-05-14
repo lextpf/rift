@@ -1,8 +1,8 @@
-#include "Editor.h"
+#include "Editor.hpp"
 
-#include "Logger.h"
-#include "MathUtils.h"
-#include "NavigationRecalc.h"
+#include "Logger.hpp"
+#include "MathUtils.hpp"
+#include "NavigationRecalc.hpp"
 
 #include <algorithm>
 #include <cmath>

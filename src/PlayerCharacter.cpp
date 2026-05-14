@@ -1,9 +1,9 @@
-#include "PlayerCharacter.h"
+#include "PlayerCharacter.hpp"
 
-#include "AmbienceConfig.h"
-#include "IRenderer.h"
-#include "Logger.h"
-#include "Tilemap.h"
+#include "AmbienceConfig.hpp"
+#include "IRenderer.hpp"
+#include "Logger.hpp"
+#include "Tilemap.hpp"
 
 #include <algorithm>
 #include <cmath>

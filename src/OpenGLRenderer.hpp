@@ -1,8 +1,8 @@
 #pragma once
 
-#include "IRenderer.h"
-#include "PostFXParams.h"
-#include "RendererMacros.h"
+#include "IRenderer.hpp"
+#include "PostFXParams.hpp"
+#include "RendererMacros.hpp"
 
 #include <glad/glad.h>
 #include <map>

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "EnumTraits.h"
-#include "IRenderer.h"
-#include "Texture.h"
+#include "EnumTraits.hpp"
+#include "IRenderer.hpp"
+#include "Texture.hpp"
 
 #include <glm/glm.hpp>
 #include <random>

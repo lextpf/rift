@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ColumnProxy.h"
+#include "ColumnProxy.hpp"
 
 #include <algorithm>
 #include <cstddef>

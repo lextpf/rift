@@ -1,6 +1,6 @@
 #pragma once
 
-#include "AmbienceConfig.h"
+#include "AmbienceConfig.hpp"
 
 #include <algorithm>
 #include <cmath>

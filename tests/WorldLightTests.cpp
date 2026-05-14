@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/WeatherDefinitions.h"
+#include "../src/WeatherDefinitions.hpp"
 
 #include <cmath>
 #include <utility>

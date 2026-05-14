@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ElevationAxis.h"
+#include "ElevationAxis.hpp"
 
 #include <glm/glm.hpp>
 

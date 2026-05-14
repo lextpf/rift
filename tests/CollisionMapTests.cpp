@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/CollisionMap.h"
+#include "../src/CollisionMap.hpp"
 
 #include <vector>
 

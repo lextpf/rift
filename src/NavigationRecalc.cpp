@@ -1,8 +1,8 @@
-#include "NavigationRecalc.h"
+#include "NavigationRecalc.hpp"
 
-#include "Logger.h"
-#include "NonPlayerCharacter.h"
-#include "Tilemap.h"
+#include "Logger.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "Tilemap.hpp"
 
 #include <algorithm>
 #include <utility>

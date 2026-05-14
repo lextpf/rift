@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "../src/Pathfinding.h"
-#include "../src/Tilemap.h"
+#include "../src/Pathfinding.hpp"
+#include "../src/Tilemap.hpp"
 
 #include <glm/glm.hpp>
 

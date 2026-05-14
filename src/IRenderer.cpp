@@ -1,6 +1,6 @@
-#include "IRenderer.h"
-#include "MathConstants.h"
-#include "PerspectiveTransform.h"
+#include "IRenderer.hpp"
+#include "MathConstants.hpp"
+#include "PerspectiveTransform.hpp"
 
 #include <cmath>
 

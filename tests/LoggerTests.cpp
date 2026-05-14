@@ -6,7 +6,7 @@
 #include <sstream>
 #include <string>
 
-#include "../src/Logger.h"
+#include "../src/Logger.hpp"
 
 namespace
 {

@@ -1,6 +1,6 @@
-#include "Game.h"
-#include "KeyToggle.h"
-#include "Logger.h"
+#include "Game.hpp"
+#include "KeyToggle.hpp"
+#include "Logger.hpp"
 
 #include <glad/glad.h>
 

@@ -1,7 +1,7 @@
-#include "ProjectManifest.h"
+#include "ProjectManifest.hpp"
 
-#include "EnumTraits.h"
-#include "PlayerCharacter.h"
+#include "EnumTraits.hpp"
+#include "PlayerCharacter.hpp"
 
 #include <json.hpp>
 

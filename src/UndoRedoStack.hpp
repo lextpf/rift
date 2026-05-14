@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorCommand.h"
+#include "EditorCommand.hpp"
 
 #include <cstddef>
 #include <deque>

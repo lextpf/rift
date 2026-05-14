@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IGameCharacter.h"
+#include "IGameCharacter.hpp"
 
 class IRenderer;
 

@@ -4,7 +4,7 @@
 // correct independently of GL state. KarisBloomWeight gates on luma (legacy);
 // KarisBloomChromaWeight gates on HSV saturation (current shader path).
 
-#include "PostFXParams.h"
+#include "PostFXParams.hpp"
 
 #include <gtest/gtest.h>
 

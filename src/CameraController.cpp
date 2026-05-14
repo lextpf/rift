@@ -1,7 +1,7 @@
-#include "CameraController.h"
+#include "CameraController.hpp"
 
-#include "Logger.h"
-#include "MathConstants.h"
+#include "Logger.hpp"
+#include "MathConstants.hpp"
 
 namespace
 {

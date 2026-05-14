@@ -1,11 +1,11 @@
 #pragma once
 
-#include "DialogueTypes.h"
-#include "GameCharacter.h"
-#include "IRenderer.h"
-#include "PatrolRoute.h"
-#include "Texture.h"
-#include "Tilemap.h"
+#include "DialogueTypes.hpp"
+#include "GameCharacter.hpp"
+#include "IRenderer.hpp"
+#include "PatrolRoute.hpp"
+#include "Texture.hpp"
+#include "Tilemap.hpp"
 
 #include <glm/glm.hpp>
 #include <string>

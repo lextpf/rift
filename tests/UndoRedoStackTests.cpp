@@ -7,12 +7,12 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/EditorCommand.h"
-#include "../src/EditorCommands.h"
-#include "../src/EditorStrokeAccumulators.h"
-#include "../src/NonPlayerCharacter.h"
-#include "../src/Tilemap.h"
-#include "../src/UndoRedoStack.h"
+#include "../src/EditorCommand.hpp"
+#include "../src/EditorCommands.hpp"
+#include "../src/EditorStrokeAccumulators.hpp"
+#include "../src/NonPlayerCharacter.hpp"
+#include "../src/Tilemap.hpp"
+#include "../src/UndoRedoStack.hpp"
 
 #include <memory>
 #include <string>

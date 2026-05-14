@@ -1,6 +1,6 @@
-#include "Texture.h"
+#include "Texture.hpp"
 
-#include "Logger.h"
+#include "Logger.hpp"
 
 #include <algorithm>
 #include <cmath>

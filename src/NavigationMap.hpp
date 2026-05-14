@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BoolGrid.h"
+#include "BoolGrid.hpp"
 
 /**
  * @class NavigationMap
