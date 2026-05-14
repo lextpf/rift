@@ -33,7 +33,7 @@ jobs:
 
       - name: Run clang-format
         run: |
-          Get-ChildItem -Path src -Include *.cpp,*.h -Recurse | ForEach-Object {
+          Get-ChildItem -Path src -Include *.cpp,*.h,*.hpp -Recurse | ForEach-Object {
             clang-format -i $_.FullName
           }
           $diff = git diff --name-only
@@ -50,3 +50,45 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Stage build artifacts
+        shell: pwsh
+        run: |
+          $staging = "artifact-staging"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+          $bin = "build\Release"
+          if (-not (Test-Path "$bin\rift.exe")) {
+            Write-Error "rift.exe not found - the build step did not produce a binary."
+            exit 1
+          }
+
+          # Executable + runtime DLLs (vcpkg copies these next to the .exe).
+          Copy-Item "$bin\*.exe" $staging
+          Get-ChildItem -Path $bin -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination $staging
+
+          # Compiled shaders (SPIR-V) + GLSL source - both are needed at runtime
+          # by the Vulkan / OpenGL backends respectively, and are small.
+          if (Test-Path "$bin\shaders") {
+            Copy-Item -Path "$bin\shaders" -Destination $staging -Recurse
+          }
+
+          # Project manifest - tiny config file the executable expects next to it.
+          if (Test-Path "$bin\rift.project.json") {
+            Copy-Item "$bin\rift.project.json" $staging
+          }
+
+          Write-Host "Staged contents:"
+          Get-ChildItem -Path $staging -Recurse -File |
+            ForEach-Object {
+              "{0,12:N0}  {1}" -f $_.Length, ($_.FullName.Substring((Resolve-Path $staging).Path.Length + 1))
+            }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rift-windows-x64-${{ github.sha }}
+          path: artifact-staging/
+          if-no-files-found: error
+          retention-days: 14
