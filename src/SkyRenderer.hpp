@@ -244,7 +244,7 @@ public:
      * Safe to call more than
      * once; generated resources are replaced by the
      * current run's textures and arrays.
- */
+     */
     void Initialize();
 
     /**
