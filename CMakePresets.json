@@ -1,0 +1,123 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "base-vcpkg",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{VCPKG_ROOT}",
+        "rhs": ""
+      }
+    },
+    {
+      "name": "default",
+      "displayName": "Default (game + tests, Visual Studio 17 2022, vcpkg)",
+      "description": "Primary local configure preset. MSBuild + MSVC via Visual Studio 17 2022 generator; vcpkg manifest install with x64-windows triplet. The compile-db preset (Ninja sidecar) covers clang-tidy/clangd separately.",
+      "inherits": "base-vcpkg"
+    },
+    {
+      "name": "ci",
+      "displayName": "CI build (game + tests, Visual Studio 17 2022, vcpkg)",
+      "description": "Used by GitHub Actions. Same single-tree layout as the local default: game and rift_tests both configured into build/.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "compile-db",
+      "displayName": "compile_commands.json (Ninja sidecar)",
+      "description": "Ninja-based configure whose only purpose is to emit a real compile_commands.json for clang-tidy/clangd. Builds the same TUs as the game AND the test target so tests/*.cpp end up in the database with the right include paths. Uses the SAME triplet as the default preset (x64-windows) so it shares build/vcpkg_installed/ without triggering manifest-mode add/remove churn. Never built directly; only configured.",
+      "binaryDir": "${sourceDir}/build-cdb",
+      "generator": "Ninja",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default-debug",
+      "displayName": "Build game (Debug)",
+      "configurePreset": "default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "default-release",
+      "displayName": "Build game (Release)",
+      "configurePreset": "default",
+      "configuration": "Release"
+    },
+    {
+      "name": "tests-release",
+      "displayName": "Build rift_tests (Release)",
+      "configurePreset": "default",
+      "configuration": "Release",
+      "targets": ["rift_tests"]
+    },
+    {
+      "name": "ci-release",
+      "displayName": "CI: build game (Release)",
+      "configurePreset": "ci",
+      "configuration": "Release",
+      "targets": ["rift"]
+    },
+    {
+      "name": "ci-tests-release",
+      "displayName": "CI: build rift_tests (Release)",
+      "configurePreset": "ci",
+      "configuration": "Release",
+      "targets": ["rift_tests"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "tests-release",
+      "displayName": "Run tests (Release)",
+      "configurePreset": "default",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-tests-release",
+      "displayName": "CI: run tests (Release)",
+      "configurePreset": "ci",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
