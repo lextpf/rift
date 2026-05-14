@@ -1,0 +1,78 @@
+name: Bug report
+description: Report incorrect or unexpected behaviour in rift.
+title: "[Bug] <short description>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please complete the
+        sections below so the maintainers can reproduce the issue and triage quickly.
+
+        **Before filing**, please:
+        - Search existing issues to avoid duplicates.
+        - Confirm you are on a recent rift release.
+        
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what is wrong.
+      placeholder: Switching renderer to Vulkan while a dialogue is open crashes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact sequence that consistently trigger the bug.
+      placeholder: |
+        1. Launch `rift.exe` (Release).
+        2. Walk up to an NPC and start a dialogue.
+        3. Press F1 to switch renderers.
+        4. Observe the crash.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Paste any error message verbatim.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste any relevant sections of `*.log`.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: rift_version
+    attributes:
+      label: rift version
+      description: From the title bar, `Version.hpp`, or `git rev-parse HEAD`.
+      placeholder: 0.1.0.0 or abc1234
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true

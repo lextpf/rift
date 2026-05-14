@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+
+  - name: Open Discussions or Questions
+    url: https://github.com/Lextpf/rift/discussions
+    about: Ask a question, share usage tips, or discuss design ideas before opening a formal issue.
+
+  - name: Contributing Guide
+    url: https://github.com/Lextpf/rift/blob/main/CONTRIBUTING.md
+    about: Coding style, naming conventions, and PR guidance.
