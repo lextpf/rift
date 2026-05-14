@@ -8,45 +8,39 @@
  * effects.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Effects
- * Every default targets
- * *"you only notice it when it's gone."* All ambience polish - vignette, grain, bloom, color
- * grading, camera breathing, ambient particles, cloud shadows, chimney smoke, dialogue easing -
- * pulls magic numbers from this header. Tuning the world's feel post-launch should require touching
+ * All ambience polish pulls magic numbers from this header.
+ * Tuning the world's feel post-launch should require touching
  * only this file.
  *
  * @par Calibration philosophy
- * Defaults aim for "lowkey arcade neon - color bleed without shine."
+ * Defaults aim for "lowkey arcade neon and color bleed."
  * Saturation pumps chroma (luma-preserving, adds zero brightness),
  * chromatic aberration gives radial color fringe at frame edges, and a
  * saturation-thresholded chroma bloom spreads color outward from saturated
  * sources without lifting luminance (so red lanterns bleed red, blue water
- * bleeds blue, white surfaces stay matte). Saturation +25%, bloom 0.30
- * (chroma-only), vignette ~17%, CA 0.007 (~10px at 1024-wide), color
- * grading +/-6%, grain +/-2 luma steps. Camera breathing/sway remains
- * sub-pixel.
+ * bleeds blue, white surfaces stay matte).
  */
 namespace ambience
 {
 
-// =============================================================================
-// Post-FX pipeline (single offscreen FBO + screen-quad pass)
-//
-// Composition order in PostFXComposite.frag:
-//   1. Sample scene (with chromatic aberration per-channel offset)
-//   2. Add chroma-only bloom (b - vec3(dot(b, LUMA))) - zero net luminance
-//   3. LGG grading split (shadows / midtones / highlights)
-//   4. Vignette + edge desaturation
-//   5. Grain (luminance-modulated, slight chroma)
-//   6. Tonemap (soft-shoulder)
-//
-// The bloom feeder (BloomPrefilter.frag) gates on HSV saturation, not luma -
-// only colored pixels enter the mip chain. Combined with the chroma-only
-// composite this gives "color bleed without shine."
-// =============================================================================
+/**
+ * Post-FX pipeline
+ *
+ * Composition order in PostFXComposite.frag:
+ *   1. Sample scene (with chromatic aberration per-channel offset)
+ *   2. Add chroma-only bloom b - vec3(dot(b, LUMA)) - zero net luminance
+ *   3. LGG grading split (shadows / midtones / highlights)
+ *   4. Vignette + edge desaturation
+ *   5. Grain (luminance-modulated, slight chroma)
+ *   6. Tonemap (soft-shoulder)
+ *
+ * The bloom feeder gates on HSV saturation, not luma - only colored
+ * pixels enter the mip chain.
+ */
 
-/// Vignette darkening intensity (0 = none, 1 = corners fully black). 0.17 reads
+/// Vignette darkening intensity (0 = none, 1 = corners fully black). 0.15 reads
 /// as a slightly tighter arcade frame without crushing peripheral content.
-constexpr float VIGNETTE_INTENSITY = 0.17f;
+constexpr float VIGNETTE_INTENSITY = 0.15f;
 
 /// Vignette inner-radius start (fraction of half-diagonal). Inside this -> no darkening.
 constexpr float VIGNETTE_INNER_R = 0.70f;
@@ -79,8 +73,8 @@ constexpr float GRAIN_CHROMA_MIX = 0.30f;
 constexpr float BLOOM_SATURATION_THRESHOLD = 0.30f;
 
 /// Bloom intensity scalar applied during composite. 0.30 with the chroma-only
-/// composite path in PostFXComposite.frag (`col += b - vec3(dot(b, LUMA))`) yields a
-/// pleasantly subtle color bleed without any net luminance lift - the entire
+/// composite path in PostFXComposite.frag `col += b - vec3(dot(b, LUMA))` yields
+/// subtle color bleed without any net luminance lift - the entire
 /// bloom contribution projects onto the chroma plane orthogonal to the luma
 /// axis. Set to 0.0 to disable bloom contribution while keeping the mip
 /// chain available.
@@ -92,7 +86,7 @@ constexpr int BLOOM_MIP_LEVELS = 5;
 
 /// Global color saturation multiplier applied after grading, before vignette.
 /// 1.0 = identity, >1 pumps chroma, 0 = grayscale. The math is luma-preserving
-/// (`mix(vec3(L), c, s)`) so this adds zero brightness - the entire "pop" is
+/// `mix(vec3(L), c, s)` so this adds zero brightness - the entire "pop" is
 /// chroma deviation, not luma lift. 1.25 reads as a softer arcade-neon pop on
 /// foliage / sky / tiles, well below the cartoon threshold (>=1.6). See
 /// PostFXComposite.frag applySaturation().
@@ -118,17 +112,8 @@ constexpr float CA_STRENGTH = 0.007f;
 /// 0.85 lets the top 15% of the range take the gentle filmic rolloff.
 constexpr float TONEMAP_KNEE = 0.85f;
 
-// =============================================================================
-// Ambient world particles (global spawner, independent of editor zones)
-//
-// Calibration: decorative ambient - clearly visible during their time-of-day
-// windows, similar in presence to fireflies. Tuned to be a feature of the
-// world, not invisible texture. Pollen still gates strictly to golden hour;
-// leaves spawn during daylight; dust motes peak at dawn and midday.
-// =============================================================================
-
 /// Total active ambient particles globally (cap across all types combined).
-constexpr int AMBIENT_PARTICLE_TOTAL_CAP = 80;
+constexpr int AMBIENT_PARTICLE_TOTAL_CAP = 100;
 
 /// Per-second spawn rate for drifting leaves (active during daylight).
 constexpr float AMBIENT_LEAF_SPAWN_PER_SEC = 2.5f;
@@ -136,29 +121,24 @@ constexpr float AMBIENT_LEAF_SPAWN_PER_SEC = 2.5f;
 /// Per-second spawn rate for dust motes (visible in sunbeams: dawn/midday).
 constexpr float AMBIENT_DUST_SPAWN_PER_SEC = 3.5f;
 
-/// Per-second spawn rate for pollen (golden hour only - bias formula gates window).
+/// Per-second spawn rate for pollen (golden hour only).
 constexpr float AMBIENT_POLLEN_SPAWN_PER_SEC = 2.5f;
 
-/// Maximum alpha for ambient particles. Uniform 0.6-0.75 target across most
-/// particle types so they read as glowy decorative features rather than
-/// barely-visible filters.
+/// Maximum alpha for ambient particles.
 constexpr float AMBIENT_PARTICLE_ALPHA_CAP = 0.7f;
 
 /// Margin in world pixels around camera rect for spawning (pre-spawned just off-screen).
 constexpr float AMBIENT_PARTICLE_SPAWN_MARGIN = 64.0f;
 
-// =============================================================================
-// Cloud shadows (multiplicative darkening drifting across world)
-// =============================================================================
-
 /// Number of large soft-edged cloud shadows visible at once.
-constexpr int CLOUD_SHADOW_COUNT = 4;
+/// TODO: For now feathered dots, replace with actual game assets.
+constexpr int CLOUD_SHADOW_COUNT = 0;
 
 /// Size of each cloud shadow blob in pixels (covers many tiles).
 constexpr float CLOUD_SHADOW_SIZE_PX = 320.0f;
 
 /// Maximum darkening of cloud shadows (0 = none, 1 = black). Subtle: 4-8%.
-constexpr float CLOUD_SHADOW_INTENSITY = 0.06f;
+constexpr float CLOUD_SHADOW_INTENSITY = 0.4f;
 
 /// Wind direction that cloud shadows drift along (normalised on use).
 constexpr glm::vec2 CLOUD_SHADOW_WIND_DIR{-1.0f, 0.0f};
@@ -166,28 +146,20 @@ constexpr glm::vec2 CLOUD_SHADOW_WIND_DIR{-1.0f, 0.0f};
 /// Drift speed in pixels per second at base zoom.
 constexpr float CLOUD_SHADOW_DRIFT_SPEED = 3.0f;
 
-// =============================================================================
-// Dialogue easing
-// =============================================================================
-
 /// Per-character alpha-in duration in seconds. Char fades from 0 to 1 over this.
-constexpr float DIALOGUE_CHAR_FADE_DURATION_S = 0.07f;
+constexpr float DIALOGUE_CHAR_FADE_DURATION_S = 0.1f;
 
 /// Extra pause time after punctuation marks (.,!?) in seconds.
 constexpr float DIALOGUE_PUNCTUATION_PAUSE_S = 0.20f;
 
-/// Box scale-in from -> to. Smaller is gentler. 1.04 -> 1.00 is barely visible.
-constexpr float DIALOGUE_BOX_SCALE_START = 1.04f;
+/// Box scale-in from -> to. Smaller is gentler. 1.05 -> 1.00 is barely visible.
+constexpr float DIALOGUE_BOX_SCALE_START = 1.05f;
 constexpr float DIALOGUE_BOX_SCALE_END = 1.00f;
 
 /// Option arrow pulse parameters: alpha = base + amp * sin(t * freq).
 constexpr float DIALOGUE_ARROW_PULSE_BASE = 0.85f;
 constexpr float DIALOGUE_ARROW_PULSE_AMPLITUDE = 0.15f;
 constexpr float DIALOGUE_ARROW_PULSE_HZ = 1.5f;
-
-// =============================================================================
-// Dialogue panel - translucent dark slate (no parchment, no portrait, no wood)
-// =============================================================================
 
 /// Panel fill RGB. Cool dark slate (#121822). Paired with PANEL_FILL_ALPHA
 /// below to produce a translucent overlay that blends with whatever's behind
