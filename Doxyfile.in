@@ -1045,6 +1045,7 @@ INPUT_FILE_ENCODING    =
 
 FILE_PATTERNS          = *.cpp \
                          *.h \
+                         *.hpp \
                          *.dox \
                          *.md
 
