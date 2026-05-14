@@ -1,10 +1,9 @@
 # Build outputs
 build/
-build_tests/
+build-*/
 
 # Assets
 assets/
-external/
 *.spv
 
 # Generated documentation
