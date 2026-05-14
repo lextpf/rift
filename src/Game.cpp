@@ -2,20 +2,20 @@
 #define NOMINMAX
 #endif
 
-#include "Game.h"
+#include "Game.hpp"
 
-#include "AmbienceConfig.h"
-#include "DrawTracer.h"
-#include "Logger.h"
-#include "MathConstants.h"
-#include "MathUtils.h"
-#include "NonPlayerCharacter.h"
-#include "OpenGLRenderer.h"
-#include "PlayerCharacter.h"
-#include "PostFXParams.h"
-#include "ProjectManifest.h"
-#include "RendererFactory.h"
-#include "Version.h"
+#include "AmbienceConfig.hpp"
+#include "DrawTracer.hpp"
+#include "Logger.hpp"
+#include "MathConstants.hpp"
+#include "MathUtils.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "OpenGLRenderer.hpp"
+#include "PlayerCharacter.hpp"
+#include "PostFXParams.hpp"
+#include "ProjectManifest.hpp"
+#include "RendererFactory.hpp"
+#include "Version.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -914,16 +914,18 @@ void Game::Render()
         renderCam.y = snapToPixel(originalCamera.y, pixelStepY);
     }
 
-    // Calculate cull rectangle for tile visibility testing
-    // When 3D effect is enabled, we need to load more tiles because the perspective widens the
-    // view. renderCam may be pixel-snapped (OpenGL) for drawing; cullCam/cullSize use the unsnapped
-    // camera to keep conservative tile visibility when the snap shifts by sub-pixels.
+    // @author Codex (https://github.com/codex)
+    // With perspective off, the cull rect is exactly the
+    // camera viewport. With perspective on, the horizon foreshortens distant
+    // tiles into a smaller screen-space footprint, so much *more* world fits
+    // above the horizon than the viewport's world-space size would imply.
+    // We compensate by inflating the cull rect by 1/horizonScale (the smaller
+    // horizonScale gets, the more we expand) and then further by the projection
+    // mode's width/height scales (globe/fisheye warp differently from a flat
+    // tilt). renderCam may be pixel-snapped (OpenGL) for drawing; cullCam stays
+    // unsnapped so the visibility test is stable across sub-pixel camera moves.
     if (m_Camera.GetState().enable3DEffect)
     {
-        // With perspective enabled, the horizon shows more world area than the
-        // camera viewport suggests (things shrink toward the horizon). We must
-        // expand the culling rectangle to load tiles that would otherwise be
-        // culled but become visible due to the perspective warping.
         float horizonScale =
             HORIZON_SCALE_BASE + (1.0f - m_Camera.GetState().tilt) * HORIZON_SCALE_TILT_RANGE;
         float expansion = 1.0f / horizonScale;
