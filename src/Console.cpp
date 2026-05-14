@@ -1,6 +1,6 @@
-#include "Console.h"
+#include "Console.hpp"
 
-#include "IRenderer.h"
+#include "IRenderer.hpp"
 
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -8,10 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
-
-// ============================================================================
-// ConsoleBuffer
-// ============================================================================
 
 void ConsoleBuffer::Print(std::string text, glm::vec3 color)
 {
@@ -219,10 +215,6 @@ void ConsoleBuffer::ResetScroll()
     m_ScrollOffset = 0;
 }
 
-// ============================================================================
-// ConsoleCommandRegistry
-// ============================================================================
-
 void ConsoleCommandRegistry::Register(std::string name,
                                       std::string description,
                                       Handler handler,
@@ -305,10 +297,6 @@ std::vector<std::string> ConsoleCommandRegistry::MatchPrefix(std::string_view pr
     }
     return out;
 }
-
-// ============================================================================
-// Console - input wiring, parsing, dispatch
-// ============================================================================
 
 std::vector<std::string_view> Console::Tokenize(std::string_view line)
 {
@@ -648,10 +636,6 @@ void Console::Submit(std::string_view line)
     std::span<const std::string_view> args(tokens.data() + 1, tokens.size() - 1);
     cmd->handler(args, *this);
 }
-
-// ============================================================================
-// Console::Render - overlay drawing
-// ============================================================================
 
 void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
 {

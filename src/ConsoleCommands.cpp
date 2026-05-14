@@ -1,22 +1,22 @@
-#include "ConsoleCommands.h"
+#include "ConsoleCommands.hpp"
 
-#include "CameraController.h"
-#include "Console.h"
-#include "DialogueManager.h"
-#include "DialogueTypes.h"
-#include "DrawTracer.h"
-#include "Editor.h"
-#include "EnumTraits.h"
-#include "Game.h"
-#include "GameStateManager.h"
-#include "IRenderer.h"
-#include "NonPlayerCharacter.h"
-#include "ParticleSystem.h"
-#include "Pathfinding.h"
-#include "PlayerCharacter.h"
-#include "Tilemap.h"
-#include "TimeManager.h"
-#include "Version.h"
+#include "CameraController.hpp"
+#include "Console.hpp"
+#include "DialogueManager.hpp"
+#include "DialogueTypes.hpp"
+#include "DrawTracer.hpp"
+#include "Editor.hpp"
+#include "EnumTraits.hpp"
+#include "Game.hpp"
+#include "GameStateManager.hpp"
+#include "IRenderer.hpp"
+#include "NonPlayerCharacter.hpp"
+#include "ParticleSystem.hpp"
+#include "Pathfinding.hpp"
+#include "PlayerCharacter.hpp"
+#include "Tilemap.hpp"
+#include "TimeManager.hpp"
+#include "Version.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -130,10 +130,6 @@ bool ParseRendererAPI(std::string_view text, RendererAPI& out)
 }
 }  // namespace
 
-// ============================================================================
-// help
-// ============================================================================
-
 bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
     // Bind ctx.out to a local reference up-front so the static analyzer
@@ -170,19 +166,11 @@ bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// clear
-// ============================================================================
-
 bool Cmd_Clear(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
     ctx.out.Clear();
     return true;
 }
-
-// ============================================================================
-// teleport <tx> <ty>
-// ============================================================================
 
 bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -209,10 +197,6 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// flag.set <name> <value>
-// ============================================================================
-
 bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -231,10 +215,6 @@ bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print("flag.set: " + name + " = " + value);
     return true;
 }
-
-// ============================================================================
-// flag.get <name>
-// ============================================================================
 
 bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -257,10 +237,6 @@ bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(name + " = " + ctx.gameState->GetFlagValue(name));
     return true;
 }
-
-// ============================================================================
-// time.set <hours>
-// ============================================================================
 
 bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -287,10 +263,6 @@ bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// time.freeze [on|off|toggle] - pause / resume the day-night cycle
-// ============================================================================
-
 bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -307,10 +279,6 @@ bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("time.freeze: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// map.load <filename>
-// ============================================================================
 
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -342,10 +310,6 @@ bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print("map.load: loaded '" + filename + "'");
     return true;
 }
-
-// ============================================================================
-// state.dump
-// ============================================================================
 
 bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
@@ -393,10 +357,6 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     return true;
 }
 
-// ============================================================================
-// player.speed [multiplier] - speedhack: scale player movement speed
-// ============================================================================
-
 bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr)
@@ -434,10 +394,6 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
-// ============================================================================
-// noclip [on|off] - toggle by default; explicit on/off if provided.
-// ============================================================================
-
 bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr)
@@ -472,10 +428,6 @@ bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// editor [on|off|toggle]
-// ============================================================================
-
 bool Cmd_Editor(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -492,10 +444,6 @@ bool Cmd_Editor(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("editor: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// appearance.copy - copy appearance from nearest NPC within 32px
-// ============================================================================
 
 bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -544,10 +492,6 @@ bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& 
     return true;
 }
 
-// ============================================================================
-// appearance.restore - restore original character appearance
-// ============================================================================
-
 bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr || ctx.renderer == nullptr)
@@ -570,10 +514,6 @@ bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContex
     ctx.out.Print("appearance.restore: restored");
     return true;
 }
-
-// ============================================================================
-// character.set <name>
-// ============================================================================
 
 bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -607,10 +547,6 @@ bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
-// ============================================================================
-// character.next
-// ============================================================================
-
 bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr)
@@ -634,10 +570,6 @@ bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& c
                   std::string(EnumTraits<CharacterType>::ToString(next)));
     return true;
 }
-
-// ============================================================================
-// renderer.set <opengl|vulkan>
-// ============================================================================
 
 bool Cmd_RendererSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -667,10 +599,6 @@ bool Cmd_RendererSet(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
-// ============================================================================
-// debug.info [on|off|toggle]
-// ============================================================================
-
 bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -688,10 +616,6 @@ bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// debug.overlays [on|off|toggle]
-// ============================================================================
-
 bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -708,10 +632,6 @@ bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& c
     ctx.out.Print(std::string("debug.overlays: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// fps.cap [on|off|toggle]
-// ============================================================================
 
 bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -731,10 +651,6 @@ bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// globe [on|off|toggle]
-// ============================================================================
-
 bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -751,10 +667,6 @@ bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("globe: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// time.next - cycle through 8 time-of-day presets
-// ============================================================================
 
 bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -784,10 +696,6 @@ bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("time.next: ") + kPresetName[s_cycle]);
     return true;
 }
-
-// ============================================================================
-// globe.radius <50.0-500.0>
-// ============================================================================
 
 bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -819,10 +727,6 @@ bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
-// ============================================================================
-// globe.tilt <0.0-1.0>
-// ============================================================================
-
 bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -853,10 +757,6 @@ bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// postfx [on|off|toggle] - master toggle for the post-processing pipeline
-// ============================================================================
-
 bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.postFXEnabled == nullptr)
@@ -873,10 +773,6 @@ bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("postfx: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// globe.intensity <up|down> - coupled radius+tilt step (matches PgUp/PgDn)
-// ============================================================================
 
 bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -910,10 +806,6 @@ bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& 
     ctx.out.Print(buf);
     return true;
 }
-
-// ============================================================================
-// player.pos - print tile coords, world pixel coords, facing direction
-// ============================================================================
 
 bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -959,10 +851,6 @@ bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// player.bicycle [on|off|toggle]
-// ============================================================================
-
 bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr)
@@ -980,10 +868,6 @@ bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
-// ============================================================================
-// player.run [on|off|toggle]
-// ============================================================================
-
 bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.player == nullptr)
@@ -1000,10 +884,6 @@ bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(std::string("player.run: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// npc.list - print every NPC's index, name, type, tile, AI state
-// ============================================================================
 
 bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1044,10 +924,6 @@ bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// npc.tp <idx> <tileX> <tileY>
-// ============================================================================
-
 bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1079,11 +955,6 @@ bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// npc.spawn <type> <tileX> <tileY> - load sprite, place at tile,
-// upload textures if a renderer is bound (skipped in unit tests).
-// ============================================================================
 
 bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1129,10 +1000,6 @@ bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// npc.despawn <idx> - refuse if NPC is the active dialogue speaker.
-// ============================================================================
-
 bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1169,10 +1036,6 @@ bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// npc.freeze <idx|all> [on|off|toggle]
-// ============================================================================
 
 bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1221,11 +1084,6 @@ bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// npc.dialog <idx> <text...> - rejoins multi-token text with single spaces
-// (the console tokenizer is whitespace-only, no quoting).
-// ============================================================================
-
 bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1259,10 +1117,6 @@ bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// dialogue.active - print mode + current node for tree, or simple text
-// ============================================================================
 
 bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1313,10 +1167,6 @@ bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& 
     return true;
 }
 
-// ============================================================================
-// dialogue.end - close any active dialogue (simple or tree)
-// ============================================================================
-
 bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -1333,10 +1183,6 @@ bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx
     ctx.out.Print("dialogue.end: closed");
     return true;
 }
-
-// ============================================================================
-// dialogue.skip - confirm current option (advance tree dialogue)
-// ============================================================================
 
 bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1359,10 +1205,6 @@ bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ct
     ctx.out.Print("dialogue.skip: advanced");
     return true;
 }
-
-// ============================================================================
-// flag.list - dump every flag in GameStateManager
-// ============================================================================
 
 bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1397,10 +1239,6 @@ bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// flag.unset <name>
-// ============================================================================
-
 bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -1426,10 +1264,6 @@ bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx)
     }
     return true;
 }
-
-// ============================================================================
-// time.scale <multiplier>
-// ============================================================================
 
 bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1460,10 +1294,6 @@ bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// time.weather <clear|overcast>
-// ============================================================================
 
 bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1555,10 +1385,6 @@ bool Cmd_WeatherRandom(std::span<const std::string_view> args, CommandContext& c
                   std::string(EnumTraits<WeatherState>::ToString(pick)));
     return true;
 }
-
-// ============================================================================
-// light.* - WorldLight registry on the active Tilemap
-// ============================================================================
 
 bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1709,10 +1535,6 @@ bool Cmd_LightRemove(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
-// ============================================================================
-// time.status - print time, period, weather, day count, moon phase
-// ============================================================================
-
 bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1771,10 +1593,6 @@ bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// particle.spawn <type> <worldX> <worldY> - one-shot spawn at world pixels
-// ============================================================================
-
 bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -1819,10 +1637,6 @@ bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& c
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// particle.list - count particles per type, list zones
-// ============================================================================
 
 bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1876,10 +1690,6 @@ bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
-// ============================================================================
-// particle.kill_all
-// ============================================================================
-
 bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -1897,10 +1707,6 @@ bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext&
     return true;
 }
 
-// ============================================================================
-// camera.freecam [on|off|toggle]
-// ============================================================================
-
 bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -1917,10 +1723,6 @@ bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& c
     ctx.out.Print(std::string("camera.freecam: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// camera.zoom <factor> - clamp into a sensible developer range
-// ============================================================================
 
 bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1952,10 +1754,6 @@ bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// camera.follow [on|off|toggle] - re-attach camera to player; clears freecam.
-// ============================================================================
-
 bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -1977,10 +1775,6 @@ bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ct
     ctx.out.Print(std::string("camera.follow: ") + (target ? "ON" : "OFF"));
     return true;
 }
-
-// ============================================================================
-// camera.info - dump camera state
-// ============================================================================
 
 bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2012,10 +1806,6 @@ bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// map.save [path] - default path comes from Game::GetSaveMapPath
-// ============================================================================
 
 bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2056,10 +1846,6 @@ bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// map.size
-// ============================================================================
-
 bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2089,10 +1875,6 @@ bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// map.collision <tileX> <tileY>
-// ============================================================================
 
 bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2124,14 +1906,6 @@ bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ct
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// perf - print FPS, frame time, draw calls
-// ============================================================================
-
-// ============================================================================
-// console.copy - put the entire scrollback buffer onto the OS clipboard
-// ============================================================================
 
 bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2177,10 +1951,6 @@ bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx
     ctx.out.Print(status);
     return true;
 }
-
-// ============================================================================
-// renderer.trace - capture and dump per-frame draw-call trace
-// ============================================================================
 
 bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2290,10 +2060,6 @@ bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// layers.list
-// ============================================================================
-
 bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2342,10 +2108,6 @@ bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx)
     }
     return true;
 }
-
-// ============================================================================
-// tile.info <tx> <ty>
-// ============================================================================
 
 bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2405,10 +2167,6 @@ bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
     }
     return true;
 }
-
-// ============================================================================
-// tile.find <tileID> [layer]
-// ============================================================================
 
 bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2479,10 +2237,6 @@ bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// map.stats
-// ============================================================================
-
 bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2539,10 +2293,6 @@ bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// tileset.info
-// ============================================================================
-
 bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2568,10 +2318,6 @@ bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// anim.list
-// ============================================================================
 
 bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2633,10 +2379,6 @@ bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// CameraSnapTo helper for the *.goto family
-// ============================================================================
-
 namespace
 {
 void CameraSnapTo(CameraController& cam, glm::vec2 worldPos)
@@ -2648,10 +2390,6 @@ void CameraSnapTo(CameraController& cam, glm::vec2 worldPos)
     s.hasFollowTarget = false;
 }
 }  // namespace
-
-// ============================================================================
-// struct.list / struct.info <id> / struct.goto <id>
-// ============================================================================
 
 bool Cmd_StructList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2759,10 +2497,6 @@ bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// zone.list / zone.goto <idx> / light.goto <idx>
-// ============================================================================
 
 bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -2876,10 +2610,6 @@ bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// nav.path <fx> <fy> <tx> <ty>
-// ============================================================================
-
 bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2933,10 +2663,6 @@ bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// nav.reachable <tx> <ty>
-// ============================================================================
-
 bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2980,10 +2706,6 @@ bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ct
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// npc.path <idx>
-// ============================================================================
 
 bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3035,10 +2757,6 @@ bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// npc.goto <idx>
-// ============================================================================
-
 bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr || ctx.camera == nullptr)
@@ -3076,10 +2794,6 @@ bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// npc.nearest
-// ============================================================================
 
 bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3130,10 +2844,6 @@ bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// quest.list
-// ============================================================================
-
 bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3174,10 +2884,6 @@ bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// quest.give <name> [description...]
-// ============================================================================
-
 bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3211,10 +2917,6 @@ bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// ============================================================================
-// quest.complete <name>
-// ============================================================================
-
 bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3234,10 +2936,6 @@ bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& c
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// version
-// ============================================================================
 
 bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3263,10 +2961,6 @@ bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx)
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// renderer.info
-// ============================================================================
 
 bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3298,10 +2992,6 @@ bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ct
     ctx.out.Print(line);
     return true;
 }
-
-// ============================================================================
-// mem.stats
-// ============================================================================
 
 bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3340,10 +3030,6 @@ bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
     }
     return true;
 }
-
-// ============================================================================
-// config.dump - emit script-style lines reproducing current toggle state
-// ============================================================================
 
 bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -3401,10 +3087,6 @@ bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
     }
     return true;
 }
-
-// ============================================================================
-// bookmark.set <name> / bookmark.tp <name> / bookmark.list
-// ============================================================================
 
 bool Cmd_BookmarkSet(std::span<const std::string_view> args,
                      CommandContext& ctx,
@@ -3502,11 +3184,6 @@ bool Cmd_BookmarkList(std::span<const std::string_view> args,
     }
     return true;
 }
-
-// ============================================================================
-// Console::RegisterDefaultCommands - production wiring. Lives here so all
-// the default commands and their bindings are in one translation unit.
-// ============================================================================
 
 void Console::RegisterDefaultCommands()
 {

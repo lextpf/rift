@@ -2,14 +2,14 @@
 #define NOMINMAX
 #endif
 
-#include "Game.h"
+#include "Game.hpp"
 
-#include "AmbienceConfig.h"
-#include "DrawTracer.h"
-#include "Logger.h"
-#include "ParticleSystem.h"
-#include "PostFXParams.h"
-#include "Version.h"
+#include "AmbienceConfig.hpp"
+#include "DrawTracer.hpp"
+#include "Logger.hpp"
+#include "ParticleSystem.hpp"
+#include "PostFXParams.hpp"
+#include "Version.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -24,10 +24,6 @@
 #include <Windows.h>
 #undef DrawText
 #endif
-
-// =============================================================================
-// File-local constants and helpers
-// =============================================================================
 
 namespace
 {
@@ -233,20 +229,12 @@ int ConfirmPromptHitTest(
 
 }  // namespace
 
-// =============================================================================
-// Save existence query
-// =============================================================================
-
 bool Game::CheckSaveExists() const
 {
     namespace fs = std::filesystem;
     std::error_code ec;
     return fs::exists(m_SaveMapPath, ec) && fs::is_regular_file(m_SaveMapPath, ec);
 }
-
-// =============================================================================
-// Load / reset world
-// =============================================================================
 
 void Game::LoadGameWorld(bool loadSave)
 {
@@ -462,10 +450,6 @@ void Game::ResetWorldToDefaults()
     m_DialogueSnap.active = false;
 }
 
-// =============================================================================
-// Title menu state (re)build
-// =============================================================================
-
 void Game::RebuildTitleMenu()
 {
     const bool hasSave = CheckSaveExists();
@@ -491,10 +475,6 @@ void Game::RebuildTitleMenu()
     m_MenuLastMouseY = -1.0;
     m_MenuMouseLeftPrev = true;
 }
-
-// =============================================================================
-// Title input dispatch
-// =============================================================================
 
 void Game::ProcessTitleInput()
 {
@@ -662,10 +642,6 @@ void Game::ProcessTitleInput()
     }
 }
 
-// =============================================================================
-// Pause input dispatch
-// =============================================================================
-
 void Game::ProcessPauseInput()
 {
     if (m_PauseMenu.enabled.size() != static_cast<size_t>(PAUSE_ITEM_COUNT))
@@ -749,10 +725,6 @@ void Game::ProcessPauseInput()
             break;
     }
 }
-
-// =============================================================================
-// Title rendering
-// =============================================================================
 
 void Game::RenderTitleFrame()
 {
@@ -1063,10 +1035,6 @@ void Game::RenderConfirmOverwritePrompt()
                          MENU_ITEM_OUTLINE,
                          1.0f);
 }
-
-// =============================================================================
-// Pause overlay rendering
-// =============================================================================
 
 void Game::RenderPauseOverlay()
 {
