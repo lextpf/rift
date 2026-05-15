@@ -10,8 +10,7 @@ std::vector<std::string> GameStateManager::GetActiveQuests() const
 
     for (const auto& [key, value] : m_Flags)
     {
-        if (key.starts_with(kAcceptedPrefix) && !value.empty() && value != "false" &&
-            value != "0")
+        if (key.starts_with(kAcceptedPrefix) && !value.empty() && value != "false" && value != "0")
         {
             // Extract quest name (remove "accepted_" prefix)
             std::string questName = key.substr(kAcceptedPrefix.size());
