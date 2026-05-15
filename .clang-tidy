@@ -1,21 +1,4 @@
-# ============================================================================
-# .clang-tidy - static analysis configuration for Rift
-# ============================================================================
-# Conventions that clang-format already enforces (braces, indent, alignment,
-# include sort) are deliberately NOT duplicated here. This file only enables
-# checks that catch real bugs or interface smells.
-#
-# Conventions in CONTRIBUTING.md are noisy under stock readability-identifier-
-# naming because the project mixes PascalCase locals, `m_PascalCase` members,
-# and snake_case fields in plain data structs. We therefore disable the naming
-# check rather than misconfigure it; PRs still review naming manually.
-#
-# To run locally:
-#   cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-#         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-#   clang-tidy -p build src/Logger.cpp           # single file
-#   .\build.bat --tidy                            # whole project, via wrapper
-# ============================================================================
+# rift clang-tidy configuration.
 
 Checks: >
   -*,
@@ -156,18 +139,13 @@ FormatStyle: file
 UseColor: true
 
 CheckOptions:
-  # Member init: structs that are explicitly POD are fine to leave defaulted;
-  # tidy still flags missing-init on real classes.
   - key: cppcoreguidelines-pro-type-member-init.IgnoreArrays
-    value: "true"
-  # Member-function-const can be very noisy on renderer interfaces that need
-  # to mutate internal handles; relax to opt-in via NOLINT instead.
-  - key: readability-make-member-function-const.IgnoreMacros
-    value: "true"
-  # Narrowing conversions: ignore conversion between float and int inside
-  # math-heavy code where it's intentional. Reviewers still catch real cases.
-  - key: cppcoreguidelines-narrowing-conversions.WarnOnFloatingPointNarrowingConversion
-    value: "false"
-  # Pass-by-value modernization: skip records bigger than a cache line.
+    value: 'true'
+  - key: readability-make-member-function-const.IgnoreMacros 
+    value: reasonable
+  - key: modernize-use-default-member-init.UseAssignment
+    value: 'true'
+  - key: cppcoreguidelines-narrowing-conversions.WarnOnFloatingPointNarrowingConversion 
+    value: 'false'
   - key: modernize-pass-by-value.ValuesOnly
-    value: "true"
+    value: 'true'
