@@ -15,10 +15,9 @@ uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
-        // typeFilter is a bitmask from Vulkan where bit i is set if memory
-        // type i is compatible with the resource. The bitwise AND checks
-        // compatibility, then we verify the type also has the requested
-        // property flags (e.g. HOST_VISIBLE, DEVICE_LOCAL).
+        // typeFilter bit i is set if memory type i is compatible with the
+        // resource; also require the requested property flags
+        // (e.g., HOST_VISIBLE, DEVICE_LOCAL).
         if ((typeFilter & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
         {
@@ -90,25 +89,21 @@ void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
 
 void VulkanRenderer::CreateBuffers()
 {
-    // Each frame in flight needs its own vertex buffer because the GPU may
-    // still be reading frame N's data while the CPU writes frame N+1.
-    // Buffer size: 4 floats/vertex * 6 vertices/quad * 10000 quads ~= 937 KB.
-    // 10000 quads is generous headroom - typical frames use ~2000 for a full
-    // tilemap + all sprites + UI.
+    // One vertex buffer per frame in flight - GPU may be reading frame N's
+    // data while CPU writes frame N+1. Size: 4 floats * 6 verts * 10000 quads
+    // ~937 KB (typical frames use ~2000 quads).
     const uint32_t maxSprites = 10000;
     m_VertexBufferSize = sizeof(float) * 4 * 6 * maxSprites;
 
-    // Create one vertex buffer per frame in flight
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        // Create directly in HOST_VISIBLE | HOST_COHERENT memory
+        // HOST_VISIBLE | HOST_COHERENT, persistently mapped for CPU writes each frame.
         CreateBuffer(m_VertexBufferSize,
                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                      m_VertexBuffers[i],
                      m_VertexBufferMemories[i]);
 
-        // Map vertex buffer persistently
         VK_CHECK(vkMapMemory(m_Device,
                              m_VertexBufferMemories[i],
                              0,
@@ -117,7 +112,7 @@ void VulkanRenderer::CreateBuffers()
                              &m_VertexBuffersMapped[i]));
     }
 
-    // Create index buffer (static, shared between frames)
+    // Index buffer: static, shared across frames.
     uint32_t indices[] = {0, 1, 2, 3, 4, 5};
     VkDeviceSize indexBufferSize = sizeof(indices);
 
@@ -150,23 +145,22 @@ void VulkanRenderer::CreateDescriptorPool()
 {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    // Allocate enough for many textures (1000 should be plenty for most games)
     poolSize.descriptorCount = DESCRIPTOR_POOL_MAX_SETS;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS;  // Allow up to 1000 descriptor sets
+    poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS;
     poolInfo.flags =
-        VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;  // Allow freeing individual sets
+        VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;  // Allow freeing single sets.
 
     VK_CHECK(vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &m_DescriptorPool));
 }
 
 void VulkanRenderer::CreateWhiteTexture()
 {
-    // Create a 1x1 white texture
+    // 1x1 white texture used as a fallback for solid-color draws.
     unsigned char whitePixel[] = {255, 255, 255, 255};
 
     VkImageCreateInfo imageInfo{};
@@ -198,7 +192,6 @@ void VulkanRenderer::CreateWhiteTexture()
     VK_CHECK(vkAllocateMemory(m_Device, &allocInfo, nullptr, &m_WhiteTextureImageMemory));
     VK_CHECK(vkBindImageMemory(m_Device, m_WhiteTextureImage, m_WhiteTextureImageMemory, 0));
 
-    // Create image view
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_WhiteTextureImage;
@@ -212,7 +205,6 @@ void VulkanRenderer::CreateWhiteTexture()
 
     VK_CHECK(vkCreateImageView(m_Device, &viewInfo, nullptr, &m_WhiteTextureImageView));
 
-    // Create sampler
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_NEAREST;
@@ -230,8 +222,8 @@ void VulkanRenderer::CreateWhiteTexture()
 
     VK_CHECK(vkCreateSampler(m_Device, &samplerInfo, nullptr, &m_WhiteTextureSampler));
 
-    // Upload texture data using staging buffer
-    VkDeviceSize imageSize = 4;  // 1x1 RGBA = 4 bytes
+    // Upload via staging buffer.
+    VkDeviceSize imageSize = 4;  // 1x1 RGBA.
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     CreateBuffer(imageSize,
