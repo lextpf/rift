@@ -77,8 +77,11 @@ private:
 /**
  * @brief Resize all resettable_container members to the same size.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
- * Uses a fold expression to call `resize(n)` on each container in a single statement.
+ * Uses a fold expression to call `resize(n)` on each container in a single
+ * statement. The intended use is keeping a family of parallel per-tile arrays
+ * (tiles, rotation, flips, structureId, ...) in lockstep on a TileLayer.
  *
  * @code{.cpp}
  * defaulted_vector<int, -1> tiles;
@@ -98,8 +101,10 @@ void resize_all(size_t n, Containers&... containers)
 /**
  * @brief Reset all resettable_container members to their compile-time defaults.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * Uses a fold expression to call `resetToDefault()` on each container.
+ * Preserves size; only the contents revert to the per-container Default NTTP.
  *
  * @param containers Pack of resettable_container references.
  */
