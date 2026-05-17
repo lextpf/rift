@@ -108,16 +108,13 @@ void VulkanRenderer::UploadStagingBufferToImage(VkBuffer stagingBuffer,
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
-    // Transition to transfer destination
     CmdTransitionColorImageLayout(
         commandBuffer, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    // Copy staging buffer to image
     const VkBufferImageCopy region = CreateColorImageCopyRegion(width, height);
     vkCmdCopyBufferToImage(
         commandBuffer, stagingBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    // Transition to shader read
     CmdTransitionColorImageLayout(commandBuffer,
                                   image,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -170,16 +167,14 @@ void VulkanRenderer::CreateTextureSampler()
 
 VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Texture& texture)
 {
-    // Use the Texture object's address as the unique cache key.
-    // Each Texture object occupies a unique memory location, so this guarantees
-    // no collisions between different textures (unlike a size-based hash).
+    // Texture object's address as the cache key - each Texture has a unique
+    // memory location, so collisions can't happen (unlike a size-based hash).
     const Texture* textureKey = &texture;
 
-    // Check if texture already exists in cache
     auto it = m_TextureCache.find(textureKey);
     if (it != m_TextureCache.end() && it->second.initialized)
     {
-        // Refresh cached fallback entry once a real image view becomes available.
+        // Upgrade cached fallback once the real image view appears.
         VkImageView liveView = texture.GetVulkanImageView();
         if (liveView != VK_NULL_HANDLE && it->second.imageView != liveView)
         {
@@ -188,7 +183,6 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
         return it->second;
     }
 
-    // Create new texture resources
     TextureResources resources{};
     resources.initialized = false;
 
@@ -197,7 +191,7 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
 
     if (width <= 0 || height <= 0)
     {
-        // Return white texture if invalid
+        // Invalid size - fall back to white.
         resources.image = m_WhiteTextureImage;
         resources.imageView = m_WhiteTextureImageView;
         resources.memory = m_WhiteTextureImageMemory;
@@ -206,20 +200,20 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
         return m_TextureCache[textureKey];
     }
 
-    // Try to use texture's Vulkan resources if they exist
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
     {
-        // Texture already has Vulkan resources - use them
+        // Texture already has Vulkan resources.
         resources.imageView = texImageView;
         resources.initialized = true;
         m_TextureCache[textureKey] = resources;
         return m_TextureCache[textureKey];
     }
 
-    // Texture doesn't have Vulkan resources yet - need to create them
-    // But we can't call CreateVulkanTexture from here because we don't have access to the Texture's
-    // private methods So we'll return white texture for now and log a warning
+    // Texture has no Vulkan resources yet. We can't call CreateVulkanTexture
+    // from here (no access to the Texture's private methods), so log and
+    // fall back to white; the cache entry is upgraded above when the real
+    // image view appears.
     Logger::WarnF(LOG_SUBSYSTEM,
                   "Texture {} (size {}x{}) not uploaded to Vulkan yet. Using white texture "
                   "fallback.",
@@ -227,8 +221,6 @@ VulkanRenderer::TextureResources& VulkanRenderer::GetOrCreateTexture(const Textu
                   width,
                   height);
 
-    // Use white texture as fallback. Cached entries are refreshed above when
-    // a real image view becomes available on the Texture object.
     resources.image = m_WhiteTextureImage;
     resources.imageView = m_WhiteTextureImageView;
     resources.memory = m_WhiteTextureImageMemory;
