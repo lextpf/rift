@@ -59,7 +59,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 
         if (m_ShowTilePicker)
         {
-            // Sync smooth scrolling state to prevent jump
+            // Sync smooth-scroll target so the view doesn't jump on open.
             m_TilePicker.targetOffsetX = m_TilePicker.offsetX;
             m_TilePicker.targetOffsetY = m_TilePicker.offsetY;
             std::vector<int> validTiles = ctx.tilemap.GetValidTileIDs();
@@ -72,8 +72,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_T] = false;
     }
 
-    // Rotates the selected tile(s) by 90 increments (0 -> 90 -> 180 -> 270).
-    // Works for both single tiles and multi-tile selections when tile picker is closed.
+    // R rotates the selected tile(s) by 90 degrees (works on single tiles and multi-tile
+    // selections; tile picker must be closed).
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
@@ -86,52 +86,47 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_R] = false;
     }
 
-    // Pans the tile picker view using arrow keys. Shift increases speed 2.5x.
-    // Uses smooth scrolling with target-based interpolation.
+    // Tile picker pan with arrow keys (Shift = 2.5x speed). Target-based
+    // smooth scrolling.
     if (m_Active && m_ShowTilePicker)
     {
         float scrollSpeed = 1000.0f * deltaTime;
 
-        // Shift modifier for faster navigation (2.5x speed)
         if (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
             glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
         {
             scrollSpeed *= 2.5f;
         }
 
-        // Arrow key input
         if (glfwGetKey(ctx.window, GLFW_KEY_UP) == GLFW_PRESS)
         {
-            m_TilePicker.targetOffsetY += scrollSpeed;  // Scroll down (view up)
+            m_TilePicker.targetOffsetY += scrollSpeed;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_DOWN) == GLFW_PRESS)
         {
-            m_TilePicker.targetOffsetY -= scrollSpeed;  // Scroll up (view down)
+            m_TilePicker.targetOffsetY -= scrollSpeed;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_LEFT) == GLFW_PRESS)
         {
-            m_TilePicker.targetOffsetX += scrollSpeed;  // Scroll right (view left)
+            m_TilePicker.targetOffsetX += scrollSpeed;
         }
         if (glfwGetKey(ctx.window, GLFW_KEY_RIGHT) == GLFW_PRESS)
         {
-            m_TilePicker.targetOffsetX -= scrollSpeed;  // Scroll left (view right)
+            m_TilePicker.targetOffsetX -= scrollSpeed;
         }
 
-        // Calculate tile picker layout dimensions
         int dataTilesPerRow = ctx.tilemap.GetTilesetDataWidth() / ctx.tilemap.GetTileWidth();
         int dataTilesPerCol = ctx.tilemap.GetTilesetDataHeight() / ctx.tilemap.GetTileHeight();
 
-        // Tile display size: base size * zoom factor
-        // Base size is calculated to fit all tiles horizontally with 1.5x padding
+        // Base tile size: fit all tiles horizontally with 1.5x padding; then apply zoom.
         float baseTileSizePixels =
             (static_cast<float>(ctx.screenWidth) / static_cast<float>(dataTilesPerRow)) * 1.5f;
         float tileSizePixels = baseTileSizePixels * m_TilePicker.zoom;
 
-        // Total content dimensions
         float totalTilesWidth = tileSizePixels * dataTilesPerRow;
         float totalTilesHeight = tileSizePixels * dataTilesPerCol;
 
-        // Clamp offset bounds to prevent scrolling beyond content edges
+        // Clamp so the user can't scroll past the content edges.
         float minOffsetX = std::min(0.0f, ctx.screenWidth - totalTilesWidth);
         float maxOffsetX = 0.0f;
         float minOffsetY = std::min(0.0f, ctx.screenHeight - totalTilesHeight);
@@ -187,10 +182,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_N] = false;
     }
 
-    // Toggles elevation editing mode. When active:
-    //   - Left-click paints elevation values (for stairs)
-    //   - Right-click removes elevation (sets to 0)
-    //   - Use scroll to adjust elevation value
+    // H: elevation mode. LMB paints elevation (stairs), RMB clears, scroll adjusts.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_H) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_H])
     {
         const bool enabling = m_EditMode != EditMode::Elevation;
@@ -214,10 +206,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_H] = false;
     }
 
-    // Toggles no-projection editing mode. When active:
-    //   - Left-click sets no-projection flag (tile renders without 3D effect)
-    //   - Right-click clears no-projection flag
-    //   - Used for buildings that should appear to have height in 3D mode
+    // B: no-projection mode. LMB sets the flag (renders without 3D effect),
+    // RMB clears. Used for buildings that should appear to have height in 3D.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_B])
     {
         const bool enabling = m_EditMode != EditMode::NoProjection;
@@ -243,11 +233,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_B] = false;
     }
 
-    // Toggles Y-sort-plus editing mode. When active:
-    //   - Left-click sets Y-sort-plus flag (tile sorts with entities by Y position)
-    //   - Right-click clears Y-sort-plus flag
-    //   - Used for tiles that should appear in front/behind player based on Y
-    // Skip when Ctrl is held - that's reserved for Ctrl+Y (redo).
+    // Y: Y-sort-plus mode. LMB sets flag (tile sorts with entities by Y),
+    // RMB clears. Skipped when Ctrl held - Ctrl+Y is redo.
     {
         const bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                               glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -278,10 +265,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_Y] = false;
     }
 
-    // Toggles Y-sort-minus editing mode. When active:
-    //   - Left-click sets Y-sort-minus flag (tile renders in front of player at same Y)
-    //   - Right-click clears Y-sort-minus flag
-    //   - Only affects tiles that are already Y-sort-plus
+    // O: Y-sort-minus mode. LMB sets flag (tile renders in front of player at
+    // same Y), RMB clears. Only affects tiles already Y-sort-plus.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_O) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_O])
     {
         const bool enabling = m_EditMode != EditMode::YSortMinus;
@@ -304,10 +289,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_O] = false;
     }
 
-    // Toggles particle zone editing mode. When active:
-    //   - Left-click and drag to create a particle zone
-    //   - Right-click to remove zone under cursor
-    //   - Use , and . keys to cycle particle type
+    // J: particle zone mode. LMB-drag creates a zone, RMB removes,
+    // ,/. cycles particle type.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_J) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_J])
     {
         const bool enabling = m_EditMode != EditMode::ParticleZone;
@@ -333,7 +316,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_J] = false;
     }
 
-    // Particle type cycling
+    // ,/. cycles particle type.
     if (m_Active && (m_EditMode == EditMode::ParticleZone))
     {
         if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
