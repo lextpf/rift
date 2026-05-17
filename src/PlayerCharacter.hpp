@@ -77,21 +77,41 @@ struct EnumTraits<CharacterType> : EnumTraitsBase<CharacterType, EnumTraits<Char
  *     +---+-o-+---+   o = position (bottom-center)
  * @endcode
  *
- * @par Movement
- * - Walking: 50 px/s (1.0x base)
- * - Running: 87.5 px/s (1.75x)
- * - Bicycle: 112.5 px/s (2.25x)
+ * @par Movement Modes
+ * The active mode resolves as `Bicycling > Running > Walking`. Enabling
+ * a higher mode while a lower one is active keeps the lower flag set but
+ * the higher sprite + speed take precedence:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     classDef walk fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *     classDef run  fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
+ *     classDef bike fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *
+ *     state "Walking (50 px/s)"  as W:::walk
+ *     state "Running (87.5 px/s)" as R:::run
+ *     state "Bicycle (112.5 px/s)" as B:::bike
+ *
+ *     [*] --> W
+ *     W --> R: SetRunning(true)
+ *     R --> W: SetRunning(false)
+ *     W --> B: SetBicycling(true)
+ *     R --> B: SetBicycling(true)
+ *     B --> R: SetBicycling(false) and running flag set
+ *     B --> W: SetBicycling(false) and running flag clear
+ * </pre>
+ * @endhtmlonly
  *
  * @par Collision
  * - Strict mode: Full 16x16 hitbox check
- * - Slide recovery: Tests
- * axis-separated fallbacks when a diagonal target is blocked
- * - Lane snapping: Aligns to tile
- * centers during cardinal movement
+ * - Slide recovery: Tests axis-separated fallbacks when a diagonal target is blocked
+ * - Lane snapping: Aligns to tile centers during cardinal movement
  *
  * @par Animation
- * Walk cycle: [1, 0, 2, 0] at 0.15s/frame
- * (walk) or 0.075s/frame (run)
+ * Walk cycle: [1, 0, 2, 0] at 0.15s/frame (walk) or 0.075s/frame (run).
+ *
+ * @see CollisionResolver, GameCharacter, NonPlayerCharacter
  */
 class PlayerCharacter : public GameCharacter
 {
