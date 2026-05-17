@@ -191,11 +191,10 @@ int main()
 
         Logger::Info(LOG_SUBSYSTEM, "Game initialized successfully");
 
-        // Run the main game loop
         try
         {
-            // Target slightly above 244 so spin overshoot and small jitter
-            // don't drop the displayed reading to 243.
+            // Slightly above 244 so spin overshoot and jitter don't drop the displayed reading to
+            // 243.
             game.SetTargetFps(244.5f);
             game.Run();
         }
