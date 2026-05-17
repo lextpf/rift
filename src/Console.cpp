@@ -651,7 +651,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
     const glm::mat4 ui = glm::ortho(0.0f, w, h, 0.0f, -1.0f, 1.0f);
     renderer.SetProjection(ui);
 
-    // ---- Translucent backdrop ----
+    // Translucent backdrop.
     // Half mode: top 50% of the screen, world visible underneath. Full mode:
     // covers the entire framebuffer for an immersive ops session.
     const float overlayH = (m_State == State::Full) ? h : h * 0.5f;
@@ -678,7 +678,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
 
     // IRenderer::DrawText takes y as the glyph baseline (see IRenderer.h).
 
-    // ---- Prompt + input + cursor at the bottom of the overlay ----
+    // Prompt + input + cursor at the bottom of the overlay.
     const float promptBaseline = overlayH - BOTTOM_PAD;
     const std::string prompt = "> " + m_Buffer.Input();
     renderer.DrawText(prompt, glm::vec2(LEFT_PAD, promptBaseline), TEXT_SCALE, glm::vec3(1.0f));
@@ -697,7 +697,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
                                  glm::vec4(1.0f, 1.0f, 1.0f, 0.9f));
     }
 
-    // ---- Scrollback (bottom-up, above the prompt) ----
+    // Scrollback (bottom-up, above the prompt).
     // Scrollback baselines stack upward from just above the prompt's top edge.
     const float scrollBottom = promptBaseline - lineH;
     const float scrollTop = TOP_PAD + ascent;
@@ -724,7 +724,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
         }
     }
 
-    // ---- Autocomplete dropdown ----
+    // Autocomplete dropdown.
     // Sits below the input in Half mode (extending into the world) and above
     // the input in Full mode (no room below; floats up over scrollback).
     // Drawn LAST so its backdrop covers any scrollback line it overlaps -
