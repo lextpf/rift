@@ -29,7 +29,6 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Game";
 
-// --- Colors -----------------------------------------------------------------
 constexpr glm::vec3 TITLE_TEXT_COLOR{1.0f, 1.0f, 1.0f};
 constexpr glm::vec3 TITLE_DIM_COLOR{0.55f, 0.55f, 0.62f};
 constexpr glm::vec3 TITLE_DISABLED_COLOR{0.30f, 0.30f, 0.34f};
@@ -39,16 +38,13 @@ constexpr glm::vec4 PAUSE_DIM_COLOR{0.0f, 0.0f, 0.0f, 0.55f};
 constexpr glm::vec4 MODAL_BACKDROP_COLOR{0.0f, 0.0f, 0.0f, 0.65f};
 constexpr glm::vec4 MODAL_BOX_COLOR{0.10f, 0.11f, 0.16f, 0.95f};
 
-// --- Layout (in screen-space pixels) ----------------------------------------
-// Title logo uses the renderer's *headline* atlas (rasterized at ~96 px in
-// OpenGLRenderer; falls back to scaled body atlas in Vulkan). At scale 1.0
-// the logo renders at the headline atlas's native size, so it stays crisp
+// Title logo uses the renderer's *headline* atlas (~96 px native in OpenGL;
+// falls back to a scaled body atlas in Vulkan). Scale 1.0 keeps it crisp
 // instead of blurring like an upscaled body-atlas glyph.
 constexpr float TITLE_LOGO_SCALE = 1.0f;
 // Outline scaled to match the menu items' outline-to-glyph ratio. Outline
-// offset is 2 * scale * outlineSize px; on a 96-px headline glyph that puts
-// the stroke at ~12.5 % of glyph height (between unselected and selected
-// menu items at scale 1.4 with outline 1.0 / 2.0).
+// offset = 2 * scale * outlineSize px; on a 96-px headline glyph that's
+// ~12.5% of glyph height.
 constexpr float TITLE_LOGO_OUTLINE = 6.0f;
 constexpr float MENU_ITEM_SCALE = 1.4f;
 constexpr float MENU_LINE_HEIGHT = 48.0f;
@@ -56,32 +52,26 @@ constexpr float VERSION_TEXT_SCALE = 0.7f;
 constexpr float PAUSE_HEADER_SCALE = 1.8f;
 constexpr float MODAL_TEXT_SCALE = 1.0f;
 
-// Outline thickness for body-atlas (24-px native) menu / button text.
-// Outline-to-glyph ratio ~21 % (heavier than the title's 12.5 %) so the
-// menu strokes read clearly against the busy grass-and-fireflies backdrop.
+// Body-atlas (24px native) menu/button outline. ~21% outline-to-glyph ratio
+// (heavier than the title's 12.5%) so strokes read against the busy backdrop.
 // Selection only changes color, never outline weight.
 constexpr float MENU_ITEM_OUTLINE = 2.5f;
 
-// --- Title-screen world ----------------------------------------------------
-// The title screen renders a small grass-only tilemap with firefly particles,
-// frozen at night. Tweak these to change the title-screen aesthetic.
+// Title world: a small grass-only tilemap with firefly particles, frozen at
+// night. Tweak these to change the title-screen aesthetic.
 constexpr int TITLE_WORLD_MAP_WIDTH = 32;
 constexpr int TITLE_WORLD_MAP_HEIGHT = 24;
 constexpr float TITLE_WORLD_TIME_OF_DAY = 23.0f;  // 23:00 = deep night.
-// Tile ID painted across layer 0. The base overworld tileset's first
-// non-empty entry is grass; adjust here if your tileset orders things
-// differently.
+// Painted across layer 0. The base overworld tileset's first non-empty entry
+// is grass; change this if your tileset orders things differently.
 constexpr int TITLE_WORLD_GRASS_TILE_ID = 1;
-// Per-zone particle cap during the title screen. Bumped above the gameplay
-// default (50, set in Game::Initialize) because the title world has only
-// one zone per type and they all span the whole map, so a denser pool reads
-// as a populated backdrop instead of a sparse trickle.
+// Per-zone particle cap on the title screen. Bumped above the gameplay
+// default (50, set in Game::Initialize) because the title world has one
+// whole-map zone per type, so a denser pool reads as populated backdrop.
 constexpr size_t TITLE_PARTICLES_PER_ZONE = 160;
-// Per-zone cap used during gameplay; restored when LoadGameWorld runs so
-// the title bump doesn't leak into the player's actual world.
+// Restored when LoadGameWorld runs so the title bump doesn't leak in.
 constexpr size_t GAMEPLAY_PARTICLES_PER_ZONE = 50;
 
-// --- Title menu items -------------------------------------------------------
 enum TitleItem : int
 {
     TITLE_NEW_GAME = 0,
@@ -98,7 +88,6 @@ constexpr const char* TITLE_LABELS[TITLE_ITEM_COUNT] = {
     "Quit",
 };
 
-// --- Pause menu items -------------------------------------------------------
 enum PauseItem : int
 {
     PAUSE_RESUME = 0,
@@ -111,10 +100,7 @@ constexpr const char* PAUSE_LABELS[PAUSE_ITEM_COUNT] = {
     "Quit to Title",
 };
 
-// --- Helpers ----------------------------------------------------------------
-
-/// Build an orthographic projection mapping (0,0)=top-left to
-/// (screenWidth, screenHeight)=bottom-right, suitable for screen-space UI.
+/// Ortho projection mapping (0,0)=top-left to (screenW, screenH)=bottom-right.
 glm::mat4 MakeUIProjection(int screenWidth, int screenHeight)
 {
     return glm::ortho(
@@ -131,8 +117,8 @@ glm::vec3 MenuItemColor(bool selected, bool enabled)
     return selected ? TITLE_HIGHLIGHT_COLOR : TITLE_DIM_COLOR;
 }
 
-// Hit-testing matches the renderer layout exactly. Note: IRenderer::DrawText
-// takes y as the glyph baseline (despite "top-left" wording in the header).
+// Hit-testing matches the renderer layout exactly. IRenderer::DrawText takes
+// y as the glyph baseline despite the "top-left" wording in the header.
 
 /// Item index under the cursor for the title menu, or -1.
 int TitleMenuHitTest(
@@ -146,9 +132,8 @@ int TitleMenuHitTest(
 
     for (int i = 0; i < TITLE_ITEM_COUNT; ++i)
     {
-        // Hit against the unselected width: the "> " vs "  " prefix shift is
-        // small relative to HIT_PAD_X, so this stays comfortable as the user
-        // moves the cursor across items.
+        // Use unselected width: "> " vs "  " prefix shift is small relative to
+        // HIT_PAD_X, so the hit box stays comfortable across items.
         const std::string display = std::string("  ") + TITLE_LABELS[i];
         const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE);
         const float x = std::floor((screenW - w) * 0.5f);
@@ -259,15 +244,13 @@ void Game::LoadGameWorld(bool loadSave)
         m_Tilemap.SetTilemapSize(m_DefaultMapWidth, m_DefaultMapHeight);
     }
 
-    // Vulkan needs the tileset re-uploaded after a map change. OpenGL uploads
-    // textures lazily on first use and does not need this.
+    // Vulkan re-uploads the tileset after a map change; OpenGL uploads lazily on first use.
     if (m_RendererAPI == RendererAPI::Vulkan && m_Renderer)
     {
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
     }
 
-    // Pick the player character: saved value first, then the first manifest
-    // entry, falling back to a hard default if the manifest is empty.
+    // Pick player character: saved value, then first manifest entry, then hard default.
     CharacterType initialCharacter =
         (loadedCharacterType >= 0 &&
          loadedCharacterType < static_cast<int>(EnumTraits<CharacterType>::Count))
@@ -284,7 +267,6 @@ void Game::LoadGameWorld(bool loadSave)
         Logger::Error(LOG_SUBSYSTEM, "Failed to switch player character in LoadGameWorld");
     }
 
-    // Place player and re-anchor the camera.
     int playerTileX = (loadedPlayerTileX >= 0) ? loadedPlayerTileX : 9;
     int playerTileY = (loadedPlayerTileY >= 0) ? loadedPlayerTileY : 5;
     m_Player.SetTilePosition(playerTileX, playerTileY);
@@ -300,16 +282,14 @@ void Game::LoadGameWorld(bool loadSave)
     m_Particles.SetZones(m_Tilemap.GetParticleZones());
     m_Particles.SetTilemap(&m_Tilemap);
 
-    // Restore the gameplay per-zone cap in case we're returning from the
-    // title screen, which bumps it for a denser backdrop.
+    // Restore the gameplay cap (title screen bumps it for a denser backdrop).
     m_Particles.SetMaxParticlesPerZone(GAMEPLAY_PARTICLES_PER_ZONE);
 }
 
 void Game::LoadTitleScreenWorld()
 {
-    // Wipe any session state. The title screen is purely cosmetic - no save,
-    // no NPCs, no player, no editor - so we strip everything to a clean slate
-    // before painting the grass.
+    // Title is purely cosmetic - no save, NPCs, player, or editor. Strip
+    // session state to a clean slate before painting the grass.
     m_NPCs.clear();
     m_Editor.SetActive(false);
     m_DialogueManager.EndDialogue();
@@ -321,12 +301,11 @@ void Game::LoadTitleScreenWorld()
     m_DialogueBoxFadeTimer = 0.0f;
     m_DialogueSnap.active = false;
 
-    // Allocate a small map sized for the visible viewport, no random
-    // generation (we paint every tile by hand below).
+    // Small map sized for the viewport; we paint every tile by hand below.
     m_Tilemap.SetTilemapSize(TITLE_WORLD_MAP_WIDTH, TITLE_WORLD_MAP_HEIGHT, /*generateMap=*/false);
 
-    // Paint layer 0 (Ground) with the grass tile. All other layers stay
-    // empty (default tile id -1) so the scene reads as a flat field.
+    // Paint layer 0 (Ground) with grass; other layers stay empty (id -1) so
+    // the scene reads as a flat field.
     for (int y = 0; y < TITLE_WORLD_MAP_HEIGHT; ++y)
     {
         for (int x = 0; x < TITLE_WORLD_MAP_WIDTH; ++x)
@@ -335,10 +314,9 @@ void Game::LoadTitleScreenWorld()
         }
     }
 
-    // Replace the particle zones with one zone per atmospheric particle
-    // type, each spanning the whole map. The ParticleSystem caps each zone's
-    // active count (configured in Initialize), so total density stays bounded.
-    // Excluded: Lantern (needs explicit lit-zone placement near a light source).
+    // One whole-map zone per atmospheric particle type. ParticleSystem caps
+    // each zone's active count so total density stays bounded.
+    // Excluded: Lantern (needs explicit lit-zone placement near a light).
     if (auto* zones = m_Tilemap.GetParticleZonesMutable())
     {
         zones->clear();
@@ -358,8 +336,7 @@ void Game::LoadTitleScreenWorld()
             ParticleType::DriftingLeaf,
             ParticleType::DustMote,
             ParticleType::Pollen,
-            // Showcase the hand-painted blossom asset on the title screen so
-            // pink petals drift across the menu alongside the night ambience.
+            // Showcases the hand-painted blossom asset over the menu.
             ParticleType::CherryBlossom,
         };
 
@@ -381,9 +358,8 @@ void Game::LoadTitleScreenWorld()
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
     }
 
-    // Stick the player at (0, 0) just to keep its tile coordinates valid;
-    // it isn't rendered in Title mode (Y-sort assembly skips it). Camera
-    // sits at the map center so the menu has a clean grass backdrop.
+    // Park player at (0,0) to keep its tile coords valid - it isn't rendered
+    // in Title (Y-sort skips it). Camera centers on the map.
     m_Player.SetTilePosition(0, 0);
     glm::vec2 mapCenterPx(TITLE_WORLD_MAP_WIDTH * 0.5f * m_Tilemap.GetTileWidth(),
                           TITLE_WORLD_MAP_HEIGHT * 0.5f * m_Tilemap.GetTileHeight());
@@ -391,33 +367,28 @@ void Game::LoadTitleScreenWorld()
     float camWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
     m_Camera.Initialize(mapCenterPx, camWorldWidth, camWorldHeight);
 
-    // Freeze time at night. m_TimeManager.Update is gated in Title mode so
-    // this value holds until the user picks Continue / New Game.
+    // Freeze time at night. TimeManager.Update is gated in Title mode so
+    // this value holds until Continue / New Game.
     m_TimeManager.Initialize();
     m_TimeManager.SetTime(TITLE_WORLD_TIME_OF_DAY);
-    // Title screen showcases AuroraNight: the SkyRenderer reads the weather
-    // each frame, so this turns on the aurora curtains + floating wisps.
-    // Cherry blossom particles still drift across the menu via the title
-    // particle zone for ParticleType::CherryBlossom.
+    // AuroraNight enables aurora curtains + floating wisps (SkyRenderer reads
+    // weather each frame). Cherry blossoms still drift via the title zone.
     m_TimeManager.SetWeather(WeatherState::AuroraNight);
 
-    // Refresh the particle system's zone pointer (zones vector reference is
-    // stored across the system) and tilemap pointer.
+    // Refresh particle system's zone + tilemap pointers (the zones vector is
+    // held by reference across the system).
     m_Particles.SetZones(m_Tilemap.GetParticleZones());
     m_Particles.SetTilemap(&m_Tilemap);
 
-    // Title-screen zones span the whole map and only have one zone per type,
-    // so bump the per-zone cap above the gameplay default for a denser
-    // backdrop. Reset back to the gameplay value when a real game world
-    // loads.
+    // Bump per-zone cap for a denser backdrop (one zone per type, whole-map).
+    // Reset to gameplay value when a real game world loads.
     m_Particles.SetMaxParticlesPerZone(TITLE_PARTICLES_PER_ZONE);
 
-    // Pre-warm the particle pool so the menu doesn't open onto an empty
-    // screen. Step the simulation forward a few seconds in fixed sub-frame
-    // steps; that reaches steady state for the fast types (rain, sparkles)
-    // and a near-cap count for the slower ones (firefly, fog). Time of day
-    // and night factor must be set before stepping or zone particles whose
-    // spawn rules read those (e.g. lantern day-skip) make the wrong choice.
+    // Pre-warm the particle pool so the menu doesn't open empty. Stepping a
+    // few seconds reaches steady state for fast types (rain, sparkles) and a
+    // near-cap count for slow ones (firefly, fog). Time-of-day and night
+    // factor must be set first - some zone spawn rules read them (e.g.
+    // lantern day-skip).
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
     m_Particles.Clear();
@@ -438,8 +409,7 @@ void Game::ResetWorldToDefaults()
     m_TimeManager.Initialize();
     m_GameState.Clear();
 
-    // Close any leftover dialogue/snap state from the prior session so the
-    // next gameplay frame starts clean.
+    // Close leftover dialogue/snap state so the next gameplay frame starts clean.
     m_DialogueManager.EndDialogue();
     m_InDialogue = false;
     m_DialogueText.clear();
@@ -456,20 +426,18 @@ void Game::RebuildTitleMenu()
 
     m_TitleMenu.enabled.assign(TITLE_ITEM_COUNT, true);
     m_TitleMenu.enabled[TITLE_CONTINUE] = hasSave;
-    m_TitleMenu.enabled[TITLE_SETTINGS] = false;  // stub in this MVP
+    m_TitleMenu.enabled[TITLE_SETTINGS] = false;  // MVP stub.
 
-    // If a save exists, default-highlight Continue (the user's most likely
-    // intent on a returning launch); otherwise fall back to the first
-    // enabled item (New Game).
+    // Default-highlight Continue when a save exists (likely intent); otherwise
+    // first enabled item (New Game).
     m_TitleMenu.selected =
         hasSave ? static_cast<int>(TITLE_CONTINUE) : MenuLogic::FirstEnabledIndex(m_TitleMenu);
 
     m_ConfirmOverwriteShown = false;
     m_ConfirmPrompt.selected = MenuLogic::ConfirmChoice::Cancel;
 
-    // Reset mouse-tracking sentinel so the first frame in title mode skips
-    // the move-detection (a stale cursor over a menu item shouldn't yank
-    // selection away from the default). Suppress any in-flight click so
+    // Sentinel skips move-detection on the first title frame so a stale
+    // cursor doesn't yank selection. Also suppresses any in-flight click so
     // entering with the mouse held doesn't fire a phantom confirm.
     m_MenuLastMouseX = -1.0;
     m_MenuLastMouseY = -1.0;
@@ -478,15 +446,14 @@ void Game::RebuildTitleMenu()
 
 void Game::ProcessTitleInput()
 {
-    // Lazy first-time init for the menu so we don't have to reach into
-    // Initialize. Also cheap to call repeatedly because the size never grows.
+    // Lazy first-time init so we don't have to reach into Initialize.
+    // Cheap to repeat (size never grows).
     if (m_TitleMenu.enabled.size() != static_cast<size_t>(TITLE_ITEM_COUNT))
     {
         RebuildTitleMenu();
     }
 
-    // Drive all KeyToggles unconditionally to advance their edge state and
-    // avoid spurious carry-over into other modes.
+    // Drive every KeyToggle to advance edge state and avoid carry-over.
     bool up = m_KeyMenuUp.JustPressed(m_Window);
     bool down = m_KeyMenuDown.JustPressed(m_Window);
     bool left = m_KeyMenuLeft.JustPressed(m_Window);
@@ -494,12 +461,10 @@ void Game::ProcessTitleInput()
     bool confirm = m_KeyMenuConfirm.JustPressed(m_Window);
     bool esc = m_KeyEscape.JustPressed(m_Window);
 
-    // Mouse: cursor hover updates selection (only when the cursor actually
-    // moved, so a parked cursor doesn't override keyboard nav each frame),
-    // and a left-click edge confirms the hovered item. The negative sentinel
-    // on m_MenuLastMouseX skips move-detection on the first frame after
-    // entering the menu, so a stale cursor over an item doesn't yank the
-    // default selection from underneath the keyboard user.
+    // Mouse: hover updates selection only when the cursor actually moved (so
+    // a parked cursor doesn't override keyboard nav); left-click edge confirms.
+    // The negative sentinel on m_MenuLastMouseX skips move-detection on the
+    // first menu frame so a stale cursor doesn't yank the default selection.
     double mouseX = 0.0;
     double mouseY = 0.0;
     glfwGetCursorPos(m_Window, &mouseX, &mouseY);
@@ -559,9 +524,8 @@ void Game::ProcessTitleInput()
         return;
     }
 
-    // Top-level title menu navigation. Mouse hover/click goes first so the
-    // cursor can override keyboard selection on the same frame, and so the
-    // confirm path below sees the click as a confirm.
+    // Mouse hover/click goes first so the cursor can override the keyboard
+    // selection on the same frame and the confirm path sees the click.
     const int titleHit =
         TitleMenuHitTest(*m_Renderer, m_ScreenWidth, m_ScreenHeight, mouseX, mouseY);
     if (titleHit >= 0 && m_TitleMenu.enabled[titleHit])
@@ -587,7 +551,7 @@ void Game::ProcessTitleInput()
     }
     if (esc)
     {
-        // Esc on the title is a no-op: the user must explicitly select Quit.
+        // No-op on title - user must explicitly select Quit.
     }
     if (!confirm)
     {
@@ -618,8 +582,8 @@ void Game::ProcessTitleInput()
                 break;  // shouldn't be reachable (item is disabled)
             }
             Logger::Info(LOG_SUBSYSTEM, "Continue: reloading save from disk");
-            // Reset time so Continue doesn't inherit the title screen's
-            // 23:00 night setting; LoadGameWorld doesn't touch TimeManager.
+            // Reset time so Continue doesn't inherit the title's 23:00 night
+            // setting (LoadGameWorld doesn't touch TimeManager).
             m_TimeManager.Initialize();
             LoadGameWorld(/*loadSave=*/true);
             m_GameMode = GameMode::Playing;
@@ -627,8 +591,7 @@ void Game::ProcessTitleInput()
         }
         case TITLE_SETTINGS:
         {
-            // Stub: greyed out, NavigateDown skips it. Reaching here would mean
-            // the user activated a disabled item, which our nav prevents.
+            // Stub (disabled; NavigateDown skips it).
             break;
         }
         case TITLE_QUIT:
@@ -655,8 +618,7 @@ void Game::ProcessPauseInput()
     bool confirm = m_KeyMenuConfirm.JustPressed(m_Window);
     bool esc = m_KeyEscape.JustPressed(m_Window);
 
-    // Mouse hover/click on pause menu items - same pattern as title menu.
-    // See ProcessTitleInput for the sentinel-based first-frame skip.
+    // Mouse hover/click - same pattern as title menu (see ProcessTitleInput).
     double mouseX = 0.0;
     double mouseY = 0.0;
     glfwGetCursorPos(m_Window, &mouseX, &mouseY);
@@ -714,8 +676,8 @@ void Game::ProcessPauseInput()
         case PAUSE_QUIT_TO_TITLE:
         {
             Logger::Info(LOG_SUBSYSTEM, "Quit to Title (no save)");
-            // Restore the cosmetic title-screen world so the menu sits over
-            // grass and fireflies again instead of the abandoned session.
+            // Restore the cosmetic title world so the menu sits over grass +
+            // fireflies again instead of the abandoned session.
             LoadTitleScreenWorld();
             m_GameMode = GameMode::Title;
             RebuildTitleMenu();
@@ -738,15 +700,13 @@ void Game::RenderTitleFrame()
 
     DrawTracer::Mark("== title frame ==", m_Renderer->GetDrawCallCount());
 
-    // Clear with the title world's sky color (deep blue at night).
+    // Clear to the title world's sky color (deep blue at night).
     glm::vec3 skyColor = m_TimeManager.GetSkyColor();
     m_Renderer->Clear(skyColor.r, skyColor.g, skyColor.b, 1.0f);
     m_Renderer->SetAmbientColor(m_TimeManager.GetAmbientColor());
 
-    // Render the title-world tilemap (grass on layer 0, other layers empty).
-    // We skip the Y-sort assembly entirely since the title world has no
-    // entities. Foreground layers are rendered too so any future tweaks to
-    // TITLE_WORLD_GRASS_TILE_ID with an upper-layer overlay still show.
+    // Title world has no entities, so the Y-sort assembly is skipped here.
+    // Foreground layers still render in case future tweaks add upper-layer overlays.
     const float worldWidth = static_cast<float>(m_ScreenWidth) / static_cast<float>(PIXEL_SCALE);
     const float worldHeight = static_cast<float>(m_ScreenHeight) / static_cast<float>(PIXEL_SCALE);
     const float zoomedWidth = worldWidth / m_Camera.GetState().zoom;
@@ -762,13 +722,12 @@ void Game::RenderTitleFrame()
     DrawTracer::Mark("section: ForegroundLayers", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderForegroundLayers(*m_Renderer, renderCam, renderSize, renderCam, renderSize);
 
-    // Fireflies + ambient particles, drawn on top of the world.
+    // Ambient particles (fireflies, etc.) drawn on top of the world.
     DrawTracer::Mark("section: Particles", m_Renderer->GetDrawCallCount());
     m_Particles.Render(*m_Renderer, renderCam, /*noProjection=*/false, /*additive=*/false);
 
-    // Atmospheric sky overlay: stars at night, moon, dawn glow, etc. Renders
-    // under the world projection with parallax driven by the menu's renderCam,
-    // matching the gameplay path.
+    // Sky overlay (stars, moon, dawn glow). World projection with parallax
+    // driven by the menu's renderCam, matching the gameplay path.
     DrawTracer::Mark("section: Sky", m_Renderer->GetDrawCallCount());
     m_Renderer->SuspendPerspective(true);
     m_SkyRenderer.Render(*m_Renderer,
@@ -778,8 +737,8 @@ void Game::RenderTitleFrame()
                          static_cast<int>(worldHeight));
     m_Renderer->SuspendPerspective(false);
 
-    // Composite the scene through PostFX. Keep bloom modest so fireflies
-    // glow without blowing the whole screen out.
+    // Composite through PostFX. Modest bloom so fireflies glow without
+    // blowing the screen out.
     PostFXParams postFX;
     postFX.timeOfDay = m_TimeManager.GetTimeOfDay();
     postFX.nightFactor = m_TimeManager.GetStarVisibility();
@@ -798,9 +757,9 @@ void Game::RenderTitleFrame()
         postFX.grainIntensity = 0.0f;
         postFX.bloomIntensity = 0.0f;
         postFX.saturation = 1.0f;
-        // gradingParams default-constructs to identity. The shader-side gate
-        // (postFXEnabled=false) is the real off-switch; these zeroes are a
-        // defensive fallback in case the uniform fails to bind.
+        // gradingParams default-constructs to identity. postFXEnabled=false
+        // is the real off-switch; these zeroes are a defensive fallback in
+        // case the uniform fails to bind.
     }
     DrawTracer::Mark("section: PostFX", m_Renderer->GetDrawCallCount());
     m_Renderer->EndSceneApplyPostFX(postFX);
@@ -814,9 +773,8 @@ void Game::RenderTitleFrame()
         RenderConfirmOverwritePrompt();
     }
 
-    // Perf overlay (F4 toggle, same as gameplay): FPS / frame time / draws +
-    // renderer / resolution / zoom on the right. Player position and quests
-    // are intentionally omitted - neither applies on the title screen.
+    // Perf overlay (F4): FPS + right-column renderer/res/zoom. Player position
+    // and quests are intentionally omitted on title.
     if (m_Editor.IsShowDebugInfo())
     {
         constexpr float kMargin = 12.0f;
@@ -833,14 +791,13 @@ void Game::RenderTitleFrame()
                                             1.0f);
         m_Renderer->SetProjection(uiProjection);
 
-        // Left column: FPS only (no player position / tile to show). Integer
-        // readout - matches the gameplay overlay.
+        // Left column: FPS only (matches gameplay overlay format).
         char fpsText[32];
         std::snprintf(
             fpsText, sizeof(fpsText), "FPS: %d", static_cast<int>(m_Fps.currentFps + 0.5f));
         m_Renderer->DrawText(fpsText, glm::vec2(kMargin, 32.0f), 1.0f, kFpsColor, 2.0f, 0.85f);
 
-        // Right column: renderer / resolution / frame time / zoom / draws.
+        // Right column: renderer, resolution, frame time, zoom, draws.
         const char* rendererName = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
         float rightMargin = static_cast<float>(m_ScreenWidth) - kMargin;
 
@@ -912,16 +869,14 @@ void Game::RenderTitleContent()
 {
     IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
 
-    // Switch to a screen-space pixel projection for UI text.
     glm::mat4 uiProjection = MakeUIProjection(m_ScreenWidth, m_ScreenHeight);
     m_Renderer->SetProjection(uiProjection);
 
     const float screenW = static_cast<float>(m_ScreenWidth);
     const float screenH = static_cast<float>(m_ScreenHeight);
 
-    // --- "RIFT" logo --------------------------------------------------------
-    // Drawn from the renderer's headline atlas (~96 px native) so the logo
-    // is sampled near 1:1 instead of upscaled from the 24-px body atlas.
+    // "RIFT" logo drawn from the headline atlas (~96 px native) so it samples
+    // near 1:1 instead of upscaled from the 24-px body atlas.
     const std::string logoText = "RIFT";
     const float logoWidth = m_Renderer->GetTextWidthLarge(logoText, TITLE_LOGO_SCALE);
     const float logoX = std::floor((screenW - logoWidth) * 0.5f);
@@ -933,7 +888,6 @@ void Game::RenderTitleContent()
                               TITLE_LOGO_OUTLINE,
                               1.0f);
 
-    // --- Menu items ---------------------------------------------------------
     const float menuTopY = std::floor(screenH * 0.50f);
     for (int i = 0; i < TITLE_ITEM_COUNT; ++i)
     {
@@ -954,7 +908,7 @@ void Game::RenderTitleContent()
                              1.0f);
     }
 
-    // --- Version footer -----------------------------------------------------
+    // Version footer (bottom-right).
     const std::string versionText = std::string("rift ") + RIFT_VERSION;
     const float versionWidth = m_Renderer->GetTextWidth(versionText, VERSION_TEXT_SCALE);
     m_Renderer->DrawText(versionText,
@@ -974,18 +928,16 @@ void Game::RenderConfirmOverwritePrompt()
     const float screenW = static_cast<float>(m_ScreenWidth);
     const float screenH = static_cast<float>(m_ScreenHeight);
 
-    // Semi-opaque backdrop covers the title.
+    // Semi-opaque backdrop over the title.
     m_Renderer->DrawColoredRect(
         glm::vec2(0.0f, 0.0f), glm::vec2(screenW, screenH), MODAL_BACKDROP_COLOR);
 
-    // Modal box sized as a fraction of screen.
     const float boxW = std::floor(screenW * 0.55f);
     const float boxH = std::floor(screenH * 0.30f);
     const float boxX = std::floor((screenW - boxW) * 0.5f);
     const float boxY = std::floor((screenH - boxH) * 0.5f);
     m_Renderer->DrawColoredRect(glm::vec2(boxX, boxY), glm::vec2(boxW, boxH), MODAL_BOX_COLOR);
 
-    // Two-line message.
     const std::string line1 = "Starting a new game will overwrite";
     const std::string line2 = "your existing save. Continue?";
     const float l1w = m_Renderer->GetTextWidth(line1, MODAL_TEXT_SCALE);
@@ -1005,7 +957,7 @@ void Game::RenderConfirmOverwritePrompt()
                          1.0f,
                          1.0f);
 
-    // Two buttons side by side: Cancel | New Game.
+    // Cancel | New Game buttons, side by side.
     const std::string cancelLabel = "Cancel";
     const std::string confirmLabel = "New Game";
     const bool confirmSelected = (m_ConfirmPrompt.selected == MenuLogic::ConfirmChoice::Confirm);
@@ -1055,7 +1007,6 @@ void Game::RenderPauseOverlay()
     m_Renderer->DrawColoredRect(
         glm::vec2(0.0f, 0.0f), glm::vec2(screenW, screenH), PAUSE_DIM_COLOR);
 
-    // "-- PAUSED --" header.
     const std::string headerText = "-- PAUSED --";
     const float headerW = m_Renderer->GetTextWidth(headerText, PAUSE_HEADER_SCALE);
     const float headerX = std::floor((screenW - headerW) * 0.5f);
