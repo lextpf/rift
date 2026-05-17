@@ -15,6 +15,35 @@
  * @tparam Container Template for the storage container (e.g., `std::vector`).
  *                   The container is instantiated as `Container<bool>`.
  *
+ * @par Class Hierarchy
+ * CollisionMap and NavigationMap are thin semantic wrappers over the same
+ * generic boolean storage so the two grids can be edited independently
+ * without sharing state:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * classDiagram
+ *     class BoolGrid~Container~ {
+ *         +Resize(w, h)
+ *         +Set(x, y, value)
+ *         +Get(x, y) bool
+ *         +operator[](x) Column
+ *     }
+ *     class CollisionMap~Container~ {
+ *         +SetCollision(x, y, blocking)
+ *         +HasCollision(x, y) bool
+ *         +GetCollisionIndices() vector~int~
+ *     }
+ *     class NavigationMap~Container~ {
+ *         +SetNavigation(x, y, walkable)
+ *         +GetNavigation(x, y) bool
+ *         +GetNavigationIndices() vector~int~
+ *     }
+ *     BoolGrid <|-- CollisionMap
+ *     BoolGrid <|-- NavigationMap
+ * </pre>
+ * @endhtmlonly
+ *
  * @par Usage
  * @code{.cpp}
  * CollisionMap<std::vector> col;
@@ -28,6 +57,12 @@
  * @par Bounds Handling
  * - **Read**: Out-of-bounds returns `false` (passable)
  * - **Write**: Out-of-bounds silently ignored
+ *
+ * @par Design Note
+ * Collision and navigation are deliberately separate grids: a fence tile may
+ * be non-walkable for NPC pathfinding without blocking player movement, and
+ * an interactive prop may block the player without affecting NPC routes.
+ * Sharing one bit-grid for both would couple unrelated gameplay concerns.
  *
  * @see BoolGrid For full implementation details
  * @see NavigationMap Similar structure for NPC walkability
