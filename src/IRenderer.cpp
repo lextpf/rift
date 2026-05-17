@@ -93,9 +93,8 @@ void IRenderer::SuspendPerspective(bool suspend)
 
 namespace
 {
-// Fallback factor mapping a "headline 1.0x" call onto the body atlas. Backends
-// that don't implement a separate high-resolution atlas still produce visually
-// large text via this default (just blurry, like a pre-fix DrawText 4.0x call).
+// Maps a "headline 1.0x" call onto the body atlas for backends without a
+// separate high-res atlas - still visibly large, just blurry.
 constexpr float kHeadlineFallbackScale = 4.0f;
 }  // namespace
 
