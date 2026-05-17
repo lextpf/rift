@@ -20,8 +20,8 @@ constexpr float TILE_POSITION_EPS = 0.1f;    ///< Epsilon for tile coordinate ca
 
 void Game::ProcessInput(float deltaTime)
 {
-    // Console toggle is checked unconditionally so F12 can both open and
-    // close it. When the console is open it consumes all subsequent input.
+    // Console toggle is checked unconditionally so F12 both opens and closes
+    // it. When open, the console consumes all subsequent input.
     if (m_KeyConsole.JustPressed(m_Window))
     {
         m_Console.Toggle();
@@ -32,8 +32,7 @@ void Game::ProcessInput(float deltaTime)
         return;  // Suppress player movement, editor toggles, F-keys, etc.
     }
 
-    // Top-level mode dispatch: Title and Pause have their own input handlers
-    // and consume all non-console input.
+    // Title and Pause have their own input handlers and consume all non-console input.
     if (m_GameMode == GameMode::Title)
     {
         ProcessTitleInput();
@@ -56,9 +55,8 @@ void Game::ProcessInput(float deltaTime)
             m_GameMode = GameMode::Paused;
             m_PauseMenu.enabled.assign(2, true);
             m_PauseMenu.selected = 0;
-            // Reset menu-mouse state on entry so the first pause frame
-            // ignores a stale cursor parked over a menu item, and a held
-            // click doesn't immediately fire confirm.
+            // Reset menu-mouse state so the first pause frame ignores a stale
+            // cursor parked over a menu item, and a held click doesn't fire confirm.
             m_MenuLastMouseX = -1.0;
             m_MenuLastMouseY = -1.0;
             m_MenuMouseLeftPrev = true;
@@ -68,11 +66,11 @@ void Game::ProcessInput(float deltaTime)
 
     glm::vec2 moveDirection(0.0f);
 
-    // Check if shift is pressed for running (1.5x movement speed)
+    // Shift runs (1.5x base speed).
     bool isRunning = (glfwGetKey(m_Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                       glfwGetKey(m_Window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
-    // Reset copied NPC appearance when starting to run
+    // Drop any copied NPC appearance when starting to run.
     if (isRunning && m_Player.IsUsingCopiedAppearance())
     {
         m_Player.RestoreOriginalAppearance();
@@ -81,8 +79,7 @@ void Game::ProcessInput(float deltaTime)
 
     m_Player.SetRunning(isRunning);
 
-    // Standard WASD layout for 8-directional movement
-    // Y increases downward in screen space (top-left origin), so W = -Y, S = +Y
+    // WASD 8-directional. Y increases downward (top-left origin), so W = -Y, S = +Y.
     if (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS)
     {
         moveDirection.y -= 1.0f;  // Up
@@ -100,17 +97,15 @@ void Game::ProcessInput(float deltaTime)
         moveDirection.x += 1.0f;  // Right
     }
 
-    // Delegate all editor-specific key input to Editor
     if (m_Editor.IsActive())
     {
         m_Editor.ProcessInput(deltaTime, MakeEditorContext());
     }
 
-    // Resets camera zoom to 1.0x and recenters on player.
-    // In editor mode, also resets tile picker zoom and pan.
+    // Z resets camera zoom to 1.0x and recenters on player; in editor mode
+    // also resets tile picker zoom/pan.
     if (m_KeyZ.JustPressed(m_Window))
     {
-        // Recenter camera on player in gameplay mode
         if (!m_Editor.IsActive())
         {
             float worldWidth = static_cast<float>(m_TilesVisibleWidth * TILE_PIXEL_SIZE);
@@ -137,15 +132,14 @@ void Game::ProcessInput(float deltaTime)
             Logger::Info(LOG_SUBSYSTEM, "Camera zoom reset to 1.0x");
         }
 
-        // Reset tile picker state in editor mode
         if (m_Editor.IsActive())
         {
             m_Editor.ResetTilePickerState();
         }
     }
 
-    // Toggle free camera mode (Space) - camera stops following player
-    // WASD/Arrows can then pan camera while player still moves with WASD
+    // Space toggles free camera (camera stops following player; WASD/Arrows
+    // pan the camera while player still moves with WASD).
     if (!m_InDialogue && !m_DialogueManager.IsActive() && !m_DialogueSnap.active &&
         !m_Editor.IsActive())
     {
@@ -157,16 +151,14 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // Toggles bicycle mode on/off. When bicycling:
-    //   - Movement speed is 2.0x base speed
-    //   - Uses center-only collision detection
-    //   - Different sprite sheet may be used
+    // B toggles bicycle mode (2.0x base speed, center-only collision, may use
+    // a different sprite sheet).
     if (!m_Editor.IsActive() && m_KeyB.JustPressed(m_Window))
     {
         bool currentBicycling = m_Player.IsBicycling();
         bool newBicycling = !currentBicycling;
 
-        // Reset copied NPC appearance when starting to bicycle
+        // Drop any copied NPC appearance when starting to bicycle.
         if (newBicycling && m_Player.IsUsingCopiedAppearance())
         {
             m_Player.RestoreOriginalAppearance();
@@ -177,14 +169,13 @@ void Game::ProcessInput(float deltaTime)
         Logger::InfoF(LOG_SUBSYSTEM, "Bicycle: {}", newBicycling ? "ON" : "OFF");
     }
 
-    // In debug mode, X key toggles corner cutting on the collision tile under cursor
-    // The corner nearest to the mouse cursor within the tile is toggled
+    // Debug mode: X toggles corner cutting on the collision tile under the
+    // cursor (the corner nearest the cursor within the tile).
     if (m_Editor.IsDebugMode() && m_KeyX.JustPressed(m_Window))
     {
         double mouseX, mouseY;
         glfwGetCursorPos(m_Window, &mouseX, &mouseY);
 
-        // Calculate world coordinates from mouse position
         float baseWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
         float baseWorldHeight =
             static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
@@ -208,7 +199,7 @@ void Game::ProcessInput(float deltaTime)
         {
             if (m_Tilemap.GetTileCollision(tileX, tileY))
             {
-                // Determine which corner is nearest to mouse position within the tile
+                // Pick the corner nearest the cursor inside this tile.
                 float localX = worldX - (tileX * tileWidth);
                 float localY = worldY - (tileY * tileHeight);
                 float halfTile = tileWidth * 0.5f;
@@ -255,22 +246,21 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // Initiates dialogue with an NPC when
-    //   1. Player is within INTERACTION_RANGE and
-    //   2. NPC is in front of player or
-    //   3. NPC hitbox is overlapping player hitbox
+    // F starts dialogue with an NPC when:
+    //   1. Player is within INTERACTION_RANGE, AND
+    //   2. NPC is in front of player, OR
+    //   3. NPC hitbox is overlapping player hitbox.
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
         !m_DialogueSnap.active && m_KeyF.JustPressed(m_Window))
     {
         glm::vec2 playerPos = m_Player.GetPosition();
         Direction playerDir = m_Player.GetDirection();
 
-        // Calculate player's tile position
         int playerTileX = static_cast<int>(std::floor(playerPos.x / TILE_PIXEL_SIZE));
         int playerTileY =
             static_cast<int>(std::floor((playerPos.y - TILE_POSITION_EPS) / TILE_PIXEL_SIZE));
 
-        // Calculate tile position in front of player
+        // Tile directly in front of the player.
         int frontTileX = playerTileX;
         int frontTileY = playerTileY;
 
@@ -290,12 +280,12 @@ void Game::ProcessInput(float deltaTime)
                 break;
         }
 
-        // Hitbox dimensions for AABB collision (tile-sized)
+        // Tile-sized AABB hitboxes.
         const float PLAYER_HALF_W = TILE_PIXEL_SIZE * 0.5f;
         const float PLAYER_BOX_H = static_cast<float>(TILE_PIXEL_SIZE);
         const float NPC_HALF_W = TILE_PIXEL_SIZE * 0.5f;
         const float NPC_BOX_H = static_cast<float>(TILE_PIXEL_SIZE);
-        const float COLLISION_EPS = 0.05f;  // Small margin for floating-point
+        const float COLLISION_EPS = 0.05f;  // Float margin.
 
         for (size_t npcIdx = 0; npcIdx < m_NPCs.size(); ++npcIdx)
         {
@@ -303,15 +293,12 @@ void Game::ProcessInput(float deltaTime)
             glm::vec2 npcPos = npc.GetPosition();
             float distance = glm::length(npcPos - playerPos);
 
-            // Check if NPC is within interaction range
             if (distance <= INTERACTION_RANGE)
             {
-                // Calculate NPC's tile position
                 int npcTileX = static_cast<int>(std::floor(npcPos.x / TILE_PIXEL_SIZE));
                 int npcTileY =
                     static_cast<int>(std::floor((npcPos.y - TILE_POSITION_EPS) / TILE_PIXEL_SIZE));
 
-                // Check for AABB collision between player and NPC
                 float playerMinX = playerPos.x - PLAYER_HALF_W + COLLISION_EPS;
                 float playerMaxX = playerPos.x + PLAYER_HALF_W - COLLISION_EPS;
                 float playerMaxY = playerPos.y - COLLISION_EPS;
@@ -325,17 +312,16 @@ void Game::ProcessInput(float deltaTime)
                 bool isColliding = (playerMinX < npcMaxX && playerMaxX > npcMinX &&
                                     playerMinY < npcMaxY && playerMaxY > npcMinY);
 
-                // Check if NPC is on the tile in front of the player
                 bool isOnFrontTile = (npcTileX == frontTileX && npcTileY == frontTileY);
 
-                // Also check if NPC is on cardinal-adjacent tiles
+                // Cardinal-adjacent fallback (NPC one tile away, axis-aligned).
                 int tileDistX = std::abs(playerTileX - npcTileX);
                 int tileDistY = std::abs(playerTileY - npcTileY);
                 bool isCardinalAdjacent =
                     (tileDistX == 1 && tileDistY == 0) || (tileDistX == 0 && tileDistY == 1);
                 bool isSameTile = (tileDistX == 0 && tileDistY == 0);
 
-                // Verify NPC is in the correct direction
+                // Cardinal-adjacent only counts if the NPC is in player's facing direction.
                 bool isInCorrectDirection = false;
                 if (isCardinalAdjacent)
                 {
@@ -360,13 +346,12 @@ void Game::ProcessInput(float deltaTime)
                     }
                 }
 
-                // Check if NPC is very close and roughly in front
+                // Very-close, roughly-in-front fallback (more lenient direction check).
                 bool isVeryClose = (distance <= COLLISION_DISTANCE);
                 glm::vec2 toNPC = npcPos - playerPos;
                 bool isRoughlyInFront = false;
                 if (isVeryClose)
                 {
-                    // When very close, be more lenient with direction check
                     switch (playerDir)
                     {
                         case Direction::DOWN:
@@ -384,11 +369,8 @@ void Game::ProcessInput(float deltaTime)
                     }
                 }
 
-                // Start dialogue if:
-                // 1. NPC is colliding with player or
-                // 2. NPC is on front tile or
-                // 3. NPC is cardinal-adjacent in correct direction or
-                // 4. NPC is very close and roughly in front
+                // Start dialogue if: colliding, on front tile, cardinal-adjacent in
+                // facing direction, or very close + roughly in front.
                 if (isColliding || isOnFrontTile || isInCorrectDirection ||
                     (isVeryClose && isRoughlyInFront))
                 {
@@ -398,14 +380,12 @@ void Game::ProcessInput(float deltaTime)
                     m_DialogueSnap.prefersTree = npc.HasDialogueTree();
                     m_DialogueSnap.fallbackText = npc.GetDialogue();
 
-                    // Get current positions
                     playerPos = m_Player.GetPosition();
                     npcPos = npc.GetPosition();
 
-                    // Snap NPC to center of current tile
-                    // X anchor is horizontally centered, so floor(x/TILE) already gives correct
-                    // tile Y anchor is at bottom, so subtract TILE to find the tile the NPC stands
-                    // on
+                    // Snap NPC to center of its tile. X anchor is centered so
+                    // floor(x/TILE) already gives the right tile; Y anchor is at
+                    // the bottom, so subtract TILE to find the standing tile.
                     int snapTileY = static_cast<int>(
                         std::round((npcPos.y - TILE_PIXEL_SIZE) / TILE_PIXEL_SIZE));
 
@@ -417,31 +397,27 @@ void Game::ProcessInput(float deltaTime)
                         static_cast<float>(m_DialogueSnap.npcTileY * TILE_PIXEL_SIZE +
                                            TILE_PIXEL_SIZE));
 
-                    // Recalculate player tile position after getting fresh position
+                    // Recompute player tile from fresh position.
                     playerTileX = static_cast<int>(std::floor(playerPos.x / TILE_PIXEL_SIZE));
                     playerTileY = static_cast<int>(
                         std::floor((playerPos.y - TILE_POSITION_EPS) / TILE_PIXEL_SIZE));
 
-                    // Use the new NPC tile coordinates for direction calculation
-                    // This ensures we look for a spot relative to where the NPC ended up
+                    // Use the new NPC tile coordinates so we look for a snap spot
+                    // relative to where the NPC ended up.
                     npcTileY = snapTileY;
 
-                    // Calculate direction from NPC to player
+                    // Direction NPC -> player.
                     int dx = playerTileX - npcTileX;
                     int dy = playerTileY - npcTileY;
 
-                    // If diagonal, snap to nearest cardinal direction
-                    // Prefer the direction with larger absolute value
-                    // TODO: Extract this dialogue-snap direction calculation
-                    // (cardinal-aligned + diagonal->cardinal fallback) into a
-                    // FindDialogueSnapTile helper alongside the existing
-                    // DialogueSnapState code so the snap rules live next to
-                    // the state they drive.
+                    // Diagonal snaps to the dominant cardinal axis.
+                    // TODO: Extract this (cardinal-aligned + diagonal->cardinal
+                    // fallback) into a FindDialogueSnapTile helper next to the
+                    // DialogueSnapState code so the snap rules live with their state.
                     int finalDx = 0;
                     int finalDy = 0;
                     if (dx != 0 && dy != 0)
                     {
-                        // Diagonal, snap to nearest cardinal
                         if (std::abs(dx) > std::abs(dy))
                         {
                             finalDx = (dx > 0) ? 1 : -1;
@@ -455,31 +431,27 @@ void Game::ProcessInput(float deltaTime)
                     }
                     else if (dx != 0)
                     {
-                        // Horizontal only
                         finalDx = (dx > 0) ? 1 : -1;
                         finalDy = 0;
                     }
                     else if (dy != 0)
                     {
-                        // Vertical only
                         finalDx = 0;
                         finalDy = (dy > 0) ? 1 : -1;
                     }
                     else
                     {
-                        // Same tile, default to down
+                        // Same tile: default to down.
                         finalDx = 0;
                         finalDy = 1;
                     }
 
-                    // Find nearest tile (round instead of floor so player doesn't snap when
-                    // slightly off-center)
+                    // Round, not floor, so the player doesn't snap when slightly off-center.
                     int currentPlayerTileX = static_cast<int>(
                         std::round((playerPos.x - TILE_PIXEL_SIZE / 2) / TILE_PIXEL_SIZE));
                     int currentPlayerTileY = static_cast<int>(
                         std::round((playerPos.y - TILE_PIXEL_SIZE) / TILE_PIXEL_SIZE));
 
-                    // Find a valid tile for the player to stand on during dialogue
                     glm::ivec2 snapTile = FindDialogueSnapTile(npcTileX,
                                                                npcTileY,
                                                                currentPlayerTileX,
@@ -500,31 +472,27 @@ void Game::ProcessInput(float deltaTime)
                                                          TILE_PIXEL_SIZE));
                     }
 
-                    // Make NPC face the player
+                    // NPC faces player.
                     glm::vec2 npcToPlayer = playerTargetPos - npcTargetPos;
                     NPCDirection npcFacing = NPCDirection::DOWN;
                     if (std::abs(npcToPlayer.x) > std::abs(npcToPlayer.y))
                     {
-                        // Horizontal direction
                         npcFacing = (npcToPlayer.x > 0) ? NPCDirection::RIGHT : NPCDirection::LEFT;
                     }
                     else
                     {
-                        // Vertical direction
                         npcFacing = (npcToPlayer.y > 0) ? NPCDirection::DOWN : NPCDirection::UP;
                     }
 
-                    // Make player face the NPC
+                    // Player faces NPC.
                     glm::vec2 playerToNPC = npcTargetPos - playerTargetPos;
                     Direction playerFacing = Direction::DOWN;
                     if (std::abs(playerToNPC.x) > std::abs(playerToNPC.y))
                     {
-                        // Horizontal direction
                         playerFacing = (playerToNPC.x > 0) ? Direction::RIGHT : Direction::LEFT;
                     }
                     else
                     {
-                        // Vertical direction
                         playerFacing = (playerToNPC.y > 0) ? Direction::DOWN : Direction::UP;
                     }
 
@@ -581,29 +549,25 @@ void Game::ProcessInput(float deltaTime)
 
 void Game::ProcessDialogueInput()
 {
-    // Handle branching dialogue tree input
     if (m_DialogueManager.IsActive())
     {
-        // Navigate options with Up/Down or W/S
+        // Up/Down or W/S navigate options; Enter/Space confirm; Esc force-closes.
         if (m_KeyDialogueUp.JustPressed(m_Window))
             m_DialogueManager.SelectPrevious();
 
         if (m_KeyDialogueDown.JustPressed(m_Window))
             m_DialogueManager.SelectNext();
 
-        // Confirm selection with Enter or Space
         if (m_KeyDialogueEnterTree.JustPressed(m_Window))
             ConfirmOrAdvanceTreeDialogue();
 
         if (m_KeyDialogueSpaceTree.JustPressed(m_Window))
             ConfirmOrAdvanceTreeDialogue();
 
-        // Escape to force-close dialogue
         if (m_KeyDialogueEscapeTree.JustPressed(m_Window))
             ForceCloseTreeDialogue();
     }
 
-    // Close simple dialogue
     if (m_InDialogue)
     {
         if (m_KeyDialogueEnter.JustPressed(m_Window))
@@ -619,26 +583,21 @@ void Game::ProcessDialogueInput()
 
 void Game::ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime)
 {
-    // Only process player movement if not in editor mode, not in dialogue,
-    // and the developer console is closed.
+    // Gate on: not in editor, not in dialogue, console closed.
     if (!m_Editor.IsActive() && !m_InDialogue && !m_DialogueManager.IsActive() &&
         !m_DialogueSnap.active && !m_Console.IsOpen())
     {
-        // Remember previous position for resolving collisions with NPCs
         m_PlayerPreviousPosition = m_Player.GetPosition();
 
-        // Collect NPC positions for collision checking (pre-allocated member avoids per-frame
-        // alloc)
+        // Pre-allocated member avoids a per-frame alloc.
         m_NpcPositions.clear();
         for (const auto& npc : m_NPCs)
         {
             m_NpcPositions.push_back(npc.GetPosition());
         }
 
-        // No-clip (developer console): bypass tile + NPC collision by passing
-        // null pointers; PlayerCharacter::Move integrates raw input when the
-        // tilemap is null. CollisionResolver::HandleIdleSnap also handles
-        // null gracefully (PlayerCharacter.cpp:563, CollisionResolver.cpp:1270).
+        // No-clip bypasses tile + NPC collision via null pointers; Move() and
+        // CollisionResolver::HandleIdleSnap both handle null safely.
         const Tilemap* tilemap = m_Player.IsNoClip() ? nullptr : &m_Tilemap;
         const std::vector<glm::vec2>* npcPositions =
             m_Player.IsNoClip() ? nullptr : &m_NpcPositions;
@@ -646,14 +605,12 @@ void Game::ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime)
     }
     else if (m_InDialogue || m_DialogueSnap.active)
     {
-        // Stop player movement during dialogue
         m_Player.Stop();
     }
 }
 
 void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset)
 {
-    // Retrieve Game instance from window user pointer
     Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
     if (!game)
     {
@@ -663,9 +620,8 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
     // Console takes scroll exclusively while open (scrollback navigation).
     if (game->m_Console.IsOpen())
     {
-        // Suggestion dropdown gets first crack at the wheel: if the cursor
-        // is over the dropdown, the wheel scrolls suggestions instead of
-        // scrollback.
+        // Suggestion dropdown gets first crack: if the cursor is over it, the
+        // wheel scrolls suggestions instead of scrollback.
         double mx = 0.0;
         double my = 0.0;
         glfwGetCursorPos(window, &mx, &my);
@@ -676,22 +632,20 @@ void Game::ScrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset
         return;
     }
 
-    // Delegate editor-specific scroll handling
     if (game->m_Editor.IsActive())
     {
         game->m_Editor.HandleScroll(yoffset, game->MakeEditorContext());
-        // If tile picker is open, editor handles all scroll
+        // Tile picker swallows all scroll when open.
         if (game->m_Editor.IsShowTilePicker())
         {
             return;
         }
     }
 
-    // Check for Ctrl modifier
     bool ctrlPressed = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
-    // Camera zoom with Ctrl+scroll
+    // Ctrl+scroll zooms the camera.
     if (ctrlPressed)
     {
         float baseWorldWidth =
@@ -732,9 +686,8 @@ void Game::CharCallback(GLFWwindow* window, unsigned int codepoint)
 
 void Game::PumpConsoleKeys()
 {
-    // Local debounced toggles for the keys the console consumes. Held inside
-    // this method (function-local statics) so they only allocate when the
-    // console is actually open.
+    // Function-local statics for the keys the console consumes - only allocate
+    // once the console is open.
     static KeyToggle<GLFW_KEY_ENTER> kEnter;
     static KeyToggle<GLFW_KEY_BACKSPACE> kBackspace;
     static KeyToggle<GLFW_KEY_DELETE> kDelete;
@@ -777,9 +730,8 @@ void Game::PumpConsoleKeys()
     if (kEscape.JustPressed(m_Window))
         m_Console.OnEscape();
 
-    // Mouse hover/click on the suggestion dropdown. Hover keeps highlight
-    // synced with the cursor; click splices the chosen suggestion into the
-    // input (same path as Tab on the highlighted row).
+    // Suggestion dropdown: hover keeps the highlight under the cursor; click
+    // splices the chosen suggestion into the input (same path as Tab).
     double mouseX = 0.0;
     double mouseY = 0.0;
     glfwGetCursorPos(m_Window, &mouseX, &mouseY);
@@ -810,7 +762,7 @@ void Game::CloseSimpleDialogue()
 
 void Game::ConfirmOrAdvanceTreeDialogue()
 {
-    // If typewriter is still revealing text, skip to full reveal first
+    // If the typewriter is still revealing, skip to full reveal first.
     if (m_DialogueCharReveal >= 0.0f)
     {
         m_DialogueCharReveal = -1.0f;
@@ -848,7 +800,7 @@ glm::ivec2 Game::FindDialogueSnapTile(int npcTileX,
                                       int preferredDx,
                                       int preferredDy) const
 {
-    // Validate a candidate tile: must be in bounds, not the NPC's tile, not blocked.
+    // Valid: in bounds, not the NPC's tile, not blocked.
     auto isValidSnapTile = [&](int tx, int ty)
     {
         if (tx < 0 || ty < 0 || tx >= m_Tilemap.GetMapWidth() || ty >= m_Tilemap.GetMapHeight())
@@ -862,7 +814,7 @@ glm::ivec2 Game::FindDialogueSnapTile(int npcTileX,
         return !m_Tilemap.GetTileCollision(tx, ty);
     };
 
-    // Check if player is already on a valid cardinal-adjacent tile
+    // If the player is already on a valid cardinal-adjacent tile, stay put.
     if (playerTileX != npcTileX || playerTileY != npcTileY)
     {
         if (isValidSnapTile(playerTileX, playerTileY))
@@ -878,14 +830,14 @@ glm::ivec2 Game::FindDialogueSnapTile(int npcTileX,
         }
     }
 
-    // Ensure we have a non-zero preferred direction
+    // Ensure non-zero preferred direction (default: down).
     if (preferredDx == 0 && preferredDy == 0)
     {
         preferredDx = 0;
         preferredDy = 1;
     }
 
-    // Try preferred direction first, then all four cardinals
+    // Try preferred direction first, then all four cardinals.
     struct CardinalDir
     {
         int dx, dy;
@@ -912,12 +864,12 @@ glm::ivec2 Game::FindDialogueSnapTile(int npcTileX,
         }
     }
 
-    // No cardinal direction worked. Fall back to current player tile if valid.
+    // No cardinal worked: fall back to the current player tile if it's valid.
     if (isValidSnapTile(playerTileX, playerTileY))
     {
         return glm::ivec2(playerTileX, playerTileY);
     }
 
-    // No safe tile found at all.
+    // No safe tile found.
     return glm::ivec2(-1, -1);
 }
