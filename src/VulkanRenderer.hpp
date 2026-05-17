@@ -44,6 +44,28 @@ struct GLFWwindow;
  * Unlike OpenGL's implicit state machine, Vulkan requires explicit management
  * of all GPU resources. The renderer maintains:
  *
+ * @par Frame Lifecycle
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart LR
+ *     classDef acquire fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *     classDef record  fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *     classDef draw    fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
+ *     classDef submit  fill:#7f1d1d,stroke:#ef4444,color:#e2e8f0
+ *     classDef present fill:#2e1f5e,stroke:#8b5cf6,color:#e2e8f0
+ *
+ *     A[BeginFrame]:::acquire --> B[Wait fence + acquire image]:::acquire
+ *     B --> C[Begin command buffer]:::record
+ *     C --> D[Begin render pass]:::record
+ *     D --> E[DrawSprite / DrawText writes vertices]:::draw
+ *     E --> F[FlushSpriteBatch on texture change]:::draw
+ *     F --> E
+ *     E --> G[EndFrame]:::submit
+ *     G --> H[End render pass + command buffer]:::submit
+ *     H --> I[Submit + present]:::present
+ * </pre>
+ * @endhtmlonly
+ *
  * @par Core Objects
  * | Object               | Purpose                              |
  * |----------------------|--------------------------------------|
