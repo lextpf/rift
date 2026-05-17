@@ -241,6 +241,38 @@ private:
  * of Game so handlers (defined in ConsoleCommands.cpp) can directly reach
  * private members like m_Player, m_GameState, m_TimeManager, m_Tilemap and
  * m_NPCs without forcing those onto Game's public API.
+ *
+ * @par Visibility State Machine
+ * F12 advances `Closed -> Half -> Full -> Closed`. `Half` overlays the top
+ * 50% of the screen so the world is still visible; `Full` covers the entire
+ * framebuffer for long ops sessions:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     classDef closed fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *     classDef half   fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
+ *     classDef full   fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *
+ *     state "Closed" as C:::closed
+ *     state "Half (top 50%)" as H:::half
+ *     state "Full (entire frame)" as F:::full
+ *
+ *     [*] --> C
+ *     C --> H: F12 (or Open)
+ *     H --> F: F12
+ *     F --> C: F12 (or Close, Esc)
+ *     H --> C: Close, Esc
+ * </pre>
+ * @endhtmlonly
+ *
+ * @par Submission Flow
+ * Each input event hook (OnChar, OnBackspace, ...) mutates the ConsoleBuffer,
+ * then OnEnter splits the line into tokens, looks up the verb in the
+ * registry, and dispatches to its handler. Handlers print success/error
+ * messages back through Buffer().Print() / Buffer().PrintError().
+ *
+ * @see ConsoleBuffer, ConsoleCommandRegistry, ConsoleCommands.hpp
  */
 class Console
 {
