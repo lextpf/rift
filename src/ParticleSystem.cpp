@@ -18,9 +18,7 @@ namespace
 constexpr const char* LOG_SUBSYSTEM = "Particle";
 }  // namespace
 
-// ---------------------------------------------------------------------------
-// Particle behavior dispatch
-// ---------------------------------------------------------------------------
+// Particle behavior dispatch.
 
 /// Context passed to per-type Update specializations.
 struct ParticleUpdateContext
@@ -52,9 +50,7 @@ struct ParticleBehavior
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx);
 };
 
-// ---------------------------------------------------------------------------
-// Firefly
-// ---------------------------------------------------------------------------
+// Firefly.
 
 template <>
 struct ParticleBehavior<ParticleType::Firefly>
@@ -138,9 +134,7 @@ struct ParticleBehavior<ParticleType::Firefly>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Rain
-// ---------------------------------------------------------------------------
+// Rain.
 
 template <>
 struct ParticleBehavior<ParticleType::Rain>
@@ -197,9 +191,7 @@ struct ParticleBehavior<ParticleType::Rain>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Snow
-// ---------------------------------------------------------------------------
+// Snow.
 
 template <>
 struct ParticleBehavior<ParticleType::Snow>
@@ -255,9 +247,7 @@ struct ParticleBehavior<ParticleType::Snow>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Fog
-// ---------------------------------------------------------------------------
+// Fog.
 
 template <>
 struct ParticleBehavior<ParticleType::Fog>
@@ -318,9 +308,7 @@ struct ParticleBehavior<ParticleType::Fog>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Sparkles
-// ---------------------------------------------------------------------------
+// Sparkles.
 
 template <>
 struct ParticleBehavior<ParticleType::Sparkles>
@@ -388,9 +376,7 @@ struct ParticleBehavior<ParticleType::Sparkles>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Wisp
-// ---------------------------------------------------------------------------
+// Wisp.
 
 template <>
 struct ParticleBehavior<ParticleType::Wisp>
@@ -502,9 +488,7 @@ struct ParticleBehavior<ParticleType::Wisp>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Lantern
-// ---------------------------------------------------------------------------
+// Lantern.
 
 template <>
 struct ParticleBehavior<ParticleType::Lantern>
@@ -552,9 +536,7 @@ struct ParticleBehavior<ParticleType::Lantern>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Sunshine
-// ---------------------------------------------------------------------------
+// Sunshine.
 
 template <>
 struct ParticleBehavior<ParticleType::Sunshine>
@@ -672,9 +654,7 @@ struct ParticleBehavior<ParticleType::Sunshine>
     }
 };
 
-// ---------------------------------------------------------------------------
-// DriftingLeaf (ambient cozy: small leaf drifting on prevailing wind)
-// ---------------------------------------------------------------------------
+// DriftingLeaf - small leaf drifting on prevailing wind.
 
 template <>
 struct ParticleBehavior<ParticleType::DriftingLeaf>
@@ -771,9 +751,7 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
     }
 };
 
-// ---------------------------------------------------------------------------
-// DustMote (ambient cozy: tiny golden mote in sunbeams)
-// ---------------------------------------------------------------------------
+// DustMote - tiny golden mote in sunbeams.
 
 template <>
 struct ParticleBehavior<ParticleType::DustMote>
@@ -830,9 +808,7 @@ struct ParticleBehavior<ParticleType::DustMote>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Pollen (ambient cozy: yellow drift during golden hour)
-// ---------------------------------------------------------------------------
+// Pollen - yellow drift during golden hour.
 
 template <>
 struct ParticleBehavior<ParticleType::Pollen>
@@ -922,9 +898,7 @@ struct ParticleBehavior<ParticleType::Pollen>
     }
 };
 
-// ---------------------------------------------------------------------------
-// CherryBlossom - drifting pink petals, gentle spiral, additive blend
-// ---------------------------------------------------------------------------
+// CherryBlossom - drifting pink petals, gentle spiral, additive blend.
 
 template <>
 struct ParticleBehavior<ParticleType::CherryBlossom>
@@ -1082,9 +1056,7 @@ struct ParticleBehavior<ParticleType::CherryBlossom>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Ash - gray particles, slow fall + horizontal flutter, alpha blend
-// ---------------------------------------------------------------------------
+// Ash - gray particles, slow fall + horizontal flutter, alpha blend.
 
 template <>
 struct ParticleBehavior<ParticleType::Ash>
@@ -1122,9 +1094,7 @@ struct ParticleBehavior<ParticleType::Ash>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Ember - orange particles rising upward, additive flicker
-// ---------------------------------------------------------------------------
+// Ember - orange particles rising upward, additive flicker.
 
 template <>
 struct ParticleBehavior<ParticleType::Ember>
@@ -1165,9 +1135,7 @@ struct ParticleBehavior<ParticleType::Ember>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Sand - fast horizontal wind-driven streaks, alpha blend
-// ---------------------------------------------------------------------------
+// Sand - fast horizontal wind-driven streaks, alpha blend.
 
 template <>
 struct ParticleBehavior<ParticleType::Sand>
@@ -1203,9 +1171,7 @@ struct ParticleBehavior<ParticleType::Sand>
     }
 };
 
-// ---------------------------------------------------------------------------
-// Dispatch tables - auto-generated from ParticleBehavior specializations
-// ---------------------------------------------------------------------------
+// Dispatch tables - auto-generated from ParticleBehavior specializations.
 
 using UpdateFn = void (*)(Particle&, const ParticleUpdateContext&);
 using SpawnFn = void (*)(int, const ParticleZone&, ParticleSpawnContext&);
@@ -1242,9 +1208,7 @@ const auto kSpawnDispatch = MakeSpawnTable(Indices{});
 
 }  // namespace
 
-// ---------------------------------------------------------------------------
-// ParticleSystem implementation
-// ---------------------------------------------------------------------------
+// ParticleSystem implementation.
 
 ParticleSystem::ParticleSystem()
     : m_Zones(nullptr),    // Particle zones from tilemap
