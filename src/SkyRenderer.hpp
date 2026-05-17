@@ -16,6 +16,7 @@ class TimeManager;
  * @struct Star
  * @brief Represents a single star in the night sky with twinkling animation.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
  *
  * Stars are positioned in normalized sky-space coordinates (0-1) and rendered
  * at screen-space positions. Each star has independent twinkle animation
@@ -48,6 +49,7 @@ struct Star
  * @struct LightRay
  * @brief Represents a single light ray emanating from the sun or moon.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
  *
  * Light rays create a "god rays" effect radiating outward from the light source.
  * Each ray has its own angle, length, and animation phase for organic movement.
@@ -82,6 +84,7 @@ struct LightRay
  * @struct ShootingStar
  * @brief Represents an animated shooting star (meteor) streaking across the sky.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
  *
  * Shooting stars spawn randomly during night hours and travel in a straight line
  * until their lifetime expires. They fade in at spawn and fade out at death.
@@ -114,6 +117,7 @@ struct ShootingStar
  * @struct DewSparkle
  * @brief Represents a glinting dew drop catching early morning sunlight.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
  *
  * Dew sparkles appear during dawn/morning hours in the lower portion of the
  * screen, simulating sunlight catching morning dew on grass and foliage.
@@ -133,6 +137,7 @@ struct DewSparkle
 /**
  * @struct VisibleStar
  * @brief Cached per-frame screen data for one rendered foreground star.
+ * @ingroup Effects
  *
  * Populated during the compute pass in SkyRenderer::RenderStars and consumed
  * by two emit passes (glow, then core) so the sprite batch doesn't alternate
