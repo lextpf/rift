@@ -21,10 +21,9 @@ constexpr const char* ANSI_WARN = "\x1b[33m";          // Yellow
 constexpr const char* ANSI_ERROR = "\x1b[91m";         // Bright red
 constexpr const char* ANSI_FATAL = "\x1b[97;41m";      // White on red
 
-// Subsystem palette - 24 readable 256-colour codes spread across the cool
-// half of the spectrum (greens / cyans / blues / magentas / pinks). Yellow
-// and red are deliberately omitted so the subsystem tag never collides with
-// the WARN / ERROR / FATAL body colours.
+// 24 readable 256-colour codes across the cool half of the spectrum
+// (greens/cyans/blues/magentas/pinks). Yellow and red are omitted so the
+// subsystem tag never collides with WARN/ERROR/FATAL body colours.
 constexpr const char* SUBSYSTEM_PALETTE[] = {
     "\x1b[38;5;39m",   // azure blue
     "\x1b[38;5;41m",   // spring green
@@ -63,8 +62,7 @@ constexpr std::string_view TAG_FATAL = "[FATAL]";
 
 const char* AnsiColorForSubsystem(std::string_view subsystem)
 {
-    // Stable FNV-style hash so a given subsystem name always picks the same
-    // palette slot across runs.
+    // FNV-style hash - stable across runs, so each subsystem keeps the same color.
     std::size_t hash = 2166136261u;
     for (char c : subsystem)
     {
