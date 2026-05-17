@@ -13,23 +13,15 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Player";
 
-// Width of each player sprite frame in pixels.
 constexpr float SPRITE_WIDTH_F = 32.0f;
-
-// Height of each player sprite frame in pixels.
 constexpr float SPRITE_HEIGHT_F = 32.0f;
-
-// Half the sprite height (for split rendering).
-constexpr float SPRITE_HALF_HEIGHT = 16.0f;
-
-// Number of walking animation frames per direction.
+constexpr float SPRITE_HALF_HEIGHT = 16.0f;  // Top/bottom split height.
 constexpr int WALK_FRAMES = 3;
 }  // namespace
 
-/* Animation frame duration in seconds (time per frame). */
-const float PlayerCharacter::ANIMATION_SPEED = 0.15f;
+const float PlayerCharacter::ANIMATION_SPEED = 0.15f;  // Seconds per animation frame.
 
-/* Static registry mapping (CharacterType, spriteType) -> asset path. */
+// (CharacterType, spriteType) -> asset path.
 std::map<PlayerCharacter::CharacterAssetKey, std::string> PlayerCharacter::s_CharacterAssets;
 
 PlayerCharacter::PlayerCharacter()
@@ -132,8 +124,7 @@ bool PlayerCharacter::LoadBicycleSpriteSheet(const std::string& path)
 
 void PlayerCharacter::UploadTextures(IRenderer& renderer)
 {
-    // Upload all sprite textures to the renderer
-    // This is needed when switching renderers to recreate textures in the new context
+    // Needed when switching renderers - textures must be recreated in the new context.
     renderer.UploadTexture(m_SpriteSheet);
     renderer.UploadTexture(m_RunningSpriteSheet);
     renderer.UploadTexture(m_BicycleSpriteSheet);
@@ -150,7 +141,6 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 {
     auto typeName = EnumTraits<CharacterType>::ToString(characterType);
 
-    // Lambda: Resolve asset path from registry
     auto getAssetPath = [characterType, typeName](const std::string& spriteType) -> std::string
     {
         auto key = CharacterAssetKey{characterType, spriteType};
@@ -158,12 +148,11 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
         if (it != s_CharacterAssets.end())
             return it->second;
 
-        // Asset not registered
         Logger::ErrorF(LOG_SUBSYSTEM, "No asset registered for {} {}", typeName, spriteType);
         return "";
     };
 
-    // Lambda: Attempt load with fallback to parent directory
+    // Try the path, then fall back to parent directory.
     auto tryLoad = [](Texture& target, const std::string& path) -> bool
     {
         if (path.empty())
@@ -171,19 +160,18 @@ bool PlayerCharacter::SwitchCharacter(CharacterType characterType)
 
         if (target.LoadFromFile(path))
             return true;
-        return target.LoadFromFile("../" + path);  // Try parent directory
+        return target.LoadFromFile("../" + path);
     };
 
+    // Load into temporaries so state only changes on success.
     Texture newWalking;
     Texture newRunning;
     Texture newBicycle;
 
-    // Load all sprite sheets into temporaries so state only changes on success
     bool walkingLoaded = tryLoad(newWalking, getAssetPath("Walking"));
     bool runningLoaded = tryLoad(newRunning, getAssetPath("Running"));
     bool bicycleLoaded = tryLoad(newBicycle, getAssetPath("Bicycle"));
 
-    // Validate required sprites loaded
     if (!walkingLoaded || !runningLoaded)
     {
         Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load character sprites for {}", typeName);
