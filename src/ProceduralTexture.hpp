@@ -14,6 +14,7 @@ using Pixel = std::array<uint8_t, 4>;
 
 /**
  * @brief Generate an RGBA pixel buffer by evaluating a functor at every texel.
+ * @ingroup Rendering
  *
  * Allocates `w * h * 4` bytes in @p pixels and fills each texel by calling
  * @p fn(x, y, w, h), which must return a `Pixel` (std::array<uint8_t, 4>).
@@ -22,20 +23,23 @@ using Pixel = std::array<uint8_t, 4>;
  * @param[out] pixels Output buffer (resized automatically).
  * @param      w      Texture width in texels.
  * @param      h      Texture height in texels.
- *
  * @param      fn     Per-texel color function.
  *
- * @pre w > 0 and h > 0. Negative dimensions are
- * converted to size_t during
+ * @pre w > 0 and h > 0. Negative dimensions are converted to size_t during
  *      allocation and would request an invalidly large buffer.
  *
- *
- * @par Example
- * @code{.cpp} std::vector<unsigned char> pixels; GeneratePixels(pixels, 64, 64,
- * [](int x, int y, int w, int h) -> Pixel { float dx = x - w / 2.0f, dy = y - h / 2.0f; float d =
- * std::sqrt(dx * dx + dy * dy) / (w / 2.0f); auto a = static_cast<uint8_t>(std::exp(-d * d * 3.0f)
- * * 255); return {255, 255, 255, a};
- * });
+ * @par Example: radial gaussian falloff
+ * @code{.cpp}
+ * std::vector<unsigned char> pixels;
+ * GeneratePixels(pixels, 64, 64,
+ *     [](int x, int y, int w, int h) -> Pixel
+ *     {
+ *         float dx = x - w / 2.0f;
+ *         float dy = y - h / 2.0f;
+ *         float d  = std::sqrt(dx * dx + dy * dy) / (w / 2.0f);
+ *         auto  a  = static_cast<uint8_t>(std::exp(-d * d * 3.0f) * 255);
+ *         return {255, 255, 255, a};  // white with gaussian alpha
+ *     });
  * @endcode
  */
 template <typename PixelFn>
