@@ -26,6 +26,33 @@ class NonPlayerCharacter;
  * - Executing consequences (flag changes)
  * - Providing UI state for rendering (selected option, visible choices)
  *
+ * @par Conversation Flow
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     classDef idle fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *     classDef active fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *     classDef done fill:#4a2020,stroke:#ef4444,color:#e2e8f0
+ *
+ *     state "Idle" as Idle:::idle
+ *     state "Showing Node" as Show:::active
+ *     state "Awaiting Input" as Wait:::active
+ *     state "Executing Consequences" as Exec:::active
+ *     state "Ended" as Done:::done
+ *
+ *     [*] --> Idle
+ *     Idle --> Show: StartDialogue(npc)
+ *     Show --> Wait: RefreshVisibleOptions
+ *     Wait --> Wait: SelectPrevious / SelectNext
+ *     Wait --> Exec: ConfirmSelection
+ *     Exec --> Show: nextNodeId not empty
+ *     Exec --> Done: nextNodeId empty
+ *     Show --> Done: EndDialogue
+ *     Wait --> Done: EndDialogue
+ *     Done --> Idle
+ * </pre>
+ * @endhtmlonly
+ *
  * @par Usage Example
  * @code{.cpp}
  * DialogueManager d;
