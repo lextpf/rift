@@ -14,11 +14,11 @@
  * a cosmetic backdrop (sky, particles, animated tiles, and PostFX) behind
  * the menu.
  *
- * | Mode    | Gameplay simulation | Cosmetic update | World render      | Input source |
- * |---------|---------------------|-----------------|-------------------|--------------------------|
- * | Title   | No                  | Yes             | Title backdrop    | Title menu | | Playing |
- * Yes                 | Yes             | Gameplay world    | Player + editor/dialogue | | Paused
- * | No                  | No              | Frozen world      | Pause menu               |
+ * | Mode    | Gameplay sim | Cosmetic update | World render   | Input source             |
+ * |---------|--------------|-----------------|----------------|--------------------------|
+ * | Title   | No           | Yes             | Title backdrop | Title menu               |
+ * | Playing | Yes          | Yes             | Gameplay world | Player + editor/dialogue |
+ * | Paused  | No           | No              | Frozen world   | Pause menu               |
  */
 enum class GameMode : uint8_t
 {
