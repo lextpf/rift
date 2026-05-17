@@ -37,14 +37,13 @@ namespace
 constexpr const char* LOG_SUBSYSTEM = "Render";
 }  // namespace
 
-// Ensure Vulkan functions are loaded
 #ifdef _WIN32
 namespace
 {
 HMODULE g_VulkanLib = nullptr;
 }  // namespace
 
-// Try to load vulkan-1.dll explicitly
+// Explicitly load vulkan-1.dll.
 static bool LoadVulkanLibrary()
 {
     g_VulkanLib = LoadLibraryA("vulkan-1.dll");
@@ -165,8 +164,8 @@ bool VulkanRenderer::Init()
         LoadFont();
         CreateCommandBuffers();
 
-        // Populate the RendererInfo cache returned by GetBackendInfo. The
-        // physical device was selected in PickPhysicalDevice() above.
+        // Populate RendererInfo for GetBackendInfo (physical device was
+        // selected in PickPhysicalDevice above).
         {
             VkPhysicalDeviceProperties props{};
             vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
@@ -231,16 +230,15 @@ void VulkanRenderer::Shutdown()
 {
     if (m_Device != VK_NULL_HANDLE)
     {
-        // Wait for device to be idle before destroying
+        // Idle the device before destroying anything.
         VkResult waitResult = vkDeviceWaitIdle(m_Device);
         if (waitResult != VK_SUCCESS && waitResult != VK_ERROR_DEVICE_LOST)
         {
-            // Device might already be lost/invalid, continue with cleanup
+            // Device may already be lost/invalid; continue cleanup anyway.
             Logger::WarnF(
                 LOG_SUBSYSTEM, "vkDeviceWaitIdle failed: {}", static_cast<int>(waitResult));
         }
 
-        // Unmap vertex buffers if mapped
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
             if (m_VertexBuffersMapped[i])
@@ -250,8 +248,8 @@ void VulkanRenderer::Shutdown()
             }
         }
 
-        // Cleanup uploaded textures (Texture objects that hold Vulkan resources)
-        // This must happen before destroying the device
+        // Release Vulkan resources owned by uploaded Texture objects. Must run
+        // before destroying the device.
         for (const Texture* tex : m_UploadedTextures)
         {
             if (tex)
@@ -262,17 +260,15 @@ void VulkanRenderer::Shutdown()
         m_UploadedTextures.clear();
         m_UploadedTextureSet.clear();
 
-        // Texture cache stores non-owning references to Texture-managed Vulkan resources.
-        // DestroyVulkanTexture() above already released owned resources, so only clear cache.
+        // Cache only holds non-owning references; DestroyVulkanTexture above
+        // already released the owned resources.
         m_TextureCache.clear();
 
-        // Cleanup texture sampler
         if (m_TextureSampler != VK_NULL_HANDLE)
         {
             vkDestroySampler(m_Device, m_TextureSampler, nullptr);
         }
 
-        // Cleanup buffers
         if (m_IndexBuffer != VK_NULL_HANDLE)
         {
             vkDestroyBuffer(m_Device, m_IndexBuffer, nullptr);
@@ -293,7 +289,6 @@ void VulkanRenderer::Shutdown()
             }
         }
 
-        // Cleanup white texture
         if (m_WhiteTextureSampler != VK_NULL_HANDLE)
         {
             vkDestroySampler(m_Device, m_WhiteTextureSampler, nullptr);
@@ -311,8 +306,7 @@ void VulkanRenderer::Shutdown()
             vkFreeMemory(m_Device, m_WhiteTextureImageMemory, nullptr);
         }
 
-        // Cleanup glyph textures
-        // Skip glyphs that use the white texture as fallback (avoid double-destroy)
+        // Skip glyphs that use the white texture as fallback (avoid double-destroy).
         for (auto& [c, glyph] : m_Glyphs)
         {
             if (glyph.imageView != VK_NULL_HANDLE && glyph.imageView != m_WhiteTextureImageView)
@@ -330,10 +324,9 @@ void VulkanRenderer::Shutdown()
         }
         m_Glyphs.clear();
 
-        // Cleanup descriptor set cache (descriptor sets are freed when pool is destroyed)
+        // Descriptor sets are freed when the pool is destroyed; just drop the cache.
         m_DescriptorSetCache.clear();
 
-        // Cleanup descriptor pool
         if (m_DescriptorPool != VK_NULL_HANDLE)
         {
             vkDestroyDescriptorPool(m_Device, m_DescriptorPool, nullptr);
@@ -411,7 +404,7 @@ void VulkanRenderer::Shutdown()
     if (m_Instance != VK_NULL_HANDLE)
     {
         vkDestroyInstance(m_Instance, nullptr);
-        m_Instance = VK_NULL_HANDLE;  // Prevent double-destroy on teardown
+        m_Instance = VK_NULL_HANDLE;  // Prevent double-destroy on teardown.
     }
 
 #ifdef _WIN32
@@ -425,21 +418,18 @@ void VulkanRenderer::Shutdown()
 
 void VulkanRenderer::CleanupSwapchain()
 {
-    // Cleanup framebuffers
     for (auto framebuffer : m_SwapchainFramebuffers)
     {
         vkDestroyFramebuffer(m_Device, framebuffer, nullptr);
     }
     m_SwapchainFramebuffers.clear();
 
-    // Cleanup image views
     for (auto imageView : m_SwapchainImageViews)
     {
         vkDestroyImageView(m_Device, imageView, nullptr);
     }
     m_SwapchainImageViews.clear();
 
-    // Cleanup swapchain
     if (m_Swapchain != VK_NULL_HANDLE)
     {
         vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
@@ -452,11 +442,10 @@ void VulkanRenderer::CleanupSwapchain()
 
 void VulkanRenderer::RecreateSwapchain()
 {
-    // Get new window size
     int width = 0, height = 0;
     glfwGetFramebufferSize(m_Window, &width, &height);
 
-    // Handle minimization - wait until window is visible again
+    // Minimized - wait until the window is visible again.
     while (width == 0 || height == 0)
     {
         glfwGetFramebufferSize(m_Window, &width, &height);
@@ -660,8 +649,8 @@ void VulkanRenderer::CreateSwapchain()
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
         m_PhysicalDevice, m_Surface, &formatCount, formats.data()));
 
-    // Prefer UNORM format to match OpenGL's non-gamma-corrected output
-    // SRGB format applies gamma correction which makes textures appear brighter
+    // Prefer UNORM to match OpenGL's non-gamma-corrected output (SRGB would
+    // apply gamma correction and make textures appear brighter).
     VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& availableFormat : formats)
     {
@@ -684,11 +673,9 @@ void VulkanRenderer::CreateSwapchain()
     VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
         m_PhysicalDevice, m_Surface, &presentModeCount, presentModes.data()));
 
-    // Prefer uncapped presentation when available so app-side FPS limiting can work.
-    // Fallback order:
-    //   1) IMMEDIATE (no vsync, may tear)
-    //   2) MAILBOX   (low-latency vsync)
-    //   3) FIFO      (always supported, vsync)
+    // Prefer uncapped presentation so app-side FPS limiting can work.
+    // Fallback order: IMMEDIATE (no vsync, may tear) -> MAILBOX (low-latency
+    // vsync) -> FIFO (always supported, vsync).
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     for (const auto& availablePresentMode : presentModes)
     {
@@ -843,13 +830,8 @@ void VulkanRenderer::CreateRenderPass()
 void VulkanRenderer::CreateGraphicsPipeline()
 {
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 1: Starting...");
-    // Shader code (simplified - in production, compile GLSL to SPIR-V)
-    // For now, we'll create a minimal pipeline
-    // NOTE: Full implementation requires SPIR-V shader compilation
+    // Shader stage info is built later, after shader modules are created.
 
-    // Note: Shader stage info will be created after shader modules are loaded
-
-    // Vertex input
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
     bindingDescription.stride = sizeof(float) * 4;  // pos + tex
@@ -929,17 +911,18 @@ void VulkanRenderer::CreateGraphicsPipeline()
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    // Push constant range for matrices and uniforms
-    // Vertex shader: mat4 projection (offset 0, 64 bytes), mat4 model (offset 64, 64 bytes) = 128
-    // bytes total Fragment shader: vec3 spriteColor (offset 128, 12 bytes), bool useColorOnly
-    // (offset 140, 4 bytes), vec4 colorOnly (offset 144, 16 bytes) = 32 bytes Total: 160 bytes
-    // (vec3 is 12 bytes, but vec4 needs 16-byte alignment, so we use 160 total)
+    // Push constants for matrices and uniforms.
+    // Vertex: mat4 projection (0..63), mat4 model (64..127).
+    // Fragment: vec3 spriteColor (128..139), float useColorOnly (140..143),
+    // vec4 colorOnly (144..159), vec3 ambientColor (160..171),
+    // float spriteAlpha (172..175). vec4 needs 16-byte alignment.
+    // See CombinedPushConstants for the canonical layout (sizeof = 176).
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(CombinedPushConstants);
 
-    // Descriptor set layout for textures
+    // Texture descriptor set layout.
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 0;
     samplerLayoutBinding.descriptorCount = 1;
@@ -965,7 +948,6 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 2: Loading shaders...");
 
-    // Load shaders
     std::vector<uint32_t> vertShaderCode = VulkanShader::GetVertexShaderSPIRV();
     std::vector<uint32_t> fragShaderCode = VulkanShader::GetFragmentShaderSPIRV();
 
@@ -986,7 +968,6 @@ void VulkanRenderer::CreateGraphicsPipeline()
                       "                      glslangValidator -V shaders/Geometry.frag -o "
                       "shaders/Geometry.frag.spv");
         Logger::Error(LOG_SUBSYSTEM, "Or run: build.bat");
-        // Don't continue without shaders - throw exception
         throw std::runtime_error("Vulkan shaders not found. Please compile shaders first.");
     }
 
@@ -998,7 +979,6 @@ void VulkanRenderer::CreateGraphicsPipeline()
     VkShaderModule fragShaderModule = VulkanShader::CreateShaderModule(m_Device, fragShaderCode);
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 3: Fragment shader module created");
 
-    // Create shader stage info AFTER modules are created
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -1063,7 +1043,6 @@ void VulkanRenderer::CreateGraphicsPipeline()
                        "vkCreateGraphicsPipelines failed with result: {}",
                        static_cast<int>(pipelineResult));
 
-        // Print error details
         switch (pipelineResult)
         {
             case VK_ERROR_OUT_OF_HOST_MEMORY:
@@ -1161,8 +1140,8 @@ void VulkanRenderer::CreateSyncObjects()
         VK_CHECK(vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[i]));
     }
 
-    // Create transfer fence for synchronous buffer/image upload operations.
-    // Don't set SIGNALED flag - we'll reset before each use.
+    // Transfer fence for synchronous buffer/image uploads. Not SIGNALED -
+    // we reset before each use.
     VkFenceCreateInfo transferFenceInfo{};
     transferFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     VK_CHECK(vkCreateFence(m_Device, &transferFenceInfo, nullptr, &m_TransferFence));
@@ -1268,7 +1247,7 @@ std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
     Logger::Debug(LOG_SUBSYSTEM,
                   "GetRequiredExtensions() step 2: Checking validation layer support...");
 
-    // Only add debug extension if validation layers are enabled
+    // Debug extension only when validation layers are enabled.
     const bool enableValidationLayers = ShouldEnableValidationLayers();
     if (enableValidationLayers && CheckValidationLayerSupport())
     {
@@ -1295,7 +1274,6 @@ void VulkanRenderer::BeginFrame()
 {
     m_FrameActive = false;
 
-    // Reset vertex buffer counter and batch state at start of frame
     m_CurrentVertexCount = 0;
     m_BatchImageView = VK_NULL_HANDLE;
     m_BatchDescriptorSet = VK_NULL_HANDLE;
@@ -1338,7 +1316,7 @@ void VulkanRenderer::BeginFrame()
         Logger::ErrorF(LOG_SUBSYSTEM,
                        "Failed to acquire swapchain image! Result: {}",
                        static_cast<int>(result));
-        // Same concern: on error the semaphore's state is ambiguous.
+        // Semaphore state is ambiguous after an error - recreate.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         return;
     }
@@ -1417,9 +1395,8 @@ void VulkanRenderer::BeginFrame()
         vkCmdBindPipeline(
             m_CommandBuffers[m_CurrentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipeline);
 
-        // Set dynamic viewport with Y-flip for Vulkan coordinate system
-        // This uses VK_KHR_maintenance1 behavior (core in Vulkan 1.1+)
-        // Negative height flips Y to match OpenGL's coordinate system
+        // Dynamic viewport with Y-flip to match OpenGL. Uses VK_KHR_maintenance1
+        // behavior (core in Vulkan 1.1+): negative height flips Y.
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = static_cast<float>(m_SwapchainExtent.height);
@@ -1442,10 +1419,9 @@ void VulkanRenderer::BeginFrame()
 
 void VulkanRenderer::BeginScene()
 {
-    // Post-FX pipeline on Vulkan is a later phase - see plan in
-    // docs/superpowers/specs (or the development plan file). The Vulkan path
-    // currently renders directly to swapchain without bloom/grading/vignette/
-    // grain. F1 toggle still works; users on Vulkan see the unprocessed scene.
+    // Vulkan Post-FX is a later phase - the path currently renders directly
+    // to swapchain without bloom/grading/vignette/grain. F1 still toggles;
+    // Vulkan users see the unprocessed scene.
 }
 
 void VulkanRenderer::EndSceneApplyPostFX(const PostFXParams& /*params*/)
@@ -1470,15 +1446,14 @@ void VulkanRenderer::EndFrame()
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
         Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds in EndFrame!");
-        // BeginFrame signaled the image-available semaphore; if we bail now
-        // without submitting, that signal never gets consumed and the next
-        // acquire on the same slot is illegal.
+        // BeginFrame signaled image-available - if we bail without submitting,
+        // that signal never gets consumed and the next acquire on the same
+        // slot is illegal.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
     }
 
-    // Flush any remaining batched sprites before ending the frame
     FlushSpriteBatch();
 
     vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
@@ -1498,7 +1473,7 @@ void VulkanRenderer::EndFrame()
         m_CurrentFrame >= m_InFlightFences.size())
     {
         Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds for sync objects!");
-        // Best-effort: if the semaphore slot still exists, recreate it.
+        // Best-effort: recreate the semaphore slot if it still exists.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
@@ -1536,10 +1511,9 @@ void VulkanRenderer::EndFrame()
         Logger::ErrorF(LOG_SUBSYSTEM,
                        "Failed to submit command buffer! Result: {}",
                        static_cast<int>(submitResult));
-        // vkResetFences succeeded above but submit failed, so the fence is
-        // unsignaled with no work to signal it. Next BeginFrame would block
-        // forever on vkWaitForFences. Destroy+recreate as signaled so the
-        // next frame can proceed.
+        // vkResetFences succeeded but submit failed: fence is unsignaled with
+        // no work to signal it. Next BeginFrame would block forever on
+        // vkWaitForFences. Destroy+recreate as signaled so the next frame can proceed.
         if (m_InFlightFences[m_CurrentFrame] != VK_NULL_HANDLE)
         {
             vkDestroyFence(m_Device, m_InFlightFences[m_CurrentFrame], nullptr);
@@ -1596,9 +1570,8 @@ void VulkanRenderer::EndFrame()
 void VulkanRenderer::SetViewport(int x, int y, int width, int height)
 {
     (void)x;
-    (void)y;  // Suppress unused parameter warnings
+    (void)y;  // Unused.
 
-    // Check if size has changed
     if (width != static_cast<int>(m_SwapchainExtent.width) ||
         height != static_cast<int>(m_SwapchainExtent.height))
     {
@@ -1614,7 +1587,7 @@ void VulkanRenderer::SetProjection(const glm::mat4& projection)
 
 void VulkanRenderer::Clear(float r, float g, float b, float a)
 {
-    // Clear is handled in BeginFrame via render pass
+    // No-op: clear is handled in BeginFrame via the render pass.
 }
 
 void VulkanRenderer::BuildQuadVertices(SpriteVertex outVertices[6],
@@ -1732,25 +1705,21 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
         return;
     }
 
-    // Get texture's Vulkan image view (or use white texture as fallback).
-    // NOTE: uploads must happen outside a frame - callers are expected to call
-    // UploadTexture() at load time. A cache miss here renders white rather
-    // than stalling the graphics queue mid-render-pass.
+    // Vulkan image view for the texture (white texture as fallback). Uploads
+    // must happen outside a frame - callers call UploadTexture() at load
+    // time. A cache miss here renders white rather than stalling the graphics
+    // queue mid-render-pass.
     VkImageView imageView = m_WhiteTextureImageView;
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
         imageView = texImageView;
 
-    // Get or create descriptor set for this texture (cached)
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
     if (descriptorSet == VK_NULL_HANDLE)
     {
-        // Failed to get descriptor set - skip this draw
         return;
     }
 
-    // Texture coordinates - need to normalize to 0-1 range
-    // texCoord and texSize are in pixels, we need to normalize them by texture size
     int texWidth = texture.GetWidth();
     int texHeight = texture.GetHeight();
 
@@ -1760,8 +1729,7 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
         return;
     }
 
-    // Normalize texture coordinates to 0-1 range
-    // No texel offset needed for GL_NEAREST filtering with pixel art
+    // Normalize pixel coords to 0..1 UV. No texel offset for GL_NEAREST pixel art.
     float texX = texCoord.x / static_cast<float>(texWidth);
     float texY = texCoord.y / static_cast<float>(texHeight);
     float texW = texSize.x / static_cast<float>(texWidth);
@@ -1774,7 +1742,7 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     float vBottom;
     if (flipY)
     {
-        // Match OpenGL-style flip (textures are loaded flipped by stb)
+        // OpenGL-style flip (textures loaded flipped by stb).
         vTop = 1.0f - (texY + texH);
         vBottom = 1.0f - texY;
     }
@@ -1784,8 +1752,8 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
         vBottom = texY + texH;
     }
 
-    // Per-tile content mirror: swap source UV before rotation so flip composes
-    // as flip-then-rotate (the geometrically correct order for reflections).
+    // Per-tile mirror: swap UV before rotation so the composition is
+    // flip-then-rotate (geometrically correct order for reflections).
     if (tileFlipX)
     {
         std::swap(u0, u1);
@@ -1795,8 +1763,7 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
         std::swap(vTop, vBottom);
     }
 
-    // Match OpenGL's UV assignment where top-left vertex gets vBottom
-    // This accounts for OpenGL's inverted V coordinate (V=0 at bottom)
+    // Top-left gets vBottom to match OpenGL's inverted V (V=0 at bottom).
     glm::vec2 texCoords[4] = {
         {u0, vBottom},  // Top-left (matches OpenGL)
         {u1, vBottom},  // Top-right
@@ -1837,8 +1804,7 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     if (m_CommandBuffers.empty() || m_CurrentFrame >= m_CommandBuffers.size())
         return;
 
-    // Get texture's Vulkan image view; see DrawSprite above for the
-    // upload-at-load contract.
+    // See DrawSprite above for the upload-at-load contract.
     VkImageView imageView = m_WhiteTextureImageView;
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
@@ -1898,7 +1864,6 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
     if (descriptorSet == VK_NULL_HANDLE)
         return;
 
-    // Use provided UV coordinates
     float u0 = uvMin.x, u1 = uvMax.x;
     float v0 = uvMin.y, v1 = uvMax.y;
 
@@ -1934,10 +1899,9 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position,
 
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
-        return;  // Pipeline not ready
+        return;
     }
 
-    // Get or create descriptor set for white texture (cached)
     VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(m_WhiteTextureImageView);
     if (descriptorSet == VK_NULL_HANDLE)
     {
@@ -1970,16 +1934,14 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
     if (!m_FrameActive)
         return;
 
-    // Warped quads are pre-transformed - corners already include projection
-    // We draw them directly without additional perspective transformation
+    // Warped quads' corners already include projection - no further perspective.
     if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
     {
         return;
     }
 
-    // If the texture hasn't been uploaded yet, GetOrCreateTexture returns an
-    // entry with VK_NULL_HANDLE and we bail. Callers are expected to upload
-    // at load time (see DrawSprite above).
+    // Bail if the texture hasn't been uploaded yet - callers upload at load
+    // time (see DrawSprite above).
     TextureResources& texRes = GetOrCreateTexture(texture);
     if (texRes.imageView == VK_NULL_HANDLE)
     {
@@ -1992,7 +1954,6 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
         return;
     }
 
-    // Calculate UV coordinates from pixel coordinates
     float texW = std::max(1.0f, static_cast<float>(texture.GetWidth()));
     float texH = std::max(1.0f, static_cast<float>(texture.GetHeight()));
 
@@ -2002,7 +1963,7 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
     float v0, v1;
     if (flipY)
     {
-        // Flip Y for textures loaded with stb_image
+        // Y-flip for textures loaded with stb_image.
         float finalTexYTop = texH - texCoord.y;
         float finalTexYBottom = texH - (texCoord.y + texSize.y);
         v0 = finalTexYBottom / texH;
@@ -2044,7 +2005,6 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
         return VK_NULL_HANDLE;
     }
 
-    // Check cache first
     auto it = m_DescriptorSetCache.find(imageView);
     if (it != m_DescriptorSetCache.end())
     {
@@ -2064,7 +2024,6 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
         }
     }
 
-    // Allocate new descriptor set
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_DescriptorPool;
@@ -2078,7 +2037,7 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     VkResult result = tryAllocate();
     if (result != VK_SUCCESS)
     {
-        // If allocation failed, create an overflow pool and retry
+        // Create an overflow pool and retry.
         if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL)
         {
             if (!m_DescriptorPoolWarned)
@@ -2116,7 +2075,7 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
         }
     }
 
-    // Update descriptor set with texture
+    // Bind the texture to the descriptor set.
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = imageView;
@@ -2133,7 +2092,6 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
 
     vkUpdateDescriptorSets(m_Device, 1, &descriptorWrite, 0, nullptr);
 
-    // Cache the descriptor set
     m_DescriptorSetCache[imageView] = descriptorSet;
 
     return descriptorSet;
@@ -2141,11 +2099,9 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
 
 void VulkanRenderer::FlushSpriteBatch()
 {
-    // Nothing to flush if no vertices accumulated
     if (m_CurrentVertexCount == m_BatchStartVertex)
         return;
 
-    // Need a valid batch state
     if (m_BatchImageView == VK_NULL_HANDLE || m_BatchDescriptorSet == VK_NULL_HANDLE)
         return;
 
@@ -2154,15 +2110,15 @@ void VulkanRenderer::FlushSpriteBatch()
 
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
-    // Push constants - identity model since vertices are pre-transformed
+    // Identity model since vertices are pre-transformed; white tint, full alpha.
     CombinedPushConstants pushConstants;
 
     pushConstants.projection = m_Projection;
-    pushConstants.model = glm::mat4(1.0f);        // Identity - vertices already transformed
-    pushConstants.spriteColor = glm::vec3(1.0f);  // White (no tint) for batched sprites
+    pushConstants.model = glm::mat4(1.0f);
+    pushConstants.spriteColor = glm::vec3(1.0f);
     pushConstants.useColorOnly = 0.0f;
     pushConstants.colorOnly = glm::vec4(0.0f);
-    pushConstants.spriteAlpha = 1.0f;  // Full opacity for sprites
+    pushConstants.spriteAlpha = 1.0f;
     pushConstants.ambientColor = m_AmbientColor;
 
     vkCmdPushConstants(commandBuffer,
@@ -2172,7 +2128,6 @@ void VulkanRenderer::FlushSpriteBatch()
                        sizeof(CombinedPushConstants),
                        &pushConstants);
 
-    // Bind descriptor set for batch texture
     vkCmdBindDescriptorSets(commandBuffer,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_PipelineLayout,
@@ -2182,16 +2137,15 @@ void VulkanRenderer::FlushSpriteBatch()
                             0,
                             nullptr);
 
-    // Bind vertex buffer
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_VertexBuffers[m_CurrentFrame], offsets);
 
-    // Draw all accumulated vertices in one call
+    // Single draw for all accumulated vertices.
     uint32_t vertexCount = m_CurrentVertexCount - m_BatchStartVertex;
     vkCmdDraw(commandBuffer, vertexCount, 1, m_BatchStartVertex, 0);
     ++m_DrawCallCount;
 
-    // Reset batch - start new batch at current position
+    // Start the next batch at the current position.
     m_BatchStartVertex = m_CurrentVertexCount;
     m_BatchImageView = VK_NULL_HANDLE;
     m_BatchDescriptorSet = VK_NULL_HANDLE;
@@ -2199,28 +2153,26 @@ void VulkanRenderer::FlushSpriteBatch()
 
 glm::mat4 VulkanRenderer::CalculateModelMatrix(glm::vec2 position, glm::vec2 size, float rotation)
 {
-    // Create model matrix matching OpenGL behavior
-    // Vertices are 0.0 to 1.0 (top-left to bottom-right)
-    // Note: In Vulkan, clip space Y points down, but we've already flipped vertex Y coordinates
-    // so the model matrix calculation can be the same as OpenGL
+    // Matches OpenGL: vertices are 0..1 (top-left to bottom-right). Vulkan
+    // clip-space Y points down, but we've already flipped vertex Y so the math
+    // can be the same as OpenGL.
     glm::mat4 model = glm::mat4(1.0f);
 
-    // Translate to position (top-left corner)
+    // Translate to position (top-left corner).
     model = glm::translate(model, glm::vec3(position, 0.0f));
 
-    // Translate to center of quad (since vertices are 0.0-1.0, center is at 0.5*size)
+    // Translate to quad center so rotation happens around the center.
     model = glm::translate(model, glm::vec3(0.5f * size.x, 0.5f * size.y, 0.0f));
 
-    // Rotate around Z axis (rotation center is now at quad center)
     if (rotation != 0.0f)
     {
         model = glm::rotate(model, glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f));
     }
 
-    // Translate back (so scaling happens around origin)
+    // Translate back so scaling happens around the origin.
     model = glm::translate(model, glm::vec3(-0.5f * size.x, -0.5f * size.y, 0.0f));
 
-    // Scale by size (vertices go from 0.0-1.0 to 0.0-size)
+    // Scale from 0..1 vertices up to 0..size.
     model = glm::scale(model, glm::vec3(size, 1.0f));
 
     return model;
@@ -2251,10 +2203,9 @@ float VulkanRenderer::GetTextAscent(float scale) const
             maxAscent = pair.second.bearing.y;
         }
     }
-    // If no glyphs loaded, use font size as fallback
     if (maxAscent == 0)
     {
-        maxAscent = 24;  // Default font size
+        maxAscent = 24;  // Fallback if no glyphs loaded.
     }
     return static_cast<float>(maxAscent) * scale;
 }
@@ -2293,7 +2244,7 @@ void VulkanRenderer::DrawText(const std::string& text,
         return;
     }
 
-    // Estimate line height from first glyph
+    // Line height from the first printable glyph.
     float lineHeight = 24.0f;
     for (const char c : text)
     {
@@ -2309,7 +2260,6 @@ void VulkanRenderer::DrawText(const std::string& text,
 
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
-    // Helper lambda to render text at a given position with a given color
     auto renderTextPass = [&, alpha](glm::vec2 basePos, glm::vec3 passColor)
     {
         float x = basePos.x;
@@ -2351,19 +2301,17 @@ void VulkanRenderer::DrawText(const std::string& text,
                 {1.0f, 1.0f, 1.0f, 1.0f}   // Bottom-right
             };
 
-            // Capacity check per glyph
+            // Capacity check per glyph.
             uint32_t maxVerts = static_cast<uint32_t>(m_VertexBufferSize / sizeof(Vertex));
             if (m_CurrentVertexCount + 6 > maxVerts)
             {
                 return;
             }
 
-            // Copy vertex data into mapped buffer - use current frame's buffer
             VkDeviceSize vertexDataSize = sizeof(vertices);
             Vertex* mappedVertices = static_cast<Vertex*>(m_VertexBuffersMapped[m_CurrentFrame]);
             memcpy(&mappedVertices[m_CurrentVertexCount], vertices, vertexDataSize);
 
-            // Push constants (same layout as sprites)
             CombinedPushConstants pushConstants;
 
             pushConstants.projection = m_Projection;
@@ -2372,8 +2320,8 @@ void VulkanRenderer::DrawText(const std::string& text,
             pushConstants.spriteColor = passColor;
             pushConstants.useColorOnly = 0.0f;
             pushConstants.colorOnly = glm::vec4(0.0f);
-            pushConstants.spriteAlpha = alpha;             // Text transparency from parameter
-            pushConstants.ambientColor = glm::vec3(1.0f);  // Text not affected by ambient lighting
+            pushConstants.spriteAlpha = alpha;
+            pushConstants.ambientColor = glm::vec3(1.0f);  // Text not affected by ambient.
 
             vkCmdPushConstants(commandBuffer,
                                m_PipelineLayout,
@@ -2382,7 +2330,6 @@ void VulkanRenderer::DrawText(const std::string& text,
                                sizeof(CombinedPushConstants),
                                &pushConstants);
 
-            // Bind descriptor set for this glyph texture
             VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(glyph.imageView);
             if (descriptorSet == VK_NULL_HANDLE)
             {
@@ -2408,10 +2355,9 @@ void VulkanRenderer::DrawText(const std::string& text,
         }
     };
 
-    // Render outline first (black, in 4 cardinal directions for performance)
+    // Black outline in 4 cardinal directions, then main text on top.
     glm::vec3 outlineColor(0.0f, 0.0f, 0.0f);
-    float outlineOffset =
-        2.0f * scale * outlineSize;  // Outline thickness (scaled by outlineSize parameter)
+    float outlineOffset = 2.0f * scale * outlineSize;
 
     static const int outlineDirections[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
     for (int dir = 0; dir < 4; dir++)
@@ -2422,7 +2368,6 @@ void VulkanRenderer::DrawText(const std::string& text,
         renderTextPass(offsetPos, outlineColor);
     }
 
-    // Render main text on top
     renderTextPass(position, color);
 }
 
@@ -2433,7 +2378,7 @@ void VulkanRenderer::CreateGlyphTexture(int width,
 {
     if (width <= 0 || height <= 0)
     {
-        // Fallback handled by caller (white texture)
+        // Fall back to caller's white texture.
         outGlyph.image = VK_NULL_HANDLE;
         outGlyph.memory = VK_NULL_HANDLE;
         outGlyph.imageView = m_WhiteTextureImageView;
@@ -2468,7 +2413,6 @@ void VulkanRenderer::CreateGlyphTexture(int width,
     VK_CHECK(vkAllocateMemory(m_Device, &allocInfo, nullptr, &outGlyph.memory));
     vkBindImageMemory(m_Device, outGlyph.image, outGlyph.memory, 0);
 
-    // Create staging buffer
     VkDeviceSize imageSize = static_cast<VkDeviceSize>(width * height * 4);
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingMemory;
@@ -2489,7 +2433,6 @@ void VulkanRenderer::CreateGlyphTexture(int width,
     vkDestroyBuffer(m_Device, stagingBuffer, nullptr);
     vkFreeMemory(m_Device, stagingMemory, nullptr);
 
-    // Create image view
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = outGlyph.image;
@@ -2552,8 +2495,8 @@ void VulkanRenderer::LoadFont()
             glyph.bearing = glm::ivec2(m_Face->glyph->bitmap_left, m_Face->glyph->bitmap_top);
             glyph.advance = static_cast<unsigned int>(m_Face->glyph->advance.x);
 
-            // Some glyphs (e.g., space) have zero-sized bitmaps. Reuse white texture to avoid
-            // invalid images.
+            // Some glyphs (e.g., space) have zero-sized bitmaps. Reuse the
+            // white texture to avoid invalid images.
             if (width == 0 || height == 0)
             {
                 glyph.imageView = m_WhiteTextureImageView;
