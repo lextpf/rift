@@ -9,7 +9,7 @@ namespace
 // One entry per WeatherState, indexed by std::to_underlying(state).
 // Order MUST match the WeatherState enum.
 const std::array<WeatherDefinition, 19> kWeatherTable = {{
-    // --- Baseline ----------------------------------------------------------
+    // Baseline.
     // Clear
     WeatherDefinition{},
     // Overcast
@@ -20,7 +20,7 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .showCelestialBodies = false,
     },
 
-    // --- Precipitation -----------------------------------------------------
+    // Precipitation.
     // LightRain
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.82f, 0.90f},
@@ -62,12 +62,10 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .maxWeatherParticles = 300,
         .windIntensity = 0.3f,
     },
-    // Blizzard: heavier and faster than regular Snow. The Snow particle's
-    // base velocity is multiplied per-particle in SpawnWeatherParticles when
-    // windIntensity >= 0.7 so the snow visibly hammers down rather than just
-    // increasing in count. Layers a low-density Fog secondary on top so the
-    // backdrop reads as low-visibility whiteout; the fog alpha is dialed
-    // down (0.5) so the snow remains the dominant element.
+    // Blizzard: heavier and faster than Snow. SpawnWeatherParticles multiplies
+    // per-particle velocity when windIntensity >= 0.7 so snow hammers down.
+    // Low-density Fog secondary on top reads as whiteout, but fog alpha is
+    // dialed down (0.5) so snow stays dominant.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
@@ -83,7 +81,7 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .fogAlphaMultiplier = 0.5f,
     },
 
-    // --- Atmosphere --------------------------------------------------------
+    // Atmosphere.
     // Fog: dense, large slow-drifting blobs that read as a thick fog wall.
     // Per-puff alpha softened (0.7) so the world stays legible behind the fog.
     WeatherDefinition{
@@ -126,7 +124,7 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .windIntensity = 1.0f,
     },
 
-    // --- Floral / seasonal -------------------------------------------------
+    // Floral / seasonal.
     // FallingLeaves
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.95f, 0.85f},
@@ -155,17 +153,16 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .windIntensity = 0.5f,
     },
 
-    // --- Special / night ---------------------------------------------------
+    // Special / night.
     // AuroraNight
     WeatherDefinition{
         .ambientTintMultiplier = {0.85f, 0.90f, 1.05f},
         .starVisibilityOverride = 0.85f,
         .showAurora = true,
     },
-    // MeteorShower: more frequent, larger, brighter streaks. Rate bump to 12
-    // collapses the spawn interval (~4s base / 12 = ~0.3s); the per-star size
-    // and brightness boost lives in SkyRenderer::SpawnShootingStar so this
-    // weather actually reads as an event instead of "did I see a star?".
+    // MeteorShower: rate bump to 12 collapses the spawn interval (~4s base / 12
+    // ~0.3s). Per-star size/brightness boost lives in
+    // SkyRenderer::SpawnShootingStar so the weather reads as an event.
     WeatherDefinition{
         .ambientTintMultiplier = {0.95f, 0.95f, 1.00f},
         .starVisibilityOverride = 1.0f,
