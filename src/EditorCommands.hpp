@@ -13,15 +13,43 @@
 #include <vector>
 
 /**
+ * @file EditorCommands.hpp
+ * @brief Concrete EditorCommand subclasses - the catalog of undoable editor actions.
+ * @ingroup Editor
+ *
+ * Each class below represents one user-visible editor action that can be
+ * undone/redone via UndoRedoStack. Commands fall into a few families:
+ *
+ * | Family               | Commands                                                |
+ * |----------------------|---------------------------------------------------------|
+ * | Tile painting        | `PlaceTilesCmd`, `PasteRegionCmd`                       |
+ * | Per-tile flags       | `CollisionToggleCmd`, `NoProjectionToggleCmd`,          |
+ * |                      | `YSortPlusToggleCmd`, `YSortMinusToggleCmd`             |
+ * | Elevation            | `ElevationSetCmd`                                       |
+ * | NPC lifecycle        | `PlaceNPCCmd`, `RemoveNPCCmd`                           |
+ * | Structures           | `AddStructureCmd`, `RemoveStructureCmd`,                |
+ * |                      | `SetTileStructureIdsCmd`                                |
+ * | Particle zones       | `AddParticleZoneCmd`, `RemoveParticleZoneCmd`           |
+ * | Animation            | `AddAnimatedTileCmd`, `SetTileAnimationCmd`             |
+ * | Navigation           | `NavigationStrokeCmd` (snapshots displaced NPCs)        |
+ * | Composition          | `CompositeCmd` (atomic multi-command grouping)          |
+ *
+ * Most "Entry" structs follow the same shape: `(coords, oldValue, newValue)`
+ * so Apply/Revert are symmetric. The few with side effects (NPC erase, tile
+ * stomping during animation set, structure ID re-stamping) document their
+ * subtleties in the per-class docblocks.
+ *
+ * @see EditorCommand for the base interface and command-pattern lifecycle.
+ */
+
+/**
  * @brief Place tile IDs and rotations on a layer for one or more tiles.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Editor
  *
  * Used by single-tile placement, multi-tile region placement, and the tile-
- * place stroke
- * accumulator. Each Entry captures both the old and new
- * (tileId, rotation, flipX, flipY) for a
- * (tileX, tileY, layer) coord so
+ * place stroke accumulator. Each Entry captures both the old and new
+ * (tileId, rotation, flipX, flipY) for a (tileX, tileY, layer) coord so
  * Apply and Revert are symmetric.
  */
 class PlaceTilesCmd : public EditorCommand
