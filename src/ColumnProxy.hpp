@@ -8,9 +8,12 @@
  * @concept RandomAccessContainerOf
  * @brief Concept for containers with random access supporting element type T.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
- * Handles both regular containers and `std::vector<T>`
- * which returns a proxy reference type from `operator[]`.
+ * Handles both regular containers and `std::vector<T>` whose `operator[]`
+ * returns a proxy reference type rather than a true `T&`. The concept asserts
+ * the container is both readable and writable through `operator[]`, and that
+ * `size()` returns something convertible to `std::size_t`.
  *
  * @tparam C Container type to check
  * @tparam T Element type
@@ -26,9 +29,11 @@ concept RandomAccessContainerOf = requires(C& c, const C& cc, std::size_t i, T v
  * @class RefProxy
  * @brief Proxy for element access, handling both real refs and proxy types.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
- * This wrapper enables `map[x][y] = value` syntax.
- * For out-of-bounds access, assignments are silently
+ * This wrapper enables `map[x][y] = value` syntax even for containers like
+ * `std::vector<bool>` whose `operator[]` returns a proxy reference rather
+ * than a true `T&`. For out-of-bounds access, assignments are silently
  * discarded and reads return DefaultValue.
  *
  * @tparam C Container type
