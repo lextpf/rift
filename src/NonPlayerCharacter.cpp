@@ -19,35 +19,20 @@ std::mt19937& GetNpcRng()
     return rng;
 }
 
-// Width of each NPC sprite frame in pixels.
 constexpr int NPC_SPRITE_WIDTH = 32;
-
-// Height of each NPC sprite frame in pixels.
 constexpr int NPC_SPRITE_HEIGHT = 32;
-
-// Number of walking animation frames per direction.
 constexpr int NPC_WALK_FRAMES = 3;
-
-// Time between animation frame changes (seconds).
-constexpr float NPC_ANIM_SPEED = 0.15f;
-
-// NPC hitbox half-width for collision detection.
+constexpr float NPC_ANIM_SPEED = 0.15f;  // Seconds per animation frame.
 constexpr float NPC_HALF_WIDTH = 8.0f;
-
-// NPC hitbox height for collision detection.
 constexpr float NPC_HITBOX_HEIGHT = 16.0f;
+constexpr float WAYPOINT_REACH_THRESHOLD = 0.5f;  // Pixels to count as "reached".
+constexpr float MIN_MOVEMENT_DIST = 0.001f;       // Avoid divide-by-zero.
 
-// Distance threshold for reaching a waypoint (pixels).
-constexpr float WAYPOINT_REACH_THRESHOLD = 0.5f;
-
-// Minimum movement distance to avoid division by zero.
-constexpr float MIN_MOVEMENT_DIST = 0.001f;
-
-// All four cardinal directions for random look-around selection.
+// Used for random look-around direction picks.
 constexpr NPCDirection ALL_DIRECTIONS[] = {
     NPCDirection::LEFT, NPCDirection::RIGHT, NPCDirection::UP, NPCDirection::DOWN};
 
-// AABB overlap test between two entities using feet-based hitboxes.
+// AABB overlap between two feet-anchored hitboxes.
 bool TestHitboxOverlap(
     const glm::vec2& posA, const glm::vec2& posB, float halfWidth, float hitboxHeight, float eps)
 {
