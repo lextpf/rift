@@ -8,8 +8,8 @@
 #include <limits>
 #include <utility>
 
-// stb_image is a header-only library - this define tells it to include the implementation
-// Only define this in ONE .cpp file to avoid duplicate symbol errors
+// Define STB_IMAGE_IMPLEMENTATION in EXACTLY ONE .cpp file (this one) to pull
+// in stb_image's implementation without duplicate symbols.
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -51,10 +51,8 @@ bool ExpandToRgba(const unsigned char* src,
     if (!src || width <= 0 || height <= 0 || srcChannels < 1 || srcChannels > 4)
         return false;
 
-    // Inlined size computation: keeps the relationship between srcSize,
-    // pixelCount, and channels visible to the static analyzer so it can
-    // verify srcBase = i * channels < pixelCount * channels <= srcSize for
-    // every iteration of the loop below.
+    // Size math inlined so the static analyzer can verify
+    // srcBase = i * channels < pixelCount * channels <= srcSize each iteration.
     const size_t w = static_cast<size_t>(width);
     const size_t h = static_cast<size_t>(height);
     if (w > std::numeric_limits<size_t>::max() / h)
@@ -117,35 +115,23 @@ bool ExpandToRgba(const unsigned char* src,
 }  // namespace
 
 Texture::Texture()
-    : m_Width(0)  // Image width in pixels (0 until loaded)
-      ,
-      m_Height(0)  // Image height in pixels (0 until loaded)
-      ,
-      m_Channels(0)  // Color channels: 3=RGB, 4=RGBA (0 until loaded)
-      ,
-      m_ImageData()  // CPU-side pixel buffer (retained for re-upload)
-      ,
-      m_OpenGLID(0)  // OpenGL texture handle (0 = not uploaded)
-      ,
-      m_OpenGLContextTag(nullptr)  // Context that owns m_OpenGLID
-      ,
-      m_OpenGLContextGeneration(0)  // Context generation that owns m_OpenGLID
-      ,
-      m_VulkanImage(VK_NULL_HANDLE)  // Vulkan image handle (device-local memory)
-      ,
-      m_VulkanImageMemory(VK_NULL_HANDLE)  // Vulkan memory backing the image
-      ,
-      m_VulkanImageView(VK_NULL_HANDLE)  // Vulkan image view for shader sampling
-      ,
-      m_VulkanSampler(VK_NULL_HANDLE)  // Vulkan sampler (filtering, wrapping)
-      ,
-      m_VulkanDevice(VK_NULL_HANDLE)  // Vulkan device that owns these resources
+    : m_Width(0),
+      m_Height(0),
+      m_Channels(0),
+      m_ImageData(),
+      m_OpenGLID(0),
+      m_OpenGLContextTag(nullptr),
+      m_OpenGLContextGeneration(0),
+      m_VulkanImage(VK_NULL_HANDLE),
+      m_VulkanImageMemory(VK_NULL_HANDLE),
+      m_VulkanImageView(VK_NULL_HANDLE),
+      m_VulkanSampler(VK_NULL_HANDLE),
+      m_VulkanDevice(VK_NULL_HANDLE)
 {
 }
 
-// Move constructor - transfers ownership of GPU resources from another texture.
-// This is important for storing textures in containers (vector, etc.) without
-// accidentally freeing GPU resources when temporaries are destroyed.
+// Move ops transfer GPU-resource ownership so containers like vector can
+// store textures without freeing their handles when temporaries are destroyed.
 Texture::Texture(Texture&& other) noexcept
     : m_Width(other.m_Width),
       m_Height(other.m_Height),
@@ -160,8 +146,7 @@ Texture::Texture(Texture&& other) noexcept
       m_VulkanSampler(other.m_VulkanSampler),
       m_VulkanDevice(other.m_VulkanDevice)
 {
-    // Null out the source object's resources so its destructor won't free them.
-    // We now own these resources exclusively.
+    // Null out source handles so its destructor doesn't free them.
     other.m_Width = other.m_Height = other.m_Channels = 0;
     other.m_OpenGLID = 0;
     other.m_OpenGLContextTag = nullptr;
@@ -173,14 +158,12 @@ Texture::Texture(Texture&& other) noexcept
     other.m_VulkanDevice = VK_NULL_HANDLE;
 }
 
-// Move assignment - same idea as move constructor but we might already own resources.
-// Must free our existing resources before stealing from the other object.
+// Move assignment may already own resources - free them before stealing.
 Texture& Texture::operator=(Texture&& other) noexcept
 {
     if (this != &other)
     {
-        // First, clean up any resources we currently own
-        // Check for valid GL context - during shutdown the context may already be gone
+        // GL context may be gone during shutdown; skip glDeleteTextures then.
         GLFWwindow* currentContext = glfwGetCurrentContext();
         if (m_OpenGLID != 0 && currentContext != nullptr &&
             m_OpenGLContextGeneration == s_CurrentOpenGLContextGeneration)
@@ -196,7 +179,6 @@ Texture& Texture::operator=(Texture&& other) noexcept
         }
         m_ImageData.clear();
 
-        // Now steal the other object's resources
         m_Width = other.m_Width;
         m_Height = other.m_Height;
         m_Channels = other.m_Channels;
@@ -210,7 +192,7 @@ Texture& Texture::operator=(Texture&& other) noexcept
         m_VulkanSampler = other.m_VulkanSampler;
         m_VulkanDevice = other.m_VulkanDevice;
 
-        // Null out the source so its destructor doesn't double-free
+        // Null out source so its destructor doesn't double-free.
         other.m_Width = other.m_Height = other.m_Channels = 0;
         other.m_OpenGLID = 0;
         other.m_OpenGLContextTag = nullptr;
@@ -226,9 +208,9 @@ Texture& Texture::operator=(Texture&& other) noexcept
 
 Texture::~Texture()
 {
-    // OpenGL textures must be deleted while the GL context is still valid.
-    // During application shutdown, GLFW may destroy the context before our
-    // destructor runs, so we check glfwGetCurrentContext() to avoid crashes.
+    // GL textures must be deleted while the context is valid. GLFW may
+    // destroy the context before this destructor runs at shutdown - guard
+    // with glfwGetCurrentContext() to avoid crashes.
     GLFWwindow* currentContext = glfwGetCurrentContext();
     if (m_OpenGLID != 0 && currentContext != nullptr &&
         m_OpenGLContextGeneration == s_CurrentOpenGLContextGeneration)
@@ -239,33 +221,28 @@ Texture::~Texture()
     m_OpenGLContextTag = nullptr;
     m_OpenGLContextGeneration = 0;
 
-    // Vulkan resources must be destroyed in a specific order and require the device handle
+    // Vulkan resources should have been explicitly destroyed before this
+    // destructor runs. Reaching here means the renderer's Shutdown() missed
+    // this texture - destroy to avoid leaks and log a warning.
     if (m_VulkanDevice != VK_NULL_HANDLE && m_VulkanImage != VK_NULL_HANDLE)
     {
-        // Vulkan resources should have been explicitly destroyed before the
-        // destructor runs. If we reach here, the renderer's Shutdown() missed
-        // this texture. Destroy now to avoid leaking, but log a warning.
         Logger::Warn(LOG_SUBSYSTEM,
                      "Texture destructor destroying Vulkan resources - DestroyVulkanTexture "
                      "should have been called before device destruction");
         DestroyVulkanTexture(m_VulkanDevice);
     }
 
-    // Free CPU-side image data last
     m_ImageData.clear();
 }
 
 bool Texture::LoadFromFile(const std::string& path)
 {
-    // stb_image loads images with (0,0) at the top-left by default.
-    // OpenGL expects (0,0) at the bottom-left, so we flip vertically.
-    // Use stbi__vertically_flip_on_load_set to avoid global state mutation
-    // (stbi_set_flip_vertically_on_load modifies a process-wide flag that
-    // would be unsafe under concurrent loading or third-party stbi use).
+    // stb_image is (0,0)-top-left; OpenGL is (0,0)-bottom-left - flip on load.
+    // Use the thread-local variant to avoid mutating the process-wide flag
+    // (unsafe under concurrent loading or third-party stbi use).
     stbi_set_flip_vertically_on_load_thread(true);
 
-    // stb_load returns the actual channel count in m_Channels.
-    // The last param (0) means "give me whatever channels the file has".
+    // Last param 0 = "whatever channels the file has" (returned in m_Channels).
     unsigned char* data = stbi_load(path.c_str(), &m_Width, &m_Height, &m_Channels, 0);
     if (!data)
     {
@@ -283,17 +260,15 @@ bool Texture::LoadFromFile(const std::string& path)
         return false;
     }
 
-    // Keep a CPU copy of the image data. This allows us to:
-    // 1. Recreate the OpenGL texture after a context switch
-    // 2. Create a Vulkan texture later (deferred creation)
-    // 3. Support multiple graphics backends from the same source
+    // CPU copy lets us recreate GL after a context switch, create a Vulkan
+    // texture later (deferred), and feed multiple backends from one source.
     std::vector<unsigned char> normalizedData;
     const unsigned char* sourceData = data;
     int sourceChannels = m_Channels;
 
-    // Normalize non-RGBA formats to RGBA so both backends share one safe path.
-    // VK_FORMAT_R8G8B8_UNORM is not universally supported for optimal tiling,
-    // so 3-channel textures must also be expanded.
+    // Normalize to RGBA so both backends share one path. VK_FORMAT_R8G8B8_UNORM
+    // isn't universally supported for optimal tiling, so 3-channel textures
+    // must also be expanded.
     if (sourceChannels != 4)
     {
         const size_t srcSize = static_cast<size_t>(m_Width) * static_cast<size_t>(m_Height) *
@@ -319,8 +294,8 @@ bool Texture::LoadFromFile(const std::string& path)
     memcpy(m_ImageData.data(), sourceData, dataSize);
     m_Channels = sourceChannels;
 
-    // Create OpenGL texture immediately only if a context is active.
-    // In Vulkan mode there is no GL context; keep CPU data and upload later.
+    // Create GL texture now only if a context is active. In Vulkan mode there
+    // is no GL context; keep CPU data and upload later.
     if (glfwGetCurrentContext() != nullptr)
     {
         CreateOpenGLTexture(m_ImageData.data(), true);
@@ -332,18 +307,16 @@ bool Texture::LoadFromFile(const std::string& path)
         m_OpenGLContextGeneration = 0;
     }
 
-    // Vulkan texture creation is deferred - it requires device, physical device,
-    // command pool, and queue handles that we don't have access to here.
-    // Call CreateVulkanTexture() later once those are available.
+    // Vulkan creation is deferred - needs device/physical-device/cmd-pool/queue
+    // handles we don't have here. Caller invokes CreateVulkanTexture() later.
 
-    // Free stb_image's allocation - we have our own copy now
     stbi_image_free(data);
     return true;
 }
 
 bool Texture::LoadFromData(unsigned char* data, int width, int height, int channels, bool flipY)
 {
-    // Validate input - GPU textures with zero or negative dimensions will crash
+    // Zero/negative dimensions would crash on upload.
     if (!data || width <= 0 || height <= 0 || channels <= 0 || channels > 4)
     {
         Logger::Error(LOG_SUBSYSTEM, "Invalid data for texture loading");
@@ -379,13 +352,13 @@ bool Texture::LoadFromData(unsigned char* data, int width, int height, int chann
     }
     m_ImageData.resize(dataSize);
 
-    // Handle vertical flip if requested (needed for OpenGL coordinate system)
+    // Optional vertical flip for OpenGL coordinate system.
     std::vector<unsigned char> finalData;
     const size_t rowBytes = static_cast<size_t>(width) * static_cast<size_t>(m_Channels);
 
     if (flipY)
     {
-        // Create a flipped copy by copying rows in reverse order
+        // Copy rows in reverse order.
         finalData.resize(dataSize);
         for (int y = 0; y < height; ++y)
         {
@@ -438,14 +411,12 @@ void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
         m_OpenGLID = 0;
     }
 
-    // Generate a new texture object and bind it for configuration
     glGenTextures(1, &m_OpenGLID);
     m_OpenGLContextTag = reinterpret_cast<void*>(currentContext);
     m_OpenGLContextGeneration = s_CurrentOpenGLContextGeneration;
     glBindTexture(GL_TEXTURE_2D, m_OpenGLID);
 
-    // Determine the appropriate OpenGL format based on channel count
-    // GL_RED for grayscale, GL_RGB for color, GL_RGBA for color with alpha
+    // 1 = grayscale, 3 = RGB, 4 = RGBA.
     GLenum format = GL_RGB;
     if (m_Channels == 1)
         format = GL_RED;
@@ -456,17 +427,14 @@ void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
 
     glTexImage2D(GL_TEXTURE_2D, 0, format, m_Width, m_Height, 0, format, GL_UNSIGNED_BYTE, data);
 
-    // Texture wrapping - clamp to edge prevents sampling artifacts at borders
-    // This is important for sprite sheets where we don't want neighboring tiles bleeding in
+    // Clamp to edge so neighboring sprite-sheet tiles don't bleed in.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // Filtering - use NEAREST for pixel-art style graphics (no blurring)
-    // Use GL_LINEAR for smooth/realistic textures
+    // NEAREST for pixel art (no blurring). Use GL_LINEAR for smooth textures.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // Unbind to prevent accidental modification
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -508,11 +476,9 @@ Hsv RgbToHsv(unsigned char r8, unsigned char g8, unsigned char b8)
 
 glm::vec3 Texture::SampleDominantNonSkinColor(glm::vec3 fallback) const
 {
-    // Filter thresholds. The upper-value cutoff from the original spec was dropped:
-    // pure saturated colors like #ff8030 (orange) or #ffff00 (yellow) have value=1.0
-    // because at least one RGB channel is at maximum. Real highlights (near-white)
-    // are already excluded by the saturation < 0.30 filter (highlights have low sat),
-    // so an upper value cap is both redundant and wrong.
+    // No upper-value cap: saturated colors like #ff8030 or #ffff00 have
+    // value=1.0 (one RGB channel at max). Real highlights are already caught
+    // by the saturation < 0.30 filter (highlights have low sat).
     constexpr float kMinSat = 0.30f;
     constexpr float kMinValue = 0.25f;
     constexpr float kSkinHueMaxNorm = 30.0f / 360.0f;  // 30 degrees normalized
@@ -563,23 +529,19 @@ glm::vec3 Texture::SampleDominantNonSkinColor(glm::vec3 fallback) const
 
 void Texture::Bind(unsigned int slot) const
 {
-    // OpenGL has multiple texture units (GL_TEXTURE0, GL_TEXTURE1, etc.)
-    // This allows shaders to sample from multiple textures simultaneously
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, m_OpenGLID);
 }
 
 void Texture::Unbind() const
 {
-    // Bind texture 0 (the "null" texture) to clear the binding
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Texture::RecreateOpenGLTexture() const
 {
-    // This is called after an OpenGL context switch (e.g., switching renderers)
-    // The old texture ID is invalid in the new context, so we recreate it
-
+    // Called after a GL context switch (e.g., renderer hot-swap). Old IDs are
+    // invalid in the new context, so we recreate from the CPU copy.
     if (m_ImageData.empty())
     {
         Logger::Error(LOG_SUBSYSTEM, "Cannot recreate OpenGL texture: no image data");
@@ -596,9 +558,8 @@ void Texture::RecreateOpenGLTexture() const
         return;
     }
 
-    // Delete old texture only if it belongs to the current context.
-    // After renderer hot-swap, stale IDs from the previous context may collide
-    // with live IDs in the new context and must not be deleted.
+    // Only delete if the old ID belongs to the current generation - stale IDs
+    // from the prior context may collide with live IDs in the new one.
     if (m_OpenGLID != 0 && currentContext != nullptr &&
         m_OpenGLContextGeneration == s_CurrentOpenGLContextGeneration)
     {
@@ -608,8 +569,7 @@ void Texture::RecreateOpenGLTexture() const
     m_OpenGLContextTag = nullptr;
     m_OpenGLContextGeneration = 0;
 
-    // Recreate from our stored CPU copy
-    // Pass flipY=false because m_ImageData is already in the correct orientation
+    // m_ImageData is already in the correct orientation, so flipY=false.
     CreateOpenGLTexture(m_ImageData.data(), false);
 }
 
@@ -660,52 +620,44 @@ void Texture::CreateVulkanTexture(VkDevice device,
         DestroyVulkanTexture(destroyDevice);
     }
 
-    // Store device handle for cleanup later
     m_VulkanDevice = device;
 
-    // Step 1: Create the VkImage object
+    // VkImage: 2D, no mipmaps, no array, UNORM (linear) to match OpenGL.
+    // SRGB would apply gamma correction and make textures brighter.
+    // OPTIMAL tiling = GPU-fastest layout (LINEAR would allow CPU access but
+    // is slower for rendering). EXCLUSIVE = single queue family.
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.extent.width = static_cast<uint32_t>(m_Width);
     imageInfo.extent.height = static_cast<uint32_t>(m_Height);
-    imageInfo.extent.depth = 1;  // 2D texture, depth is 1
-    imageInfo.mipLevels = 1;     // No mipmaps
-    imageInfo.arrayLayers = 1;   // Not a texture array
-
-    // Use UNORM format (linear color space) to match OpenGL behavior.
-    // SRGB format would apply gamma correction, making textures appear brighter.
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-
-    // OPTIMAL tiling lets the GPU arrange pixels however is fastest for sampling
-    // LINEAR tiling would allow CPU access but is slower for rendering
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // We'll transition this
-
-    // TRANSFER_DST: we'll copy data into this image
-    // SAMPLED: shaders will sample from this image
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;  // Only one queue family uses this
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;          // No multisampling
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
     if (vkCreateImage(device, &imageInfo, nullptr, &m_VulkanImage) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create Vulkan image!");
     }
 
-    // Step 2: Allocate GPU memory for the image
-    // Vulkan separates resource creation from memory allocation for flexibility
+    // Allocate device-local (fast GPU) memory. Vulkan separates resource
+    // creation from memory allocation.
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(device, m_VulkanImage, &memRequirements);
 
-    // Find a memory type that is device-local (fast GPU memory)
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
     uint32_t memoryTypeIndex = UINT32_MAX;
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
-        // Check if this memory type is compatible with our image AND is device-local
+        // Compatible with our image AND device-local.
         if ((memRequirements.memoryTypeBits & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
         {
@@ -733,16 +685,14 @@ void Texture::CreateVulkanTexture(VkDevice device,
         throw std::runtime_error("Failed to allocate Vulkan image memory!");
     }
 
-    // Bind memory to image - now the image has backing storage
     vkBindImageMemory(device, m_VulkanImage, m_VulkanImageMemory, 0);
 
-    // Step 3: Create image view - this is what shaders actually reference
+    // Image view - what shaders actually reference.
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_VulkanImage;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = imageInfo.format;
-    // Subresource range specifies which mip levels and array layers to access
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -758,21 +708,20 @@ void Texture::CreateVulkanTexture(VkDevice device,
         throw std::runtime_error("Failed to create Vulkan image view!");
     }
 
-    // Step 4: Create sampler - controls texture filtering and wrapping
+    // Sampler: NEAREST filter for pixel art (no interpolation); clamp to edge
+    // prevents border artifacts; no anisotropy; normalized 0..1 UVs.
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    // NEAREST filtering for pixel-art (no interpolation)
-    samplerInfo.magFilter = VK_FILTER_NEAREST;  // When texture is magnified
-    samplerInfo.minFilter = VK_FILTER_NEAREST;  // When texture is minified
-    // Clamp to edge prevents artifacts at texture borders
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.anisotropyEnable = VK_FALSE;  // No anisotropic filtering for pixel art
+    samplerInfo.anisotropyEnable = VK_FALSE;
     samplerInfo.maxAnisotropy = 1.0f;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;  // Use 0-1 UV coordinates
-    samplerInfo.compareEnable = VK_FALSE;            // Not a depth/shadow map
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
