@@ -11,7 +11,23 @@
  *
  * Each entry describes one complete quest dialogue: the NPC's opening line,
  * follow-up questions, quest offer/accept/decline text, and a revisit prompt.
- * BuildMysteryDialogueTree() inflates this into a full DialogueTree.
+ * `BuildMysteryDialogueTree()` inflates this into a full `DialogueTree`.
+ *
+ * @par Pattern
+ * The flat-data + builder pattern lets designers add a new mystery NPC by
+ * appending one entry to `kMysteryDialogues[]` without writing tree code:
+ *
+ * @code{.cpp}
+ * // In Dialogues.cpp:
+ * const MysteryDialogueData kMysteryDialogues[] = {
+ *     { "lost_locket", "Tessa", "lost_locket_quest",
+ *       "details", "I lost my locket...", ...},
+ *     // add more entries here; no other file needs to change
+ * };
+ * @endcode
+ *
+ * Then the editor's NPC placement picks one randomly and calls
+ * `BuildMysteryDialogueTree(tree, npcName, entry)`.
  */
 struct MysteryDialogueData
 {
