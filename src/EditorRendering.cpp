@@ -64,9 +64,8 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     return r;
 }
 
-/// Draw a colored rectangle at every visible tile where @p predicate returns true.
-/// Extracts the common CalcVisibleTileRange + double-loop + DrawColoredRect pattern
-/// shared by multiple overlay functions.
+/// Draw a colored rect at every visible tile where @p predicate is true.
+/// Extracts the common CalcVisibleTileRange + loop + DrawColoredRect pattern.
 template <typename Predicate>
 void ForVisibleFlaggedTiles(const EditorContext& ctx, Predicate predicate, const glm::vec4& color)
 {
