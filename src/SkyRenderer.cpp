@@ -347,11 +347,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
     auto wrapNearCamera = [](float anchorX, float cameraX, float period)
     { return cameraX + std::remainder(anchorX - cameraX, period); };
 
-    // (Previously a giant screen-anchored "wash" sprite was drawn here as a
-    // soft sky glow; removed because it read as a fixed oval pinned to the
-    // top of the viewport and broke the world-anchored feel of the curtains.)
-
-    // ---- Layer 1: world-anchored noodle curtains ----
+    // Layer 1: world-anchored noodle curtains.
     // Each "curtain" is a horizontal aurora ribbon built from a varying
     // number of overlapping curtain-texture slices. Every ribbon is unique:
     // segment count, segment size, ribbon height, baseline Y, X jitter, wave
@@ -507,7 +503,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         }
     }
 
-    // ---- Layer 2: floating wisps (world-anchored, hand-painted texture) ----
+    // Layer 2: floating wisps (world-anchored, hand-painted texture).
     // Smaller and lighter accents - used to be 22-60 px which dominated the
     // sky; now 6-22 px so they read as sparks framing the ribbons. Wisp count
     // bumped to 48 for a denser sparkle field. Each wisp also renders at 3
