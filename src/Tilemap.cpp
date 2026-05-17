@@ -309,10 +309,10 @@ void Tilemap::InvalidateStructureBoundsForTile(
 {
     if (m_StructureBoundsCacheDirty)
     {
-        return;  // Full rebuild already pending
+        return;  // Full rebuild already pending.
     }
 
-    // Expand bounds for the new structure (O(1))
+    // Expand bounds for the new structure - O(1).
     if (newStructId >= 0)
     {
         int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(newStructId);
@@ -328,12 +328,12 @@ void Tilemap::InvalidateStructureBoundsForTile(
         {
             m_StructureBoundsCache[key] = {x, x, y, y};
         }
-        // If the new structure was in the per-structure dirty set, clear it
-        // since we just set bounds that include this tile.
+        // We just set bounds that include this tile, so any prior dirty mark
+        // on the new structure is satisfied.
         m_DirtyStructureKeys.erase(key);
     }
 
-    // Mark old structure dirty for lazy re-scan (bounds may need to shrink)
+    // Old-structure bounds may need to shrink - mark dirty for lazy re-scan.
     if (oldStructId >= 0 && oldStructId != newStructId)
     {
         int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(oldStructId);
@@ -392,7 +392,7 @@ const Tilemap::StructureBounds* Tilemap::GetCachedStructureBounds(size_t layerId
 
     int64_t key = (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(structId);
 
-    // Re-scan this single structure if it was marked dirty
+    // Lazy re-scan if this structure was marked dirty.
     if (m_DirtyStructureKeys.contains(key))
     {
         RebuildSingleStructureBounds(layerIdx, structId, key);
