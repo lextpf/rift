@@ -75,9 +75,9 @@ std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string& fil
     const std::filesystem::path exeDir = GetExecutableDirectory();
     if (!exeDir.empty())
     {
-        // Typical runtime layout: <exe-dir>/shaders/*.spv
+        // Try <exe-dir>/shaders/*.spv first, then walk up (handles launching
+        // from source root when the exe lives in build/<Config>/).
         addUnique(exeDir / relPath);
-        // When launched from source root with exe in build/<Config>.
         addUnique(exeDir.parent_path() / relPath);
         addUnique(exeDir.parent_path().parent_path() / relPath);
     }
@@ -110,7 +110,7 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
         Logger::ErrorF(LOG_SUBSYSTEM, "SPIR-V file size is not 4-byte aligned: {}", path.string());
         return {};
     }
-    // Sprite shaders should be tiny; very large files usually indicate a wrong file/path.
+    // Sprite shaders are tiny; large files usually indicate a wrong file/path.
     static constexpr std::streamoff kMaxSPIRVBytes = 16 * 1024 * 1024;
     if (streamSize > kMaxSPIRVBytes)
     {
@@ -166,7 +166,6 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
 
 std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 {
-    // Try to load compiled SPIR-V file
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.vert.spv");
     if (code.empty())
     {
@@ -180,7 +179,6 @@ std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 
 std::vector<uint32_t> VulkanShader::GetFragmentShaderSPIRV()
 {
-    // Try to load compiled SPIR-V file
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.frag.spv");
     if (code.empty())
     {
