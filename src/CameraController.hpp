@@ -65,7 +65,41 @@ struct CameraUpdateParams
  * Owns all camera state and implements camera following, panning,
  * zooming, and 3D globe perspective configuration.
  *
- * @see CameraState, CameraUpdateParams, EditorContext
+ * @par Camera Modes
+ * Three movement modes are resolved per frame in `Update()`:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart TD
+ *     classDef mode  fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ *     classDef act   fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *
+ *     A{freeMode?}:::mode -->|yes| F[Arrow keys pan freely<br/>no player follow]:::act
+ *     A -->|no| B{arrow key down?}:::mode
+ *     B -->|yes| M[Manual pan<br/>arrows override follow target]:::act
+ *     B -->|no| S[Auto follow<br/>smoothstep to player]:::act
+ * </pre>
+ * @endhtmlonly
+ *
+ * @par Camera Settle Math
+ * Auto-follow uses an exponential approach (frame-rate independent) to
+ * `followTarget`, parameterized by `CAMERA_SETTLE_TIME` (0.6s to reach
+ * ~99% of the target). Distances below `CAMERA_SNAP_THRESHOLD` (0.1 px)
+ * are clamped to the target to stop sub-pixel jitter at rest.
+ *
+ * @par Zoom Behavior
+ * Scroll-wheel zoom adjusts the world width/height multiplier around the
+ * player's visual center. Zoom is clamped to a normal range in gameplay
+ * and a wider range in editor free-camera mode. `ResetZoom()` returns to
+ * 1.0x and re-centers on the player.
+ *
+ * @par 3D Effect
+ * When `enable3DEffect` is true, `ConfigurePerspective()` programs the
+ * renderer's globe + vanishing-point projection from `globeSphereRadius`
+ * and `tilt`. The flag is independent of camera mode - free-mode editor
+ * can still render with 3D enabled.
+ *
+ * @see CameraState, CameraUpdateParams, EditorContext, IRenderer
  */
 class CameraController
 {
