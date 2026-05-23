@@ -256,8 +256,23 @@ const ConsoleCommandRegistry::Command* ConsoleCommandRegistry::Lookup(std::strin
 std::vector<ConsoleCommandRegistry::MatchEntry> ConsoleCommandRegistry::MatchPrefixDetailed(
     std::string_view prefix, std::size_t maxCount) const
 {
+    // ASCII-only case-insensitive comparison so 'PA' matches 'particles', etc.
+    // Command names are ASCII (verbs and aliases), so this is sufficient.
+    auto toLowerByte = [](unsigned char c) -> char { return static_cast<char>(std::tolower(c)); };
     auto startsWith = [&](std::string_view s)
-    { return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix; };
+    {
+        if (s.size() < prefix.size())
+            return false;
+        for (std::size_t i = 0; i < prefix.size(); ++i)
+        {
+            if (toLowerByte(static_cast<unsigned char>(s[i])) !=
+                toLowerByte(static_cast<unsigned char>(prefix[i])))
+            {
+                return false;
+            }
+        }
+        return true;
+    };
 
     std::vector<MatchEntry> out;
     for (const auto& [name, cmd] : m_Commands)
@@ -373,8 +388,23 @@ Console::SuggestionResult Console::ComputeSuggestions(std::size_t maxCount) cons
     const std::size_t argIndex = tokens.size() - 1;
     auto candidates = cmd->argCompletions(argIndex);
 
+    // ASCII-only case-insensitive comparison so `weather lig` matches
+    // `LightRain` etc.
+    auto toLowerByte = [](unsigned char c) -> char { return static_cast<char>(std::tolower(c)); };
     auto startsWith = [&](std::string_view s)
-    { return s.size() >= currentWord.size() && s.substr(0, currentWord.size()) == currentWord; };
+    {
+        if (s.size() < currentWord.size())
+            return false;
+        for (std::size_t i = 0; i < currentWord.size(); ++i)
+        {
+            if (toLowerByte(static_cast<unsigned char>(s[i])) !=
+                toLowerByte(static_cast<unsigned char>(currentWord[i])))
+            {
+                return false;
+            }
+        }
+        return true;
+    };
     for (auto& c : candidates)
     {
         if (startsWith(c))
@@ -402,12 +432,31 @@ Console::Console(Game& game)
 
 void Console::Toggle()
 {
-    m_State = NextConsoleState(m_State);
+    // F12 just opens or closes the console. The Half/Full transition is on
+    // Tab (handled by Game::PumpConsoleKeys when the input line is empty),
+    // so a Half/Full->Closed->Half cycle through F12 always lands in Half.
+    if (m_State == State::Closed)
+    {
+        m_State = State::Half;
+        m_Buffer.ResetScroll();
+    }
+    else
+    {
+        m_State = State::Closed;
+    }
+}
+
+void Console::ToggleFullscreen()
+{
+    // Tab-driven Half <-> Full transition. No-op when closed so Tab at the
+    // start of a session doesn't open the console; F12 handles that.
     if (m_State == State::Half)
     {
-        // Just transitioned from Closed -> Half; pin scroll so a new opener
-        // sees the most recent output, not stale offset from a prior session.
-        m_Buffer.ResetScroll();
+        m_State = State::Full;
+    }
+    else if (m_State == State::Full)
+    {
+        m_State = State::Half;
     }
 }
 

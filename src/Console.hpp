@@ -297,8 +297,12 @@ public:
     [[nodiscard]] bool IsFullscreen() const { return m_State == State::Full; }
     /// Current visibility/size state.
     [[nodiscard]] State GetState() const { return m_State; }
-    /// Advance Closed -> Half -> Full -> Closed.
+    /// F12 hotkey: open the console (to Half) if closed, otherwise close it.
+    /// Does not cycle through Full - that's @ref ToggleFullscreen via Tab.
     void Toggle();
+    /// Tab hotkey when the console is open and the input line is empty:
+    /// toggle between Half and Full. No-op when closed.
+    void ToggleFullscreen();
     /// Open the console to the default visible state.
     void Open();
     /// Close the overlay and stop consuming console input.
