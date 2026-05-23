@@ -1,7 +1,9 @@
 #include "IRenderer.hpp"
+#include "Logger.hpp"
 #include "MathConstants.hpp"
 #include "PerspectiveTransform.hpp"
 
+#include <cassert>
 #include <cmath>
 
 void IRenderer::RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotation)
@@ -19,29 +21,6 @@ void IRenderer::RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotati
             corners[i] =
                 glm::vec2(p.x * cosR - p.y * sinR + center.x, p.x * sinR + p.y * cosR + center.y);
         }
-    }
-}
-
-void IRenderer::ApplyPerspective(glm::vec2 corners[4]) const
-{
-    if (m_Persp.enabled && !m_PerspectiveSuspended && m_Persp.viewHeight > 0.0f)
-    {
-        bool hasGlobe =
-            (m_Persp.mode == ProjectionMode::Globe || m_Persp.mode == ProjectionMode::Fisheye);
-        bool hasVanishing = (m_Persp.mode == ProjectionMode::VanishingPoint ||
-                             m_Persp.mode == ProjectionMode::Fisheye);
-
-        perspectiveTransform::Params p;
-        p.centerX = static_cast<double>(m_Persp.viewWidth) * 0.5;
-        p.centerY = static_cast<double>(m_Persp.viewHeight) * 0.5;
-        p.horizonY = static_cast<double>(m_Persp.horizonY);
-        p.screenHeight = static_cast<double>(m_Persp.viewHeight);
-        p.horizonScale = static_cast<double>(m_Persp.horizonScale);
-        double baseR = static_cast<double>(m_Persp.sphereRadius);
-        p.sphereRadiusX = baseR * perspectiveTransform::kGlobeRadiusXScale;
-        p.sphereRadiusY = baseR * perspectiveTransform::kGlobeRadiusYScale;
-
-        perspectiveTransform::GetTransformCornersFn(hasGlobe, hasVanishing)(corners, p);
     }
 }
 
@@ -88,7 +67,30 @@ void IRenderer::SetFisheyePerspective(bool enabled,
 
 void IRenderer::SuspendPerspective(bool suspend)
 {
-    m_PerspectiveSuspended = suspend;
+    if (suspend)
+    {
+        ++m_SuspensionDepth;
+    }
+    else
+    {
+        assert(m_SuspensionDepth > 0 &&
+               "SuspendPerspective(false) without matching SuspendPerspective(true)");
+        if (m_SuspensionDepth == 0)
+        {
+            // Underflow in release: log once and clamp. Indicates a coding bug
+            // (unbalanced calls) but we don't want to crash a shipping game.
+            static bool warned = false;
+            if (!warned)
+            {
+                Logger::Warn("Renderer",
+                             "SuspendPerspective(false) underflow - unbalanced "
+                             "suspend/resume call pair; clamping depth at 0.");
+                warned = true;
+            }
+            return;
+        }
+        --m_SuspensionDepth;
+    }
 }
 
 namespace

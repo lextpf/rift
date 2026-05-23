@@ -737,9 +737,19 @@ public:
      * Call this before drawing elements that should not be affected by
      * perspective (e.g., player, NPCs). Call with false to resume perspective.
      *
-     * @param suspend True to suspend perspective, false to resume.
+     * Reference-counted: every `suspend=true` must be balanced by exactly one
+     * `suspend=false`. Perspective is considered suspended whenever the depth
+     * is greater than zero, so nested guards are no-ops at the rendering level.
+     *
+     * @param suspend True to push a suspension, false to pop one.
      */
     virtual void SuspendPerspective(bool suspend);
+
+    /**
+     * @brief Whether perspective is currently suspended (depth > 0).
+     * @return true if any active suspension scope is in effect.
+     */
+    [[nodiscard]] bool IsPerspectiveSuspended() const { return m_SuspensionDepth > 0; }
 
     /**
      * @brief RAII guard that suspends perspective for its lifetime.
@@ -921,7 +931,11 @@ public:
 protected:
     /// @name Perspective State (shared by all renderers)
     /// @{
-    bool m_PerspectiveSuspended = false;
+    /// Reference count for nested `SuspendPerspective` calls. Perspective is
+    /// suspended whenever this is greater than zero. Toggling between 0 and 1
+    /// is the only transition the OpenGL backend treats as a real state
+    /// change (and thus the only one that flushes batch buffers).
+    int m_SuspensionDepth = 0;
     PerspectiveState m_Persp;
     /// @}
 
@@ -930,8 +944,4 @@ protected:
     /// @param size Sprite dimensions for center calculation.
     /// @param rotation Rotation angle in degrees.
     static void RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotation);
-
-    /// @brief Apply the current perspective transform to four quad corners.
-    /// @param corners Array of 4 screen-space positions (modified in-place).
-    void ApplyPerspective(glm::vec2 corners[4]) const;
 };
