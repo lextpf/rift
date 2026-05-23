@@ -8,25 +8,18 @@ namespace
 {
 // One entry per WeatherState, indexed by std::to_underlying(state).
 // Order MUST match the WeatherState enum.
-const std::array<WeatherDefinition, 19> kWeatherTable = {{
+const std::array<WeatherDefinition, 17> kWeatherTable = {{
     // Baseline.
     // Clear
     WeatherDefinition{},
-    // Overcast
-    WeatherDefinition{
-        .ambientTintMultiplier = {0.70f, 0.70f, 0.75f},
-        .skyColorOverride = {0.50f, 0.50f, 0.55f},
-        .starVisibilityOverride = 0.0f,
-        .showCelestialBodies = false,
-    },
 
     // Precipitation.
     // LightRain
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.82f, 0.90f},
         .particleType = WeatherParticleType::Rain,
-        .baseSpawnRate = 40.0f,
-        .maxWeatherParticles = 200,
+        .baseSpawnRate = 200.0f,
+        .maxWeatherParticles = 10000,
         .windIntensity = 0.4f,
     },
     // HeavyRain
@@ -34,8 +27,8 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .ambientTintMultiplier = {0.65f, 0.68f, 0.80f},
         .skyColorOverride = {0.42f, 0.45f, 0.55f},
         .particleType = WeatherParticleType::Rain,
-        .baseSpawnRate = 120.0f,
-        .maxWeatherParticles = 500,
+        .baseSpawnRate = 600.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 0.8f,
@@ -47,64 +40,46 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .ambientTintMultiplier = {0.50f, 0.52f, 0.65f},
         .skyColorOverride = {0.30f, 0.32f, 0.42f},
         .particleType = WeatherParticleType::Rain,
-        .baseSpawnRate = 200.0f,
-        .maxWeatherParticles = 800,
+        .baseSpawnRate = 1000.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .lightningIntervalSeconds = 8.0f,
         .windIntensity = 1.0f,
     },
-    // Snow
-    WeatherDefinition{
-        .ambientTintMultiplier = {0.90f, 0.92f, 0.98f},
-        .particleType = WeatherParticleType::Snow,
-        .baseSpawnRate = 25.0f,
-        .maxWeatherParticles = 300,
-        .windIntensity = 0.3f,
-    },
-    // Blizzard: heavier and faster than Snow. SpawnWeatherParticles multiplies
-    // per-particle velocity when windIntensity >= 0.7 so snow hammers down.
-    // Low-density Fog secondary on top reads as whiteout, but fog alpha is
-    // dialed down (0.5) so snow stays dominant.
+    // Blizzard: heaviest snow with gusty wind. SpawnWeatherParticle randomizes
+    // per-particle horizontal wind when windIntensity >= 0.7 so the gusts catch
+    // some flakes harder than others, and stretches per-flake lifetime so the
+    // population feels persistent without spawning a huge wave each tick.
+    // Secondary Fog reads as a mix of small mist and large fog puffs (50/50
+    // tier in the post-spawn block).
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
         .particleType = WeatherParticleType::Snow,
-        .baseSpawnRate = 150.0f,
-        .maxWeatherParticles = 700,
+        .baseSpawnRate = 550.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
         .secondaryParticleType = WeatherParticleType::Fog,
-        .secondaryBaseSpawnRate = 6.0f,
-        .secondaryMaxWeatherParticles = 60,
-        .fogAlphaMultiplier = 0.5f,
+        .secondaryBaseSpawnRate = 45.0f,
+        .secondaryMaxWeatherParticles = 10000,
+        .fogAlphaMultiplier = 0.6f,  // softened so stacked fog stays translucent (was 0.85)
     },
 
     // Atmosphere.
-    // Fog: dense, large slow-drifting blobs that read as a thick fog wall.
-    // Per-puff alpha softened (0.7) so the world stays legible behind the fog.
+    // Fog (merged): primary stream tiered post-spawn into 80% small mist-style
+    // puffs and 20% large fog blobs. Replaces the former separate Fog and Mist
+    // weathers. Soft per-puff alpha keeps the world legible.
     WeatherDefinition{
-        .ambientTintMultiplier = {0.75f, 0.77f, 0.80f},
+        .ambientTintMultiplier = {0.80f, 0.83f, 0.87f},
         .particleType = WeatherParticleType::Fog,
-        .baseSpawnRate = 8.0f,
-        .maxWeatherParticles = 100,
-        .particleSizeScale = 1.8f,
-        .starVisibilityOverride = 0.0f,
-        .showCelestialBodies = false,
+        .baseSpawnRate = 180.0f,
+        .maxWeatherParticles = 5000,
+        .particleSizeScale = 1.0f,
         .windIntensity = 0.2f,
-        .fogAlphaMultiplier = 0.7f,
-    },
-    // Mist: lighter cousin - half the density and smaller blobs. Even softer
-    // alpha (0.6) than Fog to preserve the "thinner cousin" relationship.
-    WeatherDefinition{
-        .ambientTintMultiplier = {0.88f, 0.90f, 0.93f},
-        .particleType = WeatherParticleType::Fog,
-        .baseSpawnRate = 4.0f,
-        .maxWeatherParticles = 50,
-        .particleSizeScale = 1.2f,
-        .windIntensity = 0.2f,
-        .fogAlphaMultiplier = 0.6f,
+        .fogAlphaMultiplier = 0.65f,
     },
     // HeatHaze (hazeAmplitude is reserved; tint applies today)
     WeatherDefinition{
@@ -117,46 +92,70 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .ambientTintMultiplier = {0.75f, 0.65f, 0.50f},
         .skyColorOverride = {0.70f, 0.55f, 0.40f},
         .particleType = WeatherParticleType::Sand,
-        .baseSpawnRate = 80.0f,
-        .maxWeatherParticles = 400,
+        .baseSpawnRate = 400.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
     },
 
     // Floral / seasonal.
-    // FallingLeaves
+    // FallingLeaves: floats like PollenStorm. World-anchored (no overlay-feel
+    // camera drag); particles spawn at the left and right edges of the buffer
+    // and drift inward (see the side-edge spawn case in SpawnWeatherParticle).
+    // When the player moves, leaves near the camera get a rapid radial push
+    // away (particles.js-style cursor avoidance, gated on player motion).
+    // Rate matches PollenStorm so both feel like the same family of sparse
+    // ambient flurries.
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.95f, 0.85f},
         .particleType = WeatherParticleType::Leaf,
-        .baseSpawnRate = 8.0f,
-        .maxWeatherParticles = 60,
-        .windIntensity = 0.4f,
-    },
-    // CherryBlossoms: dense flurry. Per-spawn tier system in the Blossom
-    // behavior gives mixed sizes/hues so density doesn't read as uniform.
-    // Pinker tint (R bumped past 1.0, G/B suppressed) reads as a slight pink
-    // wash over the world sprites.
-    WeatherDefinition{
-        .ambientTintMultiplier = {1.10f, 0.85f, 0.95f},
-        .particleType = WeatherParticleType::Blossom,
         .baseSpawnRate = 60.0f,
-        .maxWeatherParticles = 450,
-        .windIntensity = 0.35f,
+        .maxWeatherParticles = 2000,
+        .windIntensity = 0.25f,
     },
-    // PollenStorm
+    // CherryBlossoms: dense flurry with strong pink wash. Per-spawn tier system
+    // in the Blossom behavior gives mixed sizes/hues so density doesn't read as
+    // uniform; a deeper alpha pulse in Update makes each petal visibly breathe.
+    // Pinker tint (R bumped past 1.0, G/B suppressed harder than before) reads
+    // as a pronounced pink overlay. A strongly pink-tinted Fog secondary adds a
+    // sakura wash behind the petals (tint applied in SpawnWeatherParticle).
+    WeatherDefinition{
+        .ambientTintMultiplier = {1.22f, 0.78f, 0.92f},
+        .particleType = WeatherParticleType::Blossom,
+        .baseSpawnRate = 230.0f,
+        .maxWeatherParticles = 10000,
+        .windIntensity = 0.35f,
+        .secondaryParticleType = WeatherParticleType::Fog,
+        .secondaryBaseSpawnRate = 15.0f,
+        .secondaryMaxWeatherParticles = 10000,
+        .fogAlphaMultiplier = 0.5f,
+    },
+    // PollenStorm: sparse floaty flurry matching FallingLeaves. Particles
+    // enter from the left/right edges (see SpawnWeatherParticle edge-bias
+    // block) and rapidly scatter away from the player when the player runs
+    // through them (Pollen::Update avoidance).
     WeatherDefinition{
         .ambientTintMultiplier = {1.05f, 1.00f, 0.85f},
         .particleType = WeatherParticleType::Pollen,
-        .baseSpawnRate = 30.0f,
-        .maxWeatherParticles = 200,
+        .baseSpawnRate = 60.0f,
+        .maxWeatherParticles = 2000,
         .windIntensity = 0.5f,
     },
 
     // Special / night.
-    // AuroraNight
+    // AuroraNight: sparse Wisp-class motes drift alongside the sky ribbons.
+    // Wisp's slow spiral motion + diverse color variety reads more as aurora
+    // dust than fireflies would. The post-spawn block in SpawnWeatherParticle
+    // restricts the palette to cool aurora hues only (emerald/cyan/violet/
+    // magenta) so the warm wisp golds/ambers don't slip in. Rate is kept low
+    // so the ribbons remain the hero element.
     WeatherDefinition{
-        .ambientTintMultiplier = {0.85f, 0.90f, 1.05f},
+        .ambientTintMultiplier = {0.85f, 0.92f, 1.08f},
+        .particleType = WeatherParticleType::Wisp,
+        .baseSpawnRate = 90.0f,
+        .maxWeatherParticles = 600,
+        .particleSizeScale = 0.85f,
         .starVisibilityOverride = 0.85f,
         .showAurora = true,
     },
@@ -168,14 +167,15 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .starVisibilityOverride = 1.0f,
         .meteorRateMultiplier = 12.0f,
     },
-    // FireflySwarm: denser and brighter than ambient zone fireflies. Per-particle
-    // size matches the ambient zone default (scale 1.0) - the swarm reads as
-    // "many fireflies" via baseSpawnRate / maxWeatherParticles, not chunkier sprites.
+    // FireflySwarm: denser and brighter than ambient zone fireflies. The
+    // post-spawn block in SpawnWeatherParticle rewrites the per-particle color
+    // based on m_NightFactor so daytime swarms favor cyan/green/yellow tones
+    // and nighttime swarms favor red/green/yellow tones.
     WeatherDefinition{
         .ambientTintMultiplier = {0.90f, 1.00f, 0.85f},
         .particleType = WeatherParticleType::Firefly,
-        .baseSpawnRate = 70.0f,
-        .maxWeatherParticles = 450,
+        .baseSpawnRate = 600.0f,
+        .maxWeatherParticles = 10000,
         .particleSizeScale = 1.0f,
     },
     // AshFall
@@ -183,8 +183,8 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .ambientTintMultiplier = {0.70f, 0.65f, 0.60f},
         .skyColorOverride = {0.55f, 0.50f, 0.48f},
         .particleType = WeatherParticleType::Ash,
-        .baseSpawnRate = 30.0f,
-        .maxWeatherParticles = 200,
+        .baseSpawnRate = 150.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.2f,
         .windIntensity = 0.3f,
     },
@@ -193,10 +193,30 @@ const std::array<WeatherDefinition, 19> kWeatherTable = {{
         .ambientTintMultiplier = {0.85f, 0.60f, 0.45f},
         .skyColorOverride = {0.55f, 0.30f, 0.20f},
         .particleType = WeatherParticleType::Ember,
-        .baseSpawnRate = 50.0f,
-        .maxWeatherParticles = 250,
+        .baseSpawnRate = 250.0f,
+        .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.4f,
         .windIntensity = 0.7f,
+    },
+
+    // Atmospheric / prismatic.
+    // GodRays: shafts of light cut through soft haze. Each Sunshine particle
+    // picks a rainbow palette tier from its phase (see the WEATHER_ZONE_INDEX
+    // branch in Sunshine::Update) so the sky reads as a spread of red /
+    // orange / yellow / green / cyan / blue / violet beams. The Fog secondary
+    // supplies the atmospheric mist that justifies the prismatic look; the
+    // existing baseAlpha curve in Sunshine::Update keeps the beams visible
+    // at night, just dimmer.
+    WeatherDefinition{
+        .ambientTintMultiplier = {1.05f, 1.00f, 1.10f},
+        .particleType = WeatherParticleType::Sunshine,
+        .baseSpawnRate = 6.0f,
+        .maxWeatherParticles = 200,
+        .windIntensity = 0.0f,
+        .secondaryParticleType = WeatherParticleType::Fog,
+        .secondaryBaseSpawnRate = 25.0f,
+        .secondaryMaxWeatherParticles = 1500,
+        .fogAlphaMultiplier = 0.40f,
     },
 }};
 

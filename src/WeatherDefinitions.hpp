@@ -18,18 +18,17 @@ enum class WeatherState
 {
     // Baseline
     Clear = 0,
-    Overcast,
 
     // Precipitation
     LightRain,
     HeavyRain,
     Thunderstorm,
-    Snow,
     Blizzard,
 
-    // Atmosphere
+    // Atmosphere - Fog now merges the former Mist (small thin puffs) with
+    // occasional large fog blobs at an 80/20 ratio. Mist as a separate state
+    // and Overcast/Snow as standalone weathers have been removed.
     Fog,
-    Mist,
     HeatHaze,
     Sandstorm,
 
@@ -43,23 +42,23 @@ enum class WeatherState
     MeteorShower,
     FireflySwarm,
     AshFall,
-    EmberStorm
+    EmberStorm,
+
+    // Atmospheric / prismatic
+    GodRays
 };
 
 /// Compile-time reflection for WeatherState.
 template <>
 struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<WeatherState>>
 {
-    static constexpr size_t Count = 19;
+    static constexpr size_t Count = 17;
     static constexpr std::string_view Names[] = {"Clear",
-                                                 "Overcast",
                                                  "LightRain",
                                                  "HeavyRain",
                                                  "Thunderstorm",
-                                                 "Snow",
                                                  "Blizzard",
                                                  "Fog",
-                                                 "Mist",
                                                  "HeatHaze",
                                                  "Sandstorm",
                                                  "FallingLeaves",
@@ -69,9 +68,10 @@ struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<Weathe
                                                  "MeteorShower",
                                                  "FireflySwarm",
                                                  "AshFall",
-                                                 "EmberStorm"};
+                                                 "EmberStorm",
+                                                 "GodRays"};
 
-    static_assert(std::to_underlying(WeatherState::EmberStorm) == Count - 1,
+    static_assert(std::to_underlying(WeatherState::GodRays) == Count - 1,
                   "Update EnumTraits<WeatherState> when adding new WeatherState values");
 };
 
@@ -95,7 +95,9 @@ enum class WeatherParticleType
     Ash,       ///< Maps to ParticleType::Ash.
     Ember,     ///< Maps to ParticleType::Ember.
     Sand,      ///< Maps to ParticleType::Sand.
-    Firefly    ///< Maps to ParticleType::Firefly.
+    Firefly,   ///< Maps to ParticleType::Firefly.
+    Wisp,      ///< Maps to ParticleType::Wisp. Used by AuroraNight as a sparse aurora-dust layer.
+    Sunshine   ///< Maps to ParticleType::Sunshine. Used by GodRays for rainbow-tinted beams.
 };
 
 /**
