@@ -149,9 +149,8 @@ public:
 
     RIFT_DECLARE_COMMON_RENDERER_METHODS;
 
-    /// Draws text from the high-resolution headline atlas; crisp at the
-    /// scales used by the title screen ("RIFT" logo) without upscaling
-    /// 24-px body glyphs.
+    /// Draws text from the headline atlas (logical size 96, vs body text's
+    /// logical 24) for large title-screen text such as the "RIFT" logo.
     void DrawTextLarge(const std::string& text,
                        glm::vec2 position,
                        float scale,
@@ -178,7 +177,6 @@ public:
                                float horizonScale,
                                float viewWidth,
                                float viewHeight) override;
-    void SuspendPerspective(bool suspend) override;
 
     /// @brief OpenGL uses bottom-left texture origin, requires Y-flip.
     bool RequiresYFlip() const override { return true; }
@@ -231,16 +229,26 @@ private:
     int m_FontAtlasWidth, m_FontAtlasHeight;
 
     /// @brief Headline glyph atlas at @c HEADLINE_FONT_PIXEL_SIZE.
-    /// Used by @ref DrawTextLarge so title-screen text stays crisp without
-    /// upscaling the body atlas's 24-px glyphs.
+    /// Used by @ref DrawTextLarge for large title-screen text (the "RIFT" logo).
     std::map<char, Character> m_HeadlineCharacters;
     unsigned int m_HeadlineFontAtlasTexture = 0;
     int m_HeadlineFontAtlasWidth = 0;
     int m_HeadlineFontAtlasHeight = 0;
 
-    /// FreeType pixel sizes for the two atlases.
-    static constexpr int BODY_FONT_PIXEL_SIZE = 24;
+    /// FreeType *physical* bake sizes (atlas texel resolution) plus the *logical*
+    /// sizes that DrawText/DrawTextLarge `scale` is relative to. Per-glyph metrics
+    /// are normalized by (logical / physical) so on-screen text size is independent
+    /// of the atlas texel resolution -- letting us supersample the body atlas for
+    /// crispness without changing any caller's layout.
+    static constexpr int BODY_FONT_PIXEL_SIZE = 96;
+    static constexpr int BODY_FONT_LOGICAL_PIXEL_SIZE = 24;
     static constexpr int HEADLINE_FONT_PIXEL_SIZE = 96;
+    static constexpr int HEADLINE_FONT_LOGICAL_PIXEL_SIZE = 96;
+    static constexpr float BODY_METRIC_NORM =
+        static_cast<float>(BODY_FONT_LOGICAL_PIXEL_SIZE) / static_cast<float>(BODY_FONT_PIXEL_SIZE);
+    static constexpr float HEADLINE_METRIC_NORM =
+        static_cast<float>(HEADLINE_FONT_LOGICAL_PIXEL_SIZE) /
+        static_cast<float>(HEADLINE_FONT_PIXEL_SIZE);
 
     /// @brief Internal: build one atlas at @p pixelSize into the provided slots.
     /// Used by LoadFont to emit both body and headline atlases from one face.
@@ -258,12 +266,14 @@ private:
                       glm::vec3 color,
                       float outlineSize,
                       float alpha,
+                      float metricNorm,
                       const std::map<char, Character>& chars,
                       unsigned int atlasTexture);
 
     /// @brief Internal: shared body of GetTextWidth.
     [[nodiscard]] float GetTextWidthImpl(const std::string& text,
                                          float scale,
+                                         float metricNorm,
                                          const std::map<char, Character>& chars) const;
 
     std::vector<std::string> m_FontCandidates;  ///< Project-specific font candidates.
@@ -296,6 +306,20 @@ private:
     GLint m_UseColorOnlyLoc;  ///< Color mode selector (0=texture, 1=uniform, 2=vertex, 3=tex*vert).
     glm::vec3 m_AmbientColor;  ///< Current ambient light value.
 
+    /// @brief Perspective state pushed to the vertex shader.
+    /// Set by `Set*Perspective` and uploaded by `PushPerspectiveUniforms`.
+    GLint m_PerspEnabledLoc;
+    GLint m_PerspHasGlobeLoc;
+    GLint m_PerspHasVanishingLoc;
+    GLint m_PerspHorizonYLoc;
+    GLint m_PerspHorizonScaleLoc;
+    GLint m_PerspViewSizeLoc;
+    GLint m_PerspSphereRadiusLoc;
+
+    /// @brief Upload `m_Persp` to the perspective uniforms. Cheap; called at
+    /// the start of each Flush* and after `Set*Perspective`.
+    void PushPerspectiveUniforms();
+
     /// @}
 
     /// @name Text Batching
@@ -305,14 +329,29 @@ private:
     static constexpr size_t MAX_TEXT_QUADS = 2048;
 
     /// @brief Vertex format for text quads.
+    ///
+    /// Per-vertex color lets a single DrawText call render outline AND
+    /// foreground in one draw: outline quads carry RGBA(0,0,0,outlineAlpha),
+    /// foreground quads carry RGBA(color.rgb, alpha). The shader runs in
+    /// "textured x vertex color" mode (useColorOnly == 3) so the glyph
+    /// alpha multiplies the per-vertex color directly.
     struct TextVertex
     {
-        float x, y;  ///< Screen position.
-        float u, v;  ///< Font atlas UV.
+        float x, y;             ///< Screen position.
+        float u, v;             ///< Font atlas UV.
+        float r, g, b, a;       ///< Per-vertex RGBA tint (multiplied by glyph alpha).
+        float perspectiveFlag;  ///< 0 (UI text never wants perspective).
     };
 
     std::vector<TextVertex> m_TextBatchVertices;  ///< Accumulated text geometry.
     unsigned int m_TextVAO, m_TextVBO;            ///< Text-specific buffers.
+    /// Active font atlas for the accumulated text batch. Zero when no text is
+    /// pending. Multiple DrawText calls with the same atlas batch into a single
+    /// draw; changing atlas (e.g., body -> headline) forces a flush first.
+    unsigned int m_CurrentTextAtlas = 0;
+
+    /// @brief Submit accumulated text geometry to the GPU and reset the batch.
+    void FlushTextBatch();
 
     /// @}
 
@@ -322,13 +361,18 @@ private:
     /// @brief Maximum sprites before automatic flush.
     static constexpr size_t MAX_BATCH_SPRITES = 10000;
     static constexpr size_t VERTICES_PER_SPRITE = 6;  ///< Two triangles.
-    static constexpr size_t FLOATS_PER_VERTEX = 4;    ///< x, y, u, v.
+    static constexpr size_t FLOATS_PER_VERTEX = 5;    ///< x, y, u, v, perspectiveFlag.
 
-    /// @brief Vertex format for batched sprites (pre-transformed).
+    /// @brief Vertex format for batched sprites (screen-space pre-camera).
+    ///
+    /// `perspectiveFlag` is captured at queue time from `IsPerspectiveSuspended()`
+    /// (0 = suspended/no transform, 1 = apply perspective in the vertex shader).
+    /// This lets suspended and un-suspended geometry share a single batch.
     struct BatchVertex
     {
-        float x, y;  ///< Final screen position after perspective.
-        float u, v;  ///< Texture coordinates.
+        float x, y;             ///< World-space position (before perspective).
+        float u, v;             ///< Texture coordinates.
+        float perspectiveFlag;  ///< 0 = skip perspective, 1 = apply in shader.
     };
 
     std::vector<BatchVertex> m_BatchVertices;  ///< Accumulated sprite geometry.
@@ -346,9 +390,10 @@ private:
     /// @brief Vertex format with per-vertex RGBA color.
     struct ColoredVertex
     {
-        float x, y;        ///< Screen position.
-        float u, v;        ///< Texture coords (unused for rects).
-        float r, g, b, a;  ///< Per-vertex color.
+        float x, y;             ///< World-space position (before perspective).
+        float u, v;             ///< Texture coords (unused for rects).
+        float r, g, b, a;       ///< Per-vertex color.
+        float perspectiveFlag;  ///< 0 = skip perspective, 1 = apply in shader.
     };
 
     std::vector<ColoredVertex> m_RectBatchVertices;  ///< Accumulated rect geometry.
