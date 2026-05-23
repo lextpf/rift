@@ -1,6 +1,9 @@
 #include "VulkanCommon.hpp"
 #include "VulkanRenderer.hpp"
 
+#include "Logger.hpp"
+#include "PerspectiveTransform.hpp"
+
 #include <cstring>
 
 namespace
@@ -93,7 +96,7 @@ void VulkanRenderer::CreateBuffers()
     // data while CPU writes frame N+1. Size: 4 floats * 6 verts * 10000 quads
     // ~937 KB (typical frames use ~2000 quads).
     const uint32_t maxSprites = 10000;
-    m_VertexBufferSize = sizeof(float) * 4 * 6 * maxSprites;
+    m_VertexBufferSize = sizeof(SpriteVertex) * 6 * maxSprites;
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -141,17 +144,102 @@ void VulkanRenderer::CreateBuffers()
     vkFreeMemory(m_Device, stagingBufferMemory, nullptr);
 }
 
+void VulkanRenderer::CreatePerspectiveUBO()
+{
+    // One UBO per frame in flight, persistently mapped so we can write the
+    // 48-byte block in BeginFrame without re-mapping.
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        CreateBuffer(sizeof(PerspectiveBlock),
+                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     m_PerspUBOBuffers[i],
+                     m_PerspUBOMemories[i]);
+
+        VK_CHECK(vkMapMemory(
+            m_Device, m_PerspUBOMemories[i], 0, sizeof(PerspectiveBlock), 0, &m_PerspUBOMapped[i]));
+    }
+
+    // Allocate one descriptor set per frame from the shared pool.
+    VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        layouts[i] = m_PerspDescriptorSetLayout;
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_DescriptorPool;
+    allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+    allocInfo.pSetLayouts = layouts;
+    VK_CHECK(vkAllocateDescriptorSets(m_Device, &allocInfo, m_PerspDescriptorSets));
+
+    // Bind each descriptor set to its corresponding buffer (one-time hookup).
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = m_PerspUBOBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(PerspectiveBlock);
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_PerspDescriptorSets[i];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write.pBufferInfo = &bufferInfo;
+        vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
+    }
+}
+
+void VulkanRenderer::UpdatePerspectiveUBO()
+{
+    // Pack the current `m_Persp` into the current frame's mapped UBO. Called
+    // from BeginFrame so the GPU always sees fresh state for the frame.
+    if (m_PerspUBOMapped[m_CurrentFrame] == nullptr)
+    {
+        return;
+    }
+
+    const bool hasGlobe =
+        (m_Persp.mode == ProjectionMode::Globe || m_Persp.mode == ProjectionMode::Fisheye);
+    const bool hasVanishing =
+        (m_Persp.mode == ProjectionMode::VanishingPoint || m_Persp.mode == ProjectionMode::Fisheye);
+
+    PerspectiveBlock block{};
+    block.flags[0] = m_Persp.enabled ? 1 : 0;
+    block.flags[1] = hasGlobe ? 1 : 0;
+    block.flags[2] = hasVanishing ? 1 : 0;
+    block.flags[3] = 0;
+    block.horizon[0] = m_Persp.horizonY;
+    block.horizon[1] = m_Persp.horizonScale;
+    block.horizon[2] = m_Persp.viewWidth;
+    block.horizon[3] = m_Persp.viewHeight;
+    block.sphere[0] =
+        m_Persp.sphereRadius * static_cast<float>(perspectiveTransform::kGlobeRadiusXScale);
+    block.sphere[1] =
+        m_Persp.sphereRadius * static_cast<float>(perspectiveTransform::kGlobeRadiusYScale);
+    block.sphere[2] = 0.0f;
+    block.sphere[3] = 0.0f;
+
+    std::memcpy(m_PerspUBOMapped[m_CurrentFrame], &block, sizeof(PerspectiveBlock));
+}
+
 void VulkanRenderer::CreateDescriptorPool()
 {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = DESCRIPTOR_POOL_MAX_SETS;
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = DESCRIPTOR_POOL_MAX_SETS;
+    // Perspective UBO: one descriptor set per frame in flight.
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+    poolInfo.maxSets = DESCRIPTOR_POOL_MAX_SETS + MAX_FRAMES_IN_FLIGHT;
     poolInfo.flags =
         VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;  // Allow freeing single sets.
 
