@@ -714,7 +714,15 @@ void Game::PumpConsoleKeys()
     if (kDelete.JustPressed(m_Window))
         m_Console.OnDelete();
     if (kTab.JustPressed(m_Window))
-        m_Console.OnTab();
+    {
+        // Empty input: Tab toggles Half <-> Full so the user can resize the
+        // console for longer sessions. Non-empty input: Tab is autocomplete
+        // (cycles through suggestions, same as before).
+        if (m_Console.Buffer().Input().empty())
+            m_Console.ToggleFullscreen();
+        else
+            m_Console.OnTab();
+    }
     if (kUp.JustPressed(m_Window))
         m_Console.OnUp();
     if (kDown.JustPressed(m_Window))
