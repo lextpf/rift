@@ -18,6 +18,7 @@
 #include "VulkanShader.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -159,6 +160,7 @@ bool VulkanRenderer::Init()
         CreateSyncObjects();
         CreateBuffers();
         CreateDescriptorPool();
+        CreatePerspectiveUBO();
         CreateTextureSampler();
         CreateWhiteTexture();
         LoadFont();
@@ -246,6 +248,11 @@ void VulkanRenderer::Shutdown()
                 vkUnmapMemory(m_Device, m_VertexBufferMemories[i]);
                 m_VertexBuffersMapped[i] = nullptr;
             }
+            if (m_PerspUBOMapped[i])
+            {
+                vkUnmapMemory(m_Device, m_PerspUBOMemories[i]);
+                m_PerspUBOMapped[i] = nullptr;
+            }
         }
 
         // Release Vulkan resources owned by uploaded Texture objects. Must run
@@ -286,6 +293,16 @@ void VulkanRenderer::Shutdown()
             if (m_VertexBufferMemories[i] != VK_NULL_HANDLE)
             {
                 vkFreeMemory(m_Device, m_VertexBufferMemories[i], nullptr);
+            }
+            if (m_PerspUBOBuffers[i] != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_Device, m_PerspUBOBuffers[i], nullptr);
+                m_PerspUBOBuffers[i] = VK_NULL_HANDLE;
+            }
+            if (m_PerspUBOMemories[i] != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(m_Device, m_PerspUBOMemories[i], nullptr);
+                m_PerspUBOMemories[i] = VK_NULL_HANDLE;
             }
         }
 
@@ -339,6 +356,11 @@ void VulkanRenderer::Shutdown()
         if (m_DescriptorSetLayout != VK_NULL_HANDLE)
         {
             vkDestroyDescriptorSetLayout(m_Device, m_DescriptorSetLayout, nullptr);
+        }
+        if (m_PerspDescriptorSetLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyDescriptorSetLayout(m_Device, m_PerspDescriptorSetLayout, nullptr);
+            m_PerspDescriptorSetLayout = VK_NULL_HANDLE;
         }
 
         if (m_TransferFence != VK_NULL_HANDLE)
@@ -834,10 +856,10 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(float) * 4;  // pos + tex
+    bindingDescription.stride = sizeof(float) * 5;  // pos + tex + perspectiveFlag
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributeDescriptions[2]{};
+    VkVertexInputAttributeDescription attributeDescriptions[3]{};
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -848,11 +870,16 @@ void VulkanRenderer::CreateGraphicsPipeline()
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[1].offset = sizeof(float) * 2;
 
+    attributeDescriptions[2].binding = 0;
+    attributeDescriptions[2].location = 3;
+    attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[2].offset = sizeof(float) * 4;
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = 2;
+    vertexInputInfo.vertexAttributeDescriptionCount = 3;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -922,7 +949,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(CombinedPushConstants);
 
-    // Texture descriptor set layout.
+    // Set 0: per-draw texture sampler (fragment stage).
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 0;
     samplerLayoutBinding.descriptorCount = 1;
@@ -937,10 +964,29 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VK_CHECK(vkCreateDescriptorSetLayout(m_Device, &layoutInfo, nullptr, &m_DescriptorSetLayout));
 
+    // Set 1: frame-stable perspective UBO (vertex stage). Layout matches the
+    // GLSL `PerspectiveBlock` in shaders/Geometry.vert.
+    VkDescriptorSetLayoutBinding perspBinding{};
+    perspBinding.binding = 0;
+    perspBinding.descriptorCount = 1;
+    perspBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    perspBinding.pImmutableSamplers = nullptr;
+    perspBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo perspLayoutInfo{};
+    perspLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    perspLayoutInfo.bindingCount = 1;
+    perspLayoutInfo.pBindings = &perspBinding;
+
+    VK_CHECK(vkCreateDescriptorSetLayout(
+        m_Device, &perspLayoutInfo, nullptr, &m_PerspDescriptorSetLayout));
+
+    VkDescriptorSetLayout setLayouts[2] = {m_DescriptorSetLayout, m_PerspDescriptorSetLayout};
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = 2;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -1272,6 +1318,11 @@ std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
 
 void VulkanRenderer::BeginFrame()
 {
+    // Suspension depth must net to zero across frames: any unbalanced
+    // SuspendPerspective call inside the frame would leak depth and
+    // gradually disable perspective entirely.
+    assert(m_SuspensionDepth == 0 && "SuspendPerspective leaked depth across BeginFrame");
+
     m_FrameActive = false;
 
     m_CurrentVertexCount = 0;
@@ -1279,6 +1330,11 @@ void VulkanRenderer::BeginFrame()
     m_BatchDescriptorSet = VK_NULL_HANDLE;
     m_BatchStartVertex = 0;
     m_DrawCallCount = 0;
+
+    // Refresh the perspective UBO for the current frame's index before any
+    // draws read from it. The previous frame's UBO is still being consumed by
+    // the GPU at this point - we only touch the slot we're about to record.
+    UpdatePerspectiveUBO();
 
     if (m_Device == VK_NULL_HANDLE || m_Swapchain == VK_NULL_HANDLE)
     {
@@ -1592,14 +1648,21 @@ void VulkanRenderer::Clear(float r, float g, float b, float a)
 
 void VulkanRenderer::BuildQuadVertices(SpriteVertex outVertices[6],
                                        const glm::vec2 corners[4],
-                                       const glm::vec2 texCoords[4])
+                                       const glm::vec2 texCoords[4],
+                                       float perspectiveFlag)
 {
-    outVertices[0] = {corners[0].x, corners[0].y, texCoords[0].x, texCoords[0].y};
-    outVertices[1] = {corners[2].x, corners[2].y, texCoords[2].x, texCoords[2].y};
-    outVertices[2] = {corners[3].x, corners[3].y, texCoords[3].x, texCoords[3].y};
-    outVertices[3] = {corners[0].x, corners[0].y, texCoords[0].x, texCoords[0].y};
-    outVertices[4] = {corners[1].x, corners[1].y, texCoords[1].x, texCoords[1].y};
-    outVertices[5] = {corners[2].x, corners[2].y, texCoords[2].x, texCoords[2].y};
+    outVertices[0] = {
+        {corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}, perspectiveFlag};
+    outVertices[1] = {
+        {corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}, perspectiveFlag};
+    outVertices[2] = {
+        {corners[3].x, corners[3].y}, {texCoords[3].x, texCoords[3].y}, perspectiveFlag};
+    outVertices[3] = {
+        {corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}, perspectiveFlag};
+    outVertices[4] = {
+        {corners[1].x, corners[1].y}, {texCoords[1].x, texCoords[1].y}, perspectiveFlag};
+    outVertices[5] = {
+        {corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}, perspectiveFlag};
 }
 
 bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
@@ -1644,6 +1707,16 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                             0,
                             1,
                             &descriptorSet,
+                            0,
+                            nullptr);
+
+    // Set 1: perspective UBO (per-frame).
+    vkCmdBindDescriptorSets(commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_PipelineLayout,
+                            1,
+                            1,
+                            &m_PerspDescriptorSets[m_CurrentFrame],
                             0,
                             nullptr);
 
@@ -1776,10 +1849,10 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    ApplyPerspective(corners);
+    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
 
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords);
+    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
     SubmitQuad(descriptorSet, vertices, color, 1.0f);
 }
 
@@ -1826,10 +1899,10 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    ApplyPerspective(corners);
+    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
 
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords);
+    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
     SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
 }
 
@@ -1879,10 +1952,10 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    ApplyPerspective(corners);
+    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
 
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords);
+    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
     SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
 }
 
@@ -1913,12 +1986,12 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position,
                             {position.x + size.x, position.y + size.y},
                             {position.x, position.y + size.y}};
 
-    ApplyPerspective(corners);
+    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
 
     glm::vec2 texCoords[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
 
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords);
+    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
     SubmitQuad(descriptorSet, vertices, glm::vec3(1.0f), 1.0f, true, color);
 }
 
@@ -2290,15 +2363,17 @@ void VulkanRenderer::DrawText(const std::string& text,
             {
                 float pos[2];
                 float tex[2];
+                float perspectiveFlag;
             };
 
+            // Text always passes through perspective (UI overlay).
             Vertex vertices[6] = {
-                {0.0f, 0.0f, 0.0f, 0.0f},  // Top-left
-                {1.0f, 1.0f, 1.0f, 1.0f},  // Bottom-right
-                {0.0f, 1.0f, 0.0f, 1.0f},  // Bottom-left
-                {0.0f, 0.0f, 0.0f, 0.0f},  // Top-left
-                {1.0f, 0.0f, 1.0f, 0.0f},  // Top-right
-                {1.0f, 1.0f, 1.0f, 1.0f}   // Bottom-right
+                {{0.0f, 0.0f}, {0.0f, 0.0f}, 0.0f},  // Top-left
+                {{1.0f, 1.0f}, {1.0f, 1.0f}, 0.0f},  // Bottom-right
+                {{0.0f, 1.0f}, {0.0f, 1.0f}, 0.0f},  // Bottom-left
+                {{0.0f, 0.0f}, {0.0f, 0.0f}, 0.0f},  // Top-left
+                {{1.0f, 0.0f}, {1.0f, 0.0f}, 0.0f},  // Top-right
+                {{1.0f, 1.0f}, {1.0f, 1.0f}, 0.0f}   // Bottom-right
             };
 
             // Capacity check per glyph.
@@ -2342,6 +2417,17 @@ void VulkanRenderer::DrawText(const std::string& text,
                                     0,
                                     1,
                                     &descriptorSet,
+                                    0,
+                                    nullptr);
+
+            // Set 1: perspective UBO (text never wants perspective, but the
+            // shader's pipeline layout requires the set to be bound).
+            vkCmdBindDescriptorSets(commandBuffer,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_PipelineLayout,
+                                    1,
+                                    1,
+                                    &m_PerspDescriptorSets[m_CurrentFrame],
                                     0,
                                     nullptr);
 

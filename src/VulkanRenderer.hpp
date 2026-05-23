@@ -150,20 +150,27 @@ private:
     /**
      * @struct SpriteVertex
      * @brief Per-vertex data for batched sprite rendering.
+     *
+     * `perspectiveFlag` selects between "apply GPU perspective" (1.0) and
+     * "pass through" (0.0). Captured at queue time so suspended and
+     * un-suspended geometry share a single batch.
      */
     struct SpriteVertex
     {
-        float pos[2];  ///< Screen-space position (x, y).
-        float tex[2];  ///< Texture coordinates (u, v).
+        float pos[2];           ///< World-space position (x, y) before perspective.
+        float tex[2];           ///< Texture coordinates (u, v).
+        float perspectiveFlag;  ///< 0 = skip perspective, 1 = apply in shader.
     };
 
     /// @brief Build 6 vertices (2 triangles) from 4 screen-space corners and UV coords.
     /// @param outVertices Output array of 6 vertices.
     /// @param corners Screen-space quad corners [TL, TR, BR, BL].
     /// @param texCoords UV coordinates matching each corner.
+    /// @param perspectiveFlag 0 = skip perspective in shader, 1 = apply.
     static void BuildQuadVertices(SpriteVertex outVertices[6],
                                   const glm::vec2 corners[4],
-                                  const glm::vec2 texCoords[4]);
+                                  const glm::vec2 texCoords[4],
+                                  float perspectiveFlag = 0.0f);
 
     /// @brief Write a quad into the vertex buffer and flush if texture changes.
     /// @param descriptorSet Descriptor set binding the quad's texture.
@@ -314,6 +321,30 @@ private:
     std::unordered_map<VkImageView, VkDescriptorSet> m_DescriptorSetCache;
     std::vector<VkDescriptorPool> m_OverflowPools;  ///< Additional pools created on overflow.
     bool m_DescriptorPoolWarned{false};
+    /// @}
+
+    /// @name Perspective UBO (set 1, binding 0 in shader)
+    /// @{
+    /// Layout mirrors GLSL `PerspectiveBlock` in shaders/Geometry.vert (3x vec4 = 48 B).
+    struct PerspectiveBlock
+    {
+        int32_t flags[4];  ///< (enabled, hasGlobe, hasVanishing, pad)
+        float horizon[4];  ///< (horizonY, horizonScale, viewWidth, viewHeight)
+        float sphere[4];   ///< (sphereRadiusX, sphereRadiusY, pad, pad)
+    };
+    static_assert(sizeof(PerspectiveBlock) == 48, "PerspectiveBlock must match GLSL layout");
+
+    VkDescriptorSetLayout m_PerspDescriptorSetLayout{VK_NULL_HANDLE};
+    VkBuffer m_PerspUBOBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory m_PerspUBOMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    void* m_PerspUBOMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};
+    VkDescriptorSet m_PerspDescriptorSets[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    /// True until UpdatePerspectiveUBO has propagated the latest m_Persp into
+    /// both frame-in-flight UBOs; clears after each frame consumes its copy.
+    bool m_PerspUBODirty[MAX_FRAMES_IN_FLIGHT]{true, true};
+
+    void CreatePerspectiveUBO();
+    void UpdatePerspectiveUBO();
     /// @}
 
     /// @name White Texture (for colored rects)
