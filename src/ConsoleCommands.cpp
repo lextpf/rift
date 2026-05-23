@@ -647,6 +647,23 @@ bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+bool Cmd_ParticlesToggle(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.particles == nullptr)
+    {
+        ctx.out.PrintError("particles: particle system unavailable");
+        return false;
+    }
+    bool target = false;
+    if (!ParseToggleArg(args, ctx.particles->IsRenderEnabled(), "particles", ctx.out, target))
+    {
+        return false;
+    }
+    ctx.particles->SetRenderEnabled(target);
+    ctx.out.Print(std::string("particles: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
 bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -3394,6 +3411,15 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_DebugInfo(args, ctx);
                         },
                         {"dbg.info", "fps"});
+
+    m_Registry.Register("particles",
+                        "[on|off|toggle] - toggle all particle rendering (weather, zones, ambient)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_ParticlesToggle(args, ctx);
+                        },
+                        {"ptcs", "dbg.particles"});
 
     m_Registry.Register("debug.overlays",
                         "[on|off|toggle] - toggle collision/nav/anchor overlays",

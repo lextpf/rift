@@ -80,6 +80,7 @@ bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& c
 bool Cmd_RendererSet(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_ParticlesToggle(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx);
