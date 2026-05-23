@@ -223,8 +223,8 @@ glm::vec3 TimeManager::GetSkyColor() const
     if (def.skyColorOverride.x >= 0.0f)
     {
         glm::vec3 overrideSky = def.skyColorOverride * (IsDay() ? 1.0f : 0.3f);
-        // Blend toward override by intensity so a low-intensity Overcast
-        // doesn't fully wash out the natural sky.
+        // Blend toward override by intensity so a low-intensity weather (e.g.
+        // light HeavyRain) doesn't fully wash out the natural sky.
         // Compute the natural sky first, then mix.
         glm::vec3 natural;
         if (t >= NIGHT_END && t < DAWN_START)
