@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -348,6 +349,41 @@ public:
     bool LoadCombinedTilesets(const std::vector<std::string>& paths,
                               int tileWidth = 16,
                               int tileHeight = 16);
+
+    /**
+     * @brief Append character sprite sheets into the tile atlas after load.
+     *
+     * Rebuilds the combined atlas with each sheet appended at the bottom
+     * and re-uploads to GPU. Each sheet is identified by a string key
+     * (e.g., NPC type, "player_walk") so the renderer can resolve its
+     * pixel offset within the atlas via @ref GetCharacterAtlasOffset.
+     *
+     * This is the mechanism for collapsing the Y-sorted pass into one
+     * draw: NPCs and the player draw their sprites out of the same
+     * texture as the tiles, eliminating per-NPC texture switches.
+     *
+     * @param sheets Pairs of (key, texture pointer). Null textures are
+     *               skipped silently. All sheets must have the same
+     *               channel count as the atlas.
+     * @return `true` on success; `false` if dimensions/channels are
+     *         incompatible or the GPU re-upload fails.
+     */
+    /// One sheet to pack into the atlas.
+    struct AtlasPackEntry
+    {
+        std::string key;
+        const Texture* texture;
+    };
+
+    bool PackAdditionalSheets(const std::vector<AtlasPackEntry>& sheets);
+
+    /**
+     * @brief Look up the pixel offset of a packed character sheet.
+     * @param key Identifier used when @ref PackAdditionalSheets was called.
+     * @return Pixel-space offset within the atlas, or @c nullopt if the
+     *         key was never packed.
+     */
+    std::optional<glm::vec2> GetCharacterAtlasOffset(const std::string& key) const;
 
     /**
      * @brief Set the tilemap dimensions.
@@ -1363,9 +1399,17 @@ private:
     using TilesetDataPtr = std::unique_ptr<unsigned char[], void (*)(unsigned char*)>;
     TilesetDataPtr m_TilesetData{nullptr, +[](unsigned char* p) { delete[] p; }};
     int m_TilesetDataWidth{0}, m_TilesetDataHeight{0};  ///< Raw image dimensions
-    int m_TilesetChannels{0};                      ///< Number of color channels (3=RGB, 4=RGBA)
+    int m_TilesetChannels{0};  ///< Number of color channels (3=RGB, 4=RGBA)
+    /// Height of the atlas BEFORE any character sprite sheets were packed.
+    /// PackAdditionalSheets uses this as the baseline so subsequent calls
+    /// replace (not stack on top of) any previously-packed characters.
+    int m_TilesetOnlyHeight{0};
     std::vector<uint8_t> m_TileTransparencyCache;  ///< Cached transparency results per tile ID
     bool m_TransparencyCacheBuilt{false};          ///< Whether the cache has been built
+
+    /// Pixel offsets within the atlas for character sprite sheets packed via
+    /// @ref PackAdditionalSheets. Keyed by caller-supplied identifier.
+    std::unordered_map<std::string, glm::vec2> m_CharacterAtlasOffsets;
     /// @}
 
     /// @name Map Dimensions

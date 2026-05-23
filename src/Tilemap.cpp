@@ -622,6 +622,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
     m_TilesetWidth = combinedWidth;
     m_TilesetHeight = combinedHeight;
     m_TilesPerRow = m_TilesetWidth / m_TileWidth;
+    m_TilesetOnlyHeight = combinedHeight;  // baseline for PackAdditionalSheets
 
     Logger::InfoF(
         LOG_SUBSYSTEM, "Combined tileset dimensions: {}x{}", m_TilesetWidth, m_TilesetHeight);
@@ -669,6 +670,152 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
     BuildTransparencyCache();
 
     return true;
+}
+
+bool Tilemap::PackAdditionalSheets(const std::vector<AtlasPackEntry>& sheets)
+{
+    if (!m_TilesetData || m_TilesetDataWidth <= 0 || m_TilesetOnlyHeight <= 0)
+    {
+        Logger::Error(LOG_SUBSYSTEM, "PackAdditionalSheets: no tileset atlas loaded");
+        return false;
+    }
+
+    // Clear any previously-packed offsets; the atlas truncates back to the
+    // tileset-only baseline before re-appending the new set, so old keys are
+    // no longer valid.
+    m_CharacterAtlasOffsets.clear();
+
+    if (sheets.empty())
+    {
+        // Truncating to baseline with no characters is a valid request. Carry
+        // on so the atlas shrinks back to tileset-only and re-uploads.
+    }
+
+    // All sheets must share channels with the atlas, and fit horizontally.
+    int extraHeight = 0;
+    for (const auto& entry : sheets)
+    {
+        const Texture* tex = entry.texture;
+        if (tex == nullptr)
+        {
+            continue;
+        }
+        if (tex->GetChannels() != m_TilesetChannels)
+        {
+            Logger::ErrorF(LOG_SUBSYSTEM,
+                           "PackAdditionalSheets: sheet '{}' has {} channels, atlas has {}",
+                           entry.key,
+                           tex->GetChannels(),
+                           m_TilesetChannels);
+            return false;
+        }
+        if (tex->GetWidth() > m_TilesetDataWidth)
+        {
+            Logger::ErrorF(LOG_SUBSYSTEM,
+                           "PackAdditionalSheets: sheet '{}' is {}px wide, atlas is {}px",
+                           entry.key,
+                           tex->GetWidth(),
+                           m_TilesetDataWidth);
+            return false;
+        }
+        extraHeight += tex->GetHeight();
+    }
+
+    const int oldHeight = m_TilesetOnlyHeight;  // baseline, ignoring any prior characters
+    const int newHeight = oldHeight + extraHeight;
+    const int width = m_TilesetDataWidth;
+    const int channels = m_TilesetChannels;
+    const size_t rowStride = static_cast<size_t>(width) * static_cast<size_t>(channels);
+    const size_t newSize = static_cast<size_t>(newHeight) * rowStride;
+
+    auto newData = std::make_unique<unsigned char[]>(newSize);
+    std::memset(newData.get(), 0, newSize);
+
+    // Carry over the existing tileset data unchanged.
+    std::memcpy(newData.get(), m_TilesetData.get(), static_cast<size_t>(oldHeight) * rowStride);
+
+    // Append each sheet so that after the uniform CPU pre-flip below, the
+    // resulting atlas sub-region exactly preserves the source's m_ImageData
+    // layout (just relocated). Achieved by flipping rows on copy:
+    //     atlas_m_ImageData[atlasOffset.y + k] == source_m_ImageData[k]
+    //
+    // This works regardless of whether the source was uploaded via
+    // LoadFromFile (stbi-flipped to bottom-up) or LoadFromData(false)
+    // (image-space top-down) -- the only thing that matters is preserving
+    // the relative ordering inside each region. Both standalone characters
+    // (DrawSpriteRegion with flipY=false + spriteCoords.y in GL-row space)
+    // and standalone sky elements (DrawSpriteAtlas) then produce identical
+    // pixels in the atlas as they did against their own textures.
+    //
+    // atlasOffset.y is the GL-row offset of the FIRST GL row of this
+    // sheet's region: (newHeight - currentY - sheetH). Characters add
+    // standalone spriteCoords.y to this. Sky elements use it as the
+    // origin of a uv-min/uv-max rect.
+    int currentY = oldHeight;
+    for (const auto& entry : sheets)
+    {
+        const Texture* tex = entry.texture;
+        if (tex == nullptr)
+        {
+            continue;
+        }
+        const auto& srcPixels = tex->GetImageData();
+        const int sheetW = tex->GetWidth();
+        const int sheetH = tex->GetHeight();
+        const size_t srcRowStride = static_cast<size_t>(sheetW) * static_cast<size_t>(channels);
+
+        for (int y = 0; y < sheetH; ++y)
+        {
+            const size_t destOffset = static_cast<size_t>(currentY + y) * rowStride;
+            const size_t srcOffset = static_cast<size_t>(sheetH - 1 - y) * srcRowStride;
+            std::memcpy(newData.get() + destOffset, srcPixels.data() + srcOffset, srcRowStride);
+        }
+
+        const float glOffsetY = static_cast<float>(newHeight - currentY - sheetH);
+        m_CharacterAtlasOffsets[entry.key] = glm::vec2(0.0f, glOffsetY);
+        currentY += sheetH;
+    }
+
+    // Flip vertically for OpenGL upload (Vulkan compensates via UV).
+    auto flippedData = std::make_unique<unsigned char[]>(newSize);
+    for (int y = 0; y < newHeight; ++y)
+    {
+        const int srcY = newHeight - 1 - y;
+        std::memcpy(flippedData.get() + static_cast<size_t>(y) * rowStride,
+                    newData.get() + static_cast<size_t>(srcY) * rowStride,
+                    rowStride);
+    }
+
+    if (!m_TilesetTexture.LoadFromData(flippedData.get(), width, newHeight, channels, false))
+    {
+        Logger::Error(LOG_SUBSYSTEM, "PackAdditionalSheets: failed to re-upload atlas");
+        return false;
+    }
+
+    m_TilesetData = TilesetDataPtr(newData.release(), +[](unsigned char* p) { delete[] p; });
+    m_TilesetDataHeight = newHeight;
+    m_TilesetHeight = newHeight;
+
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Atlas grown to {}x{} with {} character sheet(s)",
+                  width,
+                  newHeight,
+                  sheets.size());
+
+    // Tile transparency cache is keyed by tile ID; existing IDs still map to
+    // their original positions, so no rebuild is needed.
+
+    return true;
+}
+
+std::optional<glm::vec2> Tilemap::GetCharacterAtlasOffset(const std::string& key) const
+{
+    auto it = m_CharacterAtlasOffsets.find(key);
+    if (it == m_CharacterAtlasOffsets.end())
+    {
+        return std::nullopt;
+    }
+    return it->second;
 }
 
 void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
