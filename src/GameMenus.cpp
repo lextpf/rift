@@ -10,6 +10,7 @@
 #include "ParticleSystem.hpp"
 #include "PostFXParams.hpp"
 #include "Version.hpp"
+#include "ViewScaling.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -19,6 +20,7 @@
 #include <cmath>
 #include <filesystem>
 #include <ranges>
+#include <unordered_set>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -28,6 +30,21 @@
 namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Game";
+
+/// Atlas region keys for the player's three sprite sheets (walk, run,
+/// bicycle). Distinct from any NPC type string so collisions are impossible.
+constexpr const char* kPlayerWalkAtlasKey = "__player_walk__";
+constexpr const char* kPlayerRunAtlasKey = "__player_run__";
+constexpr const char* kPlayerBicycleAtlasKey = "__player_bicycle__";
+
+constexpr const char* kSkyRayAtlasKey = "__sky_ray__";
+constexpr const char* kSkyStarAtlasKey = "__sky_star__";
+constexpr const char* kSkyStarGlowAtlasKey = "__sky_star_glow__";
+constexpr const char* kSkyShootingStarAtlasKey = "__sky_shooting_star__";
+constexpr const char* kSkyGlowAtlasKey = "__sky_glow__";
+constexpr const char* kSkyLightPoolAtlasKey = "__sky_light_pool__";
+constexpr const char* kSkyAuroraCurtainAtlasKey = "__sky_aurora_curtain__";
+constexpr const char* kSkyAuroraSmallAtlasKey = "__sky_aurora_small__";
 
 constexpr glm::vec3 TITLE_TEXT_COLOR{1.0f, 1.0f, 1.0f};
 constexpr glm::vec3 TITLE_DIM_COLOR{0.55f, 0.55f, 0.62f};
@@ -48,6 +65,11 @@ constexpr float TITLE_LOGO_SCALE = 1.0f;
 constexpr float TITLE_LOGO_OUTLINE = 6.0f;
 constexpr float MENU_ITEM_SCALE = 1.4f;
 constexpr float MENU_LINE_HEIGHT = 48.0f;
+// Design resolution the menu's pixel/scale constants were authored against (the
+// default window size). uiScale = 1.0 here, so the menu is unchanged at the
+// default size and scales proportionally as the window grows/shrinks.
+constexpr float MENU_REFERENCE_WIDTH = 1520.0f;
+constexpr float MENU_REFERENCE_HEIGHT = 800.0f;
 constexpr float VERSION_TEXT_SCALE = 0.7f;
 constexpr float PAUSE_HEADER_SCALE = 1.8f;
 constexpr float MODAL_TEXT_SCALE = 1.0f;
@@ -68,7 +90,10 @@ constexpr int TITLE_WORLD_GRASS_TILE_ID = 1;
 // Per-zone particle cap on the title screen. Bumped above the gameplay
 // default (50, set in Game::Initialize) because the title world has one
 // whole-map zone per type, so a denser pool reads as populated backdrop.
-constexpr size_t TITLE_PARTICLES_PER_ZONE = 160;
+// Lifted further (was 160) so Snow / Fog / CherryBlossom - whose long
+// lifetimes saturate the cap quickly - actually look populated instead
+// of "barely there".
+constexpr size_t TITLE_PARTICLES_PER_ZONE = 240;
 // Restored when LoadGameWorld runs so the title bump doesn't leak in.
 constexpr size_t GAMEPLAY_PARTICLES_PER_ZONE = 50;
 
@@ -126,8 +151,13 @@ int TitleMenuHitTest(
 {
     const float screenW = static_cast<float>(screenWidth);
     const float screenH = static_cast<float>(screenHeight);
+    // Mirror RenderTitleContent term-for-term: same uiScale, same un-scaled
+    // anchor, same per-item centering and line spacing.
+    const float uiScale = viewScaling::MenuUiScale(
+        screenWidth, screenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
     const float menuTopY = std::floor(screenH * 0.50f);
-    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE);
+    const float lineHeight = MENU_LINE_HEIGHT * uiScale;
+    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE * uiScale);
     constexpr float HIT_PAD_X = 24.0f;
 
     for (int i = 0; i < TITLE_ITEM_COUNT; ++i)
@@ -135,12 +165,12 @@ int TitleMenuHitTest(
         // Use unselected width: "> " vs "  " prefix shift is small relative to
         // HIT_PAD_X, so the hit box stays comfortable across items.
         const std::string display = std::string("  ") + TITLE_LABELS[i];
-        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE);
+        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE * uiScale);
         const float x = std::floor((screenW - w) * 0.5f);
-        const float baselineY = menuTopY + i * MENU_LINE_HEIGHT;
+        const float baselineY = menuTopY + i * lineHeight;
         const float topY = baselineY - ascent;
         if (mouseX >= x - HIT_PAD_X && mouseX <= x + w + HIT_PAD_X && mouseY >= topY &&
-            mouseY <= topY + MENU_LINE_HEIGHT)
+            mouseY <= topY + lineHeight)
         {
             return i;
         }
@@ -154,19 +184,24 @@ int PauseMenuHitTest(
 {
     const float screenW = static_cast<float>(screenWidth);
     const float screenH = static_cast<float>(screenHeight);
+    // Mirror RenderPauseOverlay term-for-term: same uiScale, same un-scaled
+    // anchor, same per-item centering and line spacing.
+    const float uiScale = viewScaling::MenuUiScale(
+        screenWidth, screenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
     const float menuTopY = std::floor(screenH * 0.52f);
-    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE);
+    const float lineHeight = MENU_LINE_HEIGHT * uiScale;
+    const float ascent = renderer.GetTextAscent(MENU_ITEM_SCALE * uiScale);
     constexpr float HIT_PAD_X = 24.0f;
 
     for (int i = 0; i < PAUSE_ITEM_COUNT; ++i)
     {
         const std::string display = std::string("  ") + PAUSE_LABELS[i];
-        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE);
+        const float w = renderer.GetTextWidth(display, MENU_ITEM_SCALE * uiScale);
         const float x = std::floor((screenW - w) * 0.5f);
-        const float baselineY = menuTopY + i * MENU_LINE_HEIGHT;
+        const float baselineY = menuTopY + i * lineHeight;
         const float topY = baselineY - ascent;
         if (mouseX >= x - HIT_PAD_X && mouseX <= x + w + HIT_PAD_X && mouseY >= topY &&
-            mouseY <= topY + MENU_LINE_HEIGHT)
+            mouseY <= topY + lineHeight)
         {
             return i;
         }
@@ -271,6 +306,12 @@ void Game::LoadGameWorld(bool loadSave)
     int playerTileY = (loadedPlayerTileY >= 0) ? loadedPlayerTileY : 5;
     m_Player.SetTilePosition(playerTileX, playerTileY);
 
+    // Pack every loaded NPC and player sprite sheet into the tile atlas so
+    // the Y-sorted pass batches into one or two draws instead of one draw
+    // per texture switch. Bindings are reset on each load so a save load or
+    // character switch re-binds with the freshly-packed offsets.
+    PackCharactersIntoAtlas();
+
     float camWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float camWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
     glm::vec2 playerPos = m_Player.GetPosition();
@@ -286,45 +327,123 @@ void Game::LoadGameWorld(bool loadSave)
     m_Particles.SetMaxParticlesPerZone(GAMEPLAY_PARTICLES_PER_ZONE);
 }
 
-void Game::LoadTitleScreenWorld()
+void Game::PackCharactersIntoAtlas()
 {
-    // Title is purely cosmetic - no save, NPCs, player, or editor. Strip
-    // session state to a clean slate before painting the grass.
-    m_NPCs.clear();
-    m_Editor.SetActive(false);
-    m_DialogueManager.EndDialogue();
-    m_InDialogue = false;
-    m_DialogueText.clear();
-    m_DialogueNPCIndex = -1;
-    m_DialoguePage = 0;
-    m_DialogueCharReveal = -1.0f;
-    m_DialogueBoxFadeTimer = 0.0f;
-    m_DialogueSnap.active = false;
+    // Build the list of sheet entries to pack. PackAdditionalSheets flips
+    // every source on copy so the atlas sub-region preserves each source's
+    // m_ImageData layout - that means standalone-equivalent UV math works
+    // for both stbi-flipped (LoadFromFile) and image-space (LoadFromData)
+    // sources without any per-source distinction here.
+    std::vector<Tilemap::AtlasPackEntry> sheets;
+    sheets.reserve(m_NPCs.size() + 3 + 8);
 
-    // Small map sized for the viewport; we paint every tile by hand below.
-    m_Tilemap.SetTilemapSize(TITLE_WORLD_MAP_WIDTH, TITLE_WORLD_MAP_HEIGHT, /*generateMap=*/false);
-
-    // Paint layer 0 (Ground) with grass; other layers stay empty (id -1) so
-    // the scene reads as a flat field.
-    for (int y = 0; y < TITLE_WORLD_MAP_HEIGHT; ++y)
+    // De-duplicate NPC types - multiple NPCs of the same type share one
+    // sheet, so we only need one atlas region per type. First-seen wins.
+    std::unordered_set<std::string> seenTypes;
+    for (const auto& npc : m_NPCs)
     {
-        for (int x = 0; x < TITLE_WORLD_MAP_WIDTH; ++x)
+        const std::string& type = npc.GetType();
+        if (type.empty())
+        {
+            continue;
+        }
+        if (seenTypes.insert(type).second)
+        {
+            sheets.push_back({type, &npc.GetSpriteSheet()});
+        }
+    }
+
+    // Player sheets (walk / run / bicycle) under fixed keys.
+    sheets.push_back({kPlayerWalkAtlasKey, &m_Player.GetSpriteSheet()});
+    sheets.push_back({kPlayerRunAtlasKey, &m_Player.GetRunningSpriteSheet()});
+    sheets.push_back({kPlayerBicycleAtlasKey, &m_Player.GetBicycleSpriteSheet()});
+
+    // Sky textures (procedurally generated + AuroraSmall from file).
+    sheets.push_back({kSkyRayAtlasKey, &m_SkyRenderer.GetRayTexture()});
+    sheets.push_back({kSkyStarAtlasKey, &m_SkyRenderer.GetStarTexture()});
+    sheets.push_back({kSkyStarGlowAtlasKey, &m_SkyRenderer.GetStarGlowTexture()});
+    sheets.push_back({kSkyShootingStarAtlasKey, &m_SkyRenderer.GetShootingStarTexture()});
+    sheets.push_back({kSkyGlowAtlasKey, &m_SkyRenderer.GetGlowTexture()});
+    sheets.push_back({kSkyLightPoolAtlasKey, &m_SkyRenderer.GetLightPoolTexture()});
+    sheets.push_back({kSkyAuroraCurtainAtlasKey, &m_SkyRenderer.GetAuroraCurtainTexture()});
+    sheets.push_back({kSkyAuroraSmallAtlasKey, &m_SkyRenderer.GetAuroraSmallTexture()});
+
+    if (!m_Tilemap.PackAdditionalSheets(sheets))
+    {
+        Logger::Error(
+            LOG_SUBSYSTEM,
+            "PackCharactersIntoAtlas: atlas pack failed; characters keep per-sheet textures");
+        // Make sure no stale bindings linger.
+        for (auto& npc : m_NPCs)
+        {
+            npc.SetAtlasBinding(nullptr, glm::vec2(0.0f));
+        }
+        m_Player.SetAtlasBinding(nullptr, glm::vec2(0.0f), glm::vec2(0.0f), glm::vec2(0.0f));
+        m_SkyRenderer.SetAtlasBinding(nullptr,
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f),
+                                      glm::vec2(0.0f));
+        return;
+    }
+
+    // Bind each character to the atlas region keyed by its sheet identifier.
+    const Texture* atlasTex = &m_Tilemap.GetTilesetTexture();
+    for (auto& npc : m_NPCs)
+    {
+        auto offset = m_Tilemap.GetCharacterAtlasOffset(npc.GetType());
+        npc.SetAtlasBinding(atlasTex, offset.value_or(glm::vec2(0.0f)));
+    }
+
+    glm::vec2 walkOff =
+        m_Tilemap.GetCharacterAtlasOffset(kPlayerWalkAtlasKey).value_or(glm::vec2(0.0f));
+    glm::vec2 runOff =
+        m_Tilemap.GetCharacterAtlasOffset(kPlayerRunAtlasKey).value_or(glm::vec2(0.0f));
+    glm::vec2 bikeOff =
+        m_Tilemap.GetCharacterAtlasOffset(kPlayerBicycleAtlasKey).value_or(glm::vec2(0.0f));
+    m_Player.SetAtlasBinding(atlasTex, walkOff, runOff, bikeOff);
+
+    auto skyOff = [this](const char* key)
+    { return m_Tilemap.GetCharacterAtlasOffset(key).value_or(glm::vec2(0.0f)); };
+    m_SkyRenderer.SetAtlasBinding(atlasTex,
+                                  skyOff(kSkyRayAtlasKey),
+                                  skyOff(kSkyStarAtlasKey),
+                                  skyOff(kSkyStarGlowAtlasKey),
+                                  skyOff(kSkyShootingStarAtlasKey),
+                                  skyOff(kSkyGlowAtlasKey),
+                                  skyOff(kSkyLightPoolAtlasKey),
+                                  skyOff(kSkyAuroraCurtainAtlasKey),
+                                  skyOff(kSkyAuroraSmallAtlasKey));
+}
+
+void Game::PaintTitleWorld(int tilesWide, int tilesTall)
+{
+    tilesWide = std::max(1, tilesWide);
+    tilesTall = std::max(1, tilesTall);
+
+    m_Tilemap.SetTilemapSize(tilesWide, tilesTall, /*generateMap=*/false);
+
+    // Paint layer 0 (Ground) with grass across the whole (possibly grown) map.
+    for (int y = 0; y < tilesTall; ++y)
+    {
+        for (int x = 0; x < tilesWide; ++x)
         {
             m_Tilemap.SetLayerTile(x, y, /*layer=*/0, TITLE_WORLD_GRASS_TILE_ID);
         }
     }
 
-    // One whole-map zone per atmospheric particle type. ParticleSystem caps
-    // each zone's active count so total density stays bounded.
-    // Excluded: Lantern (needs explicit lit-zone placement near a light).
+    // One whole-map zone per atmospheric particle type, sized to the map so
+    // particles fill the viewport. (Lantern excluded - needs a lit zone.)
     if (auto* zones = m_Tilemap.GetParticleZonesMutable())
     {
         zones->clear();
-
         const glm::vec2 zonePos(0.0f, 0.0f);
-        const glm::vec2 zoneSize(TITLE_WORLD_MAP_WIDTH * m_Tilemap.GetTileWidth(),
-                                 TITLE_WORLD_MAP_HEIGHT * m_Tilemap.GetTileHeight());
-
+        const glm::vec2 zoneSize(static_cast<float>(tilesWide * m_Tilemap.GetTileWidth()),
+                                 static_cast<float>(tilesTall * m_Tilemap.GetTileHeight()));
         constexpr ParticleType TITLE_PARTICLE_TYPES[] = {
             ParticleType::Firefly,
             ParticleType::Rain,
@@ -336,10 +455,8 @@ void Game::LoadTitleScreenWorld()
             ParticleType::DriftingLeaf,
             ParticleType::DustMote,
             ParticleType::Pollen,
-            // Showcases the hand-painted blossom asset over the menu.
             ParticleType::CherryBlossom,
         };
-
         for (ParticleType type : TITLE_PARTICLE_TYPES)
         {
             ParticleZone zone;
@@ -358,14 +475,63 @@ void Game::LoadTitleScreenWorld()
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
     }
 
+    // ParticleSystem holds the zones vector by reference; refresh after rebuild.
+    m_Particles.SetZones(m_Tilemap.GetParticleZones());
+    m_Particles.SetTilemap(&m_Tilemap);
+}
+
+void Game::RefreshTitleWorldForViewport(bool forceRepaint)
+{
+    const glm::ivec2 titleTiles = viewScaling::RequiredTitleWorldTiles(m_ScreenWidth,
+                                                                       m_ScreenHeight,
+                                                                       PIXEL_SCALE,
+                                                                       m_Tilemap.GetTileWidth(),
+                                                                       m_Tilemap.GetTileHeight(),
+                                                                       m_Camera.GetState().zoom,
+                                                                       /*marginTiles=*/2,
+                                                                       TITLE_WORLD_MAP_WIDTH,
+                                                                       TITLE_WORLD_MAP_HEIGHT);
+
+    if (forceRepaint || titleTiles.x != m_Tilemap.GetMapWidth() ||
+        titleTiles.y != m_Tilemap.GetMapHeight())
+    {
+        PaintTitleWorld(titleTiles.x, titleTiles.y);
+    }
+
+    // Center the camera on the (possibly resized) map using the accurate extent.
+    const glm::vec2 mapCenterPx(
+        static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth()) * 0.5f,
+        static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight()) * 0.5f);
+    const glm::vec2 view = VisibleWorldSizeZoomed();
+    m_Camera.Initialize(mapCenterPx, view.x, view.y);
+}
+
+void Game::LoadTitleScreenWorld()
+{
+    // Title is purely cosmetic - no save, NPCs, player, or editor. Strip
+    // session state to a clean slate before painting the grass.
+    // Re-arm the title-ambient latch: a fresh title session starts with
+    // the scripted ambient zones + initial weather, until the user opens
+    // the console (which strips them for the rest of the session).
+    m_TitleAmbientCleared = false;
+    m_NPCs.clear();
+    m_Editor.SetActive(false);
+    m_DialogueManager.EndDialogue();
+    m_InDialogue = false;
+    m_DialogueText.clear();
+    m_DialogueNPCIndex = -1;
+    m_DialoguePage = 0;
+    m_DialogueCharReveal = -1.0f;
+    m_DialogueBoxFadeTimer = 0.0f;
+    m_DialogueSnap.active = false;
+
+    // Size the title world to the current viewport, paint grass, build zones,
+    // and center the camera. Re-runnable on resize via the same helper.
+    RefreshTitleWorldForViewport(/*forceRepaint=*/true);
+
     // Park player at (0,0) to keep its tile coords valid - it isn't rendered
-    // in Title (Y-sort skips it). Camera centers on the map.
+    // in Title (Y-sort skips it).
     m_Player.SetTilePosition(0, 0);
-    glm::vec2 mapCenterPx(TITLE_WORLD_MAP_WIDTH * 0.5f * m_Tilemap.GetTileWidth(),
-                          TITLE_WORLD_MAP_HEIGHT * 0.5f * m_Tilemap.GetTileHeight());
-    float camWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
-    float camWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    m_Camera.Initialize(mapCenterPx, camWorldWidth, camWorldHeight);
 
     // Freeze time at night. TimeManager.Update is gated in Title mode so
     // this value holds until Continue / New Game.
@@ -374,11 +540,6 @@ void Game::LoadTitleScreenWorld()
     // AuroraNight enables aurora curtains + floating wisps (SkyRenderer reads
     // weather each frame). Cherry blossoms still drift via the title zone.
     m_TimeManager.SetWeather(WeatherState::AuroraNight);
-
-    // Refresh particle system's zone + tilemap pointers (the zones vector is
-    // held by reference across the system).
-    m_Particles.SetZones(m_Tilemap.GetParticleZones());
-    m_Particles.SetTilemap(&m_Tilemap);
 
     // Bump per-zone cap for a denser backdrop (one zone per type, whole-map).
     // Reset to gameplay value when a real game world loads.
@@ -393,7 +554,7 @@ void Game::LoadTitleScreenWorld()
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
     m_Particles.Clear();
     const glm::vec2 prewarmCam = m_Camera.GetState().position;
-    const glm::vec2 prewarmView(camWorldWidth, camWorldHeight);
+    const glm::vec2 prewarmView = VisibleWorldSizeZoomed();
     constexpr float PREWARM_DURATION_S = 5.0f;
     constexpr float PREWARM_STEP_S = 1.0f / 60.0f;
     constexpr int PREWARM_STEPS = static_cast<int>(PREWARM_DURATION_S / PREWARM_STEP_S);
@@ -874,21 +1035,23 @@ void Game::RenderTitleContent()
 
     const float screenW = static_cast<float>(m_ScreenWidth);
     const float screenH = static_cast<float>(m_ScreenHeight);
+    const float uiScale = viewScaling::MenuUiScale(
+        m_ScreenWidth, m_ScreenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
 
-    // "RIFT" logo drawn from the headline atlas (~96 px native) so it samples
-    // near 1:1 instead of upscaled from the 24-px body atlas.
+    // "RIFT" logo (headline atlas), scaled and anchored proportionally.
     const std::string logoText = "RIFT";
-    const float logoWidth = m_Renderer->GetTextWidthLarge(logoText, TITLE_LOGO_SCALE);
+    const float logoWidth = m_Renderer->GetTextWidthLarge(logoText, TITLE_LOGO_SCALE * uiScale);
     const float logoX = std::floor((screenW - logoWidth) * 0.5f);
     const float logoY = std::floor(screenH * 0.22f);
     m_Renderer->DrawTextLarge(logoText,
                               glm::vec2(logoX, logoY),
-                              TITLE_LOGO_SCALE,
+                              TITLE_LOGO_SCALE * uiScale,
                               TITLE_TEXT_COLOR,
                               TITLE_LOGO_OUTLINE,
                               1.0f);
 
     const float menuTopY = std::floor(screenH * 0.50f);
+    const float lineHeight = MENU_LINE_HEIGHT * uiScale;
     for (int i = 0; i < TITLE_ITEM_COUNT; ++i)
     {
         const bool enabled = m_TitleMenu.enabled[i];
@@ -897,12 +1060,12 @@ void Game::RenderTitleContent()
         const std::string display =
             selected ? std::string("> ") + label : std::string("  ") + label;
 
-        const float w = m_Renderer->GetTextWidth(display, MENU_ITEM_SCALE);
+        const float w = m_Renderer->GetTextWidth(display, MENU_ITEM_SCALE * uiScale);
         const float x = std::floor((screenW - w) * 0.5f);
-        const float y = menuTopY + i * MENU_LINE_HEIGHT;
+        const float y = menuTopY + i * lineHeight;
         m_Renderer->DrawText(display,
                              glm::vec2(x, y),
-                             MENU_ITEM_SCALE,
+                             MENU_ITEM_SCALE * uiScale,
                              MenuItemColor(selected, enabled),
                              MENU_ITEM_OUTLINE,
                              1.0f);
@@ -910,13 +1073,14 @@ void Game::RenderTitleContent()
 
     // Version footer (bottom-right).
     const std::string versionText = std::string("rift ") + RIFT_VERSION;
-    const float versionWidth = m_Renderer->GetTextWidth(versionText, VERSION_TEXT_SCALE);
-    m_Renderer->DrawText(versionText,
-                         glm::vec2(screenW - versionWidth - 16.0f, screenH - 28.0f),
-                         VERSION_TEXT_SCALE,
-                         TITLE_DISABLED_COLOR,
-                         1.0f,
-                         0.85f);
+    const float versionWidth = m_Renderer->GetTextWidth(versionText, VERSION_TEXT_SCALE * uiScale);
+    m_Renderer->DrawText(
+        versionText,
+        glm::vec2(screenW - versionWidth - 16.0f * uiScale, screenH - 28.0f * uiScale),
+        VERSION_TEXT_SCALE * uiScale,
+        TITLE_DISABLED_COLOR,
+        1.0f,
+        0.85f);
 }
 
 void Game::RenderConfirmOverwritePrompt()
@@ -1002,19 +1166,26 @@ void Game::RenderPauseOverlay()
 
     const float screenW = static_cast<float>(m_ScreenWidth);
     const float screenH = static_cast<float>(m_ScreenHeight);
+    const float uiScale = viewScaling::MenuUiScale(
+        m_ScreenWidth, m_ScreenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
 
     // Dim the frozen world.
     m_Renderer->DrawColoredRect(
         glm::vec2(0.0f, 0.0f), glm::vec2(screenW, screenH), PAUSE_DIM_COLOR);
 
     const std::string headerText = "-- PAUSED --";
-    const float headerW = m_Renderer->GetTextWidth(headerText, PAUSE_HEADER_SCALE);
+    const float headerW = m_Renderer->GetTextWidth(headerText, PAUSE_HEADER_SCALE * uiScale);
     const float headerX = std::floor((screenW - headerW) * 0.5f);
     const float headerY = std::floor(screenH * 0.32f);
-    m_Renderer->DrawText(
-        headerText, glm::vec2(headerX, headerY), PAUSE_HEADER_SCALE, TITLE_TEXT_COLOR, 2.5f, 1.0f);
+    m_Renderer->DrawText(headerText,
+                         glm::vec2(headerX, headerY),
+                         PAUSE_HEADER_SCALE * uiScale,
+                         TITLE_TEXT_COLOR,
+                         2.5f,
+                         1.0f);
 
     const float menuTopY = std::floor(screenH * 0.52f);
+    const float lineHeight = MENU_LINE_HEIGHT * uiScale;
     for (int i = 0; i < PAUSE_ITEM_COUNT; ++i)
     {
         const bool selected = (m_PauseMenu.selected == i);
@@ -1022,12 +1193,12 @@ void Game::RenderPauseOverlay()
         const std::string display =
             selected ? std::string("> ") + label : std::string("  ") + label;
 
-        const float w = m_Renderer->GetTextWidth(display, MENU_ITEM_SCALE);
+        const float w = m_Renderer->GetTextWidth(display, MENU_ITEM_SCALE * uiScale);
         const float x = std::floor((screenW - w) * 0.5f);
-        const float y = menuTopY + i * MENU_LINE_HEIGHT;
+        const float y = menuTopY + i * lineHeight;
         m_Renderer->DrawText(display,
                              glm::vec2(x, y),
-                             MENU_ITEM_SCALE,
+                             MENU_ITEM_SCALE * uiScale,
                              MenuItemColor(selected, /*enabled=*/true),
                              MENU_ITEM_OUTLINE,
                              1.0f);
