@@ -17,6 +17,7 @@
 #include "SkyRenderer.hpp"
 #include "Tilemap.hpp"
 #include "TimeManager.hpp"
+#include "ViewScaling.hpp"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -370,6 +371,19 @@ public:
      */
     GLFWwindow* GetWindow() const { return m_Window; }
 
+    /// Visible world extent (world pixels) at the current window size; matches
+    /// the render projection. Single source of truth for camera/particle sizing.
+    glm::vec2 VisibleWorldSize() const
+    {
+        return viewScaling::VisibleWorldSize(m_ScreenWidth, m_ScreenHeight, PIXEL_SCALE);
+    }
+    /// As VisibleWorldSize() but divided by the current camera zoom.
+    glm::vec2 VisibleWorldSizeZoomed() const
+    {
+        return viewScaling::VisibleWorldSizeZoomed(
+            m_ScreenWidth, m_ScreenHeight, PIXEL_SCALE, m_Camera.GetState().zoom);
+    }
+
     /**
      * @brief Whether a simple (non-tree) dialogue is currently active.
      *
@@ -544,6 +558,21 @@ private:
     /// Boot uses @c LoadTitleScreenWorld instead so the user's save isn't
     /// touched until they pick @em Continue.
     void LoadGameWorld(bool loadSave);
+
+    /// Pack every loaded NPC sprite sheet and the active player's three
+    /// sheets into the tile atlas, then bind each character to its packed
+    /// region. Called from LoadGameWorld so character draws share the atlas
+    /// texture with tiles, collapsing the Y-sorted pass into one batch.
+    void PackCharactersIntoAtlas();
+
+    /// Build the title world at the given tile dimensions: resize the map, paint
+    /// grass on layer 0, rebuild whole-map particle zones, and refresh the
+    /// particle system. Title screen only.
+    void PaintTitleWorld(int tilesWide, int tilesTall);
+    /// Size the title world to cover the current viewport (never below the base
+    /// size) and re-center the camera. forceRepaint repaints even if the size is
+    /// unchanged (use on initial load; pass false on resize to skip no-op rebuilds).
+    void RefreshTitleWorldForViewport(bool forceRepaint);
 
     /// Load the cosmetic title-screen world: a plain grass map populated
     /// with firefly particle zones and frozen at night. No player, no NPCs.
@@ -802,6 +831,13 @@ private:
     double m_MenuLastMouseX = -1.0;
     double m_MenuLastMouseY = -1.0;
     bool m_MenuMouseLeftPrev = false;
+    /// One-shot latch: the first time the console opens during a title
+    /// session, the title's ambient particle zones AND the initial weather
+    /// are cleared so the user can `weather <state>` against a clean canvas.
+    /// Stays cleared for the rest of the title session, even after the
+    /// console is closed. Reset to false when @ref LoadTitleScreenWorld
+    /// re-enters the title world (e.g., on boot or Quit-to-Title).
+    bool m_TitleAmbientCleared = false;
     int m_DefaultMapWidth = 64;   ///< Cached from manifest for ResetWorldToDefaults.
     int m_DefaultMapHeight = 48;  ///< Cached from manifest for ResetWorldToDefaults.
     /// Player character types declared in the project manifest, in

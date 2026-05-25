@@ -443,6 +443,25 @@ void Game::Update(float deltaTime)
         ~UpdateGuard() { flag = false; }
     } updateGuard(m_IsUpdating);
 
+    // One-shot: first console open during a title session permanently
+    // strips the title's ambient zones AND the initial weather so the rest
+    // of the session shows only what the user sets via the console. Cleared
+    // state persists after the console closes (still in Title); only
+    // LoadTitleScreenWorld resets the latch. In-game is unaffected because
+    // LoadGameWorld replaced the zone list with the gameplay map's zones.
+    if (m_GameMode == GameMode::Title && m_Console.IsOpen() && !m_TitleAmbientCleared)
+    {
+        m_TitleAmbientCleared = true;
+        m_Particles.SetZones(nullptr);
+        m_Particles.Clear();
+        if (auto* zones = m_Tilemap.GetParticleZonesMutable())
+        {
+            zones->clear();
+        }
+        m_TimeManager.SetWeather(WeatherState::Clear);
+        m_TimeManager.SetWeatherIntensity(0.0f);
+    }
+
     m_Fps.frameCount++;
     m_Fps.updateTimer += deltaTime;
     if (m_Fps.updateTimer >= 1.0f)  // Refresh FPS display once per second.
@@ -496,10 +515,10 @@ void Game::Update(float deltaTime)
     }
     m_SkyRenderer.Update(deltaTime, m_TimeManager);
 
-    float pWorldW = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
-    float pWorldH = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
     glm::vec2 particleCullCam = m_Camera.GetState().position;
-    glm::vec2 viewSize(pWorldW / m_Camera.GetState().zoom, pWorldH / m_Camera.GetState().zoom);
+    // Accurate pixel-based extent (matches the render projection) so weather +
+    // ambient particles cover the true viewport, not a truncated tile count.
+    glm::vec2 viewSize = VisibleWorldSizeZoomed();
     if (m_Camera.GetState().enable3DEffect)
     {
         float horizonScale =
@@ -517,6 +536,9 @@ void Game::Update(float deltaTime)
     }
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
+    // Bottom-center of the player sprite; used by PollenStorm / FallingLeaves
+    // for hitbox-anchored avoidance.
+    m_Particles.SetPlayerPosition(m_Player.GetPosition());
     // Push active weather so the particle system can drive global weather
     // spawning (rain/snow/ash/etc.) across the viewport.
     m_Particles.SetWeatherState(&GetWeatherDefinition(m_TimeManager.GetWeather()),
@@ -824,8 +846,9 @@ void Game::Render()
 
     // World size from actual screen pixels (not truncated tile count) so the
     // viewport matches the true visible area.
-    float worldWidth = static_cast<float>(m_ScreenWidth) / static_cast<float>(PIXEL_SCALE);
-    float worldHeight = static_cast<float>(m_ScreenHeight) / static_cast<float>(PIXEL_SCALE);
+    const glm::vec2 world = VisibleWorldSize();
+    float worldWidth = world.x;
+    float worldHeight = world.y;
 
     m_Renderer->SetAmbientColor(m_TimeManager.GetAmbientColor());
 
@@ -1028,6 +1051,10 @@ void Game::Render()
     // Perspective state is sticky across iterations: tiles want it enabled,
     // entities suspended. Flip only on transitions so contiguous runs stay in
     // one sprite batch. Contract: enter and leave with perspective suspended.
+    // SuspendPerspective is reference-counted, so any guard a render method
+    // constructs internally cycles depth 1<->2 without crossing the 0/1
+    // boundary (no flush). Any unbalanced suspend/resume pair inside this
+    // loop would leak depth across frames and the BeginFrame assert will fire.
     {
         char ysortLabel[64];
         std::snprintf(ysortLabel,
@@ -1118,7 +1145,7 @@ void Game::Render()
                 continue;
             glm::vec2 screenPos = light.position - renderCam;
             float diameter = light.radius * 2.0f;
-            m_Renderer->DrawSpriteAlpha(m_SkyRenderer.GetLightPoolTexture(),
+            m_SkyRenderer.DrawLightPool(*m_Renderer,
                                         screenPos - glm::vec2(light.radius),
                                         glm::vec2(diameter),
                                         0.0f,
@@ -1235,6 +1262,19 @@ void Game::Render()
                              2.0f,
                              0.85f);
         m_Renderer->DrawText(tileText,
+                             glm::vec2(DEBUG_TEXT_MARGIN, 32.0f + lineHeight * currentLine++),
+                             1.0f,
+                             glm::vec3(1.0f, 1.0f, 0.0f),
+                             2.0f,
+                             0.85f);
+
+        char particlesText[64];
+        snprintf(particlesText,
+                 sizeof(particlesText),
+                 "Particles: %zu live / %zu drawn",
+                 m_Particles.GetParticles().size(),
+                 m_Particles.GetLastDrawnCount());
+        m_Renderer->DrawText(particlesText,
                              glm::vec2(DEBUG_TEXT_MARGIN, 32.0f + lineHeight * currentLine++),
                              1.0f,
                              glm::vec3(1.0f, 1.0f, 0.0f),
@@ -1564,10 +1604,9 @@ bool Game::SwitchRenderer(RendererAPI api)
         }
 
         m_Renderer->SetViewport(0, 0, m_ScreenWidth, m_ScreenHeight);
-        float worldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth()) /
-                           m_Camera.GetState().zoom;
-        float worldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight()) /
-                            m_Camera.GetState().zoom;
+        const glm::vec2 world = VisibleWorldSizeZoomed();
+        float worldWidth = world.x;
+        float worldHeight = world.y;
         m_Camera.ConfigurePerspective(*m_Renderer, worldWidth, worldHeight);
         glm::mat4 projection = CameraController::GetOrthoProjection(worldWidth, worldHeight);
         m_Renderer->SetProjection(projection);
@@ -1581,6 +1620,11 @@ bool Game::SwitchRenderer(RendererAPI api)
         }
         m_Particles.UploadTextures(*m_Renderer);
         m_SkyRenderer.UploadTextures(*m_Renderer);
+
+        // Re-pack characters into the freshly-uploaded atlas. PackCharactersIntoAtlas
+        // also re-uploads the tile atlas, so this must run AFTER the per-texture
+        // uploads above (which create the GL resources the pack relies on).
+        PackCharactersIntoAtlas();
 
         return true;
     };
@@ -1650,13 +1694,9 @@ void Game::OnFramebufferResized(int width, int height)
     if (m_GameMode == GameMode::Title && m_Tilemap.GetMapWidth() > 0 &&
         m_Tilemap.GetMapHeight() > 0)
     {
-        const float mapCenterX =
-            static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth()) * 0.5f;
-        const float mapCenterY =
-            static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight()) * 0.5f;
-        const float worldW = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
-        const float worldH = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-        m_Camera.Initialize(glm::vec2(mapCenterX, mapCenterY), worldW, worldH);
+        // Grow the title world (and its particle zones) so grass keeps covering
+        // the window, then re-center. Repaints only when the tile size changes.
+        RefreshTitleWorldForViewport(/*forceRepaint=*/false);
     }
 
     // Schedule a snap once the resize settles.
