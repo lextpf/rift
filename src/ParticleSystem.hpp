@@ -85,18 +85,20 @@ struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<Partic
  */
 struct Particle
 {
-    glm::vec2 position;  ///< World position (pixels).
-    glm::vec2 velocity;  ///< Movement per second (pixels/s).
-    glm::vec4 color;     ///< RGBA color (alpha may animate).
-    float size;          ///< Sprite size in pixels.
-    float lifetime;      ///< Remaining life (seconds).
-    float maxLifetime;   ///< Original lifetime for fade calculations.
-    float phase;         ///< Random phase offset for oscillation effects.
-    float rotation;      ///< Sprite rotation (degrees).
-    bool additive;       ///< Use additive blending for glow.
-    bool noProjection;   ///< Render without perspective distortion.
-    int zoneIndex;       ///< Spawning zone index, or -1 for zoneless one-shots/ambient.
-    ParticleType type;   ///< Particle behavior type.
+    glm::vec2 position;        ///< World position (pixels).
+    glm::vec2 velocity;        ///< Movement per second (pixels/s).
+    glm::vec4 color;           ///< RGBA color (alpha may animate).
+    float size;                ///< Sprite size in pixels.
+    float lifetime;            ///< Remaining life (seconds).
+    float maxLifetime;         ///< Original lifetime for fade calculations.
+    float phase;               ///< Random phase offset for oscillation effects.
+    float rotation;            ///< Sprite rotation (degrees).
+    float bakedGroundY{0.0f};  ///< Per-particle ground reference (used by Rain weather for splash
+                               ///< impact); 0 means unset.
+    bool additive;             ///< Use additive blending for glow.
+    bool noProjection;         ///< Render without perspective distortion.
+    int zoneIndex;             ///< Spawning zone index, or -1 for zoneless one-shots/ambient.
+    ParticleType type;         ///< Particle behavior type.
 };
 
 /**
@@ -170,16 +172,16 @@ struct ParticleZone
  * @section particle_types Particle Type Behaviors
  * | Type     | Spawn Rate | Lifetime | Size    | Special Behavior           |
  * |----------|------------|----------|---------|----------------------------|
- * | Firefly  | 3/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
- * | Rain     | 50/s       | 2s       | 10-14px | Fast fall, angled sprite   |
- * | Snow     | 12/s       | 15s      | 1.5-3px | Slow fall, rotation        |
- * | Fog      | 3/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
- * | Sparkles | 18/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * | Wisp     | 4/s
+ * | Firefly  | 8/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
+ * | Rain     | 25/s       | 2s       | 10-14px | Fast fall, angled sprite   |
+ * | Snow     | 25/s       | 15s      | 1.5-3px | Slow fall, rotation        |
+ * | Fog      | 5/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
+ * | Sparkles | 28/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
+ * | Wisp     | 11/s
  * | 4-7s     | 2-4px   | Spiral movement, colors    |
  * | Lantern  | 0.5/s      | 10-15s   | 4x
  * zone | Night-only glow            |
- * | Sunshine | 0.8/s      | 5-9s     | 40-64px | Angled
+ * | Sunshine | 1.3/s      | 5-9s     | 40-64px | Angled
  * rays, day/night     |
  * | DriftingLeaf | weather | varied   | varied  | Wind-blown leaves |
  * |
@@ -355,6 +357,23 @@ public:
     const std::vector<Particle>& GetParticles() const { return m_Particles; }
 
     /**
+     * @brief Toggle rendering of all particles (weather, zone, ambient).
+     *
+     * Simulation keeps running while rendering is disabled, so toggling back
+     * on does not show a populate-in delay. Used by the `particles` console
+     * command to A/B-compare scenes with and without particle layers.
+     */
+    void SetRenderEnabled(bool enabled) { m_RenderEnabled = enabled; }
+    bool IsRenderEnabled() const { return m_RenderEnabled; }
+
+    /**
+     * @brief Number of particles that survived culling and were drawn on the
+     * most recent @c Render call. Reported as zero while rendering is
+     * disabled. Used by the debug overlay to gauge live load.
+     */
+    size_t GetLastDrawnCount() const { return m_LastDrawnCount; }
+
+    /**
      * @brief Remove all active particles.
      */
     void Clear() { m_Particles.clear(); }
@@ -407,6 +426,18 @@ public:
      */
     void SetWeatherState(const WeatherDefinition* def, float intensity);
 
+    /**
+     * @brief Set the player's bottom-center world position.
+     *
+     * Used by PollenStorm / FallingLeaves so weather particles can "avoid"
+     * the player's 16x32 hitbox (the standard 16x16 hitbox plus the tile
+     * directly above the player) when the player is moving. Called once per
+     * frame from Game::Update.
+     *
+     * @param pos Bottom-center of the player sprite in world pixels.
+     */
+    void SetPlayerPosition(glm::vec2 pos) { m_PlayerPosition = pos; }
+
 private:
     void SpawnParticleInZone(int zoneIndex, const ParticleZone& zone);
 
@@ -445,13 +476,21 @@ private:
     /// upwind edge for sand, anywhere for fog/ash).
     void SpawnWeatherParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
 
-    /// Sentinel zoneIndex for weather-spawned particles.
+public:
+    /// Sentinel zoneIndex for weather-spawned particles. Public so the
+    /// per-type ParticleBehavior templates (defined at namespace scope in
+    /// ParticleSystem.cpp) can discriminate weather-driven particles from
+    /// zone/ambient spawns when their Update behavior needs to differ
+    /// (e.g. FallingLeaves applying camera-velocity drag).
     static constexpr int WEATHER_ZONE_INDEX = -2;
 
+private:
     /// @name Particle Pool
     /// @{
 
     std::vector<Particle> m_Particles;         ///< Active particle pool.
+    std::vector<Particle> m_PendingSpawns;     ///< Mid-update spawns (e.g., Rain splashes), merged
+                                               ///< after the update loop.
     const std::vector<ParticleZone>* m_Zones;  ///< Zone list (owned by Tilemap).
     const Tilemap* m_Tilemap;                  ///< Tilemap for structure queries.
 
@@ -480,6 +519,18 @@ private:
     float m_WeatherIntensity{1.0f};                         ///< 0-1 density scalar.
     float m_WeatherSpawnTimer{0.0f};                        ///< Primary spawn accumulator.
     float m_WeatherSpawnTimerSecondary{0.0f};               ///< Secondary spawn accumulator.
+    /// @}
+
+    /// @name Camera Tracking
+    /// Smoothed camera velocity, derived from per-frame deltas in Update(),
+    /// used to gate weather-particle avoidance behavior to "player is moving".
+    /// Player position is set per-frame from Game::Update and drives the
+    /// hitbox-anchored avoidance zone used by PollenStorm / FallingLeaves.
+    /// @{
+    glm::vec2 m_PrevCameraPos{0.0f};
+    glm::vec2 m_CameraVelocity{0.0f};
+    bool m_HasPrevCameraPos{false};  ///< False until the first Update() seeds m_PrevCameraPos.
+    glm::vec2 m_PlayerPosition{0.0f};
     /// @}
 
     /// @}
@@ -544,6 +595,9 @@ private:
     std::vector<ParticleRenderData>
         m_NoProjectionBatch;                         ///< Particles rendered without perspective.
     std::vector<ParticleRenderData> m_RegularBatch;  ///< Particles rendered with perspective.
+
+    bool m_RenderEnabled = true;  ///< When false, Render() early-outs and reports zero drawn.
+    size_t m_LastDrawnCount = 0;  ///< Drawn count from the most recent Render() pass.
 
     /**
      * @brief Generate the lantern glow texture procedurally.
