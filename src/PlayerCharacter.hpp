@@ -183,10 +183,27 @@ public:
      */
     void UploadTextures(IRenderer& renderer);
 
+    /**
+     * @brief Bind the three player sprite sheets (walk / run / bicycle) to
+     *        atlas regions so render uses the shared atlas texture instead
+     *        of the per-player textures. Pass @c nullptr for @p atlasTex to
+     *        revert to the per-player sheets.
+     *
+     * Offsets are pixel-space within the atlas.
+     */
+    void SetAtlasBinding(const Texture* atlasTex,
+                         glm::vec2 walkOffset,
+                         glm::vec2 runOffset,
+                         glm::vec2 bicycleOffset);
+
     /// @brief Get the walking sprite sheet (const, for rendering / sampling).
     const Texture& GetSpriteSheet() const { return m_SpriteSheet; }
     /// @brief Get mutable reference to the walking sprite sheet.
     Texture& GetSpriteSheet() { return m_SpriteSheet; }
+    /// @brief Get the running sprite sheet (const).
+    const Texture& GetRunningSpriteSheet() const { return m_RunningSpriteSheet; }
+    /// @brief Get the bicycle sprite sheet (const).
+    const Texture& GetBicycleSpriteSheet() const { return m_BicycleSpriteSheet; }
 
     /// @brief Get a representative accent color for the player (lazy, cached).
     /// Sampled from the walking sprite sheet via @ref Texture::SampleDominantNonSkinColor;
@@ -441,6 +458,14 @@ private:
     Texture m_RunningSpriteSheet;  ///< Running sprite sheet
     Texture m_BicycleSpriteSheet;  ///< Bicycle sprite sheet
     /** @} */
+
+    /// Atlas binding (see @ref SetAtlasBinding). When set, render reads from
+    /// this texture instead of the per-player sheets, with per-sheet pixel
+    /// offsets selecting the correct region.
+    const Texture* m_AtlasTexture{nullptr};
+    glm::vec2 m_AtlasWalkOffset{0.0f};
+    glm::vec2 m_AtlasRunOffset{0.0f};
+    glm::vec2 m_AtlasBicycleOffset{0.0f};
 
     mutable glm::vec3 m_AccentColor{0.0f};  ///< Cached accent color (lazy via GetAccentColor)
     mutable bool m_AccentSampled{false};    ///< Reset on character/appearance swap

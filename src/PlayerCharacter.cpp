@@ -130,6 +130,17 @@ void PlayerCharacter::UploadTextures(IRenderer& renderer)
     renderer.UploadTexture(m_BicycleSpriteSheet);
 }
 
+void PlayerCharacter::SetAtlasBinding(const Texture* atlasTex,
+                                      glm::vec2 walkOffset,
+                                      glm::vec2 runOffset,
+                                      glm::vec2 bicycleOffset)
+{
+    m_AtlasTexture = atlasTex;
+    m_AtlasWalkOffset = walkOffset;
+    m_AtlasRunOffset = runOffset;
+    m_AtlasBicycleOffset = bicycleOffset;
+}
+
 void PlayerCharacter::SetCharacterAsset(CharacterType characterType,
                                         const std::string& spriteType,
                                         const std::string& path)
@@ -311,9 +322,20 @@ void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
 
     // Select sprite sheet based on movement mode
-    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
-                           : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
-                                                                     : m_SpriteSheet;
+    const Texture& localSheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+                                : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
+                                                                          : m_SpriteSheet;
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // each standalone player sheet's stbi-flipped layout), so flipY stays false
+    // and the renderer's UV math lands on the correct packed region.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : localSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_IsBicycling                             ? m_AtlasBicycleOffset
+                        : (m_AnimationType == AnimationType::RUN) ? m_AtlasRunOffset
+                                                                  : m_AtlasWalkOffset;
+    }
+    constexpr bool useAtlasFlip = false;
 
     // Suspend perspective - we already projected the position, don't double-project
     {
@@ -325,7 +347,7 @@ void PlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos)
                                   glm::vec2(SPRITE_WIDTH_F, SPRITE_HEIGHT_F),
                                   0.0f,
                                   glm::vec3(1.0f),
-                                  false);
+                                  useAtlasFlip);
     }
 }
 
@@ -361,9 +383,20 @@ void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
     }*/
 
     // Select sprite sheet based on movement mode
-    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
-                           : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
-                                                                     : m_SpriteSheet;
+    const Texture& localSheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+                                : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
+                                                                          : m_SpriteSheet;
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // each standalone player sheet's stbi-flipped layout), so flipY stays false
+    // and the renderer's UV math lands on the correct packed region.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : localSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_IsBicycling                             ? m_AtlasBicycleOffset
+                        : (m_AnimationType == AnimationType::RUN) ? m_AtlasRunOffset
+                                                                  : m_AtlasWalkOffset;
+    }
+    constexpr bool useAtlasFlip = false;
 
     // Bottom half: lower 16 pixels of the sprite
     // Render position is offset to show only the bottom half
@@ -380,7 +413,7 @@ void PlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos)
                                   glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
                                   0.0f,
                                   glm::vec3(1.0f),
-                                  false);
+                                  useAtlasFlip);
     }
 }
 
@@ -402,9 +435,20 @@ void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
     glm::vec2 renderPos = bottomCenter - glm::vec2(SPRITE_WIDTH_F / 2.0f, SPRITE_HEIGHT_F);
 
     // Select sprite sheet based on movement mode
-    const Texture& sheet = m_IsBicycling                             ? m_BicycleSpriteSheet
-                           : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
-                                                                     : m_SpriteSheet;
+    const Texture& localSheet = m_IsBicycling                             ? m_BicycleSpriteSheet
+                                : (m_AnimationType == AnimationType::RUN) ? m_RunningSpriteSheet
+                                                                          : m_SpriteSheet;
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // each standalone player sheet's stbi-flipped layout), so flipY stays false
+    // and the renderer's UV math lands on the correct packed region.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : localSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_IsBicycling                             ? m_AtlasBicycleOffset
+                        : (m_AnimationType == AnimationType::RUN) ? m_AtlasRunOffset
+                                                                  : m_AtlasWalkOffset;
+    }
+    constexpr bool useAtlasFlip = false;
 
     // Top half: upper 16 pixels of the sprite (head/torso area)
     glm::vec2 topSpriteCoords = spriteCoords + glm::vec2(0.0f, SPRITE_HALF_HEIGHT);
@@ -419,7 +463,7 @@ void PlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
                                   glm::vec2(SPRITE_WIDTH_F, SPRITE_HALF_HEIGHT),
                                   0.0f,
                                   glm::vec3(1.0f),
-                                  false);
+                                  useAtlasFlip);
     }
 }
 
