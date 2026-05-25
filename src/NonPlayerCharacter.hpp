@@ -98,6 +98,17 @@ public:
     void UploadTextures(IRenderer& renderer);
 
     /**
+     * @brief Bind this NPC's sprite to an atlas region.
+     *
+     * When bound, @ref Render / @ref RenderBottomHalf / @ref RenderTopHalf
+     * draw out of @p atlasTex with UVs shifted by @p atlasOffset, instead
+     * of the per-NPC @ref m_SpriteSheet. This lets all NPCs share a single
+     * texture (the tile atlas) and batch into one draw call. Pass
+     * @p atlasTex = nullptr to revert to the per-NPC sheet.
+     */
+    void SetAtlasBinding(const Texture* atlasTex, glm::vec2 atlasOffset);
+
+    /**
      * @brief Set NPC position by tile coordinates.
      * @param tileX Tile column.
      * @param tileY Tile row.
@@ -235,13 +246,15 @@ public:
     glm::vec3 GetAccentColor() const;
 
 private:
-    Texture m_SpriteSheet;                  ///< Loaded sprite sheet texture
-    mutable glm::vec3 m_AccentColor{0.0f};  ///< Cached accent color (lazy via GetAccentColor)
-    mutable bool m_AccentSampled{false};    ///< False until GetAccentColor() runs once
-    std::string m_Type;                     ///< NPC type identifier (e.g., "elder", "guard")
-    std::string m_Name;                     ///< Display name shown during dialogue
-    std::string m_Dialogue;                 ///< Simple dialogue text (fallback when no tree)
-    DialogueTree m_DialogueTree;            ///< Branching dialogue tree (may be empty)
+    Texture m_SpriteSheet;                   ///< Loaded sprite sheet texture
+    mutable glm::vec3 m_AccentColor{0.0f};   ///< Cached accent color (lazy via GetAccentColor)
+    mutable bool m_AccentSampled{false};     ///< False until GetAccentColor() runs once
+    const Texture* m_AtlasTexture{nullptr};  ///< Atlas texture override (see SetAtlasBinding)
+    glm::vec2 m_AtlasOffset{0.0f};           ///< Pixel offset of this NPC's sheet within the atlas
+    std::string m_Type;                      ///< NPC type identifier (e.g., "elder", "guard")
+    std::string m_Name;                      ///< Display name shown during dialogue
+    std::string m_Dialogue;                  ///< Simple dialogue text (fallback when no tree)
+    DialogueTree m_DialogueTree;             ///< Branching dialogue tree (may be empty)
 
     static std::unordered_map<std::string, std::string> s_NpcAssets;
 

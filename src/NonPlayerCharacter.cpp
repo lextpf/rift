@@ -146,6 +146,12 @@ void NonPlayerCharacter::UploadTextures(IRenderer& renderer)
     renderer.UploadTexture(m_SpriteSheet);
 }
 
+void NonPlayerCharacter::SetAtlasBinding(const Texture* atlasTex, glm::vec2 atlasOffset)
+{
+    m_AtlasTexture = atlasTex;
+    m_AtlasOffset = atlasOffset;
+}
+
 void NonPlayerCharacter::SetTilePosition(int tileX, int tileY, int tileSize, bool preserveRoute)
 {
     m_TileX = tileX;
@@ -468,14 +474,30 @@ void NonPlayerCharacter::Render(IRenderer& renderer, glm::vec2 cameraPos) const
     glm::vec2 renderPos = bottomCenter - glm::vec2(spriteWidth / 2.0f, spriteHeight);
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
 
-    renderer.DrawSpriteRegion(m_SpriteSheet,
+    // Atlas binding: draw out of the shared tile atlas with UVs shifted, so
+    // all NPCs share one texture and batch with the tiles. Falls back to the
+    // per-NPC sheet when no atlas binding is set. The tile atlas is uploaded
+    // pre-flipped (matching the tilemap's `flipY = RequiresYFlip()` draw
+    // convention), so atlas-bound draws must also pass `RequiresYFlip()` or
+    // the renderer samples the wrong row of the GL texture.
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // the standalone NPC sheet's stbi-flipped layout), so flipY stays false and
+    // the renderer's UV math lands on the packed region as if it were standalone.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : m_SpriteSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_AtlasOffset;
+    }
+    constexpr bool useAtlasFlip = false;
+
+    renderer.DrawSpriteRegion(sheet,
                               renderPos,
                               glm::vec2(spriteWidth, spriteHeight),
                               spriteCoords,
                               glm::vec2(spriteWidth, spriteHeight),
                               0.0f,
                               glm::vec3(1.0f),
-                              false);
+                              useAtlasFlip);
 }
 
 void NonPlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraPos) const
@@ -492,19 +514,28 @@ void NonPlayerCharacter::RenderBottomHalf(IRenderer& renderer, glm::vec2 cameraP
 
     glm::vec2 renderPos = bottomCenter - glm::vec2(spriteWidth / 2.0f, spriteHeight);
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // the standalone NPC sheet's stbi-flipped layout), so flipY stays false and
+    // the renderer's UV math lands on the packed region as if it were standalone.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : m_SpriteSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_AtlasOffset;
+    }
+    constexpr bool useAtlasFlip = false;
 
     // Draw lower 16 pixels (feet area)
     glm::vec2 bottomHalfCoords = spriteCoords;
     {
         IRenderer::PerspectiveSuspendGuard guard(renderer);
-        renderer.DrawSpriteRegion(m_SpriteSheet,
+        renderer.DrawSpriteRegion(sheet,
                                   renderPos + glm::vec2(0.0f, halfHeight),
                                   glm::vec2(spriteWidth, halfHeight),
                                   bottomHalfCoords,
                                   glm::vec2(spriteWidth, halfHeight),
                                   0.0f,
                                   glm::vec3(1.0f),
-                                  false);
+                                  useAtlasFlip);
     }
 }
 
@@ -522,19 +553,28 @@ void NonPlayerCharacter::RenderTopHalf(IRenderer& renderer, glm::vec2 cameraPos)
 
     glm::vec2 renderPos = bottomCenter - glm::vec2(spriteWidth / 2.0f, spriteHeight);
     glm::vec2 spriteCoords = GetSpriteCoords(m_CurrentFrame, m_Direction);
+    // The atlas offset baked by PackAdditionalSheets is in GL-row space (matching
+    // the standalone NPC sheet's stbi-flipped layout), so flipY stays false and
+    // the renderer's UV math lands on the packed region as if it were standalone.
+    const Texture& sheet = m_AtlasTexture ? *m_AtlasTexture : m_SpriteSheet;
+    if (m_AtlasTexture)
+    {
+        spriteCoords += m_AtlasOffset;
+    }
+    constexpr bool useAtlasFlip = false;
 
     // Draw upper 16 pixels (head/torso area)
     glm::vec2 topHalfCoords = spriteCoords + glm::vec2(0.0f, halfHeight);
 
     {
         IRenderer::PerspectiveSuspendGuard guard(renderer);
-        renderer.DrawSpriteRegion(m_SpriteSheet,
+        renderer.DrawSpriteRegion(sheet,
                                   renderPos,
                                   glm::vec2(spriteWidth, halfHeight),
                                   topHalfCoords,
                                   glm::vec2(spriteWidth, halfHeight),
                                   0.0f,
                                   glm::vec3(1.0f),
-                                  false);
+                                  useAtlasFlip);
     }
 }
