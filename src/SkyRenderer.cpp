@@ -102,6 +102,96 @@ void SkyRenderer::UploadTextures(IRenderer& renderer)
     renderer.UploadTexture(m_AuroraSmallTexture);
 }
 
+void SkyRenderer::DrawLightPool(IRenderer& renderer,
+                                glm::vec2 pos,
+                                glm::vec2 size,
+                                float rotation,
+                                glm::vec4 color,
+                                bool additive)
+{
+    // Free function defined below in this file's anonymous namespace.
+    // Use the bound atlas if SetAtlasBinding has been called.
+    if (m_AtlasTexture != nullptr)
+    {
+        const float aw = static_cast<float>(m_AtlasTexture->GetWidth());
+        const float ah = static_cast<float>(m_AtlasTexture->GetHeight());
+        if (aw > 0.0f && ah > 0.0f)
+        {
+            // See DrawSkyElement: atlas sub-region preserves the source's
+            // m_ImageData layout, so uv math is a direct map.
+            const glm::vec2 regionSize(static_cast<float>(m_LightPoolTexture.GetWidth()),
+                                       static_cast<float>(m_LightPoolTexture.GetHeight()));
+            const glm::vec2 uvMin = m_LightPoolAtlasOffset / glm::vec2(aw, ah);
+            const glm::vec2 uvMax = (m_LightPoolAtlasOffset + regionSize) / glm::vec2(aw, ah);
+            renderer.DrawSpriteAtlas(
+                *m_AtlasTexture, pos, size, uvMin, uvMax, rotation, color, additive);
+            return;
+        }
+    }
+    renderer.DrawSpriteAlpha(m_LightPoolTexture, pos, size, rotation, color, additive);
+}
+
+void SkyRenderer::SetAtlasBinding(const Texture* atlasTex,
+                                  glm::vec2 rayOffset,
+                                  glm::vec2 starOffset,
+                                  glm::vec2 starGlowOffset,
+                                  glm::vec2 shootingStarOffset,
+                                  glm::vec2 glowOffset,
+                                  glm::vec2 lightPoolOffset,
+                                  glm::vec2 auroraCurtainOffset,
+                                  glm::vec2 auroraSmallOffset)
+{
+    m_AtlasTexture = atlasTex;
+    m_RayAtlasOffset = rayOffset;
+    m_StarAtlasOffset = starOffset;
+    m_StarGlowAtlasOffset = starGlowOffset;
+    m_ShootingStarAtlasOffset = shootingStarOffset;
+    m_GlowAtlasOffset = glowOffset;
+    m_LightPoolAtlasOffset = lightPoolOffset;
+    m_AuroraCurtainAtlasOffset = auroraCurtainOffset;
+    m_AuroraSmallAtlasOffset = auroraSmallOffset;
+}
+
+namespace
+{
+/// Helper: route a sky-element draw through the bound atlas if any,
+/// else fall back to the per-element texture. Keeps the existing
+/// DrawSpriteAlpha semantics (full-texture sample) while collapsing
+/// the GPU-side flush count when the atlas is bound.
+void DrawSkyElement(IRenderer& renderer,
+                    const Texture* atlasTex,
+                    glm::vec2 atlasOffset,
+                    const Texture& fallback,
+                    glm::vec2 pos,
+                    glm::vec2 size,
+                    float rotation,
+                    glm::vec4 color,
+                    bool additive)
+{
+    if (atlasTex != nullptr)
+    {
+        const float aw = static_cast<float>(atlasTex->GetWidth());
+        const float ah = static_cast<float>(atlasTex->GetHeight());
+        if (aw > 0.0f && ah > 0.0f)
+        {
+            // The tile atlas is pre-flipped before GPU upload, so the GL row
+            // PackAdditionalSheets flips each source on copy so the atlas
+            // sub-region preserves the source's m_ImageData layout exactly.
+            // That means uv (atlasOffset/atlasSize, (atlasOffset+regionSize)
+            // /atlasSize) on the atlas samples the same texels as uv
+            // (0,0)-(1,1) on the standalone texture - no Y inversion here.
+            const glm::vec2 regionSize(static_cast<float>(fallback.GetWidth()),
+                                       static_cast<float>(fallback.GetHeight()));
+            const glm::vec2 uvMin = atlasOffset / glm::vec2(aw, ah);
+            const glm::vec2 uvMax = (atlasOffset + regionSize) / glm::vec2(aw, ah);
+            renderer.DrawSpriteAtlas(*atlasTex, pos, size, uvMin, uvMax, rotation, color, additive);
+            return;
+        }
+    }
+    renderer.DrawSpriteAlpha(fallback, pos, size, rotation, color, additive);
+}
+}  // namespace
+
 void SkyRenderer::GenerateLightPoolTexture()
 {
     constexpr int kSize = 128;
@@ -196,6 +286,11 @@ void SkyRenderer::Update(float deltaTime, const TimeManager& time)
         if (m_LightningTimer <= 0.0f)
         {
             m_LightningFlashTimer = 0.08f;
+            // Bolt visibility outlasts the flash by ~0.1s so the jagged
+            // streak lingers briefly after the screen goes back to normal.
+            m_LightningBoltTimer = 0.18f;
+            GenerateLightningBolt(static_cast<int>(m_LastScreenWidth),
+                                  static_cast<int>(m_LastScreenHeight));
             // +/-30% jitter on the configured interval.
             std::uniform_real_distribution<float> jitter(0.7f, 1.3f);
             m_LightningTimer = def.lightningIntervalSeconds * jitter(m_Rng);
@@ -208,6 +303,10 @@ void SkyRenderer::Update(float deltaTime, const TimeManager& time)
     if (m_LightningFlashTimer > 0.0f)
     {
         m_LightningFlashTimer = std::max(0.0f, m_LightningFlashTimer - deltaTime);
+    }
+    if (m_LightningBoltTimer > 0.0f)
+    {
+        m_LightningBoltTimer = std::max(0.0f, m_LightningBoltTimer - deltaTime);
     }
 
     // Shooting stars: gated only by darkness now. Density scales by the
@@ -294,14 +393,24 @@ void SkyRenderer::Render(IRenderer& renderer,
     {
         constexpr float kFlashDuration = 0.08f;
         float alpha = (m_LightningFlashTimer / kFlashDuration) * 0.25f;
-        renderer.DrawSpriteAlpha(m_GlowTexture,
-                                 glm::vec2(-static_cast<float>(screenWidth) * 0.5f,
-                                           -static_cast<float>(screenHeight) * 0.5f),
-                                 glm::vec2(static_cast<float>(screenWidth) * 2.0f,
-                                           static_cast<float>(screenHeight) * 2.0f),
-                                 0.0f,
-                                 glm::vec4(0.92f, 0.95f, 1.0f, alpha),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_GlowAtlasOffset,
+                       m_GlowTexture,
+                       glm::vec2(-static_cast<float>(screenWidth) * 0.5f,
+                                 -static_cast<float>(screenHeight) * 0.5f),
+                       glm::vec2(static_cast<float>(screenWidth) * 2.0f,
+                                 static_cast<float>(screenHeight) * 2.0f),
+                       0.0f,
+                       glm::vec4(0.92f, 0.95f, 1.0f, alpha),
+                       true);
+    }
+
+    // Jagged bolt drawn after the flash so it sits on top of the cool-white
+    // wash. Lingers briefly after the flash ends.
+    if (m_LightningBoltTimer > 0.0f)
+    {
+        RenderLightningBolt(renderer, screenWidth, screenHeight);
     }
 }
 
@@ -359,7 +468,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
     // camera pans, individual curtains scroll naturally and rebound through
     // the wrap rather than being pinned to the upper viewport.
     constexpr int kCurtainCount = 12;
-    const float curtainPeriod = sw * 6.5f;
+    const float curtainPeriod = sw * 4.5f;
     const float curtainSpacing = curtainPeriod / static_cast<float>(kCurtainCount);
     // Vertical wrap. A ~1-screen period keeps the wrap subtle during normal
     // play while still tiling correctly under free-cam pans. The wrap is
@@ -457,26 +566,34 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                 float colorPhase = t * 0.06f + ti * 0.20f + fs * 0.04f;
                 glm::vec3 color = auroraColor(colorPhase);
 
-                // Per-segment alpha: ribbonPulse x segment-local pulse x ends fade.
-                // Translucent (max ~0.40 per segment); overlap stacks but never
-                // becomes opaque. Bumped from 0.08+0.22 -> 0.13+0.27 for stronger
-                // ribbons during AuroraNight.
+                // Per-segment alpha: ribbonPulse x segment-local pulse x ends
+                // fade. Translucent; overlap stacks but never becomes opaque.
+                // Bumped from (0.13+0.27) to (0.18+0.34) for more visible
+                // ribbons during AuroraNight. endsFade tightens to 2.1x then
+                // pow(0.7) for a softer, more feathered tail (was a hard
+                // linear ramp at 1.7x).
                 float segPulse = 0.5f + 0.5f * std::sin(waveT * 1.3f);
-                float endsFade = 1.0f - std::abs(segNorm - 0.5f) * 1.7f;
-                endsFade = std::clamp(endsFade, 0.0f, 1.0f);
-                float alpha = (0.13f + 0.27f * segPulse) * (0.55f + 0.45f * ribbonPulse) * endsFade;
+                float endsFade = 1.0f - std::abs(segNorm - 0.5f) * 2.1f;
+                endsFade = std::pow(std::clamp(endsFade, 0.0f, 1.0f), 0.7f);
+                float alpha = (0.18f + 0.34f * segPulse) * (0.55f + 0.45f * ribbonPulse) * endsFade;
 
-                renderer.DrawSpriteAlpha(m_AuroraCurtainTexture,
-                                         glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
-                                         glm::vec2(segWidth, curtainH),
-                                         0.0f,
-                                         glm::vec4(color, alpha),
-                                         true);
+                DrawSkyElement(renderer,
+                               m_AtlasTexture,
+                               m_AuroraCurtainAtlasOffset,
+                               m_AuroraCurtainTexture,
+                               glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
+                               glm::vec2(segWidth, curtainH),
+                               0.0f,
+                               glm::vec4(color, alpha),
+                               true);
             }
 
             // Soft glow halo following the warped path during bright pulses so
-            // bloom hugs the noodle rather than a flat rectangle.
-            if (ribbonPulse > 0.55f)
+            // bloom hugs the noodle rather than a flat rectangle. Threshold
+            // lowered (was 0.55) and per-halo alpha factor bumped (was 0.40)
+            // so the glow reads earlier and brighter through the breathing
+            // cycle.
+            if (ribbonPulse > 0.40f)
             {
                 for (int s = 2; s < segments - 2; s += 4)
                 {
@@ -496,7 +613,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                         glm::vec2(screenX - glowSize * 0.5f, segY - curtainH * 0.10f),
                         glm::vec2(glowSize, glowSize * 0.85f),
                         0.0f,
-                        glm::vec4(color, (ribbonPulse - 0.55f) * 0.40f),
+                        glm::vec4(color, (ribbonPulse - 0.40f) * 0.50f),
                         true);
                 }
             }
@@ -582,12 +699,15 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
             {
                 continue;
             }
-            renderer.DrawSpriteAlpha(m_AuroraSmallTexture,
-                                     pos - glm::vec2(wispSize * 0.5f),
-                                     glm::vec2(wispSize),
-                                     0.0f,
-                                     glm::vec4(color, alpha),
-                                     true);
+            DrawSkyElement(renderer,
+                           m_AtlasTexture,
+                           m_AuroraSmallAtlasOffset,
+                           m_AuroraSmallTexture,
+                           pos - glm::vec2(wispSize * 0.5f),
+                           glm::vec2(wispSize),
+                           0.0f,
+                           glm::vec4(color, alpha),
+                           true);
         }
     }
 }
@@ -937,12 +1057,15 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
 
         float size = 1.0f + star.size * 1.2f;
 
-        renderer.DrawSpriteAlpha(m_StarTexture,
-                                 screenPos - glm::vec2(size * 0.5f),
-                                 glm::vec2(size),
-                                 0.0f,
-                                 glm::vec4(star.color, brightness),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_StarAtlasOffset,
+                       m_StarTexture,
+                       screenPos - glm::vec2(size * 0.5f),
+                       glm::vec2(size),
+                       0.0f,
+                       glm::vec4(star.color, brightness),
+                       true);
         bgCount++;
     }
 
@@ -1022,23 +1145,29 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         {
             continue;
         }
-        renderer.DrawSpriteAlpha(m_StarGlowTexture,
-                                 v.screenPos - glm::vec2(v.glowSize * 0.5f),
-                                 glm::vec2(v.glowSize),
-                                 0.0f,
-                                 glm::vec4(v.color, v.glowAlpha),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_StarGlowAtlasOffset,
+                       m_StarGlowTexture,
+                       v.screenPos - glm::vec2(v.glowSize * 0.5f),
+                       glm::vec2(v.glowSize),
+                       0.0f,
+                       glm::vec4(v.color, v.glowAlpha),
+                       true);
     }
 
     // Emit pass 2: cores for every visible star - single m_StarTexture binding.
     for (const auto& v : m_VisibleStarsScratch)
     {
-        renderer.DrawSpriteAlpha(m_StarTexture,
-                                 v.screenPos - glm::vec2(v.size * 0.5f),
-                                 glm::vec2(v.size),
-                                 0.0f,
-                                 glm::vec4(v.color, v.brightness * 0.7f),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_StarAtlasOffset,
+                       m_StarTexture,
+                       v.screenPos - glm::vec2(v.size * 0.5f),
+                       glm::vec2(v.size),
+                       0.0f,
+                       glm::vec4(v.color, v.brightness * 0.7f),
+                       true);
     }
 }
 
@@ -1154,20 +1283,26 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
-        renderer.DrawSpriteAlpha(m_RayTexture,
-                                 glowPos,
-                                 glm::vec2(glowWidth, glowLength),
-                                 rayAngleDeg,
-                                 glm::vec4(rayColor, alpha * 0.4f),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_RayAtlasOffset,
+                       m_RayTexture,
+                       glowPos,
+                       glm::vec2(glowWidth, glowLength),
+                       rayAngleDeg,
+                       glm::vec4(rayColor, alpha * 0.4f),
+                       true);
 
         // Main ray
-        renderer.DrawSpriteAlpha(m_RayTexture,
-                                 rayPos,
-                                 glm::vec2(rayWidth, rayLength),
-                                 rayAngleDeg,
-                                 glm::vec4(rayColor, alpha),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_RayAtlasOffset,
+                       m_RayTexture,
+                       rayPos,
+                       glm::vec2(rayWidth, rayLength),
+                       rayAngleDeg,
+                       glm::vec4(rayColor, alpha),
+                       true);
 
         rayIndex++;
     }
@@ -1275,20 +1410,26 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
-        renderer.DrawSpriteAlpha(m_RayTexture,
-                                 glowPos,
-                                 glm::vec2(glowWidth, glowLength),
-                                 rayAngleDeg,
-                                 glm::vec4(moonColor, alpha * 0.5f),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_RayAtlasOffset,
+                       m_RayTexture,
+                       glowPos,
+                       glm::vec2(glowWidth, glowLength),
+                       rayAngleDeg,
+                       glm::vec4(moonColor, alpha * 0.5f),
+                       true);
 
         // Main beam
-        renderer.DrawSpriteAlpha(m_RayTexture,
-                                 rayPos,
-                                 glm::vec2(rayWidth, rayLength),
-                                 rayAngleDeg,
-                                 glm::vec4(moonColor, alpha),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_RayAtlasOffset,
+                       m_RayTexture,
+                       rayPos,
+                       glm::vec2(rayWidth, rayLength),
+                       rayAngleDeg,
+                       glm::vec4(moonColor, alpha),
+                       true);
 
         rayIndex++;
     }
@@ -1413,12 +1554,15 @@ void SkyRenderer::RenderShootingStars(IRenderer& renderer,
         float worldY = wrap1D(star.position.y, cameraPos.y, fieldH);
         glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y - 1.5f);
 
-        renderer.DrawSpriteAlpha(m_ShootingStarTexture,
-                                 screenPos,
-                                 size,
-                                 angle,
-                                 glm::vec4(1.0f, 1.0f, 1.0f, alpha),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_ShootingStarAtlasOffset,
+                       m_ShootingStarTexture,
+                       screenPos,
+                       size,
+                       angle,
+                       glm::vec4(1.0f, 1.0f, 1.0f, alpha),
+                       true);
     }
 }
 
@@ -1492,20 +1636,26 @@ void SkyRenderer::RenderDawnHorizonGlow(IRenderer& renderer,
     float glowSize = std::max(sw, sh) * 2.5f;
 
     // Large soft glow from bottom center (sunrise direction)
-    renderer.DrawSpriteAlpha(m_GlowTexture,
-                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh - glowSize * 0.3f),
-                             glm::vec2(glowSize, glowSize),
-                             0.0f,
-                             glm::vec4(1.0f, 0.6f, 0.4f, dawnIntensity * 0.15f),
-                             true);
+    DrawSkyElement(renderer,
+                   m_AtlasTexture,
+                   m_GlowAtlasOffset,
+                   m_GlowTexture,
+                   glm::vec2(sw * 0.5f - glowSize * 0.5f, sh - glowSize * 0.3f),
+                   glm::vec2(glowSize, glowSize),
+                   0.0f,
+                   glm::vec4(1.0f, 0.6f, 0.4f, dawnIntensity * 0.15f),
+                   true);
 
     // Secondary softer glow higher up
-    renderer.DrawSpriteAlpha(m_GlowTexture,
-                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.3f - glowSize * 0.5f),
-                             glm::vec2(glowSize, glowSize),
-                             0.0f,
-                             glm::vec4(1.0f, 0.7f, 0.55f, dawnIntensity * 0.08f),
-                             true);
+    DrawSkyElement(renderer,
+                   m_AtlasTexture,
+                   m_GlowAtlasOffset,
+                   m_GlowTexture,
+                   glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.3f - glowSize * 0.5f),
+                   glm::vec2(glowSize, glowSize),
+                   0.0f,
+                   glm::vec4(1.0f, 0.7f, 0.55f, dawnIntensity * 0.08f),
+                   true);
 }
 
 void SkyRenderer::RenderDawnGradient(IRenderer& renderer,
@@ -1524,20 +1674,26 @@ void SkyRenderer::RenderDawnGradient(IRenderer& renderer,
     float glowSize = std::max(sw, sh) * 2.0f;
 
     // Large soft glow from top (pre-dawn sky color)
-    renderer.DrawSpriteAlpha(m_GlowTexture,
-                             glm::vec2(sw * 0.5f - glowSize * 0.5f, -glowSize * 0.6f),
-                             glm::vec2(glowSize, glowSize),
-                             0.0f,
-                             glm::vec4(0.6f, 0.4f, 0.7f, dawnIntensity * 0.1f),
-                             true);
+    DrawSkyElement(renderer,
+                   m_AtlasTexture,
+                   m_GlowAtlasOffset,
+                   m_GlowTexture,
+                   glm::vec2(sw * 0.5f - glowSize * 0.5f, -glowSize * 0.6f),
+                   glm::vec2(glowSize, glowSize),
+                   0.0f,
+                   glm::vec4(0.6f, 0.4f, 0.7f, dawnIntensity * 0.1f),
+                   true);
 
     // Overall soft pink tint across screen
-    renderer.DrawSpriteAlpha(m_GlowTexture,
-                             glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.5f - glowSize * 0.5f),
-                             glm::vec2(glowSize, glowSize),
-                             0.0f,
-                             glm::vec4(1.0f, 0.65f, 0.6f, dawnIntensity * 0.06f),
-                             true);
+    DrawSkyElement(renderer,
+                   m_AtlasTexture,
+                   m_GlowAtlasOffset,
+                   m_GlowTexture,
+                   glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.5f - glowSize * 0.5f),
+                   glm::vec2(glowSize, glowSize),
+                   0.0f,
+                   glm::vec4(1.0f, 0.65f, 0.6f, dawnIntensity * 0.06f),
+                   true);
 }
 
 void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
@@ -1581,12 +1737,15 @@ void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
         // Small bright point with warm golden color
         float size = 2.0f + brightness * 3.0f;
 
-        renderer.DrawSpriteAlpha(m_StarTexture,
-                                 screenPos - glm::vec2(size * 0.5f),
-                                 glm::vec2(size),
-                                 0.0f,
-                                 glm::vec4(1.0f, 0.92f, 0.65f, brightness),
-                                 true);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_StarAtlasOffset,
+                       m_StarTexture,
+                       screenPos - glm::vec2(size * 0.5f),
+                       glm::vec2(size),
+                       0.0f,
+                       glm::vec4(1.0f, 0.92f, 0.65f, brightness),
+                       true);
     }
 }
 
@@ -1624,11 +1783,124 @@ void SkyRenderer::RenderCloudShadows(
         if (screenPos.y + blobSize < 0.0f || screenPos.y > viewSize.y)
             continue;
 
-        renderer.DrawSpriteAlpha(m_GlowTexture,
-                                 screenPos,
-                                 glm::vec2(blobSize),
-                                 0.0f,
-                                 glm::vec4(0.0f, 0.0f, 0.0f, baseAlpha),
-                                 false);
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_GlowAtlasOffset,
+                       m_GlowTexture,
+                       screenPos,
+                       glm::vec2(blobSize),
+                       0.0f,
+                       glm::vec4(0.0f, 0.0f, 0.0f, baseAlpha),
+                       false);
+    }
+}
+
+void SkyRenderer::GenerateLightningBolt(int screenWidth, int screenHeight)
+{
+    m_LightningBolt.mainPath.clear();
+    m_LightningBolt.branches.clear();
+
+    const float fw = static_cast<float>(std::max(screenWidth, 1));
+    const float fh = static_cast<float>(std::max(screenHeight, 1));
+
+    // Origin somewhere in the middle 60% of the screen so the bolt crosses
+    // the visible viewport rather than clipping at an edge.
+    std::uniform_real_distribution<float> originDist(0.2f, 0.8f);
+    float currentX = originDist(m_Rng) * fw;
+    float currentY = 0.0f;
+
+    // ~25 segments regardless of viewport, so very tall screens still feel
+    // dense and short screens don't get a polyline made of two giant chunks.
+    constexpr int kStepCount = 25;
+    const float stepY = fh / static_cast<float>(kStepCount);
+    constexpr float kJitterX = 20.0f;
+
+    std::uniform_real_distribution<float> sym(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> uni(0.0f, 1.0f);
+
+    m_LightningBolt.mainPath.emplace_back(currentX, currentY);
+    for (int i = 0; i < kStepCount; ++i)
+    {
+        currentY += stepY;
+        currentX += sym(m_Rng) * kJitterX;
+        m_LightningBolt.mainPath.emplace_back(currentX, currentY);
+
+        // Spawn a sub-branch at this point with low probability. Cap at 3
+        // total branches per bolt so the strike stays visually readable.
+        if (m_LightningBolt.branches.size() < 3 && i > 1 && i < kStepCount - 2 &&
+            uni(m_Rng) < 0.15f)
+        {
+            std::vector<glm::vec2> branch;
+            branch.emplace_back(currentX, currentY);
+            const int branchSteps = 4 + static_cast<int>(uni(m_Rng) * 5.0f);  // 4-8
+            const float angle = (uni(m_Rng) < 0.5f ? -1.0f : 1.0f) * glm::radians(30.0f);
+            const float dirX = std::sin(angle);
+            const float dirY = std::cos(angle);
+            const float subStep = stepY * 0.8f;
+            float bx = currentX;
+            float by = currentY;
+            for (int s = 0; s < branchSteps; ++s)
+            {
+                bx += dirX * subStep + sym(m_Rng) * 10.0f;
+                by += dirY * subStep;
+                branch.emplace_back(bx, by);
+            }
+            m_LightningBolt.branches.push_back(std::move(branch));
+        }
+    }
+}
+
+void SkyRenderer::RenderLightningBolt(IRenderer& renderer, int screenWidth, int screenHeight)
+{
+    (void)screenWidth;
+    (void)screenHeight;
+
+    if (m_LightningBolt.mainPath.size() < 2)
+    {
+        return;
+    }
+
+    constexpr float kBoltDuration = 0.18f;
+    const float fade = std::clamp(m_LightningBoltTimer / kBoltDuration, 0.0f, 1.0f);
+    const glm::vec3 boltTint(0.92f, 0.95f, 1.0f);
+    const float baseAlpha = 0.9f * fade;
+
+    auto drawSegment = [&](glm::vec2 A, glm::vec2 B, float thickness, float alphaScale)
+    {
+        const glm::vec2 d = B - A;
+        const float length = glm::length(d);
+        if (length < 1e-3f)
+        {
+            return;
+        }
+        const glm::vec2 size(thickness, length);
+        const glm::vec2 center = (A + B) * 0.5f;
+        const glm::vec2 pos = center - size * 0.5f;
+        // The rect at rotation=0 has its long axis pointing +Y. Rotate so
+        // that long axis aligns with (B - A): angle = atan2(-Dx, Dy).
+        const float angleDeg = glm::degrees(std::atan2(-d.x, d.y));
+        DrawSkyElement(renderer,
+                       m_AtlasTexture,
+                       m_GlowAtlasOffset,
+                       m_GlowTexture,
+                       pos,
+                       size,
+                       angleDeg,
+                       glm::vec4(boltTint, baseAlpha * alphaScale),
+                       true);
+    };
+
+    // Branches first, thinner and dimmer so the main bolt reads on top.
+    for (const auto& branch : m_LightningBolt.branches)
+    {
+        for (size_t i = 1; i < branch.size(); ++i)
+        {
+            drawSegment(branch[i - 1], branch[i], 4.0f, 0.6f);
+        }
+    }
+    // Main bolt - full thickness and brightness.
+    for (size_t i = 1; i < m_LightningBolt.mainPath.size(); ++i)
+    {
+        drawSegment(m_LightningBolt.mainPath[i - 1], m_LightningBolt.mainPath[i], 6.0f, 1.0f);
     }
 }

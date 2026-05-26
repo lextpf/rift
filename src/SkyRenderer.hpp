@@ -263,6 +263,48 @@ public:
     void UploadTextures(IRenderer& renderer);
 
     /**
+     * @brief Bind each sky texture to a region of a shared atlas.
+     *
+     * When bound, the per-element sky draws read from @p atlasTex with
+     * UVs computed from each region's pixel offset, instead of binding
+     * the per-element textures individually. This collapses the sky's
+     * 1-5 separate-texture flushes into the same batch as the tiles.
+     *
+     * Pass @c atlasTex = nullptr to revert to per-element textures.
+     *
+     * @param atlasTex Shared atlas texture (typically the tile atlas).
+     * @param rayOffset Pixel offset of @ref m_RayTexture within @p atlasTex.
+     * @param starOffset Pixel offset of @ref m_StarTexture.
+     * @param starGlowOffset Pixel offset of @ref m_StarGlowTexture.
+     * @param shootingStarOffset Pixel offset of @ref m_ShootingStarTexture.
+     * @param glowOffset Pixel offset of @ref m_GlowTexture.
+     * @param lightPoolOffset Pixel offset of @ref m_LightPoolTexture.
+     * @param auroraCurtainOffset Pixel offset of @ref m_AuroraCurtainTexture.
+     * @param auroraSmallOffset Pixel offset of @ref m_AuroraSmallTexture.
+     */
+    void SetAtlasBinding(const Texture* atlasTex,
+                         glm::vec2 rayOffset,
+                         glm::vec2 starOffset,
+                         glm::vec2 starGlowOffset,
+                         glm::vec2 shootingStarOffset,
+                         glm::vec2 glowOffset,
+                         glm::vec2 lightPoolOffset,
+                         glm::vec2 auroraCurtainOffset,
+                         glm::vec2 auroraSmallOffset);
+
+    /// Accessor for textures so callers can register them with an atlas
+    /// packer that copies pixel data into the atlas image at load time.
+    /// (GetLightPoolTexture is declared below alongside its original
+    /// Game::Render call site.)
+    const Texture& GetRayTexture() const { return m_RayTexture; }
+    const Texture& GetStarTexture() const { return m_StarTexture; }
+    const Texture& GetStarGlowTexture() const { return m_StarGlowTexture; }
+    const Texture& GetShootingStarTexture() const { return m_ShootingStarTexture; }
+    const Texture& GetGlowTexture() const { return m_GlowTexture; }
+    const Texture& GetAuroraCurtainTexture() const { return m_AuroraCurtainTexture; }
+    const Texture& GetAuroraSmallTexture() const { return m_AuroraSmallTexture; }
+
+    /**
      * @brief Update time-based animations.
      *
      * Updates shooting star positions and spawns new ones randomly.
@@ -301,6 +343,18 @@ public:
      * Game::Render to draw additive light pools at WorldLight positions.
      */
     const Texture& GetLightPoolTexture() const { return m_LightPoolTexture; }
+
+    /**
+     * @brief Draw the light-pool quad at @p pos, routing through the bound
+     *        atlas if @ref SetAtlasBinding has been called so the draw can
+     *        batch with other atlas-textured sprites.
+     */
+    void DrawLightPool(IRenderer& renderer,
+                       glm::vec2 pos,
+                       glm::vec2 size,
+                       float rotation,
+                       glm::vec4 color,
+                       bool additive);
 
     /**
      * @brief Render slowly-drifting cloud shadows on the world (multiplicative-style darkening).
@@ -556,6 +610,16 @@ private:
                         int screenWidth,
                         int screenHeight);
 
+    /// Generate a fresh jagged lightning bolt + 0-3 sub-branches into
+    /// m_LightningBolt, sized to the cached viewport. Called once per
+    /// flash trigger from Update().
+    void GenerateLightningBolt(int screenWidth, int screenHeight);
+
+    /// Draw the previously-generated lightning bolt while m_LightningBoltTimer
+    /// is positive. Camera-locked (the bolt sits in screen space; world-anchor
+    /// parallax is a possible future polish).
+    void RenderLightningBolt(IRenderer& renderer, int screenWidth, int screenHeight);
+
     /// @}
 
     /// @name Morning/Dawn Effects
@@ -643,6 +707,20 @@ private:
     Texture m_LightPoolTexture;      ///< Soft circle for WorldLight pools
     Texture m_AuroraCurtainTexture;  ///< Vertical streaked curtain for aurora bands
     Texture m_AuroraSmallTexture;    ///< Hand-painted small aurora particle for wisps
+
+    /// Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
+    /// from the atlas at the per-element pixel offsets recorded below. The
+    /// pixel size of each region is read from the corresponding @c m_*Texture
+    /// at draw time, so resize-safe.
+    const Texture* m_AtlasTexture{nullptr};
+    glm::vec2 m_RayAtlasOffset{0.0f};
+    glm::vec2 m_StarAtlasOffset{0.0f};
+    glm::vec2 m_StarGlowAtlasOffset{0.0f};
+    glm::vec2 m_ShootingStarAtlasOffset{0.0f};
+    glm::vec2 m_GlowAtlasOffset{0.0f};
+    glm::vec2 m_LightPoolAtlasOffset{0.0f};
+    glm::vec2 m_AuroraCurtainAtlasOffset{0.0f};
+    glm::vec2 m_AuroraSmallAtlasOffset{0.0f};
     /// @}
 
     /// @name Sky Object Arrays
@@ -673,6 +751,18 @@ private:
     float m_LightningFlashTimer{0.0f};   ///< Remaining flash visibility (s).
     bool m_AuroraVisible{false};         ///< True when current weather wants aurora.
     float m_MeteorRateMultiplier{1.0f};  ///< Shooting-star spawn rate multiplier.
+
+    /// Procedurally generated lightning bolt path, regenerated each flash.
+    /// Coordinates are screen-space; the bolt is drawn camera-locked (no
+    /// parallax) for the brief duration of the strike.
+    struct LightningBolt
+    {
+        std::vector<glm::vec2> mainPath;               ///< Top-to-bottom jagged polyline.
+        std::vector<std::vector<glm::vec2>> branches;  ///< 0-3 shorter sub-bolts off main.
+    };
+    LightningBolt m_LightningBolt;
+    float m_LightningBoltTimer{
+        0.0f};  ///< Remaining bolt visibility (s); slightly longer than the flash.
     /// @}
 
     /// @name Texture Size Constants
