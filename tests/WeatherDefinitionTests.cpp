@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 
-#include "../src/WeatherDefinitions.hpp"
 #include "../src/TimeManager.hpp"
+#include "../src/WeatherDefinitions.hpp"
 
 #include <utility>
 
@@ -80,15 +80,6 @@ TEST(WeatherDefinitionTests, MeteorShowerBoostsMeteorRate)
     EXPECT_GT(def.meteorRateMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, OvercastDimsAmbient)
-{
-    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::Overcast);
-    EXPECT_LT(def.ambientTintMultiplier.r, 1.0f);
-    EXPECT_LT(def.ambientTintMultiplier.g, 1.0f);
-    EXPECT_FLOAT_EQ(def.starVisibilityOverride, 0.0f);
-    EXPECT_FALSE(def.showCelestialBodies);
-}
-
 TEST(WeatherDefinitionTests, IntensityZeroProducesNeutralAmbient)
 {
     // With intensity 0, GetAmbientColor should not be modified by the
@@ -136,25 +127,25 @@ TEST(WeatherDefinitionTests, SetWeatherIntensityClampsToRange)
     EXPECT_FLOAT_EQ(tm.GetWeatherIntensity(), 0.5f);
 }
 
-TEST(WeatherDefinitionTests, OvercastHidesStars)
+TEST(WeatherDefinitionTests, HeavyRainHidesStars)
 {
+    // Equivalent night-time star-suppression test using HeavyRain, since
+    // Overcast was removed in the weather overhaul.
     TimeManager tm;
     tm.Initialize();
     tm.SetTime(23.0f);  // Deep night
     tm.SetWeather(WeatherState::Clear);
     EXPECT_FLOAT_EQ(tm.GetStarVisibility(), 1.0f);
 
-    tm.SetWeather(WeatherState::Overcast);
+    tm.SetWeather(WeatherState::HeavyRain);
     tm.SetWeatherIntensity(1.0f);
     EXPECT_FLOAT_EQ(tm.GetStarVisibility(), 0.0f);
 }
 
-TEST(WeatherDefinitionTests, EnumTraitsCountMatchesEmberStorm)
+TEST(WeatherDefinitionTests, EnumTraitsCountMatchesGodRays)
 {
-    static_assert(EnumTraits<WeatherState>::Count == 19,
-                  "WeatherState enum has 19 values");
-    EXPECT_EQ(std::to_underlying(WeatherState::EmberStorm),
-              EnumTraits<WeatherState>::Count - 1);
+    static_assert(EnumTraits<WeatherState>::Count == 17, "WeatherState enum has 17 values");
+    EXPECT_EQ(std::to_underlying(WeatherState::GodRays), EnumTraits<WeatherState>::Count - 1);
 }
 
 TEST(WeatherDefinitionTests, BlizzardHasSecondaryFog)
@@ -169,14 +160,22 @@ TEST(WeatherDefinitionTests, BlizzardHasSecondaryFog)
     EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, FogStateSoftensAlpha)
+TEST(WeatherDefinitionTests, CherryBlossomsHasMistSecondary)
 {
-    EXPECT_NEAR(GetWeatherDefinition(WeatherState::Fog).fogAlphaMultiplier, 0.7f, 0.001f);
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::CherryBlossoms);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Blossom);
+    EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::Fog);
+    EXPECT_GT(def.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(def.secondaryMaxWeatherParticles, 0);
+    // Mist layer should be soft so the petals stay the dominant visual.
+    EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, MistSoftensAlphaMore)
+TEST(WeatherDefinitionTests, FogStateSoftensAlpha)
 {
-    EXPECT_NEAR(GetWeatherDefinition(WeatherState::Mist).fogAlphaMultiplier, 0.6f, 0.001f);
+    // Merged Fog (formerly two separate Fog + Mist weathers) sits at 0.65 -
+    // between the old Fog (0.7) and Mist (0.6).
+    EXPECT_NEAR(GetWeatherDefinition(WeatherState::Fog).fogAlphaMultiplier, 0.65f, 0.001f);
 }
 
 TEST(WeatherDefinitionTests, NonFogWeathersHaveDefaultMultiplier)
@@ -185,17 +184,48 @@ TEST(WeatherDefinitionTests, NonFogWeathersHaveDefaultMultiplier)
     EXPECT_FLOAT_EQ(GetWeatherDefinition(WeatherState::HeavyRain).fogAlphaMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, NonBlizzardWeathersHaveNoSecondaryParticle)
+TEST(WeatherDefinitionTests, OnlyLayeredWeathersHaveSecondaryParticle)
 {
     for (size_t i = 0; i < EnumTraits<WeatherState>::Count; ++i)
     {
         auto state = static_cast<WeatherState>(i);
-        if (state == WeatherState::Blizzard)
+        if (state == WeatherState::Blizzard || state == WeatherState::CherryBlossoms ||
+            state == WeatherState::GodRays)
         {
             continue;
         }
-        EXPECT_EQ(GetWeatherDefinition(state).secondaryParticleType,
-                  WeatherParticleType::None)
+        EXPECT_EQ(GetWeatherDefinition(state).secondaryParticleType, WeatherParticleType::None)
             << "state=" << EnumTraits<WeatherState>::ToString(state);
     }
+}
+
+TEST(WeatherDefinitionTests, GodRaysHasSunshineAndFogSecondary)
+{
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::GodRays);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Sunshine);
+    EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::Fog);
+    EXPECT_GT(def.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(def.secondaryMaxWeatherParticles, 0);
+    EXPECT_GT(def.fogAlphaMultiplier, 0.0f);
+    EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
+}
+
+TEST(WeatherDefinitionTests, AuroraNightHasWispParticle)
+{
+    // Aurora companion sparks use Wisp (not Firefly) for sparser spiraling
+    // motes that complement the sky ribbons rather than reading as a
+    // firefly swarm. SpawnWeatherParticle restricts the color palette to
+    // cool aurora hues.
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::AuroraNight);
+    EXPECT_TRUE(def.showAurora);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Wisp);
+    EXPECT_GT(def.baseSpawnRate, 0.0f);
+    EXPECT_GT(def.maxWeatherParticles, 0);
+}
+
+TEST(WeatherDefinitionTests, MergedFogHasNoSecondary)
+{
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::Fog);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Fog);
+    EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::None);
 }
