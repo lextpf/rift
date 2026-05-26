@@ -76,12 +76,16 @@ TEST(ConsoleCommandRegistryTests, MatchPrefixNoMatchReturnsEmpty)
     EXPECT_TRUE(r.MatchPrefix("zzz").empty());
 }
 
-TEST(ConsoleCommandRegistryTests, MatchPrefixIsCaseSensitive)
+TEST(ConsoleCommandRegistryTests, MatchPrefixIsCaseInsensitive)
 {
     ConsoleCommandRegistry r;
     r.Register("Time", "", NoOp());
-    EXPECT_TRUE(r.MatchPrefix("time").empty());
+    // Both casings must match - autocomplete shouldn't care whether the user
+    // typed with shift held or not.
+    EXPECT_EQ(r.MatchPrefix("time").size(), 1u);
     EXPECT_EQ(r.MatchPrefix("Time").size(), 1u);
+    EXPECT_EQ(r.MatchPrefix("TIME").size(), 1u);
+    EXPECT_EQ(r.MatchPrefix("tImE").size(), 1u);
 }
 
 TEST(ConsoleCommandRegistryTests, AliasResolvesToSameCommand)
