@@ -6,10 +6,7 @@ class TimeManagerTest : public ::testing::Test
 protected:
     TimeManager tm;
 
-    void SetUp() override
-    {
-        tm.Initialize();
-    }
+    void SetUp() override { tm.Initialize(); }
 };
 
 // --- Time Period Tests ---
@@ -78,7 +75,7 @@ TEST_F(TimeManagerTest, GetSunArc_AtSunrise)
 
 TEST_F(TimeManagerTest, GetSunArc_AtNoon)
 {
-    tm.SetTime(13.0f); // Midpoint of 6-20 = 13
+    tm.SetTime(13.0f);  // Midpoint of 6-20 = 13
     EXPECT_FLOAT_EQ(tm.GetSunArc(), 0.5f);
 }
 
@@ -129,7 +126,7 @@ TEST_F(TimeManagerTest, GetMoonPhase_CyclesEvery8Days)
     {
         // Manually set day count by advancing time
         tm.Initialize();
-        tm.SetDayDuration(1.0f); // 1 second = 1 day
+        tm.SetDayDuration(1.0f);  // 1 second = 1 day
         for (int d = 0; d < day; ++d)
         {
             tm.Update(1.0f);
@@ -224,7 +221,7 @@ TEST_F(TimeManagerTest, TogglePause)
 TEST_F(TimeManagerTest, TimeScale_DoublesSpeed)
 {
     tm.SetTime(0.0f);
-    tm.SetDayDuration(24.0f); // 24 seconds = 24 hours, so 1 sec = 1 hour
+    tm.SetDayDuration(24.0f);  // 24 seconds = 24 hours, so 1 sec = 1 hour
     tm.SetTimeScale(2.0f);
     tm.Update(1.0f);
     EXPECT_NEAR(tm.GetTimeOfDay(), 2.0f, 0.001f);
@@ -253,10 +250,12 @@ TEST_F(TimeManagerTest, GetStarVisibility_FullAtMidnight)
     EXPECT_FLOAT_EQ(tm.GetStarVisibility(), 1.0f);
 }
 
-TEST_F(TimeManagerTest, GetStarVisibility_ZeroInOvercast)
+TEST_F(TimeManagerTest, GetStarVisibility_ZeroInHeavyRain)
 {
+    // Equivalent night-time star-suppression check using HeavyRain since
+    // Overcast was removed in the weather overhaul.
     tm.SetTime(0.0f);
-    tm.SetWeather(WeatherState::Overcast);
+    tm.SetWeather(WeatherState::HeavyRain);
     EXPECT_FLOAT_EQ(tm.GetStarVisibility(), 0.0f);
 }
 
@@ -276,7 +275,7 @@ TEST_F(TimeManagerTest, GetDawnIntensity_PeakAt6)
 
 TEST_F(TimeManagerTest, GetDawnIntensity_FadingIn)
 {
-    tm.SetTime(5.0f); // Midpoint of 4.5-5.5 fade in
+    tm.SetTime(5.0f);  // Midpoint of 4.5-5.5 fade in
     EXPECT_NEAR(tm.GetDawnIntensity(), 0.5f, 0.01f);
 }
 
