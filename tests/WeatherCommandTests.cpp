@@ -6,8 +6,8 @@
 
 #include "../src/Console.hpp"
 #include "../src/ConsoleCommands.hpp"
-#include "../src/TimeManager.hpp"
 #include "../src/Tilemap.hpp"
+#include "../src/TimeManager.hpp"
 #include "../src/WeatherDefinitions.hpp"
 
 #include <span>
@@ -78,14 +78,14 @@ TEST(WeatherCommandTests, TimeWeatherRejectsGarbage)
 {
     TimeManager time;
     time.Initialize();
-    time.SetWeather(WeatherState::Snow);
+    time.SetWeather(WeatherState::Blizzard);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.time = &time;
 
     ArgPack args({"NotARealState"});
     EXPECT_FALSE(Cmd_TimeWeather(args.span(), ctx));
-    EXPECT_EQ(time.GetWeather(), WeatherState::Snow);
+    EXPECT_EQ(time.GetWeather(), WeatherState::Blizzard);
 }
 
 TEST(WeatherCommandTests, TimeWeatherRejectsWrongArgCount)
@@ -162,6 +162,8 @@ TEST(WeatherCommandTests, IntensityAcceptsBoundaries)
 
 TEST(WeatherCommandTests, NextCyclesForward)
 {
+    // After the weather overhaul (Overcast removed), LightRain is now the
+    // second enum value so weather.next from Clear advances to it.
     TimeManager time;
     time.Initialize();
     time.SetWeather(WeatherState::Clear);
@@ -171,14 +173,18 @@ TEST(WeatherCommandTests, NextCyclesForward)
 
     ArgPack args({});
     EXPECT_TRUE(Cmd_WeatherNext(args.span(), ctx));
-    EXPECT_EQ(time.GetWeather(), WeatherState::Overcast);
+    EXPECT_EQ(time.GetWeather(), WeatherState::LightRain);
 }
 
 TEST(WeatherCommandTests, NextWrapsFromLastToFirst)
 {
     TimeManager time;
     time.Initialize();
-    time.SetWeather(WeatherState::EmberStorm);
+    // Derive the last weather from the enum (Count - 1) so this wrap test stays
+    // correct when weather states change -- it previously hardcoded EmberStorm,
+    // which stopped being the last state when GodRays was added.
+    constexpr auto lastWeather = static_cast<WeatherState>(EnumTraits<WeatherState>::Count - 1);
+    time.SetWeather(lastWeather);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.time = &time;
