@@ -1128,7 +1128,7 @@ TEST(ConsoleCommandsTests, TimeScaleSetsAndRejectsNonPositive)
     EXPECT_FLOAT_EQ(tm.GetTimeScale(), 3.5f);
 }
 
-TEST(ConsoleCommandsTests, TimeWeatherSetsClearAndOvercast)
+TEST(ConsoleCommandsTests, TimeWeatherSetsValidStates)
 {
     // Names are now case-sensitive (canonical EnumTraits spelling). Tab
     // completion makes the correct casing discoverable.
@@ -1137,31 +1137,34 @@ TEST(ConsoleCommandsTests, TimeWeatherSetsClearAndOvercast)
     CommandContext ctx{buf};
     ctx.time = &tm;
 
-    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Overcast"}).span(), ctx));
-    EXPECT_EQ(tm.GetWeather(), WeatherState::Overcast);
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"LightRain"}).span(), ctx));
+    EXPECT_EQ(tm.GetWeather(), WeatherState::LightRain);
     EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Clear"}).span(), ctx));
     EXPECT_EQ(tm.GetWeather(), WeatherState::Clear);
-    // "Snow" is now a valid weather state (it wasn't before).
-    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Snow"}).span(), ctx));
-    EXPECT_EQ(tm.GetWeather(), WeatherState::Snow);
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Blizzard"}).span(), ctx));
+    EXPECT_EQ(tm.GetWeather(), WeatherState::Blizzard);
     // Lowercase is rejected.
     EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"clear"}).span(), ctx));
     // Garbage still rejected.
     EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"NotARealState"}).span(), ctx));
+    // Removed weathers (Overcast / Snow / Mist) are no longer valid states.
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"Overcast"}).span(), ctx));
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"Snow"}).span(), ctx));
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"Mist"}).span(), ctx));
 }
 
 TEST(ConsoleCommandsTests, TimeStatusPrintsKeyFields)
 {
     TimeManager tm;
     tm.SetTime(10.5f);
-    tm.SetWeather(WeatherState::Overcast);
+    tm.SetWeather(WeatherState::HeavyRain);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.time = &tm;
 
     EXPECT_TRUE(Cmd_TimeStatus(ArgPack({}).span(), ctx));
     EXPECT_TRUE(BufferContains(buf, "10.50h"));
-    EXPECT_TRUE(BufferContains(buf, "Overcast"));
+    EXPECT_TRUE(BufferContains(buf, "HeavyRain"));
 }
 
 // ---------------------------------------------------------------------------
