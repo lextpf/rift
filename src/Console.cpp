@@ -215,6 +215,12 @@ void ConsoleBuffer::ResetScroll()
     m_ScrollOffset = 0;
 }
 
+void ConsoleBuffer::ScrollTo(int offsetFromBottom)
+{
+    const int maxOffset = static_cast<int>(m_Lines.size());
+    m_ScrollOffset = std::clamp(offsetFromBottom, 0, maxOffset);
+}
+
 void ConsoleCommandRegistry::Register(std::string name,
                                       std::string description,
                                       Handler handler,
@@ -231,6 +237,16 @@ void ConsoleCommandRegistry::Register(std::string name,
                 std::move(aliases),
                 std::move(argCompletions)};
     m_Commands[std::move(name)] = std::move(cmd);
+}
+
+void ConsoleCommandRegistry::SetArgCompletions(std::string_view name,
+                                               ArgCompletionProvider argCompletions)
+{
+    auto it = m_Commands.find(std::string(name));
+    if (it != m_Commands.end())
+    {
+        it->second.argCompletions = std::move(argCompletions);
+    }
 }
 
 const ConsoleCommandRegistry::Command* ConsoleCommandRegistry::Lookup(std::string_view name) const
@@ -665,6 +681,21 @@ void Console::OnScroll(double yoffset)
     m_Buffer.Scroll(static_cast<int>(yoffset) * LINES_PER_NOTCH);
 }
 
+void Console::ScrollToOutputTop(std::size_t outputLineCount)
+{
+    // Put the block's first line at the top of the visible window: scroll up
+    // from the bottom by (block height - visible rows). When the block already
+    // fits in the window there's nothing to scroll. Before the first Render()
+    // the visible-row count is unknown, so fall back to the bottom.
+    if (m_LastVisibleLines <= 0)
+    {
+        m_Buffer.ResetScroll();
+        return;
+    }
+    const int span = static_cast<int>(outputLineCount);
+    m_Buffer.ScrollTo(std::max(0, span - m_LastVisibleLines));
+}
+
 void Console::Submit(std::string_view line)
 {
     // Echo the submitted line in dim color so users can see what ran.
@@ -751,6 +782,11 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
     const float scrollBottom = promptBaseline - lineH;
     const float scrollTop = TOP_PAD + ascent;
     const int visibleLines = std::max(0, static_cast<int>((scrollBottom - scrollTop) / lineH));
+
+    // Cache the row count so command handlers that print a tall block (e.g.
+    // `help`) can position the scroll via ScrollToOutputTop so the first line
+    // of their output lands at the top of the visible window.
+    m_LastVisibleLines = visibleLines;
 
     const auto& lines = m_Buffer.Lines();
     if (!lines.empty() && visibleLines > 0)

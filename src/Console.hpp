@@ -123,6 +123,11 @@ public:
     /// Pin scroll to the bottom of the buffer.
     void ResetScroll();
 
+    /// Set the absolute scroll offset (lines up from the bottom), clamped to
+    /// [0, line count]. Lets callers position the view at a specific point,
+    /// e.g. the top of a freshly printed block.
+    void ScrollTo(int offsetFromBottom);
+
     // ---------------- Read-only accessors ----------------
 
     [[nodiscard]] const std::deque<Line>& Lines() const { return m_Lines; }
@@ -187,6 +192,13 @@ public:
                   Handler handler,
                   std::vector<std::string> aliases = {},
                   ArgCompletionProvider argCompletions = nullptr);
+
+    /// Attach (or replace) the argument-completion provider on an
+    /// already-registered command, looked up by canonical @p name. No-op if
+    /// @p name isn't registered. Lets the default command set wire completions
+    /// for many commands in one place after registration instead of threading
+    /// a provider through every @ref Register call.
+    void SetArgCompletions(std::string_view name, ArgCompletionProvider argCompletions);
 
     /// Look up a command by canonical name or by alias. Returns nullptr if
     /// no match. Canonical names are O(log n); aliases are a linear fallback.
@@ -366,6 +378,13 @@ public:
     /// Registered command table.
     [[nodiscard]] const ConsoleCommandRegistry& Registry() const { return m_Registry; }
 
+    /// Position the scrollback so the first line of the most recently printed
+    /// block of @p outputLineCount lines sits at the top of the visible window;
+    /// the rest fills downward (scroll down to reveal more). Used by `help` so
+    /// the listing reads from the top instead of pinning to the newest line.
+    /// Falls back to the bottom before the first Render() (visible rows unknown).
+    void ScrollToOutputTop(std::size_t outputLineCount);
+
     /// Session-scoped player-position bookmarks driven by `bookmark.set` /
     /// `bookmark.tp` / `bookmark.list`. Cleared on Console destruction; not
     /// persisted to disk.
@@ -434,6 +453,9 @@ private:
     ConsoleBuffer m_Buffer;
     ConsoleCommandRegistry m_Registry;
     State m_State = State::Closed;
+    /// Scrollback row count from the last Render(), cached so ScrollToOutputTop
+    /// can position the view without re-deriving the overlay layout here.
+    int m_LastVisibleLines = 0;
     /// Index of the highlighted entry in the current dropdown (across the
     /// full item list, not just the visible window). Reset to 0 on any
     /// input modification; clamped to the suggestion count when read.
