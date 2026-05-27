@@ -279,6 +279,21 @@ TEST(ConsoleBufferTests, ScrollOffsetClampsToBufferSize)
     EXPECT_EQ(buf.ScrollOffset(), 5);  // clamped to lines.size()
 }
 
+TEST(ConsoleBufferTests, ScrollToSetsAbsoluteOffsetClamped)
+{
+    ConsoleBuffer buf;
+    for (int i = 0; i < 5; ++i)
+    {
+        buf.Print("line");
+    }
+    buf.ScrollTo(3);
+    EXPECT_EQ(buf.ScrollOffset(), 3);  // absolute, not relative
+    buf.ScrollTo(-2);
+    EXPECT_EQ(buf.ScrollOffset(), 0);  // clamped to 0
+    buf.ScrollTo(100);
+    EXPECT_EQ(buf.ScrollOffset(), 5);  // clamped to lines.size()
+}
+
 TEST(ConsoleBufferTests, NewPrintAutoSnapsScrollToBottom)
 {
     ConsoleBuffer buf;
