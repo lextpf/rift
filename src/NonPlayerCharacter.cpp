@@ -77,6 +77,17 @@ void NonPlayerCharacter::SetNpcAsset(const std::string& type, const std::string&
     }
 }
 
+std::vector<std::string> NonPlayerCharacter::AvailableTypes()
+{
+    std::vector<std::string> types;
+    types.reserve(s_NpcAssets.size());
+    for (const auto& [type, path] : s_NpcAssets)
+    {
+        types.push_back(type);
+    }
+    return types;
+}
+
 std::string NonPlayerCharacter::ResolveAssetPath(const std::string& type)
 {
     auto it = s_NpcAssets.find(type);

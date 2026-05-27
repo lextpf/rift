@@ -10,6 +10,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 /**
  * @class NonPlayerCharacter
@@ -76,6 +77,14 @@ public:
      * @param path Sprite sheet path.
      */
     static void SetNpcAsset(const std::string& type, const std::string& path);
+
+    /**
+     * @brief List all registered NPC type identifiers (asset-table keys).
+     * @return Type names in unspecified order; empty until the manifest
+     *         populates the table at startup. Used by the console `npc.spawn`
+     *         argument autocomplete.
+     */
+    static std::vector<std::string> AvailableTypes();
 
     /**
      * @brief Resolve an NPC sprite path from a type identifier.
