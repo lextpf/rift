@@ -270,3 +270,52 @@ TEST(ConsoleCommandRegistryTests, ArgCompletionsAreOptional)
     ASSERT_NE(cmd, nullptr);
     EXPECT_FALSE(static_cast<bool>(cmd->argCompletions));
 }
+
+TEST(ConsoleCommandRegistryTests, SetArgCompletionsAttachesProviderByName)
+{
+    ConsoleCommandRegistry r;
+    r.Register("toggleme", "", NoOp());
+    EXPECT_FALSE(static_cast<bool>(r.Lookup("toggleme")->argCompletions));
+
+    r.SetArgCompletions("toggleme",
+                        [](std::size_t argIndex) -> std::vector<std::string>
+                        {
+                            if (argIndex == 0)
+                            {
+                                return {"on", "off", "toggle"};
+                            }
+                            return {};
+                        });
+
+    const auto* cmd = r.Lookup("toggleme");
+    ASSERT_NE(cmd, nullptr);
+    ASSERT_TRUE(static_cast<bool>(cmd->argCompletions));
+    EXPECT_EQ(cmd->argCompletions(0), (std::vector<std::string>{"on", "off", "toggle"}));
+    EXPECT_TRUE(cmd->argCompletions(1).empty());
+}
+
+TEST(ConsoleCommandRegistryTests, SetArgCompletionsResolvesCanonicalForAliasLookup)
+{
+    // Completions attach to the canonical command, so a lookup via an alias
+    // (how the dropdown resolves a typed alias) sees the same provider.
+    ConsoleCommandRegistry r;
+    r.Register("renderer.set", "", NoOp(), {"gfx"});
+    r.SetArgCompletions("renderer.set",
+                        [](std::size_t) -> std::vector<std::string>
+                        { return {"opengl", "vulkan"}; });
+
+    const auto* viaAlias = r.Lookup("gfx");
+    ASSERT_NE(viaAlias, nullptr);
+    ASSERT_TRUE(static_cast<bool>(viaAlias->argCompletions));
+    EXPECT_EQ(viaAlias->argCompletions(0), (std::vector<std::string>{"opengl", "vulkan"}));
+}
+
+TEST(ConsoleCommandRegistryTests, SetArgCompletionsUnknownNameIsNoOp)
+{
+    ConsoleCommandRegistry r;
+    r.Register("known", "", NoOp());
+    // Unknown name must not crash or create a phantom command.
+    r.SetArgCompletions("unknown", [](std::size_t) -> std::vector<std::string> { return {"x"}; });
+    EXPECT_EQ(r.Lookup("unknown"), nullptr);
+    EXPECT_EQ(r.All().size(), 1u);
+}
