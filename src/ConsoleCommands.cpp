@@ -128,6 +128,23 @@ bool ParseRendererAPI(std::string_view text, RendererAPI& out)
     }
     return false;
 }
+
+/// Build an ArgCompletionProvider that offers a fixed @p values list for the
+/// positional argument at @p slot (0 = first arg after the verb) and nothing
+/// for any other slot. Keeps the many on/off/toggle-style commands from each
+/// repeating the same lambda.
+ConsoleCommandRegistry::ArgCompletionProvider FixedArgValues(std::vector<std::string> values,
+                                                             std::size_t slot = 0)
+{
+    return [values = std::move(values), slot](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex != slot)
+        {
+            return {};
+        }
+        return values;
+    };
+}
 }  // namespace
 
 bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
@@ -3257,10 +3274,16 @@ void Console::RegisterDefaultCommands()
 
     m_Registry.Register("help",
                         "list available commands",
-                        [makeContext](auto args, Console&)
+                        [makeContext](auto args, Console& console)
                         {
                             CommandContext ctx = makeContext();
+                            const std::size_t before = console.Buffer().Lines().size();
                             (void)Cmd_Help(args, ctx);
+                            const std::size_t after = console.Buffer().Lines().size();
+                            // Jump the view to the top of the just-printed listing
+                            // so it reads from the first command (scroll down for
+                            // the rest) instead of pinning to the newest line.
+                            console.ScrollToOutputTop(after - before);
                         });
 
     m_Registry.Register("clear",
@@ -4094,4 +4117,113 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_BookmarkList(args, ctx, m_Bookmarks);
                         },
                         {"bl"});
+
+    // Argument autocomplete for commands with a small, enumerable value set.
+    // Wired here (rather than inline on each Register) so the whole set is
+    // visible in one place. Numeric args (coords, indices, ranges) and
+    // open-ended args (map paths, brand-new flag/quest names) are intentionally
+    // omitted: a dropdown only helps when the choices are few and named.
+    const auto toggleCompletions = FixedArgValues({"on", "off", "toggle"});
+
+    const auto characterCompletions = [](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex != 0)
+        {
+            return {};
+        }
+        std::vector<std::string> out;
+        out.reserve(EnumTraits<CharacterType>::Count);
+        for (auto name : EnumTraits<CharacterType>::Names)
+        {
+            out.emplace_back(name);
+        }
+        return out;
+    };
+
+    // npc.freeze takes `<idx|all> [on|off|toggle]`: suggest "all" for the first
+    // arg (numeric indices aren't worth listing) and the toggle words for the
+    // second.
+    const auto npcFreezeCompletions = [](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex == 0)
+        {
+            return {"all"};
+        }
+        if (argIndex == 1)
+        {
+            return {"on", "off", "toggle"};
+        }
+        return {};
+    };
+
+    // Dynamic: read live state when the dropdown asks. Capturing makeContext is
+    // safe -- the provider is owned by m_Registry, which lives as long as this
+    // Console, and makeContext only holds `this`.
+    const auto flagNameCompletions = [makeContext](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex != 0)
+        {
+            return {};
+        }
+        CommandContext ctx = makeContext();
+        std::vector<std::string> out;
+        if (ctx.gameState == nullptr)
+        {
+            return out;
+        }
+        for (const auto& [key, value] : ctx.gameState->GetAllFlags())
+        {
+            out.push_back(key);
+        }
+        return out;
+    };
+
+    const auto npcTypeCompletions = [](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex != 0)
+        {
+            return {};  // arg 0 is the type; args 1-2 are tile coords (numeric)
+        }
+        return NonPlayerCharacter::AvailableTypes();
+    };
+
+    const auto bookmarkCompletions = [this](std::size_t argIndex) -> std::vector<std::string>
+    {
+        if (argIndex != 0)
+        {
+            return {};
+        }
+        std::vector<std::string> out;
+        out.reserve(m_Bookmarks.size());
+        for (const auto& [name, pos] : m_Bookmarks)
+        {
+            out.push_back(name);
+        }
+        return out;
+    };
+
+    for (const char* toggleCmd : {"time.freeze",
+                                  "editor",
+                                  "debug.info",
+                                  "particles",
+                                  "debug.overlays",
+                                  "fps.cap",
+                                  "globe",
+                                  "postfx",
+                                  "player.bicycle",
+                                  "player.run",
+                                  "camera.freecam",
+                                  "camera.follow"})
+    {
+        m_Registry.SetArgCompletions(toggleCmd, toggleCompletions);
+    }
+    m_Registry.SetArgCompletions("renderer.set", FixedArgValues({"opengl", "vulkan"}));
+    m_Registry.SetArgCompletions("renderer.trace", FixedArgValues({"on", "off", "dump", "clear"}));
+    m_Registry.SetArgCompletions("globe.intensity", FixedArgValues({"up", "down"}));
+    m_Registry.SetArgCompletions("character.set", characterCompletions);
+    m_Registry.SetArgCompletions("npc.freeze", npcFreezeCompletions);
+    m_Registry.SetArgCompletions("flag.get", flagNameCompletions);
+    m_Registry.SetArgCompletions("flag.unset", flagNameCompletions);
+    m_Registry.SetArgCompletions("npc.spawn", npcTypeCompletions);
+    m_Registry.SetArgCompletions("bookmark.tp", bookmarkCompletions);
 }
