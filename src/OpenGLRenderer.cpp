@@ -2285,22 +2285,31 @@ void OpenGLRenderer::DrawTextImpl(const std::string& text,
 
     const size_t maxTextVertices = MAX_TEXT_QUADS * 6;
 
-    auto addCharQuad = [this, maxTextVertices](float xpos,
-                                               float ypos,
-                                               float w,
-                                               float h,
-                                               float u0,
-                                               float v0,
-                                               float u1,
-                                               float v1,
-                                               float r,
-                                               float g,
-                                               float b,
-                                               float a)
+    auto addCharQuad = [this, maxTextVertices, atlasTexture](float xpos,
+                                                             float ypos,
+                                                             float w,
+                                                             float h,
+                                                             float u0,
+                                                             float v0,
+                                                             float u1,
+                                                             float v1,
+                                                             float r,
+                                                             float g,
+                                                             float b,
+                                                             float a)
     {
-        // Don't overflow the pre-allocated text VBO.
+        // The text batch is shared across every DrawText call in the frame and
+        // only auto-flushes on EndFrame or an atlas/state change. A long run of
+        // text (e.g. the console scrollback in fullscreen) can exceed the
+        // pre-allocated VBO; when it would, flush the accumulated glyphs and
+        // continue into a fresh batch rather than silently dropping the rest.
+        // Dropping truncated the console after ~7 lines (outlined glyphs cost
+        // 5 quads each, so the 2048-quad budget filled fast).
         if (m_TextBatchVertices.size() + 6 > maxTextVertices)
-            return;
+        {
+            FlushTextBatch();
+            m_CurrentTextAtlas = atlasTexture;  // re-arm; FlushTextBatch reset it to 0
+        }
 
         // Two triangles per glyph; per-vertex color is uniform across the quad.
         // Text never wants perspective (UI overlay), so emit perspFlag = 0.
