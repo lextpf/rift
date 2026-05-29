@@ -1,6 +1,11 @@
-# Build outputs
-build/
+# Build outputs — keep the empty build/ dir tracked via .gitkeep; build-* stay fully ignored
+build/*
+!build/.gitkeep
 build-*/
+
+# Site folder — keep the empty dir tracked via .gitkeep; ignore any generated contents
+site/*
+!site/.gitkeep
 
 # Assets
 assets/
