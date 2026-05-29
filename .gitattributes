@@ -43,7 +43,6 @@ CMakePresets.json       text eol=lf
 *.xml                   text
 *.txt                   text
 vcpkg.json              text eol=lf
-LICENSE                 text
 Doxyfile                text
 Doxyfile.in             text
 .gitattributes          text eol=lf
