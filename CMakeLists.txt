@@ -65,6 +65,9 @@ endif()
 # MSVC: Enable asynchronous exception handling for SEH translation support
 if(MSVC)
     string(REPLACE "/EHsc" "/EHa" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    # /Zc:__cplusplus so the __cplusplus macro reports the real value; the
+    # bundled ecs.hpp (C++23, std::expected) relies on it under MSVC.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
 endif()
 
 # Always compile both renderers - switching is done at runtime
@@ -158,6 +161,22 @@ else()
     endif()
 endif()
 
+# ecs - header-only ECS. Try vcpkg first, otherwise use bundled. STL-only, so
+# the bundled path is just an include dir (no link target). Requires C++23.
+find_package(ecs CONFIG QUIET)
+if(ecs_FOUND)
+    message(STATUS "ecs found via vcpkg/find_package")
+    set(ECS_FROM_VCPKG TRUE)
+else()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/external/ecs/ecs.hpp")
+        include_directories(${CMAKE_SOURCE_DIR}/external/ecs)
+        message(STATUS "Using bundled ecs from external/")
+    else()
+        message(FATAL_ERROR "ecs not found!\n"
+                "Run setup.ps1 to copy ecs.hpp into external/ecs/")
+    endif()
+endif()
+
 # Include directories
 if(EXISTS "${CMAKE_SOURCE_DIR}/include")
     include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -236,6 +255,12 @@ endif()
 # Link nlohmann_json if from vcpkg (header-only but has target)
 if(JSON_FROM_VCPKG)
     target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
+endif()
+
+# Link ecs if from vcpkg (header-only INTERFACE target; bundled path uses
+# the global include dir and needs no link)
+if(ECS_FROM_VCPKG)
+    target_link_libraries(${PROJECT_NAME} ecs)
 endif()
 
 # Link stb include dirs if from vcpkg
@@ -383,11 +408,11 @@ if(BUILD_TESTS)
     file(GLOB TEST_SOURCES "tests/*.cpp")
 
     # Source files needed for tests (exclude main.cpp).
-    # CollisionResolverTests exercises the collision pipeline end-to-end, so
-    # it requires Tilemap + PlayerCharacter + their transitive deps. The test
-    # binary is linked against the same graphics libraries as the game but
-    # never creates a GL/VK context, so rendering methods are not called at
-    # runtime. Tests should not invoke render paths.
+    # CollisionSystemTests exercises the collision pipeline end-to-end, so
+    # it requires Tilemap + the collision/movement systems + their transitive
+    # deps. The test binary is linked against the same graphics libraries as the
+    # game but never creates a GL/VK context, so rendering methods are not called
+    # at runtime. Tests should not invoke render paths.
     set(TEST_LIB_SOURCES
         "${CMAKE_SOURCE_DIR}/src/Logger.cpp"
         "${CMAKE_SOURCE_DIR}/src/TimeManager.cpp"
@@ -398,16 +423,50 @@ if(BUILD_TESTS)
         # DrawTracer: tiny per-frame event log; renderer-free. Linked here
         # so ConsoleCommands.cpp's Cmd_RendererTrace resolves at test link.
         "${CMAKE_SOURCE_DIR}/src/DrawTracer.cpp"
-        "${CMAKE_SOURCE_DIR}/src/CollisionResolver.cpp"
-        "${CMAKE_SOURCE_DIR}/src/PlayerCharacter.cpp"
-        "${CMAKE_SOURCE_DIR}/src/NonPlayerCharacter.cpp"
+        "${CMAKE_SOURCE_DIR}/src/CollisionSystem.cpp"
+        # MotionSystem: stateless momentum kinematics over a Motor component
+        # (the former PlayerMotor class is deleted); renderer-free.
+        "${CMAKE_SOURCE_DIR}/src/MotionSystem.cpp"
+        # PlayerMovementSystem: stateless player move/animation/facing logic over
+        # component bundles (PlayerCharacter the class is dissolved; the player is
+        # granular components + free systems).
+        "${CMAKE_SOURCE_DIR}/src/PlayerMovementSystem.cpp"
+        # PlayerSystem: player appearance/mode/per-frame glue over components,
+        # services from globals (replaces PlayerCharacter's non-render methods).
+        "${CMAKE_SOURCE_DIR}/src/PlayerSystem.cpp"
+        # NpcAiSystem: stateless NPC patrol/idle AI over component bundles
+        # (NonPlayerCharacter the class is dissolved; NPCs are granular components).
+        "${CMAKE_SOURCE_DIR}/src/NpcAiSystem.cpp"
+        # NpcRender / PlayerRender: free-function sprite draw over components; only
+        # use the virtual IRenderer interface (replace the entity render methods).
+        "${CMAKE_SOURCE_DIR}/src/NpcRender.cpp"
+        "${CMAKE_SOURCE_DIR}/src/PlayerRender.cpp"
+        # RenderDrawable: AddNpcDrawables (ECS render-list build); needs NpcRender.
+        "${CMAKE_SOURCE_DIR}/src/RenderDrawable.cpp"
+        # EntityStore: NPC spawn/lifecycle/query seam over the registry; renderer-free
+        # (SpawnNpc only touches an optional IRenderer for the upload path).
+        "${CMAKE_SOURCE_DIR}/src/EntityStore.cpp"
         "${CMAKE_SOURCE_DIR}/src/PatrolRoute.cpp"
         # Pathfinding: free-function BFS over Tilemap navigation; renderer-free.
         # Used by Cmd_NavPath / Cmd_NavReachable.
         "${CMAKE_SOURCE_DIR}/src/Pathfinding.cpp"
-        "${CMAKE_SOURCE_DIR}/src/GameCharacter.cpp"
+        # CharacterKinematics: stateless elevation + walk-animation logic over the
+        # Elevation/AnimationState components, extracted from GameCharacter.
+        "${CMAKE_SOURCE_DIR}/src/CharacterKinematics.cpp"
         "${CMAKE_SOURCE_DIR}/src/Tilemap.cpp"
         "${CMAKE_SOURCE_DIR}/src/Texture.cpp"
+        # TextureStore: renderer-side owner of sprite textures keyed by handle;
+        # data paths are renderer-free (UploadAll needs only a virtual IRenderer).
+        "${CMAKE_SOURCE_DIR}/src/TextureStore.cpp"
+        # DialogueStore: owner of NPC dialogue trees keyed by handle; pure data,
+        # referenced by NonPlayerCharacter/Tilemap/ConsoleCommands at test link.
+        "${CMAKE_SOURCE_DIR}/src/DialogueStore.cpp"
+        # CharacterRender: shared character sprite draw mechanics; only uses the
+        # virtual IRenderer interface, referenced by Player/NonPlayerCharacter.
+        "${CMAKE_SOURCE_DIR}/src/CharacterRender.cpp"
+        # AssetRegistry: character/NPC sprite asset paths (demoted class statics);
+        # pure data, referenced by Player/NonPlayerCharacter/Tilemap/ConsoleCommands.
+        "${CMAKE_SOURCE_DIR}/src/AssetRegistry.cpp"
         "${CMAKE_SOURCE_DIR}/src/IRenderer.cpp"
         "${CMAKE_SOURCE_DIR}/src/EditorCommands.cpp"
         "${CMAKE_SOURCE_DIR}/src/NavigationRecalc.cpp"
@@ -469,6 +528,10 @@ if(BUILD_TESTS)
 
     if(JSON_FROM_VCPKG)
         target_link_libraries(rift_tests PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+
+    if(ECS_FROM_VCPKG)
+        target_link_libraries(rift_tests PRIVATE ecs)
     endif()
 
     if(STB_FROM_VCPKG)
