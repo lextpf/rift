@@ -7,6 +7,7 @@
 #   - GLAD (OpenGL loader)      -> external/glad/     (included in repo)
 #   - stb_image (image loading) -> external/stb/      (included in repo)
 #   - nlohmann/json (JSON)      -> external/nlohmann/ (downloaded)
+#   - ecs (entity-component)    -> external/ecs/      (downloaded, single header)
 #   - Vulkan SDK (required)     -> System install required
 #   - FreeType (optional)       -> vcpkg or system install
 # ============================================================================
@@ -42,7 +43,7 @@ if (-not (Test-Path "external")) {
 # ============================================================================
 # GLFW - Windowing library
 # ============================================================================
-Write-Host "[1/3] Setting up GLFW..." -ForegroundColor Cyan
+Write-Host "[1/4] Setting up GLFW..." -ForegroundColor Cyan
 Write-Host "----------------------------------------------------------------------------"
 
 if (Test-Path "external\glfw\CMakeLists.txt") {
@@ -65,7 +66,7 @@ Write-Host ""
 # ============================================================================
 # GLM - Math library
 # ============================================================================
-Write-Host "[2/3] Setting up GLM..." -ForegroundColor Cyan
+Write-Host "[2/4] Setting up GLM..." -ForegroundColor Cyan
 Write-Host "----------------------------------------------------------------------------"
 
 if (Test-Path "external\glm\glm\glm.hpp") {
@@ -100,7 +101,7 @@ Write-Host ""
 # ============================================================================
 # nlohmann/json - JSON library
 # ============================================================================
-Write-Host "[3/3] Setting up nlohmann/json..." -ForegroundColor Cyan
+Write-Host "[3/4] Setting up nlohmann/json..." -ForegroundColor Cyan
 Write-Host "----------------------------------------------------------------------------"
 
 if (Test-Path "external\nlohmann\json.hpp") {
@@ -125,6 +126,33 @@ if (Test-Path "external\nlohmann\json.hpp") {
 Write-Host ""
 
 # ============================================================================
+# ecs - Entity Component System (single header)
+# ============================================================================
+Write-Host "[4/4] Setting up ecs..." -ForegroundColor Cyan
+Write-Host "----------------------------------------------------------------------------"
+
+if (Test-Path "external\ecs\ecs.hpp") {
+    Write-Host "ecs already exists. Skipping."
+} else {
+    Write-Host "Downloading ecs.hpp..."
+
+    if (-not (Test-Path "external\ecs")) {
+        New-Item -ItemType Directory -Path "external\ecs" | Out-Null
+    }
+
+    try {
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lextpf/ecs/main/src/ecs.hpp" -OutFile "external\ecs\ecs.hpp" -UseBasicParsing
+        Write-Host "ecs setup complete." -ForegroundColor Green
+    } catch {
+        Write-Host "ERROR: Failed to download ecs.hpp!" -ForegroundColor Red
+        Write-Host "Please download manually from: https://github.com/lextpf/ecs"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+}
+Write-Host ""
+
+# ============================================================================
 # Verification
 # ============================================================================
 Write-Host "============================================================================" -ForegroundColor Cyan
@@ -141,7 +169,8 @@ $deps = @(
     @{Name="GLM"; Path="external\glm\glm\glm.hpp"},
     @{Name="GLAD"; Path="external\glad\src\glad.c"},
     @{Name="stb_image"; Path="external\stb\stb_image.h"},
-    @{Name="nlohmann/json"; Path="external\nlohmann\json.hpp"}
+    @{Name="nlohmann/json"; Path="external\nlohmann\json.hpp"},
+    @{Name="ecs"; Path="external\ecs\ecs.hpp"}
 )
 
 foreach ($dep in $deps) {
