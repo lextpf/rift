@@ -61,7 +61,16 @@ where clang-tidy >nul 2>&1
 if errorlevel 1 (
     echo SKIP: clang-tidy not found in PATH
 ) else (
-    if not exist "build-cdb\compile_commands.json" (
+    REM Regenerate the sidecar db when it is missing OR when CMakeLists.txt is
+    REM newer than it. The previous "only if missing" guard left compile_commands.json
+    REM stale after include-dir / target changes, so clang-tidy ran with outdated
+    REM flags and failed to resolve newly added include paths.
+    set "REGEN_CDB="
+    if not exist "build-cdb\compile_commands.json" set "REGEN_CDB=1"
+    if not defined REGEN_CDB (
+        for /f %%R in ('powershell -NoProfile -Command "[int]((Get-Item 'CMakeLists.txt').LastWriteTime -gt (Get-Item 'build-cdb\compile_commands.json').LastWriteTime)"') do if "%%R"=="1" set "REGEN_CDB=1"
+    )
+    if defined REGEN_CDB (
         echo   Generating compile_commands.json via Ninja sidecar...
         cmake --preset compile-db >nul
         if errorlevel 1 (
