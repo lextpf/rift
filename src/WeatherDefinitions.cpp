@@ -81,9 +81,11 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .windIntensity = 0.2f,
         .fogAlphaMultiplier = 0.65f,
     },
-    // HeatHaze (hazeAmplitude is reserved; tint applies today)
+    // HeatHaze (hazeAmplitude is reserved; tint applies today). Tint channels
+    // held at/below the white point so the warm cast doesn't over-brighten
+    // sprites past full albedo at midday (ambient is an unclamped multiply).
     WeatherDefinition{
-        .ambientTintMultiplier = {1.05f, 1.02f, 0.95f},
+        .ambientTintMultiplier = {1.00f, 0.99f, 0.95f},
         .windIntensity = 0.1f,
         .hazeAmplitude = 2.0f,
     },
@@ -117,11 +119,12 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     // CherryBlossoms: dense flurry with strong pink wash. Per-spawn tier system
     // in the Blossom behavior gives mixed sizes/hues so density doesn't read as
     // uniform; a deeper alpha pulse in Update makes each petal visibly breathe.
-    // Pinker tint (R bumped past 1.0, G/B suppressed harder than before) reads
-    // as a pronounced pink overlay. A strongly pink-tinted Fog secondary adds a
-    // sakura wash behind the petals (tint applied in SpawnWeatherParticle).
+    // Pinker tint (R held at the white point, G/B suppressed) reads as a
+    // pronounced pink overlay without over-brightening reds past full albedo.
+    // A strongly pink-tinted Fog secondary adds a sakura wash behind the petals
+    // (tint applied in SpawnWeatherParticle).
     WeatherDefinition{
-        .ambientTintMultiplier = {1.22f, 0.78f, 0.92f},
+        .ambientTintMultiplier = {1.00f, 0.80f, 0.92f},
         .particleType = WeatherParticleType::Blossom,
         .baseSpawnRate = 230.0f,
         .maxWeatherParticles = 10000,
@@ -136,7 +139,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     // block) and rapidly scatter away from the player when the player runs
     // through them (Pollen::Update avoidance).
     WeatherDefinition{
-        .ambientTintMultiplier = {1.05f, 1.00f, 0.85f},
+        .ambientTintMultiplier = {1.00f, 0.98f, 0.85f},
         .particleType = WeatherParticleType::Pollen,
         .baseSpawnRate = 60.0f,
         .maxWeatherParticles = 2000,
@@ -208,7 +211,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     // existing baseAlpha curve in Sunshine::Update keeps the beams visible
     // at night, just dimmer.
     WeatherDefinition{
-        .ambientTintMultiplier = {1.05f, 1.00f, 1.10f},
+        .ambientTintMultiplier = {1.00f, 0.98f, 1.00f},
         .particleType = WeatherParticleType::Sunshine,
         .baseSpawnRate = 6.0f,
         .maxWeatherParticles = 200,
