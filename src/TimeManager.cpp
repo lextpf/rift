@@ -125,12 +125,15 @@ glm::vec3 TimeManager::GetAmbientColor() const
     // Define ambient colors for different times - subtle, not too bright
     // Dawn: soft muted orange/pink
     glm::vec3 dawnColor(0.85f, 0.75f, 0.7f);
-    // Morning: warm white
-    glm::vec3 morningColor(0.95f, 0.93f, 0.9f);
-    // Midday: neutral/slight warm
-    glm::vec3 middayColor(1.0f, 1.0f, 0.98f);
-    // Afternoon: warm yellow
-    glm::vec3 afternoonColor(0.95f, 0.9f, 0.82f);
+    // Morning: warm white (toned below white for daytime exposure headroom)
+    glm::vec3 morningColor(0.90f, 0.88f, 0.85f);
+    // Midday: just below white for daytime exposure headroom (slight warm).
+    // Ambient is an unclamped multiply on albedo with no scene tonemap, so a
+    // white midday made noon as bright as the source art allowed; ~7% of
+    // headroom here takes the eye-strain off daytime while staying the peak.
+    glm::vec3 middayColor(0.93f, 0.93f, 0.91f);
+    // Afternoon: warm yellow (toned for daytime exposure headroom)
+    glm::vec3 afternoonColor(0.90f, 0.85f, 0.78f);
     // Dusk: muted orange/purple (less saturated)
     glm::vec3 duskColor(0.75f, 0.6f, 0.55f);
     // Evening: deep blue (dim)
