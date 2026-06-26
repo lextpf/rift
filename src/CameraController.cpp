@@ -112,10 +112,17 @@ void CameraController::Update(const CameraUpdateParams& params)
     else
     {
         // No manual camera input.
-        // If player is moving with WASD, establish a follow target.
+        // If player is moving with WASD, establish a follow target (with look-ahead).
         if (params.playerMoving || m_State.hasFollowTarget)
         {
-            m_State.followTarget = params.playerFollowTarget;
+            glm::vec2 lead(0.0f);
+            float vlen = glm::length(params.playerVelocity);
+            if (vlen > 1e-3f && m_LookAheadDistance > 0.0f)
+            {
+                float mag = std::min(1.0f, vlen / LOOKAHEAD_REF_SPEED);
+                lead = (params.playerVelocity / vlen) * (m_LookAheadDistance * mag);
+            }
+            m_State.followTarget = params.playerFollowTarget + lead;
             m_State.hasFollowTarget = true;
         }
 

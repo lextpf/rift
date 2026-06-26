@@ -41,6 +41,7 @@ struct CameraUpdateParams
     float deltaTime = 0.0f;
     glm::vec2 playerFollowTarget{0.0f};  ///< Camera centering target derived from player position
     bool playerMoving = false;           ///< Whether WASD input is active this frame
+    glm::vec2 playerVelocity{0.0f};      ///< Player velocity (px/s) for camera look-ahead
     bool arrowUp = false;
     bool arrowDown = false;
     bool arrowLeft = false;
@@ -192,16 +193,22 @@ public:
     float GetZoom() const { return m_State.zoom; }
     bool Is3DEnabled() const { return m_State.enable3DEffect; }
     bool IsFreeMode() const { return m_State.freeMode; }
+    /// @brief Set the camera look-ahead distance in world pixels (0 disables it).
+    void SetLookAheadDistance(float d) { m_LookAheadDistance = d; }
+    /// @brief Current camera look-ahead distance (world pixels).
+    float GetLookAheadDistance() const { return m_LookAheadDistance; }
     /// @}
 
 private:
     CameraState m_State;
+    float m_LookAheadDistance = 12.0f;  ///< Camera lead in the direction of travel (px).
 
     /// @name Constants
     /// @{
     static constexpr float CAMERA_PAN_SPEED = 600.0f;
     static constexpr float CAMERA_SETTLE_TIME = 0.6f;
     static constexpr float CAMERA_SNAP_THRESHOLD = 0.1f;
+    static constexpr float LOOKAHEAD_REF_SPEED = 87.5f;  ///< Speed at which lead is maxed out.
     /// @}
 
     /// @brief Clamp camera position to map bounds.
