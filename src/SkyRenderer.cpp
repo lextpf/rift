@@ -4,6 +4,7 @@
 #include "AmbienceConfig.hpp"
 #include "MathConstants.hpp"
 #include "ProceduralTexture.hpp"
+#include "TextureStore.hpp"
 #include "WeatherDefinitions.hpp"
 
 #include <algorithm>
@@ -23,10 +24,12 @@ SkyRenderer::SkyRenderer()
 
 SkyRenderer::~SkyRenderer() {}
 
-void SkyRenderer::Initialize()
+void SkyRenderer::Initialize(TextureStore& store)
 {
     if (m_Initialized)
         return;
+
+    m_Store = &store;
 
     GenerateRayTexture();
     GenerateStarTexture();
@@ -75,31 +78,20 @@ void SkyRenderer::Initialize()
             glowPixels[idx + 3] = static_cast<unsigned char>(alpha * 255);
         }
     }
-    m_GlowTexture.LoadFromData(glowPixels.data(), GLOW_TEXTURE_SIZE, GLOW_TEXTURE_SIZE, 4, false);
+    Texture glowTex;
+    glowTex.LoadFromData(glowPixels.data(), GLOW_TEXTURE_SIZE, GLOW_TEXTURE_SIZE, 4, false);
+    m_GlowHandle = m_Store->Adopt(std::move(glowTex));
 
     GenerateLightPoolTexture();
     GenerateAuroraCurtainTexture();
     // Hand-painted small aurora particle for the floating wisp layer.
     // Loads from disk; if missing the Texture stays default-constructed and
     // DrawSpriteAlpha gracefully falls back to a colored rectangle.
-    m_AuroraSmallTexture.LoadFromFile("assets/particles/bc3ad898-4ba3-406a-af06-63256cbd45b2.png");
+    Texture auroraSmallTex;
+    auroraSmallTex.LoadFromFile("assets/particles/bc3ad898-4ba3-406a-af06-63256cbd45b2.png");
+    m_AuroraSmallHandle = m_Store->Adopt(std::move(auroraSmallTex));
 
     m_Initialized = true;
-}
-
-void SkyRenderer::UploadTextures(IRenderer& renderer)
-{
-    if (!m_Initialized)
-        return;
-
-    renderer.UploadTexture(m_RayTexture);
-    renderer.UploadTexture(m_StarTexture);
-    renderer.UploadTexture(m_StarGlowTexture);
-    renderer.UploadTexture(m_ShootingStarTexture);
-    renderer.UploadTexture(m_GlowTexture);
-    renderer.UploadTexture(m_LightPoolTexture);
-    renderer.UploadTexture(m_AuroraCurtainTexture);
-    renderer.UploadTexture(m_AuroraSmallTexture);
 }
 
 void SkyRenderer::DrawLightPool(IRenderer& renderer,
@@ -119,8 +111,9 @@ void SkyRenderer::DrawLightPool(IRenderer& renderer,
         {
             // See DrawSkyElement: atlas sub-region preserves the source's
             // m_ImageData layout, so uv math is a direct map.
-            const glm::vec2 regionSize(static_cast<float>(m_LightPoolTexture.GetWidth()),
-                                       static_cast<float>(m_LightPoolTexture.GetHeight()));
+            const glm::vec2 regionSize(
+                static_cast<float>(m_Store->Get(m_LightPoolHandle).GetWidth()),
+                static_cast<float>(m_Store->Get(m_LightPoolHandle).GetHeight()));
             const glm::vec2 uvMin = m_LightPoolAtlasOffset / glm::vec2(aw, ah);
             const glm::vec2 uvMax = (m_LightPoolAtlasOffset + regionSize) / glm::vec2(aw, ah);
             renderer.DrawSpriteAtlas(
@@ -128,7 +121,7 @@ void SkyRenderer::DrawLightPool(IRenderer& renderer,
             return;
         }
     }
-    renderer.DrawSpriteAlpha(m_LightPoolTexture, pos, size, rotation, color, additive);
+    renderer.DrawSpriteAlpha(m_Store->Get(m_LightPoolHandle), pos, size, rotation, color, additive);
 }
 
 void SkyRenderer::SetAtlasBinding(const Texture* atlasTex,
@@ -220,7 +213,9 @@ void SkyRenderer::GenerateLightPoolTexture()
             pixels[idx + 3] = static_cast<unsigned char>(alpha * 255.0f);
         }
     }
-    m_LightPoolTexture.LoadFromData(pixels.data(), kSize, kSize, 4, false);
+    Texture lightPoolTex;
+    lightPoolTex.LoadFromData(pixels.data(), kSize, kSize, 4, false);
+    m_LightPoolHandle = m_Store->Adopt(std::move(lightPoolTex));
 }
 
 void SkyRenderer::GenerateAuroraCurtainTexture()
@@ -266,7 +261,9 @@ void SkyRenderer::GenerateAuroraCurtainTexture()
             pixels[idx + 3] = static_cast<unsigned char>(alpha * 255.0f);
         }
     }
-    m_AuroraCurtainTexture.LoadFromData(pixels.data(), kW, kH, 4, false);
+    Texture auroraCurtainTex;
+    auroraCurtainTex.LoadFromData(pixels.data(), kW, kH, 4, false);
+    m_AuroraCurtainHandle = m_Store->Adopt(std::move(auroraCurtainTex));
 }
 
 void SkyRenderer::Update(float deltaTime, const TimeManager& time)
@@ -396,7 +393,7 @@ void SkyRenderer::Render(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_GlowAtlasOffset,
-                       m_GlowTexture,
+                       m_Store->Get(m_GlowHandle),
                        glm::vec2(-static_cast<float>(screenWidth) * 0.5f,
                                  -static_cast<float>(screenHeight) * 0.5f),
                        glm::vec2(static_cast<float>(screenWidth) * 2.0f,
@@ -580,7 +577,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                 DrawSkyElement(renderer,
                                m_AtlasTexture,
                                m_AuroraCurtainAtlasOffset,
-                               m_AuroraCurtainTexture,
+                               m_Store->Get(m_AuroraCurtainHandle),
                                glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
                                glm::vec2(segWidth, curtainH),
                                0.0f,
@@ -609,7 +606,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                     glm::vec3 color = auroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
                     float glowSize = curtainH * 1.3f;
                     renderer.DrawSpriteAlpha(
-                        m_GlowTexture,
+                        m_Store->Get(m_GlowHandle),
                         glm::vec2(screenX - glowSize * 0.5f, segY - curtainH * 0.10f),
                         glm::vec2(glowSize, glowSize * 0.85f),
                         0.0f,
@@ -702,7 +699,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
             DrawSkyElement(renderer,
                            m_AtlasTexture,
                            m_AuroraSmallAtlasOffset,
-                           m_AuroraSmallTexture,
+                           m_Store->Get(m_AuroraSmallHandle),
                            pos - glm::vec2(wispSize * 0.5f),
                            glm::vec2(wispSize),
                            0.0f,
@@ -745,7 +742,9 @@ void SkyRenderer::GenerateRayTexture()
                        return {255, 255, 255, a};
                    });
 
-    m_RayTexture.LoadFromData(pixels.data(), RAY_TEXTURE_WIDTH, RAY_TEXTURE_HEIGHT, 4, false);
+    Texture rayTex;
+    rayTex.LoadFromData(pixels.data(), RAY_TEXTURE_WIDTH, RAY_TEXTURE_HEIGHT, 4, false);
+    m_RayHandle = m_Store->Adopt(std::move(rayTex));
 }
 
 void SkyRenderer::GenerateStarTexture()
@@ -787,7 +786,9 @@ void SkyRenderer::GenerateStarTexture()
             return {255, 255, 255, a};
         });
 
-    m_StarTexture.LoadFromData(pixels.data(), STAR_TEXTURE_SIZE, STAR_TEXTURE_SIZE, 4, false);
+    Texture starTex;
+    starTex.LoadFromData(pixels.data(), STAR_TEXTURE_SIZE, STAR_TEXTURE_SIZE, 4, false);
+    m_StarHandle = m_Store->Adopt(std::move(starTex));
 }
 
 void SkyRenderer::GenerateStarGlowTexture()
@@ -814,8 +815,10 @@ void SkyRenderer::GenerateStarGlowTexture()
                        return {255, 255, 255, static_cast<uint8_t>(intensity * 255)};
                    });
 
-    m_StarGlowTexture.LoadFromData(
+    Texture starGlowTex;
+    starGlowTex.LoadFromData(
         pixels.data(), STAR_GLOW_TEXTURE_SIZE, STAR_GLOW_TEXTURE_SIZE, 4, false);
+    m_StarGlowHandle = m_Store->Adopt(std::move(starGlowTex));
 }
 
 void SkyRenderer::GenerateShootingStarTexture()
@@ -845,7 +848,9 @@ void SkyRenderer::GenerateShootingStarTexture()
             return {255, 255, 255, static_cast<uint8_t>(std::min(intensity * 255.0f, 255.0f))};
         });
 
-    m_ShootingStarTexture.LoadFromData(pixels.data(), width, height, 4, false);
+    Texture shootingStarTex;
+    shootingStarTex.LoadFromData(pixels.data(), width, height, 4, false);
+    m_ShootingStarHandle = m_Store->Adopt(std::move(shootingStarTex));
 }
 
 void SkyRenderer::GenerateLightRays()
@@ -1060,7 +1065,7 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_StarAtlasOffset,
-                       m_StarTexture,
+                       m_Store->Get(m_StarHandle),
                        screenPos - glm::vec2(size * 0.5f),
                        glm::vec2(size),
                        0.0f,
@@ -1071,8 +1076,8 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
 
     // Second pass: Main stars - gradual appearance, sparkly twinkle.
     //
-    // Each visible star can produce a glow (m_StarGlowTexture) and a core
-    // (m_StarTexture). Emitting them inline alternates textures per star and
+    // Each visible star can produce a glow (m_Store->Get(m_StarGlowHandle)) and a core
+    // (m_Store->Get(m_StarHandle)). Emitting them inline alternates textures per star and
     // forces the OpenGL particle batch to flush between every pair, so a few
     // hundred stars become a few hundred draw calls. Instead we collect the
     // per-star screen data in one compute pass, then emit all glows in one
@@ -1138,7 +1143,7 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         starCount++;
     }
 
-    // Emit pass 1: glows for qualifying stars - single m_StarGlowTexture binding.
+    // Emit pass 1: glows for qualifying stars - single m_Store->Get(m_StarGlowHandle) binding.
     for (const auto& v : m_VisibleStarsScratch)
     {
         if (v.glowSize <= 0.0f)
@@ -1148,7 +1153,7 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_StarGlowAtlasOffset,
-                       m_StarGlowTexture,
+                       m_Store->Get(m_StarGlowHandle),
                        v.screenPos - glm::vec2(v.glowSize * 0.5f),
                        glm::vec2(v.glowSize),
                        0.0f,
@@ -1156,13 +1161,13 @@ void SkyRenderer::RenderStars(IRenderer& renderer,
                        true);
     }
 
-    // Emit pass 2: cores for every visible star - single m_StarTexture binding.
+    // Emit pass 2: cores for every visible star - single m_Store->Get(m_StarHandle) binding.
     for (const auto& v : m_VisibleStarsScratch)
     {
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_StarAtlasOffset,
-                       m_StarTexture,
+                       m_Store->Get(m_StarHandle),
                        v.screenPos - glm::vec2(v.size * 0.5f),
                        glm::vec2(v.size),
                        0.0f,
@@ -1286,7 +1291,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
-                       m_RayTexture,
+                       m_Store->Get(m_RayHandle),
                        glowPos,
                        glm::vec2(glowWidth, glowLength),
                        rayAngleDeg,
@@ -1297,7 +1302,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
-                       m_RayTexture,
+                       m_Store->Get(m_RayHandle),
                        rayPos,
                        glm::vec2(rayWidth, rayLength),
                        rayAngleDeg,
@@ -1413,7 +1418,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
-                       m_RayTexture,
+                       m_Store->Get(m_RayHandle),
                        glowPos,
                        glm::vec2(glowWidth, glowLength),
                        rayAngleDeg,
@@ -1424,7 +1429,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
-                       m_RayTexture,
+                       m_Store->Get(m_RayHandle),
                        rayPos,
                        glm::vec2(rayWidth, rayLength),
                        rayAngleDeg,
@@ -1557,7 +1562,7 @@ void SkyRenderer::RenderShootingStars(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_ShootingStarAtlasOffset,
-                       m_ShootingStarTexture,
+                       m_Store->Get(m_ShootingStarHandle),
                        screenPos,
                        size,
                        angle,
@@ -1639,7 +1644,7 @@ void SkyRenderer::RenderDawnHorizonGlow(IRenderer& renderer,
     DrawSkyElement(renderer,
                    m_AtlasTexture,
                    m_GlowAtlasOffset,
-                   m_GlowTexture,
+                   m_Store->Get(m_GlowHandle),
                    glm::vec2(sw * 0.5f - glowSize * 0.5f, sh - glowSize * 0.3f),
                    glm::vec2(glowSize, glowSize),
                    0.0f,
@@ -1650,7 +1655,7 @@ void SkyRenderer::RenderDawnHorizonGlow(IRenderer& renderer,
     DrawSkyElement(renderer,
                    m_AtlasTexture,
                    m_GlowAtlasOffset,
-                   m_GlowTexture,
+                   m_Store->Get(m_GlowHandle),
                    glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.3f - glowSize * 0.5f),
                    glm::vec2(glowSize, glowSize),
                    0.0f,
@@ -1677,7 +1682,7 @@ void SkyRenderer::RenderDawnGradient(IRenderer& renderer,
     DrawSkyElement(renderer,
                    m_AtlasTexture,
                    m_GlowAtlasOffset,
-                   m_GlowTexture,
+                   m_Store->Get(m_GlowHandle),
                    glm::vec2(sw * 0.5f - glowSize * 0.5f, -glowSize * 0.6f),
                    glm::vec2(glowSize, glowSize),
                    0.0f,
@@ -1688,7 +1693,7 @@ void SkyRenderer::RenderDawnGradient(IRenderer& renderer,
     DrawSkyElement(renderer,
                    m_AtlasTexture,
                    m_GlowAtlasOffset,
-                   m_GlowTexture,
+                   m_Store->Get(m_GlowHandle),
                    glm::vec2(sw * 0.5f - glowSize * 0.5f, sh * 0.5f - glowSize * 0.5f),
                    glm::vec2(glowSize, glowSize),
                    0.0f,
@@ -1740,7 +1745,7 @@ void SkyRenderer::RenderDewSparkles(IRenderer& renderer,
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_StarAtlasOffset,
-                       m_StarTexture,
+                       m_Store->Get(m_StarHandle),
                        screenPos - glm::vec2(size * 0.5f),
                        glm::vec2(size),
                        0.0f,
@@ -1786,7 +1791,7 @@ void SkyRenderer::RenderCloudShadows(
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_GlowAtlasOffset,
-                       m_GlowTexture,
+                       m_Store->Get(m_GlowHandle),
                        screenPos,
                        glm::vec2(blobSize),
                        0.0f,
@@ -1882,7 +1887,7 @@ void SkyRenderer::RenderLightningBolt(IRenderer& renderer, int screenWidth, int 
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_GlowAtlasOffset,
-                       m_GlowTexture,
+                       m_Store->Get(m_GlowHandle),
                        pos,
                        size,
                        angleDeg,

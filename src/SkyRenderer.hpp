@@ -9,6 +9,8 @@
 #include "AmbienceConfig.hpp"
 #include "IRenderer.hpp"
 #include "Texture.hpp"
+#include "TextureHandle.hpp"
+#include "TextureStore.hpp"
 
 class TimeManager;
 
@@ -250,17 +252,9 @@ public:
      * once; generated resources are replaced by the
      * current run's textures and arrays.
      */
-    void Initialize();
-
-    /**
-     * @brief Re-upload all sky textures to the renderer.
-     *
-     * Called after switching rendering backends to ensure textures
-     * are available in the new renderer's GPU memory.
-     *
-     * @param renderer The renderer to upload textures to.
-     */
-    void UploadTextures(IRenderer& renderer);
+    /// @param store TextureStore that adopts the generated sky textures; its
+    ///              UploadAll re-uploads them on a renderer switch.
+    void Initialize(TextureStore& store);
 
     /**
      * @brief Bind each sky texture to a region of a shared atlas.
@@ -296,13 +290,13 @@ public:
     /// packer that copies pixel data into the atlas image at load time.
     /// (GetLightPoolTexture is declared below alongside its original
     /// Game::Render call site.)
-    const Texture& GetRayTexture() const { return m_RayTexture; }
-    const Texture& GetStarTexture() const { return m_StarTexture; }
-    const Texture& GetStarGlowTexture() const { return m_StarGlowTexture; }
-    const Texture& GetShootingStarTexture() const { return m_ShootingStarTexture; }
-    const Texture& GetGlowTexture() const { return m_GlowTexture; }
-    const Texture& GetAuroraCurtainTexture() const { return m_AuroraCurtainTexture; }
-    const Texture& GetAuroraSmallTexture() const { return m_AuroraSmallTexture; }
+    const Texture& GetRayTexture() const { return m_Store->Get(m_RayHandle); }
+    const Texture& GetStarTexture() const { return m_Store->Get(m_StarHandle); }
+    const Texture& GetStarGlowTexture() const { return m_Store->Get(m_StarGlowHandle); }
+    const Texture& GetShootingStarTexture() const { return m_Store->Get(m_ShootingStarHandle); }
+    const Texture& GetGlowTexture() const { return m_Store->Get(m_GlowHandle); }
+    const Texture& GetAuroraCurtainTexture() const { return m_Store->Get(m_AuroraCurtainHandle); }
+    const Texture& GetAuroraSmallTexture() const { return m_Store->Get(m_AuroraSmallHandle); }
 
     /**
      * @brief Update time-based animations.
@@ -342,7 +336,7 @@ public:
      * Generated in Initialize() and re-uploaded by UploadTextures(). Used by
      * Game::Render to draw additive light pools at WorldLight positions.
      */
-    const Texture& GetLightPoolTexture() const { return m_LightPoolTexture; }
+    const Texture& GetLightPoolTexture() const { return m_Store->Get(m_LightPoolHandle); }
 
     /**
      * @brief Draw the light-pool quad at @p pos, routing through the bound
@@ -699,14 +693,17 @@ private:
     /// @name Procedural Textures
     /// @brief GPU textures generated at initialization.
     /// @{
-    Texture m_RayTexture;            ///< Vertical gradient for light rays
-    Texture m_StarTexture;           ///< Small soft circle for stars
-    Texture m_StarGlowTexture;       ///< Larger glow behind bright stars
-    Texture m_ShootingStarTexture;   ///< Elongated streak for meteors
-    Texture m_GlowTexture;           ///< Large soft glow for atmosphere
-    Texture m_LightPoolTexture;      ///< Soft circle for WorldLight pools
-    Texture m_AuroraCurtainTexture;  ///< Vertical streaked curtain for aurora bands
-    Texture m_AuroraSmallTexture;    ///< Hand-painted small aurora particle for wisps
+    /// Sky textures live in this store (set in Initialize); UploadAll re-uploads
+    /// them on a renderer switch, replacing the old IGpuResourceOwner hook.
+    TextureStore* m_Store = nullptr;
+    TextureHandle m_RayHandle;            ///< Vertical gradient for light rays
+    TextureHandle m_StarHandle;           ///< Small soft circle for stars
+    TextureHandle m_StarGlowHandle;       ///< Larger glow behind bright stars
+    TextureHandle m_ShootingStarHandle;   ///< Elongated streak for meteors
+    TextureHandle m_GlowHandle;           ///< Large soft glow for atmosphere
+    TextureHandle m_LightPoolHandle;      ///< Soft circle for WorldLight pools
+    TextureHandle m_AuroraCurtainHandle;  ///< Vertical streaked curtain for aurora bands
+    TextureHandle m_AuroraSmallHandle;    ///< Hand-painted small aurora particle for wisps
 
     /// Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
     /// from the atlas at the per-element pixel offsets recorded below. The
