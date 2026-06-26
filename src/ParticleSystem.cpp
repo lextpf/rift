@@ -4,6 +4,7 @@
 #include "Logger.hpp"
 #include "MathConstants.hpp"
 #include "ProceduralTexture.hpp"
+#include "TextureStore.hpp"
 #include "Tilemap.hpp"
 #include "WeatherDefinitions.hpp"
 
@@ -1587,19 +1588,12 @@ ParticleSystem::ParticleSystem()
     m_Particles.reserve(1000);
 }
 
-bool ParticleSystem::LoadTextures()
+bool ParticleSystem::LoadTextures(TextureStore& store)
 {
+    m_Store = &store;
     BuildAtlas();
     m_TexturesLoaded = true;
     return true;
-}
-
-void ParticleSystem::UploadTextures(IRenderer& renderer)
-{
-    if (!m_TexturesLoaded)
-        return;
-
-    renderer.UploadTexture(m_AtlasTexture);
 }
 
 void ParticleSystem::BuildAtlas()
@@ -1867,7 +1861,9 @@ void ParticleSystem::BuildAtlas()
     }
 
     // Create the atlas texture
-    m_AtlasTexture.LoadFromData(atlasPixels.data(), atlasWidth, atlasHeight, 4, false);
+    Texture atlas;
+    atlas.LoadFromData(atlasPixels.data(), atlasWidth, atlasHeight, 4, false);
+    m_AtlasHandle = m_Store->Adopt(std::move(atlas));
 
     Logger::InfoF(LOG_SUBSYSTEM, "Atlas built: {}x{}", atlasWidth, atlasHeight);
 }
@@ -2696,7 +2692,7 @@ void ParticleSystem::Render(IRenderer& renderer,
                 renderSize.x *= flipScale;
             }
             glm::vec2 centeredPos = data.screenPos - renderSize * 0.5f;
-            renderer.DrawSpriteAtlas(m_AtlasTexture,
+            renderer.DrawSpriteAtlas(m_Store->Get(m_AtlasHandle),
                                      centeredPos,
                                      renderSize,
                                      region.uvMin,

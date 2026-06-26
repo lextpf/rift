@@ -3,12 +3,14 @@
 #include "EnumTraits.hpp"
 #include "IRenderer.hpp"
 #include "Texture.hpp"
+#include "TextureHandle.hpp"
 
 #include <glm/glm.hpp>
 #include <random>
 #include <vector>
 
 class Tilemap;
+class TextureStore;
 struct WeatherDefinition;
 enum class WeatherParticleType;
 
@@ -267,18 +269,11 @@ public:
      * will fall back to colored rectangles during rendering.
      *
      * @return Always true (individual failures are non-fatal).
-     */
-    bool LoadTextures();
-
-    /**
-     * @brief Re-upload all particle textures to the renderer.
      *
-     * Called after switching rendering backends to ensure textures
-     * are available in the new renderer's GPU memory.
-     *
-     * @param renderer The renderer to upload textures to.
+     * @param store TextureStore that adopts the built atlas; its UploadAll re-uploads
+     *              it on a renderer switch (no per-object IGpuResourceOwner hook).
      */
-    void UploadTextures(IRenderer& renderer);
+    bool LoadTextures(TextureStore& store);
 
     /**
      * @brief Set the zone list for particle spawning.
@@ -557,7 +552,8 @@ private:
         glm::vec2 uvMax;  ///< Bottom-right UV coordinate.
     };
 
-    Texture m_AtlasTexture;  ///< Combined particle texture atlas.
+    TextureStore* m_Store = nullptr;  ///< Owns the adopted atlas (set in LoadTextures).
+    TextureHandle m_AtlasHandle;      ///< Handle to the combined particle atlas in m_Store.
     AtlasRegion m_AtlasRegions[EnumTraits<ParticleType>::Count];  ///< UV per ParticleType.
     bool m_TexturesLoaded;  ///< Whether LoadTextures() succeeded.
 
