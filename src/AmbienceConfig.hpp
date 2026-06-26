@@ -72,13 +72,15 @@ constexpr float GRAIN_CHROMA_MIX = 0.30f;
 /// soft filter in PostFXParams::KarisBloomChromaWeight.
 constexpr float BLOOM_SATURATION_THRESHOLD = 0.30f;
 
-/// Bloom intensity scalar applied during composite. 0.30 with the chroma-only
-/// composite path in PostFXComposite.frag `col += b - vec3(dot(b, LUMA))` yields
-/// subtle color bleed without any net luminance lift - the entire
-/// bloom contribution projects onto the chroma plane orthogonal to the luma
-/// axis. Set to 0.0 to disable bloom contribution while keeping the mip
-/// chain available.
-constexpr float BLOOM_INTENSITY = 0.30f;
+/// Bloom intensity scalar applied during composite. The chroma-only composite
+/// path in PostFXComposite.frag `col = max(col + (b - vec3(dot(b, LUMA))), 0)`
+/// projects the bloom onto the chroma plane orthogonal to the luma axis, so the
+/// add is luma-neutral *before* the clamp; the trailing `max(., 0)` then leaks a
+/// small amount of luminance on strongly-saturated sources (foliage / water /
+/// sky), so this is kept modest. 0.22 yields subtle color bleed without an
+/// eye-straining brightness lift at midday. Set to 0.0 to disable the bloom
+/// contribution while keeping the mip chain available.
+constexpr float BLOOM_INTENSITY = 0.22f;
 
 /// Number of mip levels in the bloom downsample/upsample chain.
 /// 5 levels covers 1/2 -> 1/32 resolution, enough for multi-scale character on cozy scenes.
@@ -87,10 +89,11 @@ constexpr int BLOOM_MIP_LEVELS = 5;
 /// Global color saturation multiplier applied after grading, before vignette.
 /// 1.0 = identity, >1 pumps chroma, 0 = grayscale. The math is luma-preserving
 /// `mix(vec3(L), c, s)` so this adds zero brightness - the entire "pop" is
-/// chroma deviation, not luma lift. 1.25 reads as a softer arcade-neon pop on
-/// foliage / sky / tiles, well below the cartoon threshold (>=1.6). See
+/// chroma deviation, not luma lift. 1.15 reads as a gentle arcade-neon pop on
+/// foliage / sky / tiles - calmer than the old 1.25 to ease daytime eye-strain,
+/// still clearly above neutral and well below the cartoon threshold (>=1.6). See
 /// PostFXComposite.frag applySaturation().
-constexpr float COLOR_SATURATION = 1.25f;
+constexpr float COLOR_SATURATION = 1.15f;
 
 /// Color grading warm/cool RGB swing (+/-). Per-time-of-day blend at 0.06
 /// reads as distinct mood per anchor (dawn/midday/dusk/night) without
