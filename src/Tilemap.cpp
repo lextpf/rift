@@ -1,7 +1,14 @@
 #include "Tilemap.hpp"
 
+#include "AssetRegistry.hpp"
+#include "Dialogue.hpp"
+#include "DialogueStore.hpp"
+#include "EntityStore.hpp"
 #include "Logger.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "NpcRecord.hpp"
+#include "NpcTag.hpp"
+#include "Patrol.hpp"
+#include "WorldServices.hpp"
 
 #include <glad/glad.h>
 #include <algorithm>
@@ -2779,7 +2786,7 @@ static nlohmann::json SerializeConsequences(const std::vector<DialogueConsequenc
 }
 
 bool Tilemap::SaveMapToJSON(const std::string& filename,
-                            const std::vector<NonPlayerCharacter>* npcs,
+                            const ecs::registry* npcs,
                             int playerTileX,
                             int playerTileY,
                             int characterType) const
@@ -2982,71 +2989,73 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
     json npcsArray = json::array();
     if (npcs)
     {
-        Logger::InfoF(LOG_SUBSYSTEM, "Saving {} NPCs to {}", npcs->size(), filename);
-        for (const auto& npc : *npcs)
-        {
-            json npcObj;
-            npcObj["type"] = npc.GetType();
-            npcObj["tileX"] = npc.GetTileX();
-            npcObj["tileY"] = npc.GetTileY();
-            if (!npc.GetName().empty())
+        const WorldServices* svc = npcs->globals().find<WorldServices>();
+        npcs->each<const Dialogue, const Patrol, const NpcTag>(
+            [&](const Dialogue& dial, const Patrol& patrol)
             {
-                npcObj["name"] = npc.GetName();
-            }
-            if (!npc.GetDialogue().empty())
-            {
-                npcObj["dialogue"] = npc.GetDialogue();
-            }
-            // Save dialogue tree (simplified format)
-            if (npc.HasDialogueTree())
-            {
-                const DialogueTree& tree = npc.GetDialogueTree();
-                json treeJson;
-                if (tree.startNodeId != "start")
-                    treeJson["start"] = tree.startNodeId;
-
-                // Find default speaker (most common speaker in nodes)
-                std::string defaultSpeaker = npc.GetName();
-                if (!tree.nodes.empty())
-                    defaultSpeaker = tree.nodes.begin()->second.speaker;
-                if (!defaultSpeaker.empty())
-                    treeJson["speaker"] = defaultSpeaker;
-
-                json nodesObj = json::object();
-                for (const auto& [nodeId, node] : tree.nodes)
+                json npcObj;
+                npcObj["type"] = dial.type;
+                npcObj["tileX"] = patrol.tileX;
+                npcObj["tileY"] = patrol.tileY;
+                if (!dial.name.empty())
                 {
-                    json nodeJson;
-                    if (node.speaker != defaultSpeaker)
-                        nodeJson["speaker"] = node.speaker;
-                    nodeJson["text"] = node.text;
-
-                    json choicesArr = json::array();
-                    for (const auto& opt : node.options)
-                    {
-                        json choiceJson;
-                        choiceJson["text"] = opt.text;
-                        if (!opt.nextNodeId.empty())
-                            choiceJson["goto"] = opt.nextNodeId;
-                        std::string whenStr = SerializeConditions(opt.conditions);
-                        if (!whenStr.empty())
-                            choiceJson["when"] = whenStr;
-                        if (!opt.consequences.empty())
-                            choiceJson["do"] = SerializeConsequences(opt.consequences);
-                        choicesArr.push_back(choiceJson);
-                    }
-                    nodeJson["choices"] = choicesArr;
-                    nodesObj[nodeId] = nodeJson;
+                    npcObj["name"] = dial.name;
                 }
-                treeJson["nodes"] = nodesObj;
-                npcObj["dialogueTree"] = treeJson;
-            }
-            npcsArray.push_back(npcObj);
-            Logger::InfoF(LOG_SUBSYSTEM,
-                          "  Saved NPC: {} at ({}, {})",
-                          npc.GetType(),
-                          npc.GetTileX(),
-                          npc.GetTileY());
-        }
+                if (!dial.text.empty())
+                {
+                    npcObj["dialogue"] = dial.text;
+                }
+                // Save dialogue tree (simplified format)
+                if (svc != nullptr && svc->dialogue != nullptr && svc->dialogue->HasTree(dial.tree))
+                {
+                    const DialogueTree& tree = svc->dialogue->Get(dial.tree);
+                    json treeJson;
+                    if (tree.startNodeId != "start")
+                        treeJson["start"] = tree.startNodeId;
+
+                    // Find default speaker (most common speaker in nodes)
+                    std::string defaultSpeaker = dial.name;
+                    if (!tree.nodes.empty())
+                        defaultSpeaker = tree.nodes.begin()->second.speaker;
+                    if (!defaultSpeaker.empty())
+                        treeJson["speaker"] = defaultSpeaker;
+
+                    json nodesObj = json::object();
+                    for (const auto& [nodeId, node] : tree.nodes)
+                    {
+                        json nodeJson;
+                        if (node.speaker != defaultSpeaker)
+                            nodeJson["speaker"] = node.speaker;
+                        nodeJson["text"] = node.text;
+
+                        json choicesArr = json::array();
+                        for (const auto& opt : node.options)
+                        {
+                            json choiceJson;
+                            choiceJson["text"] = opt.text;
+                            if (!opt.nextNodeId.empty())
+                                choiceJson["goto"] = opt.nextNodeId;
+                            std::string whenStr = SerializeConditions(opt.conditions);
+                            if (!whenStr.empty())
+                                choiceJson["when"] = whenStr;
+                            if (!opt.consequences.empty())
+                                choiceJson["do"] = SerializeConsequences(opt.consequences);
+                            choicesArr.push_back(choiceJson);
+                        }
+                        nodeJson["choices"] = choicesArr;
+                        nodesObj[nodeId] = nodeJson;
+                    }
+                    treeJson["nodes"] = nodesObj;
+                    npcObj["dialogueTree"] = treeJson;
+                }
+                npcsArray.push_back(npcObj);
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "  Saved NPC: {} at ({}, {})",
+                              dial.type,
+                              patrol.tileX,
+                              patrol.tileY);
+            });
+        Logger::InfoF(LOG_SUBSYSTEM, "Saving {} NPCs to {}", npcsArray.size(), filename);
     }
     j["npcs"] = npcsArray;
 
@@ -3124,7 +3133,7 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
 }
 
 bool Tilemap::LoadMapFromJSON(const std::string& filename,
-                              std::vector<NonPlayerCharacter>* npcs,
+                              ecs::registry* npcs,
                               int* playerTileX,
                               int* playerTileY,
                               int* characterType)
@@ -3545,7 +3554,7 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
         // Load NPCs
         if (npcs && j.contains("npcs") && j["npcs"].is_array())
         {
-            npcs->clear();
+            EntityStore::Clear(*npcs);
             for (const auto& npcJson : j["npcs"])
             {
                 std::string type = npcJson.value("type", "");
@@ -3556,60 +3565,61 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
 
                 if (!type.empty())
                 {
-                    NonPlayerCharacter npc;
-                    if (npc.Load(NonPlayerCharacter::ResolveAssetPath(type)))
+                    // Services for the spawn come from the registry's globals
+                    // (WorldServices); SpawnNpc resolves the sheet + registers the
+                    // tree and logs if the sprite fails to load.
+                    NpcRecord record;
+                    record.type = type;
+                    record.name = name;
+                    record.text = dialogue;
+                    record.tileX = tileX;
+                    record.tileY = tileY;
+                    record.tileSize = tileWidth;
+
+                    // Load dialogue tree (simplified format)
+                    if (npcJson.contains("dialogueTree") && npcJson["dialogueTree"].is_object())
                     {
-                        npc.SetTilePosition(tileX, tileY, tileWidth);
-                        if (!name.empty())
-                            npc.SetName(name);
-                        if (!dialogue.empty())
-                            npc.SetDialogue(dialogue);
+                        const auto& treeJson = npcJson["dialogueTree"];
+                        DialogueTree tree;
+                        tree.id = treeJson.value("id", type);
+                        tree.startNodeId = treeJson.value("start", "start");
+                        std::string defaultSpeaker = treeJson.value("speaker", name);
 
-                        // Load dialogue tree (simplified format)
-                        if (npcJson.contains("dialogueTree") && npcJson["dialogueTree"].is_object())
+                        if (treeJson.contains("nodes") && treeJson["nodes"].is_object())
                         {
-                            const auto& treeJson = npcJson["dialogueTree"];
-                            DialogueTree tree;
-                            tree.id = treeJson.value("id", npc.GetType());
-                            tree.startNodeId = treeJson.value("start", "start");
-                            std::string defaultSpeaker = treeJson.value("speaker", npc.GetName());
-
-                            if (treeJson.contains("nodes") && treeJson["nodes"].is_object())
+                            for (auto& [nodeId, nodeJson] : treeJson["nodes"].items())
                             {
-                                for (auto& [nodeId, nodeJson] : treeJson["nodes"].items())
+                                DialogueNode node;
+                                node.id = nodeId;
+                                node.speaker = nodeJson.value("speaker", defaultSpeaker);
+                                node.text = nodeJson.value("text", "");
+
+                                if (nodeJson.contains("choices") && nodeJson["choices"].is_array())
                                 {
-                                    DialogueNode node;
-                                    node.id = nodeId;
-                                    node.speaker = nodeJson.value("speaker", defaultSpeaker);
-                                    node.text = nodeJson.value("text", "");
-
-                                    if (nodeJson.contains("choices") &&
-                                        nodeJson["choices"].is_array())
+                                    for (const auto& choiceJson : nodeJson["choices"])
                                     {
-                                        for (const auto& choiceJson : nodeJson["choices"])
-                                        {
-                                            DialogueOption opt;
-                                            opt.text = choiceJson.value("text", "");
-                                            opt.nextNodeId = choiceJson.value("goto", "");
-                                            opt.conditions =
-                                                ParseConditionString(choiceJson.value("when", ""));
-                                            if (choiceJson.contains("do"))
-                                                opt.consequences =
-                                                    ParseConsequenceArray(choiceJson["do"]);
-                                            node.options.push_back(opt);
-                                        }
+                                        DialogueOption opt;
+                                        opt.text = choiceJson.value("text", "");
+                                        opt.nextNodeId = choiceJson.value("goto", "");
+                                        opt.conditions =
+                                            ParseConditionString(choiceJson.value("when", ""));
+                                        if (choiceJson.contains("do"))
+                                            opt.consequences =
+                                                ParseConsequenceArray(choiceJson["do"]);
+                                        node.options.push_back(opt);
                                     }
-                                    tree.nodes[node.id] = node;
                                 }
+                                tree.nodes[node.id] = node;
                             }
-                            npc.SetDialogueTree(tree);
                         }
-
-                        npcs->emplace_back(std::move(npc));
+                        record.tree = std::move(tree);
+                        record.hasTree = true;
                     }
+
+                    EntityStore::SpawnNpc(*npcs, record);
                 }
             }
-            Logger::InfoF(LOG_SUBSYSTEM, "NPCs loaded: {}", npcs->size());
+            Logger::InfoF(LOG_SUBSYSTEM, "NPCs loaded: {}", EntityStore::Count(*npcs));
         }
 
         // Load player position

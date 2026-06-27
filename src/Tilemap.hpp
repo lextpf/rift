@@ -8,8 +8,12 @@
 #include "NavigationMap.hpp"
 #include "ParticleSystem.hpp"
 #include "Texture.hpp"
+#include "TileMath.hpp"
 #include "WeatherDefinitions.hpp"
 
+#include <ecs.hpp>
+
+#include <cmath>
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
@@ -18,9 +22,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-// Forward declaration
-class NonPlayerCharacter;
 
 /**
  * @struct Tile
@@ -870,14 +871,14 @@ public:
      */
     inline void WorldToTileCoord(float worldX, float worldY, int& tileX, int& tileY) const
     {
-        tileX = static_cast<int>(std::floor(worldX / m_TileWidth));
-        tileY = static_cast<int>(std::floor((worldY - m_TileHeight * 0.5f) / m_TileHeight));
+        tileX = TileMath::TileIndex(worldX, static_cast<float>(m_TileWidth));
+        tileY = TileMath::AnchorTileRow(worldY, static_cast<float>(m_TileHeight));
     }
 
     /**
      * @brief Auto-derive the elevation engagement axis for a tile.
      *
-     * The axis tells GameCharacter::UpdatePlane in which movement direction
+     * The axis tells CharacterKinematics::UpdatePlane in which movement direction
      * the player's logical plane should track this tile's elevation. The
      * derivation looks at the four orthogonal neighbors:
      *
@@ -1051,7 +1052,7 @@ public:
      * @return `true` if saved successfully.
      */
     bool SaveMapToJSON(const std::string& filename,
-                       const std::vector<class NonPlayerCharacter>* npcs = nullptr,
+                       const ecs::registry* npcs = nullptr,
                        int playerTileX = -1,
                        int playerTileY = -1,
                        int characterType = -1) const;
@@ -1072,7 +1073,7 @@ public:
      * @return `true` if loaded successfully.
      */
     bool LoadMapFromJSON(const std::string& filename,
-                         std::vector<class NonPlayerCharacter>* npcs = nullptr,
+                         ecs::registry* npcs = nullptr,
                          int* playerTileX = nullptr,
                          int* playerTileY = nullptr,
                          int* characterType = nullptr);
