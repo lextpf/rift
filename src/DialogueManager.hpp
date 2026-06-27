@@ -2,12 +2,13 @@
 
 #include "DialogueTypes.hpp"
 
+#include <ecs.hpp>
+
 #include <string>
 #include <vector>
 
 // Forward declarations
 class GameStateManager;
-class NonPlayerCharacter;
 
 /**
  * @class DialogueManager
@@ -125,7 +126,7 @@ public:
      * - NPC must have a valid dialogue tree assigned
      * - No dialogue currently active (will fail if already in conversation)
      */
-    bool StartDialogue(NonPlayerCharacter* npc);
+    bool StartDialogue(ecs::entity npc, const ecs::registry& world);
 
     /**
      * @brief End the current dialogue.

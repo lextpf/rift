@@ -1,8 +1,10 @@
 #include "DialogueManager.hpp"
 
+#include "Dialogue.hpp"
+#include "DialogueStore.hpp"
 #include "GameStateManager.hpp"
 #include "Logger.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "WorldServices.hpp"
 
 namespace
 {
@@ -61,7 +63,7 @@ void DialogueManager::Initialize(GameStateManager* stateManager)
     m_StateManager = stateManager;
 }
 
-bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
+bool DialogueManager::StartDialogue(ecs::entity npc, const ecs::registry& world)
 {
     // Respect contract do not start if a conversation is already active
     if (m_Active)
@@ -70,20 +72,23 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
         return false;
     }
 
-    // Validate required pointers
-    if (!npc || !m_StateManager)
+    // Validate required state.
+    if (!world.alive(npc) || !m_StateManager)
     {
         return false;
     }
 
-    // Check if NPC has dialogue content
-    if (!npc->HasDialogueTree())
+    // Resolve the NPC's dialogue component + its tree from the store in globals.
+    const Dialogue* dialogue = world.find<Dialogue>(npc);
+    const WorldServices* services = world.globals().find<WorldServices>();
+    if (dialogue == nullptr || services == nullptr || services->dialogue == nullptr ||
+        !services->dialogue->HasTree(dialogue->tree))
     {
         return false;
     }
 
     // Get the starting point for this conversation
-    const DialogueTree& tree = npc->GetDialogueTree();
+    const DialogueTree& tree = services->dialogue->Get(dialogue->tree);
     const DialogueNode* startNode = tree.GetStartNode();
     if (!startNode)
     {
@@ -109,7 +114,7 @@ bool DialogueManager::StartDialogue(NonPlayerCharacter* npc)
     // Build the list of currently available options
     RefreshVisibleOptions();
 
-    Logger::InfoF(LOG_SUBSYSTEM, "Started dialogue with NPC '{}'", npc->GetType());
+    Logger::InfoF(LOG_SUBSYSTEM, "Started dialogue with NPC '{}'", dialogue->type);
     return true;
 }
 
