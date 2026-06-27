@@ -1,12 +1,13 @@
 // Tests for the per-NPC accent color sampler used by the dialogue panel.
-// Exercises Texture::SampleDominantNonSkinColor (pure pixel-data math) and the
-// lazy caching contract on NonPlayerCharacter::GetAccentColor. No GL/Vulkan
-// context is created.
+// Exercises Texture::SampleDominantNonSkinColor (pure pixel-data math). The
+// accent is sampled into NpcSprite::accentColor at spawn (EntityStore::SpawnNpc
+// -> TextureStore::SampleAccent); that wiring is covered by the gameplay smoke
+// run since it needs real asset files. No GL/Vulkan context is created here.
 
 #include <gtest/gtest.h>
 
-#include "../src/NonPlayerCharacter.hpp"
 #include "../src/Texture.hpp"
+#include "../src/TextureStore.hpp"
 
 #include <array>
 #include <cmath>
@@ -163,27 +164,21 @@ TEST(DialogueAccentTest, EmptyTexture_ReturnsFallback)
     EXPECT_TRUE(ColorsClose(tex.SampleDominantNonSkinColor(kFallback), kFallback));
 }
 
-TEST(DialogueAccentTest, NpcAccent_CachesAcrossCalls)
+TEST(DialogueAccentTest, StoreSampleAccent_MatchesTextureSampler)
 {
-    // Build a synthetic sprite with one bright red pixel so the accent has a
-    // deterministic, non-fallback value.
+    // The spawn path samples the accent via TextureStore::SampleAccent into the
+    // NpcSprite component. Verify the store's sampler agrees with the texture's
+    // own sampler for a deterministic bright-red sheet.
     auto pixels = WithOnePixel(/*bg=*/{128, 128, 128, 255},
                                /*x=*/0,
                                /*y=*/0,
                                /*one=*/{220, 30, 30, 255});
     Texture tex = MakeTexture(pixels);
 
-    NonPlayerCharacter npc;
-    npc.GetSpriteSheet() = std::move(tex);
-
-    // First call computes; second call returns the cached value. We can't easily
-    // observe the cache directly (it's private), but we can prove the function is
-    // deterministic - same input -> same output across repeated calls.
-    const glm::vec3 first = npc.GetAccentColor();
-    const glm::vec3 second = npc.GetAccentColor();
-    EXPECT_TRUE(ColorsClose(first, second));
-    // And the result is the bright red, not the fallback.
-    EXPECT_NEAR(first.r, 220.0f / 255.0f, 1e-3f);
-    EXPECT_NEAR(first.g, 30.0f / 255.0f, 1e-3f);
-    EXPECT_NEAR(first.b, 30.0f / 255.0f, 1e-3f);
+    TextureStore store;
+    const TextureHandle handle = store.Adopt(std::move(tex));
+    const glm::vec3 accent = store.SampleAccent(handle, kFallback);
+    EXPECT_NEAR(accent.r, 220.0f / 255.0f, 1e-3f);
+    EXPECT_NEAR(accent.g, 30.0f / 255.0f, 1e-3f);
+    EXPECT_NEAR(accent.b, 30.0f / 255.0f, 1e-3f);
 }
