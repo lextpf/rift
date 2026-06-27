@@ -268,7 +268,7 @@
  * px/s  | 1.75x |
  * | Bicycle  | 112.5 px/s | 2.25x |
  *
- * @see PlayerCharacter, NonPlayerCharacter
+ * @see PlayerMovementSystem, PlayerModes
  */
 
 /**
@@ -403,7 +403,7 @@
  *     keyPressed = false;
  * @endcode
  *
- * @see Game::ProcessInput, PlayerCharacter::Move
+ * @see Game::ProcessInput, PlayerSystem::Move
  */
 
 /**

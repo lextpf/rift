@@ -9,7 +9,7 @@
  * @ingroup World
  *
  * Auto-derived from neighbor elevations by Tilemap::GetElevationAxisAt(x, y).
- * Drives GameCharacter::UpdatePlane: the entity's logical plane only changes
+ * Drives CharacterKinematics::UpdatePlane: the entity's logical plane only changes
  * when the destination tile's axis matches the movement direction (or the
  * tile has no axis, i.e. ground). Movement perpendicular to the axis passes
  * underneath without engaging.
@@ -19,7 +19,7 @@
  *              on east/west movement, ignored on north/south traversal.
  * - **Y**    : vertical-extending elevation (north-south bridge); symmetric.
  *
- * @see Tilemap::GetElevationAxisAt, GameCharacter::UpdatePlane
+ * @see Tilemap::GetElevationAxisAt, CharacterKinematics::UpdatePlane
  */
 enum class ElevationAxis : uint8_t
 {
