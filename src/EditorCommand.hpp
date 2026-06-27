@@ -1,10 +1,11 @@
 #pragma once
 
+#include <ecs.hpp>
+
 #include <string>
 #include <vector>
 
 class Tilemap;
-class NonPlayerCharacter;
 
 /**
  * @brief Abstract base for editor mutations participating in undo/redo.
@@ -49,10 +50,12 @@ public:
     virtual ~EditorCommand() = default;
 
     /// @brief Re-apply the mutation. Called on initial Execute and on Redo.
-    virtual void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) = 0;
+    /// @p npcs is the live NPC store (the ECS registry); NPC-placement commands
+    /// spawn/despawn entities through it, tile-only commands ignore it.
+    virtual void Apply(Tilemap& tilemap, ecs::registry& npcs) = 0;
 
     /// @brief Revert the mutation back to its pre-Apply state. Called on Undo.
-    virtual void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) = 0;
+    virtual void Revert(Tilemap& tilemap, ecs::registry& npcs) = 0;
 
     /// @brief Short human-readable label for status toasts and HUD overlays.
     [[nodiscard]] virtual std::string DebugLabel() const = 0;

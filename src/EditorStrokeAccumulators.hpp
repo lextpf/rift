@@ -276,7 +276,7 @@ struct NavigationStrokeAccum
     /// Commits via Execute so the cmd's Apply runs (snapshot + NPC erase +
     /// patrol rebuild). The nav SetNavigation calls inside Apply re-apply
     /// the values that were already set during the drag - a harmless no-op.
-    void Commit(UndoRedoStack& stack, Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+    void Commit(UndoRedoStack& stack, Tilemap& tilemap, ecs::registry& npcs)
     {
         if (active && !entries.empty())
             stack.Execute(std::make_unique<NavigationStrokeCmd>(std::move(entries)), tilemap, npcs);

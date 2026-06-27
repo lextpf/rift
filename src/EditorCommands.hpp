@@ -1,7 +1,7 @@
 #pragma once
 
 #include "EditorCommand.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "NpcRecord.hpp"
 #include "ParticleSystem.hpp"
 #include "Tilemap.hpp"
 
@@ -75,8 +75,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -106,8 +106,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -137,8 +137,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -163,16 +163,16 @@ private:
 class PlaceNPCCmd : public EditorCommand
 {
 public:
-    explicit PlaceNPCCmd(NonPlayerCharacter npc);
+    explicit PlaceNPCCmd(NpcRecord npc);
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
 private:
     int m_TileX;
     int m_TileY;
-    std::optional<NonPlayerCharacter> m_Held;  ///< Holds NPC while command is in "reverted" state.
+    std::optional<NpcRecord> m_Held;  ///< Holds NPC while command is in "reverted" state.
 };
 
 /**
@@ -192,14 +192,14 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
 private:
     int m_TileX;
     int m_TileY;
-    std::optional<NonPlayerCharacter> m_Held;
+    std::optional<NpcRecord> m_Held;
 };
 
 /// @brief Shared entry shape for per-layer per-tile boolean flag mutations
@@ -232,8 +232,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -257,8 +257,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -282,8 +282,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -321,8 +321,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -357,8 +357,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
@@ -386,8 +386,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] int StructureId() const { return m_StructureId; }
@@ -418,8 +418,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
 private:
@@ -449,8 +449,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
 private:
@@ -471,8 +471,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
 private:
@@ -559,8 +559,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     /// @brief Read a single tile (all 10 layers + per-tile fields) into a
@@ -601,8 +601,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] int AnimId() const { return m_AnimId; }
@@ -631,8 +631,8 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override { return m_Label; }
 
     [[nodiscard]] std::size_t ChildCount() const { return m_Children.size(); }
@@ -672,13 +672,13 @@ public:
     {
     }
 
-    void Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
-    void Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs) override;
+    void Apply(Tilemap& tilemap, ecs::registry& npcs) override;
+    void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
     [[nodiscard]] const std::vector<Entry>& Entries() const { return m_Entries; }
 
 private:
     std::vector<Entry> m_Entries;
-    std::vector<NonPlayerCharacter> m_ErasedNPCs;  ///< Held while reverted.
+    std::vector<NpcRecord> m_ErasedNPCs;  ///< Detached NPC blueprints held while reverted.
 };

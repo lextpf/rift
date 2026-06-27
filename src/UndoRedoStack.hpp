@@ -10,7 +10,6 @@
 #include <vector>
 
 class Tilemap;
-class NonPlayerCharacter;
 
 /**
  * @brief Bounded undo/redo stack of EditorCommand pointers.
@@ -41,9 +40,7 @@ public:
 
     /// Apply the command immediately, then push it onto the undo stack.
     /// Clears the redo stack.
-    void Execute(std::unique_ptr<EditorCommand> cmd,
-                 Tilemap& tilemap,
-                 std::vector<NonPlayerCharacter>& npcs)
+    void Execute(std::unique_ptr<EditorCommand> cmd, Tilemap& tilemap, ecs::registry& npcs)
     {
         if (!cmd)
             return;
@@ -65,7 +62,7 @@ public:
 
     /// Pop the most recent command, revert it, move to the redo stack.
     /// Returns false if the undo stack is empty.
-    bool Undo(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+    bool Undo(Tilemap& tilemap, ecs::registry& npcs)
     {
         if (m_Undo.empty())
             return false;
@@ -78,7 +75,7 @@ public:
 
     /// Pop the most recent reverted command, re-apply it, move to undo.
     /// Returns false if the redo stack is empty.
-    bool Redo(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+    bool Redo(Tilemap& tilemap, ecs::registry& npcs)
     {
         if (m_Redo.empty())
             return false;

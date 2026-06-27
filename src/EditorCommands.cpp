@@ -1,11 +1,14 @@
 #include "EditorCommands.hpp"
 
+#include "EntityStore.hpp"
 #include "NavigationRecalc.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "NpcTag.hpp"
+#include "Patrol.hpp"
 #include "Tilemap.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -59,7 +62,7 @@ void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
 
 // --- PlaceTilesCmd ----------------------------------------------------------
 
-void PlaceTilesCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void PlaceTilesCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
     {
@@ -70,7 +73,7 @@ void PlaceTilesCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*n
     }
 }
 
-void PlaceTilesCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void PlaceTilesCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
     {
@@ -88,13 +91,13 @@ std::string PlaceTilesCmd::DebugLabel() const
 
 // --- CollisionToggleCmd -----------------------------------------------------
 
-void CollisionToggleCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void CollisionToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetTileCollision(e.tileX, e.tileY, e.newCollision);
 }
 
-void CollisionToggleCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void CollisionToggleCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetTileCollision(e.tileX, e.tileY, e.oldCollision);
@@ -107,13 +110,13 @@ std::string CollisionToggleCmd::DebugLabel() const
 
 // --- ElevationSetCmd --------------------------------------------------------
 
-void ElevationSetCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void ElevationSetCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetElevation(e.tileX, e.tileY, e.newElevation);
 }
 
-void ElevationSetCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void ElevationSetCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetElevation(e.tileX, e.tileY, e.oldElevation);
@@ -128,37 +131,45 @@ std::string ElevationSetCmd::DebugLabel() const
 
 namespace
 {
-auto FindNPCAtTile(std::vector<NonPlayerCharacter>& npcs, int tileX, int tileY)
+// Entity of the NPC standing on (tileX, tileY), or nullopt. Tile-coord
+// uniqueness is invariant in the editor's NPC click handler.
+std::optional<ecs::entity> FindNPCAtTile(ecs::registry& npcs, int tileX, int tileY)
 {
-    return std::find_if(npcs.begin(),
-                        npcs.end(),
-                        [&](const NonPlayerCharacter& n)
-                        { return n.GetTileX() == tileX && n.GetTileY() == tileY; });
+    std::optional<ecs::entity> found;
+    npcs.each<const Patrol, const NpcTag>(
+        [&](ecs::entity e, const Patrol& patrol)
+        {
+            if (patrol.tileX == tileX && patrol.tileY == tileY)
+            {
+                found = e;
+            }
+        });
+    return found;
 }
 }  // namespace
 
-PlaceNPCCmd::PlaceNPCCmd(NonPlayerCharacter npc)
-    : m_TileX(npc.GetTileX()),
-      m_TileY(npc.GetTileY()),
+PlaceNPCCmd::PlaceNPCCmd(NpcRecord npc)
+    : m_TileX(npc.tileX),
+      m_TileY(npc.tileY),
       m_Held(std::move(npc))
 {
 }
 
-void PlaceNPCCmd::Apply(Tilemap& /*tilemap*/, std::vector<NonPlayerCharacter>& npcs)
+void PlaceNPCCmd::Apply(Tilemap& /*tilemap*/, ecs::registry& npcs)
 {
     if (!m_Held.has_value())
         return;
-    npcs.emplace_back(std::move(*m_Held));
+    EntityStore::SpawnNpc(npcs, *m_Held);
     m_Held.reset();
 }
 
-void PlaceNPCCmd::Revert(Tilemap& /*tilemap*/, std::vector<NonPlayerCharacter>& npcs)
+void PlaceNPCCmd::Revert(Tilemap& /*tilemap*/, ecs::registry& npcs)
 {
-    auto it = FindNPCAtTile(npcs, m_TileX, m_TileY);
-    if (it == npcs.end())
+    std::optional<ecs::entity> e = FindNPCAtTile(npcs, m_TileX, m_TileY);
+    if (!e.has_value())
         return;
-    m_Held.emplace(std::move(*it));
-    npcs.erase(it);
+    m_Held = EntityStore::SnapshotNpc(npcs, *e);
+    EntityStore::Remove(npcs, *e);
 }
 
 std::string PlaceNPCCmd::DebugLabel() const
@@ -166,20 +177,20 @@ std::string PlaceNPCCmd::DebugLabel() const
     return "Place NPC (" + std::to_string(m_TileX) + ", " + std::to_string(m_TileY) + ")";
 }
 
-void RemoveNPCCmd::Apply(Tilemap& /*tilemap*/, std::vector<NonPlayerCharacter>& npcs)
+void RemoveNPCCmd::Apply(Tilemap& /*tilemap*/, ecs::registry& npcs)
 {
-    auto it = FindNPCAtTile(npcs, m_TileX, m_TileY);
-    if (it == npcs.end())
+    std::optional<ecs::entity> e = FindNPCAtTile(npcs, m_TileX, m_TileY);
+    if (!e.has_value())
         return;
-    m_Held.emplace(std::move(*it));
-    npcs.erase(it);
+    m_Held = EntityStore::SnapshotNpc(npcs, *e);
+    EntityStore::Remove(npcs, *e);
 }
 
-void RemoveNPCCmd::Revert(Tilemap& /*tilemap*/, std::vector<NonPlayerCharacter>& npcs)
+void RemoveNPCCmd::Revert(Tilemap& /*tilemap*/, ecs::registry& npcs)
 {
     if (!m_Held.has_value())
         return;
-    npcs.emplace_back(std::move(*m_Held));
+    EntityStore::SpawnNpc(npcs, *m_Held);
     m_Held.reset();
 }
 
@@ -190,7 +201,7 @@ std::string RemoveNPCCmd::DebugLabel() const
 
 // --- NavigationStrokeCmd ----------------------------------------------------
 
-void NavigationStrokeCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+void NavigationStrokeCmd::Apply(Tilemap& tilemap, ecs::registry& npcs)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetNavigation(e.tileX, e.tileY, e.newWalkable);
@@ -202,7 +213,7 @@ void NavigationStrokeCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter
     RebuildPatrolRoutes(tilemap, npcs);
 }
 
-void NavigationStrokeCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+void NavigationStrokeCmd::Revert(Tilemap& tilemap, ecs::registry& npcs)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetNavigation(e.tileX, e.tileY, e.oldWalkable);
@@ -218,13 +229,13 @@ std::string NavigationStrokeCmd::DebugLabel() const
 
 // --- NoProjectionToggleCmd / YSortPlusToggleCmd / YSortMinusToggleCmd -------
 
-void NoProjectionToggleCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void NoProjectionToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerNoProjection(e.tileX, e.tileY, e.layer, e.newFlag);
 }
 
-void NoProjectionToggleCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void NoProjectionToggleCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerNoProjection(e.tileX, e.tileY, e.layer, e.oldFlag);
@@ -235,13 +246,13 @@ std::string NoProjectionToggleCmd::DebugLabel() const
     return "Toggle no-projection (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-void YSortPlusToggleCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void YSortPlusToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerYSortPlus(e.tileX, e.tileY, e.layer, e.newFlag);
 }
 
-void YSortPlusToggleCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void YSortPlusToggleCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerYSortPlus(e.tileX, e.tileY, e.layer, e.oldFlag);
@@ -252,13 +263,13 @@ std::string YSortPlusToggleCmd::DebugLabel() const
     return "Toggle Y-sort-plus (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-void YSortMinusToggleCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void YSortMinusToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerYSortMinus(e.tileX, e.tileY, e.layer, e.newFlag);
 }
 
-void YSortMinusToggleCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void YSortMinusToggleCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetLayerYSortMinus(e.tileX, e.tileY, e.layer, e.oldFlag);
@@ -271,13 +282,13 @@ std::string YSortMinusToggleCmd::DebugLabel() const
 
 // --- SetTileAnimationCmd ----------------------------------------------------
 
-void SetTileAnimationCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void SetTileAnimationCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetTileAnimation(e.tileX, e.tileY, e.layer, e.newAnimId);
 }
 
-void SetTileAnimationCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void SetTileAnimationCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     // SetTileAnimation may stomp tiles[idx] when assigning a non-empty
     // animation - in particular, restoring an animId of -1 leaves tiles[idx]
@@ -297,13 +308,13 @@ std::string SetTileAnimationCmd::DebugLabel() const
 
 // --- SetTileStructureIdsCmd -------------------------------------------------
 
-void SetTileStructureIdsCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void SetTileStructureIdsCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetTileStructureId(e.tileX, e.tileY, e.layer, e.newStructId);
 }
 
-void SetTileStructureIdsCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void SetTileStructureIdsCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
         tilemap.SetTileStructureId(e.tileX, e.tileY, e.layer, e.oldStructId);
@@ -316,13 +327,13 @@ std::string SetTileStructureIdsCmd::DebugLabel() const
 
 // --- CompositeCmd -----------------------------------------------------------
 
-void CompositeCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+void CompositeCmd::Apply(Tilemap& tilemap, ecs::registry& npcs)
 {
     for (auto& child : m_Children)
         child->Apply(tilemap, npcs);
 }
 
-void CompositeCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+void CompositeCmd::Revert(Tilemap& tilemap, ecs::registry& npcs)
 {
     // Reverse order so child2.Revert undoes child2.Apply against the state
     // that existed after child1.Apply ran.
@@ -332,12 +343,12 @@ void CompositeCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npc
 
 // --- AddStructureCmd / RemoveStructureCmd -----------------------------------
 
-void AddStructureCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddStructureCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     m_StructureId = tilemap.AddNoProjectionStructure(m_LeftAnchor, m_RightAnchor, m_Name);
 }
 
-void AddStructureCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddStructureCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     if (m_StructureId < 0)
         return;
@@ -349,7 +360,7 @@ std::string AddStructureCmd::DebugLabel() const
     return "Add structure";
 }
 
-void RemoveStructureCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void RemoveStructureCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     const NoProjectionStructure* s = tilemap.GetNoProjectionStructure(m_Id);
     if (!s)
@@ -378,7 +389,7 @@ void RemoveStructureCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>
     tilemap.RemoveNoProjectionStructure(m_Id);
 }
 
-void RemoveStructureCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void RemoveStructureCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     if (!m_Captured)
         return;
@@ -394,12 +405,12 @@ std::string RemoveStructureCmd::DebugLabel() const
 
 // --- AddParticleZoneCmd / RemoveParticleZoneCmd -----------------------------
 
-void AddParticleZoneCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddParticleZoneCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     tilemap.AddParticleZone(m_Zone);
 }
 
-void AddParticleZoneCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddParticleZoneCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     // LIFO invariant: our zone is the last one in the vector.
     auto* zones = tilemap.GetParticleZonesMutable();
@@ -412,7 +423,7 @@ std::string AddParticleZoneCmd::DebugLabel() const
     return "Add particle zone";
 }
 
-void RemoveParticleZoneCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void RemoveParticleZoneCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     const auto* zones = tilemap.GetParticleZones();
     if (!zones || m_Index >= zones->size())
@@ -422,7 +433,7 @@ void RemoveParticleZoneCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharact
     tilemap.RemoveParticleZone(m_Index);
 }
 
-void RemoveParticleZoneCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void RemoveParticleZoneCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     if (!m_Captured)
         return;
@@ -436,12 +447,12 @@ std::string RemoveParticleZoneCmd::DebugLabel() const
 
 // --- AddAnimatedTileCmd -----------------------------------------------------
 
-void AddAnimatedTileCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddAnimatedTileCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     m_AnimId = tilemap.AddAnimatedTile(m_Anim);
 }
 
-void AddAnimatedTileCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void AddAnimatedTileCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     tilemap.PopLastAnimatedTile();
 }
@@ -522,7 +533,7 @@ void PasteRegionCmd::WriteCellInto(Tilemap& tm, int destX, int destY, const Clip
     tm.SetElevation(destX, destY, cell.elevation);
 }
 
-void PasteRegionCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void PasteRegionCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     if (m_Source.Empty())
         return;
@@ -572,7 +583,7 @@ void PasteRegionCmd::Apply(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*
     }
 }
 
-void PasteRegionCmd::Revert(Tilemap& tilemap, std::vector<NonPlayerCharacter>& /*npcs*/)
+void PasteRegionCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     if (!m_Captured)
         return;
