@@ -6,8 +6,9 @@
 
 #include "../src/EditorCommand.hpp"
 #include "../src/EditorCommands.hpp"
-#include "../src/NonPlayerCharacter.hpp"
 #include "../src/Tilemap.hpp"
+
+#include <ecs.hpp>
 
 #include <cmath>
 #include <memory>
@@ -48,7 +49,7 @@ class TilemapFlipTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(kMapSize, kMapSize, false); }
 };
