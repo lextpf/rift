@@ -17,13 +17,6 @@ docs/html/
 # Runtime log file (written by Logger and crash handlers)
 rift.project.log
 
-# Legacy log file (pre-rename, may exist from old builds)
-rift.txt
-
 # Cloned dependency repos (fetched by setup.ps1; not vendored like glad/stb/json/ecs)
 external/glfw/
 external/glm/
-
-# Tooling caches
-.vite/
-.understand-anything/
