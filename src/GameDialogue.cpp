@@ -3,6 +3,10 @@
 #include "Game.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "Appearance.hpp"
+#include "CharacterConstants.hpp"
+#include "NpcSprite.hpp"
+#include "Transform.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -349,34 +353,24 @@ void DrawSpeakerRibbon(IRenderer& renderer,
 }
 }  // namespace
 
-NonPlayerCharacter& Game::GetDialogueNPC()
+bool Game::HasDialogueNPC() const
 {
-    assert(m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
-           "Dialogue NPC index is out of range");
-    return m_NPCs[m_DialogueNPCIndex];
-}
-
-const NonPlayerCharacter& Game::GetDialogueNPC() const
-{
-    assert(m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) &&
-           "Dialogue NPC index is out of range");
-    return m_NPCs[m_DialogueNPCIndex];
+    return static_cast<bool>(FindNPCById(m_DialogueUi.npcId));
 }
 
 void Game::RenderNPCHeadText()
 {
-    if (!m_InDialogue || m_DialogueText.empty() || m_DialogueNPCIndex < 0 ||
-        m_DialogueNPCIndex >= static_cast<int>(m_NPCs.size()))
+    if (!m_DialogueUi.inDialogue || m_DialogueUi.text.empty() || !HasDialogueNPC())
     {
         return;
     }
 
-    glm::vec2 npcWorldPos = GetDialogueNPC().GetPosition();
+    glm::vec2 npcWorldPos = m_World.get<Transform>(FindNPCById(m_DialogueUi.npcId)).position;
     glm::vec2 npcScreenPos = npcWorldPos - m_Camera.GetState().position;
 
     // Place the text above the NPC's head.
     float textAreaWidth = 180.0f;
-    const float NPC_SPRITE_HEIGHT = PlayerCharacter::RENDER_HEIGHT;
+    const float NPC_SPRITE_HEIGHT = CharacterConstants::SPRITE_HEIGHT;
     float npcTopY = npcScreenPos.y - NPC_SPRITE_HEIGHT;
     float npcCenterX = npcScreenPos.x;
 
@@ -390,7 +384,7 @@ void Game::RenderNPCHeadText()
 
 void Game::RenderDialogueText(glm::vec2 boxPos, glm::vec2 boxSize)
 {
-    if (m_DialogueText.empty())
+    if (m_DialogueUi.text.empty())
     {
         return;
     }
@@ -399,7 +393,7 @@ void Game::RenderDialogueText(glm::vec2 boxPos, glm::vec2 boxSize)
     float lineHeight = 6.0f;
     float maxWidth = boxSize.x - 20.0f;
 
-    auto lines = WrapText(m_DialogueText,
+    auto lines = WrapText(m_DialogueUi.text,
                           maxWidth,
                           [&](const std::string& s) { return m_Renderer->GetTextWidth(s, scale); });
 
@@ -448,7 +442,7 @@ void Game::RenderDialogueTreeBox()
 
     // Fade-in animation (smoothstep over 0.2s).
     constexpr float kFadeDuration = 0.2f;
-    const float fadeT = std::min(1.0f, m_DialogueBoxFadeTimer / kFadeDuration);
+    const float fadeT = std::min(1.0f, m_DialogueUi.boxFadeTimer / kFadeDuration);
     const float fadeAlpha = fadeT * fadeT * (3.0f - 2.0f * fadeT);
 
     // Panel: 90% width, 60px height, bottom-anchored.
@@ -491,11 +485,11 @@ void Game::RenderDialogueTreeBox()
         !node->speaker.empty() && (node->speaker == "Player" || node->speaker == "You");
     if (isPlayerTurn)
     {
-        accent = m_Player.GetAccentColor();
+        accent = m_World.get<Appearance>(m_PlayerEntity).accentColor;
     }
-    else if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
+    else if (HasDialogueNPC())
     {
-        accent = GetDialogueNPC().GetAccentColor();
+        accent = m_World.get<NpcSprite>(FindNPCById(m_DialogueUi.npcId)).accentColor;
     }
 
     // Layout constants for the body text area.
@@ -567,12 +561,12 @@ void Game::RenderDialogueTreeBox()
         const int remainingLines = totalLines - maxTextLines;
         totalPages = 1 + (remainingLines + maxTextLines - 1) / maxTextLines;
     }
-    m_DialogueTotalPages = totalPages;
-    if (m_DialoguePage >= totalPages)
-        m_DialoguePage = totalPages - 1;
-    if (m_DialoguePage < 0)
-        m_DialoguePage = 0;
-    const bool isLastPage = (m_DialoguePage == totalPages - 1);
+    m_DialogueUi.totalPages = totalPages;
+    if (m_DialogueUi.page >= totalPages)
+        m_DialogueUi.page = totalPages - 1;
+    if (m_DialogueUi.page < 0)
+        m_DialogueUi.page = 0;
+    const bool isLastPage = (m_DialogueUi.page == totalPages - 1);
 
     int startLine = 0;
     int linesToShow = 0;
@@ -583,12 +577,12 @@ void Game::RenderDialogueTreeBox()
     }
     else if (isLastPage)
     {
-        startLine = m_DialoguePage * maxTextLines;
+        startLine = m_DialogueUi.page * maxTextLines;
         linesToShow = totalLines - startLine;
     }
     else
     {
-        startLine = m_DialoguePage * maxTextLines;
+        startLine = m_DialogueUi.page * maxTextLines;
         linesToShow = maxTextLines;
     }
 
@@ -596,8 +590,9 @@ void Game::RenderDialogueTreeBox()
     int totalCharsOnPage = 0;
     for (int i = 0; i < linesToShow && (startLine + i) < totalLines; ++i)
         totalCharsOnPage += static_cast<int>(allLines[startLine + i].size());
-    const int charsToShow =
-        (m_DialogueCharReveal < 0.0f) ? totalCharsOnPage : static_cast<int>(m_DialogueCharReveal);
+    const int charsToShow = (m_DialogueUi.charReveal < 0.0f)
+                                ? totalCharsOnPage
+                                : static_cast<int>(m_DialogueUi.charReveal);
     const bool textFullyRevealed = (charsToShow >= totalCharsOnPage);
 
     // Body text on slate (cream fill + black outline for legibility).
@@ -630,9 +625,10 @@ void Game::RenderDialogueTreeBox()
                                      bodyOutlineSize,
                                      textAlpha);
             }
-            if (m_DialogueCharReveal >= 0.0f && charsRemaining < lineLen)
+            if (m_DialogueUi.charReveal >= 0.0f && charsRemaining < lineLen)
             {
-                const float partialFrac = m_DialogueCharReveal - std::floor(m_DialogueCharReveal);
+                const float partialFrac =
+                    m_DialogueUi.charReveal - std::floor(m_DialogueUi.charReveal);
                 if (partialFrac > 0.0f)
                 {
                     const float xOffset =
@@ -670,7 +666,7 @@ void Game::RenderDialogueTreeBox()
                            ribbonOutlineSize,
                            z,
                            fadeAlpha,
-                           m_DialogueBoxFadeTimer);
+                           m_DialogueUi.boxFadeTimer);
     }
     else
     {
@@ -687,7 +683,7 @@ void Game::RenderDialogueTreeBox()
                 const float pulseAlpha =
                     ambience::DIALOGUE_ARROW_PULSE_BASE +
                     ambience::DIALOGUE_ARROW_PULSE_AMPLITUDE *
-                        std::sin(m_DialogueBoxFadeTimer * ambience::DIALOGUE_ARROW_PULSE_HZ *
+                        std::sin(m_DialogueUi.boxFadeTimer * ambience::DIALOGUE_ARROW_PULSE_HZ *
                                  6.28318530f);
                 const float triH = ambience::DIALOGUE_SELECTION_TRIANGLE_H * z;
                 const float triCenterY = currentY - textAscent * 0.5f;
@@ -771,5 +767,5 @@ void Game::RenderDialogueTreeBox()
 
 bool Game::IsDialogueOnLastPage()
 {
-    return m_DialoguePage >= m_DialogueTotalPages - 1;
+    return m_DialogueUi.page >= m_DialogueUi.totalPages - 1;
 }
