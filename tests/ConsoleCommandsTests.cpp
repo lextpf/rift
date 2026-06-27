@@ -4,17 +4,31 @@
 
 #include <gtest/gtest.h>
 
+#include "../src/AssetRegistry.hpp"
 #include "../src/CameraController.hpp"
 #include "../src/Console.hpp"
 #include "../src/ConsoleCommands.hpp"
+#include "../src/Dialogue.hpp"
 #include "../src/DialogueManager.hpp"
 #include "../src/Editor.hpp"
+#include "../src/EntityStore.hpp"
+#include "../src/Facing.hpp"
 #include "../src/GameStateManager.hpp"
-#include "../src/NonPlayerCharacter.hpp"
+#include "../src/Motor.hpp"
+#include "../src/NpcIdle.hpp"
+#include "../src/NpcRecord.hpp"
+#include "../src/NpcTag.hpp"
 #include "../src/ParticleSystem.hpp"
-#include "../src/PlayerCharacter.hpp"
+#include "../src/Patrol.hpp"
+#include "../src/PlayerModes.hpp"
+#include "../src/PlayerSystem.hpp"
+#include "../src/TextureStore.hpp"
 #include "../src/Tilemap.hpp"
 #include "../src/TimeManager.hpp"
+#include "../src/Transform.hpp"
+#include "../src/WorldServices.hpp"
+
+#include <ecs.hpp>
 
 #include <string>
 #include <string_view>
@@ -60,6 +74,23 @@ bool BufferContains(const ConsoleBuffer& buf, std::string_view needle)
         }
     }
     return false;
+}
+
+/// Spawn @p n default NPCs into @p world (the ctx.npcs registry). The npc.*
+/// commands address NPCs by index in registry dense order; @ref NpcAt resolves
+/// such an index to its entity the same way the commands do. No WorldServices
+/// are published, so the NPCs have no sprite - fine for the component reads here.
+void SpawnNpcs(ecs::registry& world, int n)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        EntityStore::SpawnNpc(world, NpcRecord{});
+    }
+}
+
+ecs::entity NpcAt(ecs::registry& world, std::size_t index)
+{
+    return EntityStore::Entities(world)[index];
 }
 }  // namespace
 
@@ -114,27 +145,31 @@ TEST(ConsoleCommandsTests, ClearEmptiesScrollback)
 
 TEST(ConsoleCommandsTests, TeleportUpdatesPlayerTilePosition)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack args({"7", "11"});
     EXPECT_TRUE(Cmd_Teleport(args.span(), ctx));
 
     // SetTilePosition snaps feet to bottom-center of tile (16px tiles):
     //   x = 7*16 + 8 = 120, y = 11*16 + 16 = 192
-    EXPECT_FLOAT_EQ(player.GetPosition().x, 120.0f);
-    EXPECT_FLOAT_EQ(player.GetPosition().y, 192.0f);
+    EXPECT_FLOAT_EQ(world.get<Transform>(player).position.x, 120.0f);
+    EXPECT_FLOAT_EQ(world.get<Transform>(player).position.y, 192.0f);
 }
 
 TEST(ConsoleCommandsTests, TeleportRejectsBadArgs)
 {
-    PlayerCharacter player;
-    const glm::vec2 before = player.GetPosition();
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    const glm::vec2 before = world.get<Transform>(player).position;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     // Wrong arg count
     {
@@ -146,7 +181,7 @@ TEST(ConsoleCommandsTests, TeleportRejectsBadArgs)
         ArgPack args({"foo", "bar"});
         EXPECT_FALSE(Cmd_Teleport(args.span(), ctx));
     }
-    EXPECT_EQ(player.GetPosition(), before);
+    EXPECT_EQ(world.get<Transform>(player).position, before);
 }
 
 TEST(ConsoleCommandsTests, TeleportFailsWithoutPlayer)
@@ -241,46 +276,52 @@ TEST(ConsoleCommandsTests, TimeSetRejectsNonNumeric)
 
 TEST(ConsoleCommandsTests, NoClipDefaultArgTogglesState)
 {
-    PlayerCharacter player;
-    ASSERT_FALSE(player.IsNoClip());
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ASSERT_FALSE(world.get<PlayerModes>(player).noClip);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack none({});
     EXPECT_TRUE(Cmd_NoClip(none.span(), ctx));
-    EXPECT_TRUE(player.IsNoClip());
+    EXPECT_TRUE(world.get<PlayerModes>(player).noClip);
 
     EXPECT_TRUE(Cmd_NoClip(none.span(), ctx));
-    EXPECT_FALSE(player.IsNoClip());
+    EXPECT_FALSE(world.get<PlayerModes>(player).noClip);
 }
 
 TEST(ConsoleCommandsTests, NoClipExplicitOnOff)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack on({"on"});
     EXPECT_TRUE(Cmd_NoClip(on.span(), ctx));
-    EXPECT_TRUE(player.IsNoClip());
+    EXPECT_TRUE(world.get<PlayerModes>(player).noClip);
 
     ArgPack off({"off"});
     EXPECT_TRUE(Cmd_NoClip(off.span(), ctx));
-    EXPECT_FALSE(player.IsNoClip());
+    EXPECT_FALSE(world.get<PlayerModes>(player).noClip);
 }
 
 TEST(ConsoleCommandsTests, NoClipRejectsBadArg)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack bogus({"maybe"});
     EXPECT_FALSE(Cmd_NoClip(bogus.span(), ctx));
-    EXPECT_FALSE(player.IsNoClip());
+    EXPECT_FALSE(world.get<PlayerModes>(player).noClip);
 }
 
 // ---------------------------------------------------------------------------
@@ -289,39 +330,45 @@ TEST(ConsoleCommandsTests, NoClipRejectsBadArg)
 
 TEST(ConsoleCommandsTests, PlayerSpeedSetsMultiplier)
 {
-    PlayerCharacter player;
-    ASSERT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.0f);
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ASSERT_FLOAT_EQ(world.get<PlayerModes>(player).speedMultiplier, 1.0f);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack args({"2.5"});
     EXPECT_TRUE(Cmd_PlayerSpeed(args.span(), ctx));
-    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 2.5f);
+    EXPECT_FLOAT_EQ(world.get<PlayerModes>(player).speedMultiplier, 2.5f);
     EXPECT_TRUE(BufferContains(buf, "2.500"));
 }
 
 TEST(ConsoleCommandsTests, PlayerSpeedNoArgPrintsCurrentWithoutMutating)
 {
-    PlayerCharacter player;
-    player.SetSpeedMultiplier(1.5f);
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    world.get<PlayerModes>(player).speedMultiplier = 1.5f;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack args({});
     EXPECT_TRUE(Cmd_PlayerSpeed(args.span(), ctx));
-    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.5f);
+    EXPECT_FLOAT_EQ(world.get<PlayerModes>(player).speedMultiplier, 1.5f);
     EXPECT_TRUE(BufferContains(buf, "1.500"));
 }
 
 TEST(ConsoleCommandsTests, PlayerSpeedRejectsNonPositive)
 {
-    PlayerCharacter player;
-    player.SetSpeedMultiplier(2.0f);
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    world.get<PlayerModes>(player).speedMultiplier = 2.0f;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     {
         ArgPack zero({"0"});
@@ -331,27 +378,31 @@ TEST(ConsoleCommandsTests, PlayerSpeedRejectsNonPositive)
         ArgPack neg({"-1.5"});
         EXPECT_FALSE(Cmd_PlayerSpeed(neg.span(), ctx));
     }
-    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 2.0f);
+    EXPECT_FLOAT_EQ(world.get<PlayerModes>(player).speedMultiplier, 2.0f);
 }
 
 TEST(ConsoleCommandsTests, PlayerSpeedRejectsBadFloat)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack args({"foo"});
     EXPECT_FALSE(Cmd_PlayerSpeed(args.span(), ctx));
-    EXPECT_FLOAT_EQ(player.GetSpeedMultiplier(), 1.0f);
+    EXPECT_FLOAT_EQ(world.get<PlayerModes>(player).speedMultiplier, 1.0f);
 }
 
 TEST(ConsoleCommandsTests, PlayerSpeedRejectsTooManyArgs)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     ArgPack args({"1.0", "2.0"});
     EXPECT_FALSE(Cmd_PlayerSpeed(args.span(), ctx));
@@ -422,17 +473,17 @@ TEST(ConsoleCommandsTests, TimeFreezeFailsWithoutTime)
 
 TEST(ConsoleCommandsTests, StateDumpPrintsSummary)
 {
-    PlayerCharacter player;
-    player.SetTilePosition(3, 4);
+    ecs::registry npcs;  // empty is fine for the dump
+    ecs::entity player = EntityStore::SpawnPlayer(npcs);
+    PlayerSystem::SetTilePosition(npcs, player, 3, 4);
     GameStateManager state;
     state.SetFlag("done", true);
     TimeManager time;
     time.SetTime(7.0f);
-    std::vector<NonPlayerCharacter> npcs;  // empty is fine for the dump
 
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.playerEntity = player;
     ctx.gameState = &state;
     ctx.time = &time;
     ctx.npcs = &npcs;
@@ -729,10 +780,12 @@ TEST(ConsoleCommandsTests, TimeAddRejectsInvalidInputs)
 
 TEST(ConsoleCommandsTests, CharacterSetUnknownNameRejected)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     EXPECT_FALSE(Cmd_CharacterSet(ArgPack({"NOT_A_THING"}).span(), ctx));
     EXPECT_FALSE(Cmd_CharacterSet(ArgPack({}).span(), ctx));  // wrong arity
@@ -741,10 +794,12 @@ TEST(ConsoleCommandsTests, CharacterSetUnknownNameRejected)
 
 TEST(ConsoleCommandsTests, CharacterNextRejectsArgs)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
     EXPECT_FALSE(Cmd_CharacterNext(ArgPack({"foo"}).span(), ctx));
 }
 
@@ -804,12 +859,14 @@ TEST(ConsoleCommandsTests, PostFXFailsWithoutPointer)
 
 TEST(ConsoleCommandsTests, PlayerPosPrintsTileWorldFacing)
 {
-    PlayerCharacter player;
-    player.SetTilePosition(3, 4);
-    player.SetDirection(CharacterDirection::LEFT);
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    PlayerSystem::SetTilePosition(world, player, 3, 4);
+    world.get<Facing>(player).dir = CharacterDirection::LEFT;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     EXPECT_TRUE(Cmd_PlayerPos(ArgPack({}).span(), ctx));
     EXPECT_TRUE(BufferContains(buf, "tile=(3, 4)"));
@@ -823,40 +880,46 @@ TEST(ConsoleCommandsTests, PlayerPosFailsWithoutPlayerOrExtraArgs)
         CommandContext ctx{buf};
         EXPECT_FALSE(Cmd_PlayerPos(ArgPack({}).span(), ctx));
     }
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
     EXPECT_FALSE(Cmd_PlayerPos(ArgPack({"oops"}).span(), ctx));
 }
 
 TEST(ConsoleCommandsTests, PlayerBicycleToggle)
 {
-    PlayerCharacter player;
-    ASSERT_FALSE(player.IsBicycling());
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ASSERT_FALSE(world.get<PlayerModes>(player).isBicycling);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     EXPECT_TRUE(Cmd_PlayerBicycle(ArgPack({}).span(), ctx));
-    EXPECT_TRUE(player.IsBicycling());
+    EXPECT_TRUE(world.get<PlayerModes>(player).isBicycling);
     EXPECT_TRUE(Cmd_PlayerBicycle(ArgPack({"off"}).span(), ctx));
-    EXPECT_FALSE(player.IsBicycling());
+    EXPECT_FALSE(world.get<PlayerModes>(player).isBicycling);
     EXPECT_FALSE(Cmd_PlayerBicycle(ArgPack({"junk"}).span(), ctx));
 }
 
 TEST(ConsoleCommandsTests, PlayerRunToggle)
 {
-    PlayerCharacter player;
-    ASSERT_FALSE(player.IsRunning());
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ASSERT_FALSE(world.get<PlayerModes>(player).isRunning);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
 
     EXPECT_TRUE(Cmd_PlayerRun(ArgPack({"on"}).span(), ctx));
-    EXPECT_TRUE(player.IsRunning());
+    EXPECT_TRUE(world.get<PlayerModes>(player).isRunning);
     EXPECT_TRUE(Cmd_PlayerRun(ArgPack({}).span(), ctx));  // toggle
-    EXPECT_FALSE(player.IsRunning());
+    EXPECT_FALSE(world.get<PlayerModes>(player).isRunning);
 }
 
 TEST(ConsoleCommandsTests, PlayerRunFailsWithoutPlayer)
@@ -867,14 +930,209 @@ TEST(ConsoleCommandsTests, PlayerRunFailsWithoutPlayer)
 }
 
 // ---------------------------------------------------------------------------
+// move.accel / move.decel / move.lookahead / move.dump
+// (accel/decel write the player Motor's MotorParams; lookahead drives the
+// CameraController. No-arg prints current; out-of-range/garbage is rejected.)
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, MoveAccelNoArgPrintsDefaultWithoutMutating)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+
+    EXPECT_TRUE(Cmd_MoveAccel(ArgPack({}).span(), ctx));
+    EXPECT_FLOAT_EQ(world.get<Motor>(player).params.accel, 800.0f);  // unchanged default
+    EXPECT_TRUE(BufferContains(buf, "move.accel: 800.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveAccelSetsParam)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+
+    EXPECT_TRUE(Cmd_MoveAccel(ArgPack({"1500"}).span(), ctx));
+    EXPECT_FLOAT_EQ(world.get<Motor>(player).params.accel, 1500.0f);
+    EXPECT_TRUE(BufferContains(buf, "move.accel: 1500.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveAccelRejectsNonPositiveAndBadArgs)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+
+    EXPECT_FALSE(Cmd_MoveAccel(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveAccel(ArgPack({"-100"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveAccel(ArgPack({"foo"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveAccel(ArgPack({"1", "2"}).span(), ctx));
+    EXPECT_FLOAT_EQ(world.get<Motor>(player).params.accel, 800.0f);  // untouched
+}
+
+TEST(ConsoleCommandsTests, MoveAccelFailsWithoutPlayer)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_MoveAccel(ArgPack({"1000"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MoveDecelNoArgPrintsThenSets)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+
+    EXPECT_TRUE(Cmd_MoveDecel(ArgPack({}).span(), ctx));  // no-arg prints default
+    EXPECT_TRUE(BufferContains(buf, "move.decel: 200.0"));
+
+    EXPECT_TRUE(Cmd_MoveDecel(ArgPack({"450"}).span(), ctx));
+    EXPECT_FLOAT_EQ(world.get<Motor>(player).params.decel, 450.0f);
+    EXPECT_TRUE(BufferContains(buf, "move.decel: 450.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveDecelRejectsNonPositiveAndBadArgs)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+
+    EXPECT_FALSE(Cmd_MoveDecel(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveDecel(ArgPack({"-1"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveDecel(ArgPack({"nope"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveDecel(ArgPack({"1", "2"}).span(), ctx));
+    EXPECT_FLOAT_EQ(world.get<Motor>(player).params.decel, 200.0f);
+}
+
+TEST(ConsoleCommandsTests, MoveDecelFailsWithoutPlayer)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_MoveDecel(ArgPack({"100"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MoveLookaheadNoArgPrintsDefault)
+{
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_MoveLookahead(ArgPack({}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetLookAheadDistance(), 12.0f);  // unchanged default
+    EXPECT_TRUE(BufferContains(buf, "move.lookahead: 12.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveLookaheadSetsDistanceAndAllowsZero)
+{
+    CameraController cam;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_MoveLookahead(ArgPack({"40"}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetLookAheadDistance(), 40.0f);
+    EXPECT_TRUE(BufferContains(buf, "move.lookahead: 40.0"));
+
+    // Zero is a valid distance (disables look-ahead), unlike accel/decel.
+    EXPECT_TRUE(Cmd_MoveLookahead(ArgPack({"0"}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetLookAheadDistance(), 0.0f);
+}
+
+TEST(ConsoleCommandsTests, MoveLookaheadRejectsNegativeAndBadArgs)
+{
+    CameraController cam;
+    cam.SetLookAheadDistance(15.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;
+
+    EXPECT_FALSE(Cmd_MoveLookahead(ArgPack({"-1"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveLookahead(ArgPack({"abc"}).span(), ctx));
+    EXPECT_FALSE(Cmd_MoveLookahead(ArgPack({"1", "2"}).span(), ctx));
+    EXPECT_FLOAT_EQ(cam.GetLookAheadDistance(), 15.0f);  // untouched
+}
+
+TEST(ConsoleCommandsTests, MoveLookaheadFailsWithoutCamera)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_MoveLookahead(ArgPack({"10"}).span(), ctx));
+}
+
+TEST(ConsoleCommandsTests, MoveDumpPrintsAllTunables)
+{
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    world.get<Motor>(player).params.accel = 900.0f;
+    world.get<Motor>(player).params.decel = 300.0f;
+    CameraController cam;
+    cam.SetLookAheadDistance(50.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
+    ctx.camera = &cam;
+
+    EXPECT_TRUE(Cmd_MoveDump(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "move: accel 900.0, decel 300.0"));
+    EXPECT_TRUE(BufferContains(buf, "move: lookahead 50.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveDumpCameraOnlyStillSucceeds)
+{
+    CameraController cam;
+    cam.SetLookAheadDistance(20.0f);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.camera = &cam;  // no player entity / registry
+
+    EXPECT_TRUE(Cmd_MoveDump(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "move: lookahead 20.0"));
+}
+
+TEST(ConsoleCommandsTests, MoveDumpRejectsArgsAndFailsWhenAllUnavailable)
+{
+    {
+        CameraController cam;
+        ConsoleBuffer buf;
+        CommandContext ctx{buf};
+        ctx.camera = &cam;
+        EXPECT_FALSE(Cmd_MoveDump(ArgPack({"oops"}).span(), ctx));
+    }
+    {
+        ConsoleBuffer buf;
+        CommandContext ctx{buf};
+        EXPECT_FALSE(Cmd_MoveDump(ArgPack({}).span(), ctx));  // no player, no camera
+        EXPECT_TRUE(BufferContains(buf, "player and camera unavailable"));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // npc.list / npc.tp / npc.spawn / npc.despawn / npc.freeze / npc.dialog
 // ---------------------------------------------------------------------------
 
 TEST(ConsoleCommandsTests, NpcListPrintsCount)
 {
-    std::vector<NonPlayerCharacter> npcs(2);
-    npcs[0].SetName("Anna");
-    npcs[1].SetName("Bob");
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 2);
+    npcs.get<Dialogue>(NpcAt(npcs, 0)).name = "Anna";
+    npcs.get<Dialogue>(NpcAt(npcs, 1)).name = "Bob";
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -887,7 +1145,7 @@ TEST(ConsoleCommandsTests, NpcListPrintsCount)
 
 TEST(ConsoleCommandsTests, NpcListEmptyVector)
 {
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -897,19 +1155,21 @@ TEST(ConsoleCommandsTests, NpcListEmptyVector)
 
 TEST(ConsoleCommandsTests, NpcTpUpdatesPosition)
 {
-    std::vector<NonPlayerCharacter> npcs(1);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 1);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_TRUE(Cmd_NpcTp(ArgPack({"0", "5", "9"}).span(), ctx));
-    EXPECT_EQ(npcs[0].GetTileX(), 5);
-    EXPECT_EQ(npcs[0].GetTileY(), 9);
+    EXPECT_EQ(npcs.get<Patrol>(NpcAt(npcs, 0)).tileX, 5);
+    EXPECT_EQ(npcs.get<Patrol>(NpcAt(npcs, 0)).tileY, 9);
 }
 
 TEST(ConsoleCommandsTests, NpcTpRejectsBadIndexAndArity)
 {
-    std::vector<NonPlayerCharacter> npcs(1);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 1);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -921,71 +1181,77 @@ TEST(ConsoleCommandsTests, NpcTpRejectsBadIndexAndArity)
 
 TEST(ConsoleCommandsTests, NpcSpawnRejectsBadArgsAndUnknownType)
 {
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
+    // Publish real services so SpawnNpc actually attempts a sprite load: an
+    // unknown type resolves to a missing file -> invalid sheet -> SpawnNpc
+    // returns no_entity -> the command reports failure.
+    TextureStore textures;
+    AssetRegistry assets;
+    npcs.globals().obtain<WorldServices>() = WorldServices{&textures, nullptr, &assets};
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({}).span(), ctx));
     EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({"BW1_NPC1", "abc", "1"}).span(), ctx));
-    // Unknown type with no asset on disk: Load() fails, command returns false.
+    // Unknown type with no asset on disk: the sprite load fails, command returns false.
     EXPECT_FALSE(Cmd_NpcSpawn(ArgPack({"definitely_not_a_real_npc_type", "5", "5"}).span(), ctx));
-    EXPECT_TRUE(npcs.empty());
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 }
 
 TEST(ConsoleCommandsTests, NpcDespawnRemovesAndBoundsCheck)
 {
-    std::vector<NonPlayerCharacter> npcs(2);
-    npcs[0].SetName("First");
-    npcs[1].SetName("Second");
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 2);
+    npcs.get<Dialogue>(NpcAt(npcs, 0)).name = "First";
+    npcs.get<Dialogue>(NpcAt(npcs, 1)).name = "Second";
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_FALSE(Cmd_NpcDespawn(ArgPack({"99"}).span(), ctx));
-    EXPECT_EQ(npcs.size(), 2u);
+    EXPECT_EQ(EntityStore::Count(npcs), 2u);
     EXPECT_TRUE(Cmd_NpcDespawn(ArgPack({"0"}).span(), ctx));
-    EXPECT_EQ(npcs.size(), 1u);
-    EXPECT_EQ(npcs[0].GetName(), "Second");
+    EXPECT_EQ(EntityStore::Count(npcs), 1u);
+    EXPECT_EQ(npcs.get<Dialogue>(NpcAt(npcs, 0)).name, "Second");
 }
 
 TEST(ConsoleCommandsTests, NpcFreezePerIndex)
 {
-    std::vector<NonPlayerCharacter> npcs(2);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 2);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"0", "on"}).span(), ctx));
-    EXPECT_TRUE(npcs[0].IsStopped());
-    EXPECT_FALSE(npcs[1].IsStopped());
+    EXPECT_TRUE(npcs.get<NpcIdle>(NpcAt(npcs, 0)).isStopped);
+    EXPECT_FALSE(npcs.get<NpcIdle>(NpcAt(npcs, 1)).isStopped);
 
     EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"0"}).span(), ctx));  // toggle
-    EXPECT_FALSE(npcs[0].IsStopped());
+    EXPECT_FALSE(npcs.get<NpcIdle>(NpcAt(npcs, 0)).isStopped);
 }
 
 TEST(ConsoleCommandsTests, NpcFreezeAll)
 {
-    std::vector<NonPlayerCharacter> npcs(3);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 3);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"all", "on"}).span(), ctx));
-    for (const auto& n : npcs)
-    {
-        EXPECT_TRUE(n.IsStopped());
-    }
+    npcs.each<const NpcIdle, const NpcTag>([](const NpcIdle& idle)
+                                           { EXPECT_TRUE(idle.isStopped); });
     EXPECT_TRUE(Cmd_NpcFreeze(ArgPack({"all", "off"}).span(), ctx));
-    for (const auto& n : npcs)
-    {
-        EXPECT_FALSE(n.IsStopped());
-    }
+    npcs.each<const NpcIdle, const NpcTag>([](const NpcIdle& idle)
+                                           { EXPECT_FALSE(idle.isStopped); });
 }
 
 TEST(ConsoleCommandsTests, NpcFreezeRejectsBadArgs)
 {
-    std::vector<NonPlayerCharacter> npcs(1);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 1);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -997,18 +1263,20 @@ TEST(ConsoleCommandsTests, NpcFreezeRejectsBadArgs)
 
 TEST(ConsoleCommandsTests, NpcDialogSetsTextWithMultiToken)
 {
-    std::vector<NonPlayerCharacter> npcs(1);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 1);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
 
     EXPECT_TRUE(Cmd_NpcDialog(ArgPack({"0", "Hello", "world!"}).span(), ctx));
-    EXPECT_EQ(npcs[0].GetDialogue(), "Hello world!");
+    EXPECT_EQ(npcs.get<Dialogue>(NpcAt(npcs, 0)).text, "Hello world!");
 }
 
 TEST(ConsoleCommandsTests, NpcDialogRejectsBadArgs)
 {
-    std::vector<NonPlayerCharacter> npcs(1);
+    ecs::registry npcs;
+    SpawnNpcs(npcs, 1);
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -1684,7 +1952,7 @@ TEST(ConsoleCommandsTests, NavReachableCount)
 
 TEST(ConsoleCommandsTests, NpcPathInvalidIdxRejected)
 {
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
@@ -1694,7 +1962,7 @@ TEST(ConsoleCommandsTests, NpcPathInvalidIdxRejected)
 
 TEST(ConsoleCommandsTests, NpcGotoInvalidIdxRejected)
 {
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
     CameraController cam;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
@@ -1706,12 +1974,11 @@ TEST(ConsoleCommandsTests, NpcGotoInvalidIdxRejected)
 
 TEST(ConsoleCommandsTests, NpcNearestEmptyList)
 {
-    std::vector<NonPlayerCharacter> npcs;
-    PlayerCharacter player;
+    ecs::registry npcs;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.npcs = &npcs;
-    ctx.player = &player;
+    ctx.playerEntity = EntityStore::SpawnPlayer(npcs);
     ArgPack args({});
     EXPECT_TRUE(Cmd_NpcNearest(args.span(), ctx));
     EXPECT_TRUE(BufferContains(buf, "no NPCs"));
@@ -1798,7 +2065,7 @@ TEST(ConsoleCommandsTests, MemStatsPrintsLabels)
 {
     Tilemap m;
     m.SetTilemapSize(8, 8, /*generateMap=*/false);
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
     ctx.tilemap = &m;
@@ -1822,17 +2089,54 @@ TEST(ConsoleCommandsTests, ConfigDumpProducesScriptableLines)
 }
 
 // ---------------------------------------------------------------------------
+// ecs.validate (on-demand registry integrity check over registry::validate)
+// ---------------------------------------------------------------------------
+
+TEST(ConsoleCommandsTests, EcsValidateOkOnHealthyRegistry)
+{
+    ecs::registry world;
+    EntityStore::SpawnPlayer(world);
+    SpawnNpcs(world, 3);  // populate component pools with several entities
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+
+    EXPECT_TRUE(Cmd_EcsValidate(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "ecs.validate: OK"));
+}
+
+TEST(ConsoleCommandsTests, EcsValidateRejectsArgs)
+{
+    ecs::registry world;
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.npcs = &world;
+    EXPECT_FALSE(Cmd_EcsValidate(ArgPack({"x"}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "usage"));
+}
+
+TEST(ConsoleCommandsTests, EcsValidateFailsWithoutRegistry)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_EcsValidate(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(BufferContains(buf, "registry unavailable"));
+}
+
+// ---------------------------------------------------------------------------
 // bookmark.set / bookmark.tp / bookmark.list
 // ---------------------------------------------------------------------------
 
 TEST(ConsoleCommandsTests, BookmarkSetStoresPlayerTile)
 {
-    PlayerCharacter player;
-    player.SetTilePosition(7, 11);
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
+    PlayerSystem::SetTilePosition(world, player, 7, 11);
     std::unordered_map<std::string, glm::ivec2> bookmarks;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
     ArgPack args({"home"});
     EXPECT_TRUE(Cmd_BookmarkSet(args.span(), ctx, bookmarks));
     ASSERT_TRUE(bookmarks.count("home"));
@@ -1841,11 +2145,13 @@ TEST(ConsoleCommandsTests, BookmarkSetStoresPlayerTile)
 
 TEST(ConsoleCommandsTests, BookmarkTpUnknownNameRejected)
 {
-    PlayerCharacter player;
+    ecs::registry world;
+    ecs::entity player = EntityStore::SpawnPlayer(world);
     std::unordered_map<std::string, glm::ivec2> bookmarks;
     ConsoleBuffer buf;
     CommandContext ctx{buf};
-    ctx.player = &player;
+    ctx.npcs = &world;
+    ctx.playerEntity = player;
     ArgPack args({"ghost"});
     EXPECT_FALSE(Cmd_BookmarkTp(args.span(), ctx, bookmarks));
 }
