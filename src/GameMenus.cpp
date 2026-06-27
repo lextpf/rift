@@ -5,10 +5,17 @@
 #include "Game.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "CharacterConstants.hpp"
+#include "Dialogue.hpp"
 #include "DrawTracer.hpp"
 #include "Logger.hpp"
+#include "NpcSprite.hpp"
+#include "NpcTag.hpp"
 #include "ParticleSystem.hpp"
+#include "PlayerSprite.hpp"
+#include "PlayerSystem.hpp"
 #include "PostFXParams.hpp"
+#include "Transform.hpp"
 #include "Version.hpp"
 #include "ViewScaling.hpp"
 
@@ -266,7 +273,7 @@ void Game::LoadGameWorld(bool loadSave)
     if (loadSave)
     {
         mapLoaded = m_Tilemap.LoadMapFromJSON(
-            m_SaveMapPath, &m_NPCs, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
+            m_SaveMapPath, &m_World, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
     }
 
     if (!mapLoaded)
@@ -275,7 +282,7 @@ void Game::LoadGameWorld(bool loadSave)
                       "{}",
                       loadSave ? "No existing save found, generating default map"
                                : "New Game: regenerating default map");
-        m_NPCs.clear();
+        EntityStore::Clear(m_World);
         m_Tilemap.SetTilemapSize(m_DefaultMapWidth, m_DefaultMapHeight);
     }
 
@@ -297,14 +304,14 @@ void Game::LoadGameWorld(bool loadSave)
     {
         initialCharacter = m_ConfiguredCharacters.front();
     }
-    if (!m_Player.SwitchCharacter(initialCharacter))
+    if (!PlayerSystem::SwitchCharacter(m_World, m_PlayerEntity, initialCharacter))
     {
         Logger::Error(LOG_SUBSYSTEM, "Failed to switch player character in LoadGameWorld");
     }
 
     int playerTileX = (loadedPlayerTileX >= 0) ? loadedPlayerTileX : 9;
     int playerTileY = (loadedPlayerTileY >= 0) ? loadedPlayerTileY : 5;
-    m_Player.SetTilePosition(playerTileX, playerTileY);
+    PlayerSystem::SetTilePosition(m_World, m_PlayerEntity, playerTileX, playerTileY);
 
     // Pack every loaded NPC and player sprite sheet into the tile atlas so
     // the Y-sorted pass batches into one or two draws instead of one draw
@@ -314,9 +321,9 @@ void Game::LoadGameWorld(bool loadSave)
 
     float camWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float camWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    glm::vec2 playerPos = m_Player.GetPosition();
+    glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
     glm::vec2 playerVisualCenter =
-        glm::vec2(playerPos.x, playerPos.y - PlayerCharacter::HITBOX_HEIGHT);
+        glm::vec2(playerPos.x, playerPos.y - CharacterConstants::HITBOX_HEIGHT);
     m_Camera.Initialize(playerVisualCenter, camWorldWidth, camWorldHeight);
 
     // Particle zones are tied to the live tilemap; refresh after a (re)load.
@@ -335,28 +342,32 @@ void Game::PackCharactersIntoAtlas()
     // for both stbi-flipped (LoadFromFile) and image-space (LoadFromData)
     // sources without any per-source distinction here.
     std::vector<Tilemap::AtlasPackEntry> sheets;
-    sheets.reserve(m_NPCs.size() + 3 + 8);
+    sheets.reserve(EntityStore::Count(m_World) + 3 + 8);
 
     // De-duplicate NPC types - multiple NPCs of the same type share one
     // sheet, so we only need one atlas region per type. First-seen wins.
     std::unordered_set<std::string> seenTypes;
-    for (const auto& npc : m_NPCs)
-    {
-        const std::string& type = npc.GetType();
-        if (type.empty())
+    m_World.each<const Dialogue, const NpcSprite, const NpcTag>(
+        [&](const Dialogue& dial, const NpcSprite& sprite)
         {
-            continue;
-        }
-        if (seenTypes.insert(type).second)
-        {
-            sheets.push_back({type, &npc.GetSpriteSheet()});
-        }
-    }
+            const std::string& type = dial.type;
+            if (type.empty())
+            {
+                return;
+            }
+            if (seenTypes.insert(type).second)
+            {
+                sheets.push_back({type, &m_TextureStore.Get(sprite.sheet)});
+            }
+        });
 
     // Player sheets (walk / run / bicycle) under fixed keys.
-    sheets.push_back({kPlayerWalkAtlasKey, &m_Player.GetSpriteSheet()});
-    sheets.push_back({kPlayerRunAtlasKey, &m_Player.GetRunningSpriteSheet()});
-    sheets.push_back({kPlayerBicycleAtlasKey, &m_Player.GetBicycleSpriteSheet()});
+    const PlayerSprite& playerSprite = m_World.get<PlayerSprite>(m_PlayerEntity);
+    sheets.push_back({kPlayerWalkAtlasKey, &PlayerSystem::GetSpriteSheet(m_World, playerSprite)});
+    sheets.push_back(
+        {kPlayerRunAtlasKey, &PlayerSystem::GetRunningSpriteSheet(m_World, playerSprite)});
+    sheets.push_back(
+        {kPlayerBicycleAtlasKey, &PlayerSystem::GetBicycleSpriteSheet(m_World, playerSprite)});
 
     // Sky textures (procedurally generated + AuroraSmall from file).
     sheets.push_back({kSkyRayAtlasKey, &m_SkyRenderer.GetRayTexture()});
@@ -374,11 +385,14 @@ void Game::PackCharactersIntoAtlas()
             LOG_SUBSYSTEM,
             "PackCharactersIntoAtlas: atlas pack failed; characters keep per-sheet textures");
         // Make sure no stale bindings linger.
-        for (auto& npc : m_NPCs)
-        {
-            npc.SetAtlasBinding(nullptr, glm::vec2(0.0f));
-        }
-        m_Player.SetAtlasBinding(nullptr, glm::vec2(0.0f), glm::vec2(0.0f), glm::vec2(0.0f));
+        m_World.each<NpcSprite, NpcTag>(
+            [](NpcSprite& sprite)
+            {
+                sprite.atlas = nullptr;
+                sprite.atlasOffset = glm::vec2(0.0f);
+            });
+        PlayerSystem::SetAtlasBinding(
+            m_World, m_PlayerEntity, nullptr, glm::vec2(0.0f), glm::vec2(0.0f), glm::vec2(0.0f));
         m_SkyRenderer.SetAtlasBinding(nullptr,
                                       glm::vec2(0.0f),
                                       glm::vec2(0.0f),
@@ -393,11 +407,13 @@ void Game::PackCharactersIntoAtlas()
 
     // Bind each character to the atlas region keyed by its sheet identifier.
     const Texture* atlasTex = &m_Tilemap.GetTilesetTexture();
-    for (auto& npc : m_NPCs)
-    {
-        auto offset = m_Tilemap.GetCharacterAtlasOffset(npc.GetType());
-        npc.SetAtlasBinding(atlasTex, offset.value_or(glm::vec2(0.0f)));
-    }
+    m_World.each<Dialogue, NpcSprite, NpcTag>(
+        [&](const Dialogue& dial, NpcSprite& sprite)
+        {
+            auto offset = m_Tilemap.GetCharacterAtlasOffset(dial.type);
+            sprite.atlas = atlasTex;
+            sprite.atlasOffset = offset.value_or(glm::vec2(0.0f));
+        });
 
     glm::vec2 walkOff =
         m_Tilemap.GetCharacterAtlasOffset(kPlayerWalkAtlasKey).value_or(glm::vec2(0.0f));
@@ -405,7 +421,7 @@ void Game::PackCharactersIntoAtlas()
         m_Tilemap.GetCharacterAtlasOffset(kPlayerRunAtlasKey).value_or(glm::vec2(0.0f));
     glm::vec2 bikeOff =
         m_Tilemap.GetCharacterAtlasOffset(kPlayerBicycleAtlasKey).value_or(glm::vec2(0.0f));
-    m_Player.SetAtlasBinding(atlasTex, walkOff, runOff, bikeOff);
+    PlayerSystem::SetAtlasBinding(m_World, m_PlayerEntity, atlasTex, walkOff, runOff, bikeOff);
 
     auto skyOff = [this](const char* key)
     { return m_Tilemap.GetCharacterAtlasOffset(key).value_or(glm::vec2(0.0f)); };
@@ -514,16 +530,16 @@ void Game::LoadTitleScreenWorld()
     // the scripted ambient zones + initial weather, until the user opens
     // the console (which strips them for the rest of the session).
     m_TitleAmbientCleared = false;
-    m_NPCs.clear();
+    EntityStore::Clear(m_World);
     m_Editor.SetActive(false);
     m_DialogueManager.EndDialogue();
-    m_InDialogue = false;
-    m_DialogueText.clear();
-    m_DialogueNPCIndex = -1;
-    m_DialoguePage = 0;
-    m_DialogueCharReveal = -1.0f;
-    m_DialogueBoxFadeTimer = 0.0f;
-    m_DialogueSnap.active = false;
+    m_DialogueUi.inDialogue = false;
+    m_DialogueUi.text.clear();
+    m_DialogueUi.npcId = 0;
+    m_DialogueUi.page = 0;
+    m_DialogueUi.charReveal = -1.0f;
+    m_DialogueUi.boxFadeTimer = 0.0f;
+    m_DialogueUi.snap.active = false;
 
     // Size the title world to the current viewport, paint grass, build zones,
     // and center the camera. Re-runnable on resize via the same helper.
@@ -531,7 +547,7 @@ void Game::LoadTitleScreenWorld()
 
     // Park player at (0,0) to keep its tile coords valid - it isn't rendered
     // in Title (Y-sort skips it).
-    m_Player.SetTilePosition(0, 0);
+    PlayerSystem::SetTilePosition(m_World, m_PlayerEntity, 0, 0);
 
     // Freeze time at night. TimeManager.Update is gated in Title mode so
     // this value holds until Continue / New Game.
@@ -572,13 +588,13 @@ void Game::ResetWorldToDefaults()
 
     // Close leftover dialogue/snap state so the next gameplay frame starts clean.
     m_DialogueManager.EndDialogue();
-    m_InDialogue = false;
-    m_DialogueText.clear();
-    m_DialogueNPCIndex = -1;
-    m_DialoguePage = 0;
-    m_DialogueCharReveal = -1.0f;
-    m_DialogueBoxFadeTimer = 0.0f;
-    m_DialogueSnap.active = false;
+    m_DialogueUi.inDialogue = false;
+    m_DialogueUi.text.clear();
+    m_DialogueUi.npcId = 0;
+    m_DialogueUi.page = 0;
+    m_DialogueUi.charReveal = -1.0f;
+    m_DialogueUi.boxFadeTimer = 0.0f;
+    m_DialogueUi.snap.active = false;
 }
 
 void Game::RebuildTitleMenu()
