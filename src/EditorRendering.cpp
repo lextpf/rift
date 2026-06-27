@@ -1,5 +1,11 @@
 #include "Editor.hpp"
 
+#include "CameraController.hpp"
+#include "CharacterConstants.hpp"
+#include "NpcTag.hpp"
+#include "Patrol.hpp"
+#include "Transform.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -24,15 +30,15 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     if (r.tileWidth <= 0 || r.tileHeight <= 0)
         return r;
 
-    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float zoom = std::max(ctx.camera.zoom, 0.01f);
     float worldWidth = static_cast<float>(ctx.tilesVisibleWidth * r.tileWidth) / zoom;
     float worldHeight = static_cast<float>(ctx.tilesVisibleHeight * r.tileHeight) / zoom;
     r.screenSize = glm::vec2(worldWidth, worldHeight);
 
-    float cullMinX = ctx.cameraPosition.x;
-    float cullMinY = ctx.cameraPosition.y;
-    float cullMaxX = ctx.cameraPosition.x + worldWidth;
-    float cullMaxY = ctx.cameraPosition.y + worldHeight;
+    float cullMinX = ctx.camera.position.x;
+    float cullMinY = ctx.camera.position.y;
+    float cullMaxX = ctx.camera.position.x + worldWidth;
+    float cullMaxY = ctx.camera.position.y + worldHeight;
 
     auto s = ctx.renderer.GetPerspectiveState();
     if (s.enabled)
@@ -80,8 +86,8 @@ void ForVisibleFlaggedTiles(const EditorContext& ctx, Predicate predicate, const
             {
                 continue;
             }
-            glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                              y * vr.tileHeight - ctx.cameraPosition.y);
+            glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                              y * vr.tileHeight - ctx.camera.position.y);
             ctx.renderer.DrawColoredRect(tilePos, tileSize, color);
         }
     }
@@ -308,12 +314,12 @@ void Editor::RenderCollisionOverlays(const EditorContext& ctx)
         glm::vec4(1.0f, 0.0f, 0.0f, 0.5f));
 
     // Render player hitbox
-    glm::vec2 playerPos = ctx.player.GetPosition();
+    glm::vec2 playerPos = ctx.npcs.get<Transform>(ctx.playerEntity).position;
 
     glm::vec2 playerHitboxPos(
-        playerPos.x - PlayerCharacter::HITBOX_WIDTH * 0.5f - ctx.cameraPosition.x,
-        playerPos.y - PlayerCharacter::HITBOX_HEIGHT - ctx.cameraPosition.y);
-    glm::vec2 playerHitboxSize(PlayerCharacter::HITBOX_WIDTH, PlayerCharacter::HITBOX_HEIGHT);
+        playerPos.x - CharacterConstants::HITBOX_WIDTH * 0.5f - ctx.camera.position.x,
+        playerPos.y - CharacterConstants::HITBOX_HEIGHT - ctx.camera.position.y);
+    glm::vec2 playerHitboxSize(CharacterConstants::HITBOX_WIDTH, CharacterConstants::HITBOX_HEIGHT);
 
     if (playerHitboxPos.x + playerHitboxSize.x >= 0 && playerHitboxPos.x <= vr.screenSize.x &&
         playerHitboxPos.y + playerHitboxSize.y >= 0 && playerHitboxPos.y <= vr.screenSize.y)
@@ -323,21 +329,22 @@ void Editor::RenderCollisionOverlays(const EditorContext& ctx)
     }
 
     // Render NPC hitboxes in editor mode
-    const float NPC_HITBOX_SIZE = PlayerCharacter::HITBOX_HEIGHT;
-    for (const auto& npc : ctx.npcs)
-    {
-        glm::vec2 npcFeet = npc.GetPosition();
-        glm::vec2 npcHitboxPos(npcFeet.x - NPC_HITBOX_SIZE * 0.5f - ctx.cameraPosition.x,
-                               npcFeet.y - NPC_HITBOX_SIZE - ctx.cameraPosition.y);
-        glm::vec2 npcHitboxSize(NPC_HITBOX_SIZE, NPC_HITBOX_SIZE);
-
-        if (npcHitboxPos.x + npcHitboxSize.x >= 0 && npcHitboxPos.x <= vr.screenSize.x &&
-            npcHitboxPos.y + npcHitboxSize.y >= 0 && npcHitboxPos.y <= vr.screenSize.y)
+    const float NPC_HITBOX_SIZE = CharacterConstants::HITBOX_HEIGHT;
+    ctx.npcs.each<const Transform, const NpcTag>(
+        [&](const Transform& xf)
         {
-            ctx.renderer.DrawColoredRect(
-                npcHitboxPos, npcHitboxSize, glm::vec4(1.0f, 0.0f, 1.0f, 0.6f));
-        }
-    }
+            glm::vec2 npcFeet = xf.position;
+            glm::vec2 npcHitboxPos(npcFeet.x - NPC_HITBOX_SIZE * 0.5f - ctx.camera.position.x,
+                                   npcFeet.y - NPC_HITBOX_SIZE - ctx.camera.position.y);
+            glm::vec2 npcHitboxSize(NPC_HITBOX_SIZE, NPC_HITBOX_SIZE);
+
+            if (npcHitboxPos.x + npcHitboxSize.x >= 0 && npcHitboxPos.x <= vr.screenSize.x &&
+                npcHitboxPos.y + npcHitboxSize.y >= 0 && npcHitboxPos.y <= vr.screenSize.y)
+            {
+                ctx.renderer.DrawColoredRect(
+                    npcHitboxPos, npcHitboxSize, glm::vec4(1.0f, 0.0f, 1.0f, 0.6f));
+            }
+        });
 }
 
 void Editor::RenderNavigationOverlays(const EditorContext& ctx)
@@ -362,8 +369,8 @@ void Editor::RenderElevationOverlays(const EditorContext& ctx)
             if (elevation <= 0)
                 continue;
 
-            glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                              y * vr.tileHeight - ctx.cameraPosition.y);
+            glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                              y * vr.tileHeight - ctx.camera.position.y);
 
             float alpha = std::min(0.5f, static_cast<float>(elevation) / 32.0f * 0.5f + 0.15f);
 
@@ -406,8 +413,8 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
                 if (!ctx.tilemap.GetLayerNoProjection(x, y, m_CurrentLayer))
                     continue;
 
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
 
                 // Orange overlay for no-projection tiles
                 ctx.renderer.DrawColoredRect(
@@ -428,8 +435,8 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
                 if (count == 0)
                     continue;
 
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
 
                 // Alpha based on number of layers with flag
                 float alpha =
@@ -459,10 +466,10 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
             int rightPixelX = (bounds.maxX + 1) * vr.tileWidth;
             int bottomPixelY = (bounds.maxY + 1) * vr.tileHeight;
 
-            glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
-                                 static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
-            glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
-                                  static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+            glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.camera.position.x,
+                                 static_cast<float>(bottomPixelY) - ctx.camera.position.y);
+            glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.camera.position.x,
+                                  static_cast<float>(bottomPixelY) - ctx.camera.position.y);
 
             DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
             DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
@@ -495,10 +502,10 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
         int bottomPixelY = (bounds.maxY + 1) * tileHeight;
 
         // Screen-space positions
-        glm::vec2 screenLeft(static_cast<float>(leftPixelX) - ctx.cameraPosition.x,
-                             static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
-        glm::vec2 screenRight(static_cast<float>(rightPixelX) - ctx.cameraPosition.x,
-                              static_cast<float>(bottomPixelY) - ctx.cameraPosition.y);
+        glm::vec2 screenLeft(static_cast<float>(leftPixelX) - ctx.camera.position.x,
+                             static_cast<float>(bottomPixelY) - ctx.camera.position.y);
+        glm::vec2 screenRight(static_cast<float>(rightPixelX) - ctx.camera.position.x,
+                              static_cast<float>(bottomPixelY) - ctx.camera.position.y);
 
         // Skip anchors behind the sphere in globe mode
         if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
@@ -525,10 +532,10 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
     for (const auto& s : structures)
     {
         // Screen-space positions from world coordinates
-        glm::vec2 screenLeft(s.leftAnchor.x - ctx.cameraPosition.x,
-                             s.leftAnchor.y - ctx.cameraPosition.y);
-        glm::vec2 screenRight(s.rightAnchor.x - ctx.cameraPosition.x,
-                              s.rightAnchor.y - ctx.cameraPosition.y);
+        glm::vec2 screenLeft(s.leftAnchor.x - ctx.camera.position.x,
+                             s.leftAnchor.y - ctx.camera.position.y);
+        glm::vec2 screenRight(s.rightAnchor.x - ctx.camera.position.x,
+                              s.rightAnchor.y - ctx.camera.position.y);
 
         // Skip anchors behind the sphere in globe mode
         if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
@@ -584,8 +591,8 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
             int structId = ctx.tilemap.GetTileStructureId(x, y, m_CurrentLayer + 1);
             if (structId >= 0)
             {
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
 
                 float alpha = (structId == m_CurrentStructureId) ? 0.6f : 0.3f;
                 ctx.renderer.DrawColoredRect(
@@ -602,10 +609,10 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
     const auto& structures = ctx.tilemap.GetNoProjectionStructures();
     for (const auto& s : structures)
     {
-        glm::vec2 leftPos(s.leftAnchor.x - ctx.cameraPosition.x,
-                          s.leftAnchor.y - ctx.cameraPosition.y);
-        glm::vec2 rightPos(s.rightAnchor.x - ctx.cameraPosition.x,
-                           s.rightAnchor.y - ctx.cameraPosition.y);
+        glm::vec2 leftPos(s.leftAnchor.x - ctx.camera.position.x,
+                          s.leftAnchor.y - ctx.camera.position.y);
+        glm::vec2 rightPos(s.rightAnchor.x - ctx.camera.position.x,
+                           s.rightAnchor.y - ctx.camera.position.y);
 
         // Green for normal, cyan for selected structure
         glm::vec4 anchorColor = (s.id == m_CurrentStructureId) ? glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)
@@ -631,16 +638,16 @@ void Editor::RenderStructureOverlays(const EditorContext& ctx)
     // Draw temporary anchors being placed (yellow, same style)
     if (m_TempLeftAnchor.x >= 0)
     {
-        glm::vec2 pos(m_TempLeftAnchor.x - ctx.cameraPosition.x,
-                      m_TempLeftAnchor.y - ctx.cameraPosition.y);
+        glm::vec2 pos(m_TempLeftAnchor.x - ctx.camera.position.x,
+                      m_TempLeftAnchor.y - ctx.camera.position.y);
         glm::vec4 color(1.0f, 1.0f, 0.0f, 1.0f);  // Yellow
         DrawCrossMarker(ctx.renderer, pos, markerSize, color);
     }
 
     if (m_TempRightAnchor.x >= 0)
     {
-        glm::vec2 pos(m_TempRightAnchor.x - ctx.cameraPosition.x,
-                      m_TempRightAnchor.y - ctx.cameraPosition.y);
+        glm::vec2 pos(m_TempRightAnchor.x - ctx.camera.position.x,
+                      m_TempRightAnchor.y - ctx.camera.position.y);
         glm::vec4 color(1.0f, 0.8f, 0.0f, 1.0f);  // Orange-yellow
         DrawCrossMarker(ctx.renderer, pos, markerSize, color);
     }
@@ -662,8 +669,8 @@ void Editor::RenderLayerFlagOverlays(const EditorContext& ctx,
                 if (!(ctx.tilemap.*getter)(x, y, m_CurrentLayer))
                     continue;
 
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
 
                 ctx.renderer.DrawColoredRect(
                     tilePos,
@@ -683,8 +690,8 @@ void Editor::RenderLayerFlagOverlays(const EditorContext& ctx,
                 if (count == 0)
                     continue;
 
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
 
                 float alpha =
                     0.15f + (static_cast<float>(count) / static_cast<float>(layerCount)) * 0.35f;
@@ -727,7 +734,7 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
     for (const auto& zone : *zones)
     {
         // Calculate screen position
-        glm::vec2 screenPos = zone.position - ctx.cameraPosition;
+        glm::vec2 screenPos = zone.position - ctx.camera.position;
 
         // Cull zones outside view
         if (screenPos.x + zone.size.x < 0 || screenPos.x > worldWidth ||
@@ -774,10 +781,10 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
 
         float worldX =
             (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldWidth +
-            ctx.cameraPosition.x;
+            ctx.camera.position.x;
         float worldY =
             (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) * worldHeight +
-            ctx.cameraPosition.y;
+            ctx.camera.position.y;
 
         auto zr = CalculateParticleZoneRect(
             worldX, worldY, ctx.tilemap.GetTileWidth(), ctx.tilemap.GetTileHeight());
@@ -785,7 +792,7 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
         // Preview color based on type
         glm::vec4 previewColor = GetParticleTypeColor(m_CurrentParticleType, 0.5f);
 
-        glm::vec2 previewPos(zr.x - ctx.cameraPosition.x, zr.y - ctx.cameraPosition.y);
+        glm::vec2 previewPos(zr.x - ctx.camera.position.x, zr.y - ctx.camera.position.y);
         glm::vec2 previewSize(zr.w, zr.h);
         if (!IsRectFullyBehindSphere(ctx.renderer, previewPos, previewSize))
         {
@@ -798,38 +805,40 @@ void Editor::RenderNPCDebugInfo(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
-    const float NPC_HITBOX_SIZE = PlayerCharacter::HITBOX_HEIGHT;
+    const float NPC_HITBOX_SIZE = CharacterConstants::HITBOX_HEIGHT;
 
-    for (const auto& npc : ctx.npcs)
-    {
-        glm::vec2 npcAnchor = npc.GetPosition();
-
-        glm::vec2 npcHitboxPos(npcAnchor.x - NPC_HITBOX_SIZE * 0.5f - ctx.cameraPosition.x,
-                               npcAnchor.y - NPC_HITBOX_SIZE - ctx.cameraPosition.y);
-        glm::vec2 npcHitboxSize(NPC_HITBOX_SIZE, NPC_HITBOX_SIZE);
-
-        if (npcHitboxPos.x + npcHitboxSize.x >= 0 && npcHitboxPos.x <= vr.screenSize.x &&
-            npcHitboxPos.y + npcHitboxSize.y >= 0 && npcHitboxPos.y <= vr.screenSize.y)
+    ctx.npcs.each<const Transform, const Patrol, const NpcTag>(
+        [&](const Transform& xf, const Patrol& patrol)
         {
-            ctx.renderer.DrawColoredRect(
-                npcHitboxPos, npcHitboxSize, glm::vec4(1.0f, 0.0f, 1.0f, 0.3f));
-        }
+            glm::vec2 npcAnchor = xf.position;
 
-        int targetX = npc.GetTargetTileX();
-        int targetY = npc.GetTargetTileY();
+            glm::vec2 npcHitboxPos(npcAnchor.x - NPC_HITBOX_SIZE * 0.5f - ctx.camera.position.x,
+                                   npcAnchor.y - NPC_HITBOX_SIZE - ctx.camera.position.y);
+            glm::vec2 npcHitboxSize(NPC_HITBOX_SIZE, NPC_HITBOX_SIZE);
 
-        glm::vec2 targetPos(targetX * vr.tileWidth - ctx.cameraPosition.x + vr.tileWidth * 0.5f,
-                            targetY * vr.tileHeight - ctx.cameraPosition.y + vr.tileHeight * 0.5f);
+            if (npcHitboxPos.x + npcHitboxSize.x >= 0 && npcHitboxPos.x <= vr.screenSize.x &&
+                npcHitboxPos.y + npcHitboxSize.y >= 0 && npcHitboxPos.y <= vr.screenSize.y)
+            {
+                ctx.renderer.DrawColoredRect(
+                    npcHitboxPos, npcHitboxSize, glm::vec4(1.0f, 0.0f, 1.0f, 0.3f));
+            }
 
-        if (targetPos.x >= -vr.tileWidth && targetPos.x <= vr.screenSize.x + vr.tileWidth &&
-            targetPos.y >= -vr.tileHeight && targetPos.y <= vr.screenSize.y + vr.tileHeight)
-        {
-            float dotSize = 6.0f;
-            ctx.renderer.DrawColoredRect(targetPos - glm::vec2(dotSize * 0.5f),
-                                         glm::vec2(dotSize),
-                                         glm::vec4(0.0f, 1.0f, 0.0f, 0.8f));
-        }
-    }
+            int targetX = patrol.targetTileX;
+            int targetY = patrol.targetTileY;
+
+            glm::vec2 targetPos(
+                targetX * vr.tileWidth - ctx.camera.position.x + vr.tileWidth * 0.5f,
+                targetY * vr.tileHeight - ctx.camera.position.y + vr.tileHeight * 0.5f);
+
+            if (targetPos.x >= -vr.tileWidth && targetPos.x <= vr.screenSize.x + vr.tileWidth &&
+                targetPos.y >= -vr.tileHeight && targetPos.y <= vr.screenSize.y + vr.tileHeight)
+            {
+                float dotSize = 6.0f;
+                ctx.renderer.DrawColoredRect(targetPos - glm::vec2(dotSize * 0.5f),
+                                             glm::vec2(dotSize),
+                                             glm::vec4(0.0f, 1.0f, 0.0f, 0.8f));
+            }
+        });
 }
 
 void Editor::RenderCornerCuttingOverlays(const EditorContext& ctx)
@@ -837,7 +846,7 @@ void Editor::RenderCornerCuttingOverlays(const EditorContext& ctx)
     auto vr = CalcVisibleTileRange(ctx);
 
     // Player hitbox 16x16 pixels
-    const float HITBOX_SIZE = PlayerCharacter::HITBOX_WIDTH;
+    const float HITBOX_SIZE = CharacterConstants::HITBOX_WIDTH;
     const float HITBOX_HALF = HITBOX_SIZE * 0.5f;  // 8 pixels from center
     const float TILE_SIZE = static_cast<float>(ctx.tilemap.GetTileWidth());
 
@@ -858,8 +867,8 @@ void Editor::RenderCornerCuttingOverlays(const EditorContext& ctx)
             if (!ctx.tilemap.GetTileCollision(x, y))
                 continue;
 
-            glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                              y * vr.tileHeight - ctx.cameraPosition.y);
+            glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                              y * vr.tileHeight - ctx.camera.position.y);
 
             // Check adjacency for this tile to determine valid exposed corners and edges
             bool freeLeft = (x > 0) && !ctx.tilemap.GetTileCollision(x - 1, y);
@@ -987,8 +996,8 @@ void Editor::RenderLayerOverlay(const EditorContext& ctx, int layerIndex, const 
         for (int x = vr.startX; x < vr.endX; ++x)
             if (ctx.tilemap.GetLayerTile(x, y, layerIndex) >= 0)
             {
-                glm::vec2 tilePos(x * vr.tileWidth - ctx.cameraPosition.x,
-                                  y * vr.tileHeight - ctx.cameraPosition.y);
+                glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
+                                  y * vr.tileHeight - ctx.camera.position.y);
                 ctx.renderer.DrawColoredRect(
                     tilePos,
                     glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
@@ -1590,8 +1599,8 @@ void Editor::RenderMapSelectionOverlay(const EditorContext& ctx)
         int th = ctx.tilemap.GetTileHeight();
         if (tw <= 0 || th <= 0)
             return;
-        glm::vec2 pos(static_cast<float>(m_MapSelection.MinX() * tw) - ctx.cameraPosition.x,
-                      static_cast<float>(m_MapSelection.MinY() * th) - ctx.cameraPosition.y);
+        glm::vec2 pos(static_cast<float>(m_MapSelection.MinX() * tw) - ctx.camera.position.x,
+                      static_cast<float>(m_MapSelection.MinY() * th) - ctx.camera.position.y);
         glm::vec2 size(static_cast<float>(m_MapSelection.Width() * tw),
                        static_cast<float>(m_MapSelection.Height() * th));
         glm::vec4 color = m_MapSelection.isDragging ? glm::vec4(1.0f, 1.0f, 0.0f, 0.35f)
@@ -1611,21 +1620,21 @@ void Editor::RenderMapSelectionOverlay(const EditorContext& ctx)
         glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
         float baseWorldW = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
         float baseWorldH = static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight());
-        float zoom = std::max(ctx.cameraZoom, 0.01f);
+        float zoom = std::max(ctx.camera.zoom, 0.01f);
         float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) *
                            (baseWorldW / zoom) +
-                       ctx.cameraPosition.x;
+                       ctx.camera.position.x;
         float worldY = (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) *
                            (baseWorldH / zoom) +
-                       ctx.cameraPosition.y;
+                       ctx.camera.position.y;
         int tw = ctx.tilemap.GetTileWidth();
         int th = ctx.tilemap.GetTileHeight();
         if (tw <= 0 || th <= 0)
             return;
         int cursorTileX = static_cast<int>(std::floor(worldX / tw));
         int cursorTileY = static_cast<int>(std::floor(worldY / th));
-        glm::vec2 pos(static_cast<float>(cursorTileX * tw) - ctx.cameraPosition.x,
-                      static_cast<float>(cursorTileY * th) - ctx.cameraPosition.y);
+        glm::vec2 pos(static_cast<float>(cursorTileX * tw) - ctx.camera.position.x,
+                      static_cast<float>(cursorTileY * th) - ctx.camera.position.y);
         glm::vec2 size(static_cast<float>(m_Clipboard.width * tw),
                        static_cast<float>(m_Clipboard.height * th));
         ctx.renderer.DrawColoredRect(pos, size, glm::vec4(0.4f, 1.0f, 0.4f, 0.2f));
@@ -1657,16 +1666,16 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
     float baseWorldWidth = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
     float baseWorldHeight =
         static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight());
-    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float zoom = std::max(ctx.camera.zoom, 0.01f);
     float worldWidth = baseWorldWidth / zoom;
     float worldHeight = baseWorldHeight / zoom;
 
     // Convert mouse position to world coordinates
     float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldWidth +
-                   ctx.cameraPosition.x;
+                   ctx.camera.position.x;
     float worldY =
         (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) * worldHeight +
-        ctx.cameraPosition.y;
+        ctx.camera.position.y;
 
     // Convert world coordinates to tile coordinates
     if (ctx.tilemap.GetTileWidth() == 0 || ctx.tilemap.GetTileHeight() == 0)
@@ -1703,8 +1712,8 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
                     m_MultiTile.selectedStartID + sourceDy * dataTilesPerRow + sourceDx;
 
                 // Calculate tile position in camera-relative coordinates
-                glm::vec2 tilePos((previewX * tileWidth) - ctx.cameraPosition.x,
-                                  (previewY * tileHeight) - ctx.cameraPosition.y);
+                glm::vec2 tilePos((previewX * tileWidth) - ctx.camera.position.x,
+                                  (previewY * tileHeight) - ctx.camera.position.y);
 
                 // Render semi-transparent preview
                 int tilesetX = (sourceTileID % dataTilesPerRow) * tileWidth;
@@ -1751,8 +1760,8 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
         if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
             tileY < ctx.tilemap.GetMapHeight())
         {
-            glm::vec2 tilePos((tileX * tileWidth) - ctx.cameraPosition.x,
-                              (tileY * tileHeight) - ctx.cameraPosition.y);
+            glm::vec2 tilePos((tileX * tileWidth) - ctx.camera.position.x,
+                              (tileY * tileHeight) - ctx.camera.position.y);
 
             int tilesetX = (m_MultiTile.selectedStartID % dataTilesPerRow) * tileWidth;
             int tilesetY = (m_MultiTile.selectedStartID / dataTilesPerRow) * tileHeight;

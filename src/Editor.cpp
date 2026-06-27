@@ -1,5 +1,6 @@
 #include "Editor.hpp"
 
+#include "CameraController.hpp"
 #include "Logger.hpp"
 #include "MathUtils.hpp"
 #include "NavigationRecalc.hpp"
@@ -207,13 +208,13 @@ Editor::ScreenToTile Editor::ScreenToTileCoords(const EditorContext& ctx,
         return {};
     }
 
-    float zoom = std::max(ctx.cameraZoom, 0.01f);
+    float zoom = std::max(ctx.camera.zoom, 0.01f);
     float worldW = static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth()) / zoom;
     float worldH = static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight()) / zoom;
     float worldX = (static_cast<float>(mouseX) / static_cast<float>(ctx.screenWidth)) * worldW +
-                   ctx.cameraPosition.x;
+                   ctx.camera.position.x;
     float worldY = (static_cast<float>(mouseY) / static_cast<float>(ctx.screenHeight)) * worldH +
-                   ctx.cameraPosition.y;
+                   ctx.camera.position.y;
 
     return {worldX,
             worldY,
@@ -223,7 +224,7 @@ Editor::ScreenToTile Editor::ScreenToTileCoords(const EditorContext& ctx,
 
 void Editor::ExecuteEditorCommand(std::unique_ptr<EditorCommand> cmd,
                                   Tilemap& tilemap,
-                                  std::vector<NonPlayerCharacter>& npcs)
+                                  ecs::registry& npcs)
 {
     if (!cmd)
         return;
@@ -356,13 +357,4 @@ void Editor::Render(const EditorContext& ctx)
 void Editor::RenderNoProjectionAnchors(const EditorContext& ctx)
 {
     RenderNoProjectionAnchorsImpl(ctx);
-}
-
-void Editor::RecalculateNPCPatrolRoutes(const EditorContext& ctx)
-{
-    // Thin wrapper - the body lives in NavigationRecalc.{h,cpp} so editor
-    // commands can invoke the same logic without coupling to Editor itself.
-    auto displaced = SnapshotAndEraseNPCsOnNonWalkable(ctx.tilemap, ctx.npcs);
-    (void)displaced;  // intentionally discarded - this code path is non-undoable
-    RebuildPatrolRoutes(ctx.tilemap, ctx.npcs);
 }

@@ -1,8 +1,15 @@
+#include "Appearance.hpp"
+#include "CameraController.hpp"
 #include "Dialogues.hpp"
 #include "Editor.hpp"
 #include "EditorBrushTransform.hpp"
 #include "EditorCommands.hpp"
 #include "Logger.hpp"
+#include "NpcTag.hpp"
+#include "Patrol.hpp"
+#include "PlayerSystem.hpp"
+#include "TileMath.hpp"
+#include "Transform.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -622,11 +629,13 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     if (glfwGetKey(ctx.window, GLFW_KEY_S) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_S] && m_Active)
     {
         // Calculate player's current tile for spawn point
-        glm::vec2 playerPos = ctx.player.GetPosition();
-        int playerTileX = static_cast<int>(std::floor(playerPos.x / ctx.tilemap.GetTileWidth()));
+        glm::vec2 playerPos = ctx.npcs.get<Transform>(ctx.playerEntity).position;
+        int playerTileX =
+            TileMath::TileIndex(playerPos.x, static_cast<float>(ctx.tilemap.GetTileWidth()));
         int playerTileY =
-            static_cast<int>(std::floor((playerPos.y - 0.1f) / ctx.tilemap.GetTileHeight()));
-        int characterType = static_cast<int>(ctx.player.GetCharacterType());
+            TileMath::StandingTileRow(playerPos.y, static_cast<float>(ctx.tilemap.GetTileHeight()));
+        int characterType =
+            static_cast<int>(ctx.npcs.get<Appearance>(ctx.playerEntity).characterType);
 
         const std::string savePath = ctx.saveMapPath.empty() ? "rift.save.json" : ctx.saveMapPath;
         if (ctx.tilemap.SaveMapToJSON(savePath, &ctx.npcs, playerTileX, playerTileY, characterType))
@@ -675,7 +684,8 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             // Restore character type if saved
             if (loadedCharacterType >= 0)
             {
-                ctx.player.SwitchCharacter(static_cast<CharacterType>(loadedCharacterType));
+                PlayerSystem::SwitchCharacter(
+                    ctx.npcs, ctx.playerEntity, static_cast<CharacterType>(loadedCharacterType));
                 Logger::InfoF(
                     LOG_SUBSYSTEM, "Player character restored to type {}", loadedCharacterType);
             }
@@ -683,19 +693,20 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
             // Restore player position if spawn point was saved
             if (loadedPlayerTileX >= 0 && loadedPlayerTileY >= 0)
             {
-                ctx.player.SetTilePosition(loadedPlayerTileX, loadedPlayerTileY);
+                PlayerSystem::SetTilePosition(
+                    ctx.npcs, ctx.playerEntity, loadedPlayerTileX, loadedPlayerTileY);
 
                 // Recenter camera on player
-                glm::vec2 playerPos = ctx.player.GetPosition();
+                glm::vec2 playerPos = ctx.npcs.get<Transform>(ctx.playerEntity).position;
                 float camWorldWidth =
                     static_cast<float>(ctx.tilesVisibleWidth * ctx.tilemap.GetTileWidth());
                 float camWorldHeight =
                     static_cast<float>(ctx.tilesVisibleHeight * ctx.tilemap.GetTileHeight());
                 glm::vec2 playerVisualCenter = glm::vec2(playerPos.x, playerPos.y - 16.0f);
-                ctx.cameraPosition =
+                ctx.camera.position =
                     playerVisualCenter - glm::vec2(camWorldWidth / 2.0f, camWorldHeight / 2.0f);
-                ctx.cameraFollowTarget = ctx.cameraPosition;
-                ctx.hasCameraFollowTarget = false;
+                ctx.camera.followTarget = ctx.camera.position;
+                ctx.camera.hasFollowTarget = false;
                 Logger::InfoF(LOG_SUBSYSTEM,
                               "Player position restored to tile ({}, {})",
                               loadedPlayerTileX,
@@ -1584,11 +1595,15 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
 
                 // First, try to remove any NPC at this tile (works on any tile)
                 bool removed = false;
-                bool hasNPCHere =
-                    std::any_of(ctx.npcs.begin(),
-                                ctx.npcs.end(),
-                                [&](const NonPlayerCharacter& n)
-                                { return n.GetTileX() == tileX && n.GetTileY() == tileY; });
+                bool hasNPCHere = false;
+                ctx.npcs.each<const Patrol, const NpcTag>(
+                    [&](const Patrol& patrol)
+                    {
+                        if (patrol.tileX == tileX && patrol.tileY == tileY)
+                        {
+                            hasNPCHere = true;
+                        }
+                    });
                 if (hasNPCHere)
                 {
                     ExecuteEditorCommand(
@@ -1603,51 +1618,50 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     ClampNPCTypeIndex();
                     if (!m_AvailableNPCTypes.empty())
                     {
-                        NonPlayerCharacter npc;
                         std::string npcType = m_AvailableNPCTypes[m_SelectedNPCTypeIndex];
-                        if (npc.Load(npcType))
+
+                        // Randomly assign a dialogue tree from the pool
+                        // TODO: Load from rift.save.json only and create dialogues via editor
+                        DialogueTree tree;
+                        std::string npcName;
+                        static std::mt19937 rng(std::random_device{}());
+                        // Total dialogue types: mystery dialogues + editor-aware + annoyed NPC
+                        const int TOTAL_DIALOGUE_TYPES = kMysteryDialogueCount + 2;
+                        std::uniform_int_distribution<int> dist(0, TOTAL_DIALOGUE_TYPES - 1);
+                        int dialogueType = dist(rng);
+                        if (dialogueType < kMysteryDialogueCount)
                         {
-                            npc.SetTilePosition(tileX, tileY, tileSize);
-
-                            // Randomly assign a dialogue tree from the pool
-                            // TODO: Load from rift.save.json only and create dialogues via editor
-                            DialogueTree tree;
-                            std::string npcName;
-                            static std::mt19937 rng(std::random_device{}());
-                            // Total dialogue types: mystery dialogues + editor-aware + annoyed NPC
-                            const int TOTAL_DIALOGUE_TYPES = kMysteryDialogueCount + 2;
-                            std::uniform_int_distribution<int> dist(0, TOTAL_DIALOGUE_TYPES - 1);
-                            int dialogueType = dist(rng);
-                            if (dialogueType < kMysteryDialogueCount)
-                            {
-                                BuildMysteryDialogueTree(
-                                    tree, npcName, kMysteryDialogues[dialogueType]);
-                            }
-                            else if (dialogueType == kMysteryDialogueCount)
-                            {
-                                BuildEditorAwareDialogueTree(tree, npcName);
-                            }
-                            else
-                            {
-                                BuildAnnoyedNPCDialogueTree(tree, npcName);
-                            }
-
-                            npc.SetDialogueTree(tree);
-                            npc.SetName(npcName);
-
-                            ExecuteEditorCommand(std::make_unique<PlaceNPCCmd>(std::move(npc)),
-                                                 ctx.tilemap,
-                                                 ctx.npcs);
-                            Logger::InfoF(LOG_SUBSYSTEM,
-                                          "Placed NPC {} at tile ({}, {}) with dialogue tree",
-                                          npcType,
-                                          tileX,
-                                          tileY);
+                            BuildMysteryDialogueTree(
+                                tree, npcName, kMysteryDialogues[dialogueType]);
+                        }
+                        else if (dialogueType == kMysteryDialogueCount)
+                        {
+                            BuildEditorAwareDialogueTree(tree, npcName);
                         }
                         else
                         {
-                            Logger::ErrorF(LOG_SUBSYSTEM, "Failed to load NPC type: {}", npcType);
+                            BuildAnnoyedNPCDialogueTree(tree, npcName);
                         }
+
+                        // Build a blueprint; SpawnNpc (in PlaceNPCCmd::Apply) resolves the
+                        // sheet + tree via globals services and logs if the type fails to load.
+                        NpcRecord record;
+                        record.type = npcType;
+                        record.name = npcName;
+                        record.tileX = tileX;
+                        record.tileY = tileY;
+                        record.tileSize = tileSize;
+                        record.tree = std::move(tree);
+                        record.hasTree = true;
+
+                        ExecuteEditorCommand(std::make_unique<PlaceNPCCmd>(std::move(record)),
+                                             ctx.tilemap,
+                                             ctx.npcs);
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Placed NPC {} at tile ({}, {}) with dialogue tree",
+                                      npcType,
+                                      tileX,
+                                      tileY);
                     }
                     else
                     {

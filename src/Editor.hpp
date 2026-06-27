@@ -3,9 +3,7 @@
 #include "EditorCommands.hpp"
 #include "EditorStrokeAccumulators.hpp"
 #include "IRenderer.hpp"
-#include "NonPlayerCharacter.hpp"
 #include "ParticleSystem.hpp"
-#include "PlayerCharacter.hpp"
 #include "Tilemap.hpp"
 #include "UndoRedoStack.hpp"
 
@@ -14,6 +12,8 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
+
+struct CameraState;
 
 /**
  * @struct EditorContext
@@ -47,25 +47,18 @@
  */
 struct EditorContext
 {
-    GLFWwindow* window;                     ///< GLFW window handle for input queries.
-    int screenWidth;                        ///< Window width in pixels.
-    int screenHeight;                       ///< Window height in pixels.
-    int tilesVisibleWidth;                  ///< Tiles visible horizontally at current zoom.
-    int tilesVisibleHeight;                 ///< Tiles visible vertically at current zoom.
-    glm::vec2& cameraPosition;              ///< Current camera world position (mutable).
-    glm::vec2& cameraFollowTarget;          ///< Camera follow target position (mutable).
-    bool& hasCameraFollowTarget;            ///< Whether camera has a follow target (mutable).
-    float& cameraZoom;                      ///< Camera zoom level (mutable).
-    bool& freeCameraMode;                   ///< Free camera toggle (mutable).
-    bool& enable3DEffect;                   ///< 3D perspective toggle (mutable).
-    float& cameraTilt;                      ///< Camera tilt angle (mutable).
-    float& globeSphereRadius;               ///< Globe effect radius (mutable).
-    Tilemap& tilemap;                       ///< Active tilemap for tile queries and edits.
-    PlayerCharacter& player;                ///< Player character for position/rendering.
-    std::vector<NonPlayerCharacter>& npcs;  ///< NPC list for placement and debug display.
-    IRenderer& renderer;                    ///< Active renderer for drawing overlays.
-    ParticleSystem& particles;              ///< Particle system for zone editing.
-    std::string saveMapPath;                ///< Save/load JSON path configured by project manifest.
+    GLFWwindow* window;         ///< GLFW window handle for input queries.
+    int screenWidth;            ///< Window width in pixels.
+    int screenHeight;           ///< Window height in pixels.
+    int tilesVisibleWidth;      ///< Tiles visible horizontally at current zoom.
+    int tilesVisibleHeight;     ///< Tiles visible vertically at current zoom.
+    CameraState& camera;        ///< Camera state (position/zoom/tilt/3D/follow/freeMode), mutable.
+    Tilemap& tilemap;           ///< Active tilemap for tile queries and edits.
+    ecs::entity playerEntity;   ///< Player entity (resolve via @ref npcs, the world).
+    ecs::registry& npcs;        ///< Live NPC + player store (the ECS registry / world).
+    IRenderer& renderer;        ///< Active renderer for drawing overlays.
+    ParticleSystem& particles;  ///< Particle system for zone editing.
+    std::string saveMapPath;    ///< Save/load JSON path configured by project manifest.
 };
 
 /**
@@ -282,9 +275,6 @@ private:
     /// @brief Clear all mutually exclusive edit sub-modes.
     void ClearAllEditModes();
 
-    /// @brief Recalculate all NPC patrol routes after navigation changes.
-    void RecalculateNPCPatrolRoutes(const EditorContext& ctx);
-
     /// @brief Lazily compute and cache no-projection structure bounds for the current frame.
     void EnsureNoProjBoundsCache(const EditorContext& ctx);
 
@@ -324,7 +314,7 @@ private:
     /// @brief Execute an undoable command and mark the map dirty.
     void ExecuteEditorCommand(std::unique_ptr<EditorCommand> cmd,
                               Tilemap& tilemap,
-                              std::vector<NonPlayerCharacter>& npcs);
+                              ecs::registry& npcs);
     /// @brief Push an already-applied undoable command and mark the map dirty.
     void PushEditorCommand(std::unique_ptr<EditorCommand> cmd);
 
