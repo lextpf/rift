@@ -10,9 +10,13 @@
 #include "../src/EditorCommand.hpp"
 #include "../src/EditorCommands.hpp"
 #include "../src/EditorStrokeAccumulators.hpp"
-#include "../src/NonPlayerCharacter.hpp"
+#include "../src/EntityStore.hpp"
+#include "../src/NpcRecord.hpp"
+#include "../src/Patrol.hpp"
 #include "../src/Tilemap.hpp"
 #include "../src/UndoRedoStack.hpp"
+
+#include <ecs.hpp>
 
 #include <memory>
 #include <string>
@@ -26,16 +30,14 @@ namespace
 class StubCmd : public EditorCommand
 {
 public:
-    StubCmd(int* counter, int delta) : m_Counter(counter), m_Delta(delta) {}
+    StubCmd(int* counter, int delta)
+        : m_Counter(counter),
+          m_Delta(delta)
+    {
+    }
 
-    void Apply(Tilemap&, std::vector<NonPlayerCharacter>&) override
-    {
-        *m_Counter += m_Delta;
-    }
-    void Revert(Tilemap&, std::vector<NonPlayerCharacter>&) override
-    {
-        *m_Counter -= m_Delta;
-    }
+    void Apply(Tilemap&, ecs::registry&) override { *m_Counter += m_Delta; }
+    void Revert(Tilemap&, ecs::registry&) override { *m_Counter -= m_Delta; }
     [[nodiscard]] std::string DebugLabel() const override { return "Stub"; }
 
 private:
@@ -51,15 +53,12 @@ class UndoRedoStackTest : public ::testing::Test
 protected:
     UndoRedoStack stack;
     Tilemap tilemap;  // unused by StubCmd but required by the API
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
     int counter = 0;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 
-    std::unique_ptr<StubCmd> Stub(int delta)
-    {
-        return std::make_unique<StubCmd>(&counter, delta);
-    }
+    std::unique_ptr<StubCmd> Stub(int delta) { return std::make_unique<StubCmd>(&counter, delta); }
 };
 
 TEST_F(UndoRedoStackTest, Empty_NoUndoOrRedo)
@@ -207,7 +206,7 @@ class PlaceTilesCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -266,7 +265,8 @@ TEST_F(PlaceTilesCmdTest, DebugLabel_ReportsCount)
     PlaceTilesCmd one{std::vector<PlaceTilesCmd::Entry>{{0, 0, 0, -1, 0.0f, 1, 0.0f}}};
     EXPECT_EQ(one.DebugLabel(), "Place 1 tile(s)");
 
-    std::vector<PlaceTilesCmd::Entry> manyEntries(3, PlaceTilesCmd::Entry{0, 0, 0, -1, 0.0f, 1, 0.0f});
+    std::vector<PlaceTilesCmd::Entry> manyEntries(3,
+                                                  PlaceTilesCmd::Entry{0, 0, 0, -1, 0.0f, 1, 0.0f});
     PlaceTilesCmd many{std::move(manyEntries)};
     EXPECT_EQ(many.DebugLabel(), "Place 3 tile(s)");
 }
@@ -292,9 +292,7 @@ TEST_F(PlaceTilesCmdTest, StackIntegration_RoundTrip)
 TEST_F(PlaceTilesCmdTest, AcrossMultipleLayers_EachLayerTracked)
 {
     PlaceTilesCmd cmd{std::vector<PlaceTilesCmd::Entry>{
-        {0, 0, 0, -1, 0.0f, 1, 0.0f},
-        {0, 0, 1, -1, 0.0f, 2, 0.0f},
-        {0, 0, 2, -1, 0.0f, 3, 0.0f}}};
+        {0, 0, 0, -1, 0.0f, 1, 0.0f}, {0, 0, 1, -1, 0.0f, 2, 0.0f}, {0, 0, 2, -1, 0.0f, 3, 0.0f}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_EQ(tilemap.GetLayerTile(0, 0, 0), 1);
     EXPECT_EQ(tilemap.GetLayerTile(0, 0, 1), 2);
@@ -312,7 +310,7 @@ class CollisionToggleCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -356,15 +354,14 @@ class ElevationSetCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
 
 TEST_F(ElevationSetCmdTest, Apply_SetsElevation)
 {
-    ElevationSetCmd cmd{
-        std::vector<ElevationSetCmd::Entry>{{1, 1, /*old=*/0, /*new=*/12}}};
+    ElevationSetCmd cmd{std::vector<ElevationSetCmd::Entry>{{1, 1, /*old=*/0, /*new=*/12}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_EQ(tilemap.GetElevation(1, 1), 12);
 }
@@ -372,8 +369,7 @@ TEST_F(ElevationSetCmdTest, Apply_SetsElevation)
 TEST_F(ElevationSetCmdTest, Revert_RestoresOriginal)
 {
     tilemap.SetElevation(2, 2, 8);
-    ElevationSetCmd cmd{
-        std::vector<ElevationSetCmd::Entry>{{2, 2, 8, -4}}};
+    ElevationSetCmd cmd{std::vector<ElevationSetCmd::Entry>{{2, 2, 8, -4}}};
     cmd.Apply(tilemap, npcs);
     ASSERT_EQ(tilemap.GetElevation(2, 2), -4);
     cmd.Revert(tilemap, npcs);
@@ -382,8 +378,7 @@ TEST_F(ElevationSetCmdTest, Revert_RestoresOriginal)
 
 TEST_F(ElevationSetCmdTest, ApplyRevertApply_Idempotent)
 {
-    ElevationSetCmd cmd{
-        std::vector<ElevationSetCmd::Entry>{{3, 3, 0, 16}}};
+    ElevationSetCmd cmd{std::vector<ElevationSetCmd::Entry>{{3, 3, 0, 16}}};
     cmd.Apply(tilemap, npcs);
     cmd.Revert(tilemap, npcs);
     cmd.Apply(tilemap, npcs);
@@ -394,13 +389,22 @@ TEST_F(ElevationSetCmdTest, ApplyRevertApply_Idempotent)
 
 namespace
 {
-// Build a default-constructed NPC at given coords. Skip Load() to avoid
-// touching texture I/O - tests run without a GL/Vulkan context.
-NonPlayerCharacter MakeStubNPC(int tileX, int tileY)
+// Blueprint for an NPC at given coords. No sprite is loaded (tests run without
+// services / a GL context); SpawnNpc tolerates that and still sets Transform +
+// Patrol from the tile.
+NpcRecord MakeStubNPC(int tileX, int tileY)
 {
-    NonPlayerCharacter npc;
-    npc.SetTilePosition(tileX, tileY, 16);
-    return npc;
+    NpcRecord rec;
+    rec.tileX = tileX;
+    rec.tileY = tileY;
+    rec.tileSize = 16;
+    return rec;
+}
+
+// The NPC registry's first entity in dense order (tests assert a single NPC).
+ecs::entity FirstNpc(ecs::registry& world)
+{
+    return EntityStore::Entities(world).front();
 }
 }  // namespace
 
@@ -408,7 +412,7 @@ class NPCCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -417,18 +421,18 @@ TEST_F(NPCCmdTest, PlaceNPCCmd_Apply_AddsToVector)
 {
     PlaceNPCCmd cmd{MakeStubNPC(3, 4)};
     cmd.Apply(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
-    EXPECT_EQ(npcs[0].GetTileX(), 3);
-    EXPECT_EQ(npcs[0].GetTileY(), 4);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileX, 3);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileY, 4);
 }
 
 TEST_F(NPCCmdTest, PlaceNPCCmd_Revert_RemovesFromVector)
 {
     PlaceNPCCmd cmd{MakeStubNPC(5, 6)};
     cmd.Apply(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
     cmd.Revert(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 }
 
 TEST_F(NPCCmdTest, PlaceNPCCmd_RoundTrip_PreservesIdentity)
@@ -437,57 +441,57 @@ TEST_F(NPCCmdTest, PlaceNPCCmd_RoundTrip_PreservesIdentity)
     cmd.Apply(tilemap, npcs);
     cmd.Revert(tilemap, npcs);
     cmd.Apply(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
-    EXPECT_EQ(npcs[0].GetTileX(), 2);
-    EXPECT_EQ(npcs[0].GetTileY(), 3);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileX, 2);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileY, 3);
 }
 
 TEST_F(NPCCmdTest, RemoveNPCCmd_Apply_RemovesNPCAtTile)
 {
-    npcs.push_back(MakeStubNPC(7, 7));
-    ASSERT_EQ(npcs.size(), 1u);
+    EntityStore::SpawnNpc(npcs, MakeStubNPC(7, 7));
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
     RemoveNPCCmd cmd{7, 7};
     cmd.Apply(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 }
 
 TEST_F(NPCCmdTest, RemoveNPCCmd_Revert_ReinsertsNPC)
 {
-    npcs.push_back(MakeStubNPC(7, 7));
+    EntityStore::SpawnNpc(npcs, MakeStubNPC(7, 7));
     RemoveNPCCmd cmd{7, 7};
     cmd.Apply(tilemap, npcs);
     cmd.Revert(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
-    EXPECT_EQ(npcs[0].GetTileX(), 7);
-    EXPECT_EQ(npcs[0].GetTileY(), 7);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileX, 7);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileY, 7);
 }
 
 TEST_F(NPCCmdTest, PlaceThenRemove_StackUndoRedoSequence)
 {
     UndoRedoStack stack;
     stack.Execute(std::make_unique<PlaceNPCCmd>(MakeStubNPC(1, 1)), tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 1u);
+    EXPECT_EQ(EntityStore::Count(npcs), 1u);
     stack.Execute(std::make_unique<RemoveNPCCmd>(1, 1), tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 
     stack.Undo(tilemap, npcs);  // un-removes
-    EXPECT_EQ(npcs.size(), 1u);
+    EXPECT_EQ(EntityStore::Count(npcs), 1u);
     stack.Undo(tilemap, npcs);  // un-places
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 
     stack.Redo(tilemap, npcs);  // re-places
-    EXPECT_EQ(npcs.size(), 1u);
+    EXPECT_EQ(EntityStore::Count(npcs), 1u);
     stack.Redo(tilemap, npcs);  // re-removes
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 }
 
 TEST_F(NPCCmdTest, RemoveNPCCmd_NoNPCAtTile_NoOpApply)
 {
     RemoveNPCCmd cmd{0, 0};
     cmd.Apply(tilemap, npcs);  // npcs empty, should not crash
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
     cmd.Revert(tilemap, npcs);  // m_Held empty, should not crash
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 }
 
 // --- Stroke accumulators -----------------------------------------------------
@@ -497,7 +501,7 @@ class StrokeAccumulatorTest : public ::testing::Test
 protected:
     UndoRedoStack stack;
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -656,7 +660,7 @@ class NavigationStrokeCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override
     {
@@ -671,8 +675,7 @@ protected:
 TEST_F(NavigationStrokeCmdTest, NoNPCs_RoundTripPreservesNav)
 {
     NavigationStrokeCmd cmd{std::vector<NavigationStrokeCmd::Entry>{
-        {3, 3, /*old=*/true, /*new=*/false},
-        {3, 4, /*old=*/true, /*new=*/false}}};
+        {3, 3, /*old=*/true, /*new=*/false}, {3, 4, /*old=*/true, /*new=*/false}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_FALSE(tilemap.GetNavigation(3, 3));
     EXPECT_FALSE(tilemap.GetNavigation(3, 4));
@@ -684,77 +687,68 @@ TEST_F(NavigationStrokeCmdTest, NoNPCs_RoundTripPreservesNav)
 
 TEST_F(NavigationStrokeCmdTest, NPCDisplaced_RestoredOnRevert)
 {
-    NonPlayerCharacter npc;
-    npc.SetTilePosition(4, 4, 16);
-    npcs.push_back(std::move(npc));
+    EntityStore::SpawnNpc(npcs, MakeStubNPC(4, 4));
 
-    NavigationStrokeCmd cmd{std::vector<NavigationStrokeCmd::Entry>{
-        {4, 4, /*old=*/true, /*new=*/false}}};
+    NavigationStrokeCmd cmd{
+        std::vector<NavigationStrokeCmd::Entry>{{4, 4, /*old=*/true, /*new=*/false}}};
     cmd.Apply(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);  // NPC erased
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);  // NPC erased
 
     cmd.Revert(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
-    EXPECT_EQ(npcs[0].GetTileX(), 4);
-    EXPECT_EQ(npcs[0].GetTileY(), 4);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileX, 4);
+    EXPECT_EQ(npcs.get<Patrol>(FirstNpc(npcs)).tileY, 4);
     EXPECT_TRUE(tilemap.GetNavigation(4, 4));  // nav restored
 }
 
 TEST_F(NavigationStrokeCmdTest, ApplyRevertApply_NoNPCDuplication)
 {
-    NonPlayerCharacter npc;
-    npc.SetTilePosition(2, 2, 16);
-    npcs.push_back(std::move(npc));
+    EntityStore::SpawnNpc(npcs, MakeStubNPC(2, 2));
 
-    NavigationStrokeCmd cmd{std::vector<NavigationStrokeCmd::Entry>{
-        {2, 2, true, false}}};
+    NavigationStrokeCmd cmd{std::vector<NavigationStrokeCmd::Entry>{{2, 2, true, false}}};
     cmd.Apply(tilemap, npcs);
     cmd.Revert(tilemap, npcs);
     cmd.Apply(tilemap, npcs);  // Redo
 
-    EXPECT_EQ(npcs.size(), 0u);  // NPC erased again on Redo, not duplicated
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);  // NPC erased again on Redo, not duplicated
 
     cmd.Revert(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 1u);  // back once
+    EXPECT_EQ(EntityStore::Count(npcs), 1u);  // back once
 }
 
 TEST_F(NavigationStrokeCmdTest, MultipleNPCsDisplacedTogether)
 {
     for (int i = 0; i < 3; ++i)
     {
-        NonPlayerCharacter npc;
-        npc.SetTilePosition(i, 0, 16);
-        npcs.push_back(std::move(npc));
+        EntityStore::SpawnNpc(npcs, MakeStubNPC(i, 0));
     }
 
     NavigationStrokeCmd cmd{std::vector<NavigationStrokeCmd::Entry>{
         {0, 0, true, false}, {1, 0, true, false}, {2, 0, true, false}}};
     cmd.Apply(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 
     cmd.Revert(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 3u);
+    EXPECT_EQ(EntityStore::Count(npcs), 3u);
 }
 
 TEST_F(NavigationStrokeCmdTest, StackIntegration_UndoRedoSequence)
 {
     UndoRedoStack stack;
 
-    NonPlayerCharacter npc;
-    npc.SetTilePosition(5, 5, 16);
-    npcs.push_back(std::move(npc));
+    EntityStore::SpawnNpc(npcs, MakeStubNPC(5, 5));
 
     auto cmd = std::make_unique<NavigationStrokeCmd>(
         std::vector<NavigationStrokeCmd::Entry>{{5, 5, true, false}});
     stack.Execute(std::move(cmd), tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
 
     stack.Undo(tilemap, npcs);
-    ASSERT_EQ(npcs.size(), 1u);
+    ASSERT_EQ(EntityStore::Count(npcs), 1u);
     EXPECT_TRUE(tilemap.GetNavigation(5, 5));
 
     stack.Redo(tilemap, npcs);
-    EXPECT_EQ(npcs.size(), 0u);
+    EXPECT_EQ(EntityStore::Count(npcs), 0u);
     EXPECT_FALSE(tilemap.GetNavigation(5, 5));
 }
 
@@ -764,15 +758,14 @@ class FlagToggleCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
 
 TEST_F(FlagToggleCmdTest, NoProjection_RoundTrip)
 {
-    NoProjectionToggleCmd cmd{
-        std::vector<LayerFlagEntry>{{2, 2, 0, /*old=*/false, /*new=*/true}}};
+    NoProjectionToggleCmd cmd{std::vector<LayerFlagEntry>{{2, 2, 0, /*old=*/false, /*new=*/true}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_TRUE(tilemap.GetLayerNoProjection(2, 2, 0));
     cmd.Revert(tilemap, npcs);
@@ -782,8 +775,7 @@ TEST_F(FlagToggleCmdTest, NoProjection_RoundTrip)
 TEST_F(FlagToggleCmdTest, YSortPlus_RoundTrip)
 {
     tilemap.SetLayerYSortPlus(3, 3, 1, true);
-    YSortPlusToggleCmd cmd{
-        std::vector<LayerFlagEntry>{{3, 3, 1, /*old=*/true, /*new=*/false}}};
+    YSortPlusToggleCmd cmd{std::vector<LayerFlagEntry>{{3, 3, 1, /*old=*/true, /*new=*/false}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_FALSE(tilemap.GetLayerYSortPlus(3, 3, 1));
     cmd.Revert(tilemap, npcs);
@@ -792,8 +784,7 @@ TEST_F(FlagToggleCmdTest, YSortPlus_RoundTrip)
 
 TEST_F(FlagToggleCmdTest, YSortMinus_RoundTrip)
 {
-    YSortMinusToggleCmd cmd{
-        std::vector<LayerFlagEntry>{{4, 4, 2, /*old=*/false, /*new=*/true}}};
+    YSortMinusToggleCmd cmd{std::vector<LayerFlagEntry>{{4, 4, 2, /*old=*/false, /*new=*/true}}};
     cmd.Apply(tilemap, npcs);
     EXPECT_TRUE(tilemap.GetLayerYSortMinus(4, 4, 2));
     cmd.Revert(tilemap, npcs);
@@ -820,7 +811,7 @@ class SetTileAnimationCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -913,7 +904,7 @@ class StructureCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
@@ -1002,7 +993,7 @@ class ParticleZoneCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 
@@ -1057,7 +1048,7 @@ class PasteRegionCmdTest : public ::testing::Test
 {
 protected:
     Tilemap tilemap;
-    std::vector<NonPlayerCharacter> npcs;
+    ecs::registry npcs;
 
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
