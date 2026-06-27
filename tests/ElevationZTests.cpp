@@ -1,15 +1,17 @@
 // Tests for the z-axis elevation system: auto-derived elevation axis,
-// GameCharacter plane update with axis-engagement + step-gate, and the
-// z-aware skip in CollisionResolver. Pure data paths - no GL/Vulkan
+// CharacterKinematics plane update with axis-engagement + step-gate, and the
+// z-aware skip in CollisionSystem. Pure data paths - no GL/Vulkan
 // context is created (per CMakeLists.txt:352-355).
 
 #include <gtest/gtest.h>
 
 #include <glm/glm.hpp>
 
-#include "../src/CollisionResolver.hpp"
+#include "../src/CharacterKinematics.hpp"
+#include "../src/CollisionSystem.hpp"
+#include "../src/Elevation.hpp"
 #include "../src/ElevationAxis.hpp"
-#include "../src/PlayerCharacter.hpp"
+#include "../src/Hitbox.hpp"
 #include "../src/Tilemap.hpp"
 
 namespace
@@ -146,37 +148,38 @@ TEST(UpdatePlane, PerpendicularToAxisLeavesPlane)
 {
     // Player at plane 0 walking N->S into a horizontal-bridge deck cell.
     // Movement is on Y, tile axis is X -> perpendicular -> no engagement.
-    PlayerCharacter player;
-    EXPECT_EQ(player.GetPlane(), 0);
+    Elevation elev;
+    EXPECT_EQ(elev.plane, 0);
 
-    player.UpdatePlane(/*destTileElev=*/10,
-                       ElevationAxis::X,
-                       /*moveDx=*/0,
-                       /*moveDy=*/1);
-    EXPECT_EQ(player.GetPlane(), 0);
+    CharacterKinematics::UpdatePlane(elev,
+                                     /*destTileElev=*/10,
+                                     ElevationAxis::X,
+                                     /*moveDx=*/0,
+                                     /*moveDy=*/1);
+    EXPECT_EQ(elev.plane, 0);
 }
 
 TEST(UpdatePlane, AxisMatchWithinStepGateEngages)
 {
     // Player at plane 6 (mid-ramp) walking +X onto deck (10). Delta = 4
     // which is within MAX_STEP_HEIGHT (8) -> engages.
-    PlayerCharacter player;
-    player.UpdatePlane(6, ElevationAxis::X, 1, 0);  // bring plane up to 6
-    EXPECT_EQ(player.GetPlane(), 6);
+    Elevation elev;
+    CharacterKinematics::UpdatePlane(elev, 6, ElevationAxis::X, 1, 0);  // bring plane up to 6
+    EXPECT_EQ(elev.plane, 6);
 
-    player.UpdatePlane(10, ElevationAxis::X, 1, 0);
-    EXPECT_EQ(player.GetPlane(), 10);
+    CharacterKinematics::UpdatePlane(elev, 10, ElevationAxis::X, 1, 0);
+    EXPECT_EQ(elev.plane, 10);
 }
 
 TEST(UpdatePlane, DirectGroundToDeckJumpRejected)
 {
     // No ramp authored: stepping from plane 0 directly onto a deck (elev 10)
     // exceeds MAX_STEP_HEIGHT (8). Plane must stay 0 (player walks under).
-    PlayerCharacter player;
-    EXPECT_EQ(player.GetPlane(), 0);
+    Elevation elev;
+    EXPECT_EQ(elev.plane, 0);
 
-    player.UpdatePlane(10, ElevationAxis::X, 1, 0);
-    EXPECT_EQ(player.GetPlane(), 0);
+    CharacterKinematics::UpdatePlane(elev, 10, ElevationAxis::X, 1, 0);
+    EXPECT_EQ(elev.plane, 0);
 }
 
 TEST(UpdatePlane, GroundTileAlwaysEngages)
@@ -184,25 +187,25 @@ TEST(UpdatePlane, GroundTileAlwaysEngages)
     // Player at plane 10 (on deck) steps onto axis=None ground. The step
     // gate must not block this - falling-off-bridge needs to work even
     // when the drop exceeds MAX_STEP_HEIGHT.
-    PlayerCharacter player;
+    Elevation elev;
     // Bring plane up: small ramp (4) then deck (10).
-    player.UpdatePlane(4, ElevationAxis::X, 1, 0);
-    player.UpdatePlane(10, ElevationAxis::X, 1, 0);
-    EXPECT_EQ(player.GetPlane(), 10);
+    CharacterKinematics::UpdatePlane(elev, 4, ElevationAxis::X, 1, 0);
+    CharacterKinematics::UpdatePlane(elev, 10, ElevationAxis::X, 1, 0);
+    EXPECT_EQ(elev.plane, 10);
 
-    player.UpdatePlane(0, ElevationAxis::None, 0, 1);
-    EXPECT_EQ(player.GetPlane(), 0);
+    CharacterKinematics::UpdatePlane(elev, 0, ElevationAxis::None, 0, 1);
+    EXPECT_EQ(elev.plane, 0);
 }
 
 TEST(UpdatePlane, ZeroMovementOnAxisTileDoesNotEngage)
 {
     // No movement (dx=dy=0) onto an X-axis tile: matchesAxis is false
     // because moveDx != 0 is required. Plane stays.
-    PlayerCharacter player;
-    EXPECT_EQ(player.GetPlane(), 0);
+    Elevation elev;
+    EXPECT_EQ(elev.plane, 0);
 
-    player.UpdatePlane(10, ElevationAxis::X, 0, 0);
-    EXPECT_EQ(player.GetPlane(), 0);
+    CharacterKinematics::UpdatePlane(elev, 10, ElevationAxis::X, 0, 0);
+    EXPECT_EQ(elev.plane, 0);
 }
 
 // --- CollisionResolver z-aware skip ---------------------------------------
@@ -216,11 +219,17 @@ TEST(CollisionZSkip, TileAbovePlayerPlaneDoesNotBlock)
     tm.SetTileCollision(5, 5, true);
     tm.SetElevation(5, 5, 10);
 
-    PlayerCharacter player;
-    EXPECT_EQ(player.GetPlane(), 0);
+    Elevation elev;
+    Hitbox hitbox;
+    EXPECT_EQ(elev.plane, 0);
 
-    bool blocked = player.GetCollision().CollidesWithTilesStrict(
-        FeetAtTile(5, 5), &tm, /*moveDx=*/0, /*moveDy=*/0, /*diagonalInput=*/false);
+    bool blocked = CollisionSystem::CollidesWithTilesStrict(hitbox,
+                                                            FeetAtTile(5, 5),
+                                                            &tm,
+                                                            /*moveDx=*/0,
+                                                            /*moveDy=*/0,
+                                                            /*diagonalInput=*/false,
+                                                            elev.plane);
     EXPECT_FALSE(blocked);
 }
 
@@ -232,14 +241,20 @@ TEST(CollisionZSkip, TileAtPlayerPlaneStillBlocks)
     tm.SetTileCollision(5, 5, true);
     tm.SetElevation(5, 5, 10);
 
-    PlayerCharacter player;
+    Elevation elev;
+    Hitbox hitbox;
     // Climb to plane 10 via a small ramp step that respects the gate.
-    player.UpdatePlane(4, ElevationAxis::X, 1, 0);
-    player.UpdatePlane(10, ElevationAxis::X, 1, 0);
-    ASSERT_EQ(player.GetPlane(), 10);
+    CharacterKinematics::UpdatePlane(elev, 4, ElevationAxis::X, 1, 0);
+    CharacterKinematics::UpdatePlane(elev, 10, ElevationAxis::X, 1, 0);
+    ASSERT_EQ(elev.plane, 10);
 
-    bool blocked = player.GetCollision().CollidesWithTilesStrict(
-        FeetAtTile(5, 5), &tm, /*moveDx=*/0, /*moveDy=*/0, /*diagonalInput=*/false);
+    bool blocked = CollisionSystem::CollidesWithTilesStrict(hitbox,
+                                                            FeetAtTile(5, 5),
+                                                            &tm,
+                                                            /*moveDx=*/0,
+                                                            /*moveDy=*/0,
+                                                            /*diagonalInput=*/false,
+                                                            elev.plane);
     EXPECT_TRUE(blocked);
 }
 
@@ -251,9 +266,10 @@ TEST(CollisionZSkip, GroundWallBlocksAtAnyPlane)
     tm.SetTileCollision(5, 5, true);
     // elev defaults to 0
 
-    PlayerCharacter player;
+    Elevation elev;
+    Hitbox hitbox;
     // Plane stays 0 by default - wall blocks at same plane.
     bool blocked =
-        player.GetCollision().CollidesWithTilesStrict(FeetAtTile(5, 5), &tm, 0, 0, false);
+        CollisionSystem::CollidesWithTilesStrict(hitbox, FeetAtTile(5, 5), &tm, 0, 0, false, elev.plane);
     EXPECT_TRUE(blocked);
 }
