@@ -1,27 +1,36 @@
 #pragma once
 
+#include "AssetRegistry.hpp"
 #include "CameraController.hpp"
+#include "CharacterDirection.hpp"
 #include "Console.hpp"
 #include "DialogueManager.hpp"
+#include "DialogueStore.hpp"
 #include "Editor.hpp"
+#include "EntityStore.hpp"
 #include "GameMode.hpp"
 #include "GameStateManager.hpp"
 #include "IRenderer.hpp"
 #include "KeyToggle.hpp"
 #include "MenuLogic.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "NpcIdle.hpp"
 #include "ParticleSystem.hpp"
-#include "PlayerCharacter.hpp"
+#include "RenderDrawable.hpp"
 #include "RendererAPI.hpp"
 #include "RendererFactory.hpp"
 #include "SkyRenderer.hpp"
+#include "TextureStore.hpp"
 #include "Tilemap.hpp"
 #include "TimeManager.hpp"
 #include "ViewScaling.hpp"
+#include "WorldServices.hpp"
+
+#include <ecs.hpp>
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -50,22 +59,45 @@ struct FPSCounter
  */
 struct DialogueSnapState
 {
-    bool active = false;                          ///< Whether snap animation is in progress
-    float timer = 0.0f;                           ///< Elapsed time during snap animation
-    float duration = 0.4f;                        ///< Total snap animation duration in seconds
-    glm::vec2 playerStart{0.0f};                  ///< Player position at snap start
-    glm::vec2 playerTarget{0.0f};                 ///< Player target position (facing NPC)
-    glm::vec2 npcStart{0.0f};                     ///< NPC position at snap start
-    glm::vec2 npcTarget{0.0f};                    ///< NPC target position (facing player)
-    bool hasPlayerTile = true;                    ///< Whether player has a valid target tile
-    int playerTileX = 0;                          ///< Player target tile column
-    int playerTileY = 0;                          ///< Player target tile row
-    int npcTileX = 0;                             ///< NPC target tile column
-    int npcTileY = 0;                             ///< NPC target tile row
-    Direction playerFacing = Direction::DOWN;     ///< Player facing after snap
-    NPCDirection npcFacing = NPCDirection::DOWN;  ///< NPC facing after snap
-    bool prefersTree = false;                     ///< Use branching tree dialogue after snap
-    std::string fallbackText;                     ///< Simple text if no tree available
+    bool active = false;                       ///< Whether snap animation is in progress
+    float timer = 0.0f;                        ///< Elapsed time during snap animation
+    float duration = 0.4f;                     ///< Total snap animation duration in seconds
+    glm::vec2 playerStart{0.0f};               ///< Player position at snap start
+    glm::vec2 playerTarget{0.0f};              ///< Player target position (facing NPC)
+    glm::vec2 npcStart{0.0f};                  ///< NPC position at snap start
+    glm::vec2 npcTarget{0.0f};                 ///< NPC target position (facing player)
+    bool hasPlayerTile = true;                 ///< Whether player has a valid target tile
+    int playerTileX = 0;                       ///< Player target tile column
+    int playerTileY = 0;                       ///< Player target tile row
+    int npcTileX = 0;                          ///< NPC target tile column
+    int npcTileY = 0;                          ///< NPC target tile row
+    Direction playerFacing = Direction::DOWN;  ///< Player facing after snap
+    Direction npcFacing = Direction::DOWN;     ///< NPC facing after snap
+    bool prefersTree = false;                  ///< Use branching tree dialogue after snap
+    std::string fallbackText;                  ///< Simple text if no tree available
+};
+
+/**
+ * @struct DialogueUiState
+ * @brief Presentation state of the single active conversation.
+ * @author Alex (https://github.com/lextpf)
+ *
+ * Groups the formerly-loose Game members describing the one active dialogue. The
+ * branching-tree runtime lives in @ref DialogueManager and the per-NPC tree data
+ * in the @ref Dialogue component; this is just the simple-text + pagination +
+ * fade/typewriter + snap presentation. The speaker is referenced by @ref npcId
+ * (a stable instanceId that survives despawn, unlike an entity handle).
+ */
+struct DialogueUiState
+{
+    bool inDialogue = false;    ///< Simple-dialogue mode active.
+    std::uint64_t npcId = 0;    ///< Instance id of the NPC being talked to (0 = none).
+    std::string text;           ///< Current simple-dialogue text.
+    int page = 0;               ///< Current page (pagination).
+    int totalPages = 1;         ///< Total pages (cached during render).
+    float boxFadeTimer = 0.0f;  ///< Dialogue-box fade-in timer (seconds).
+    float charReveal = -1.0f;   ///< Typewriter char count (<0 = fully revealed).
+    DialogueSnapState snap;     ///< Pre-dialogue snap-alignment animation state.
 };
 
 /**
@@ -162,8 +194,9 @@ struct DialogueSnapState
  *
  * Game((Game)):::core
  * Game --> Tilemap:::world
- * Game --> Player[PlayerCharacter]:::entity
- * Game --> NPCs[vector of NPC]:::entity
+ * Game --> World[ECS registry]:::entity
+ * World --> Player[player entity]:::entity
+ * World --> NPCs[NPC entities]:::entity
  * Game --> Renderer[IRenderer]:::render
  * Game --> Window[GLFW]:::input
  * Tilemap --> CollisionMap:::world
@@ -179,7 +212,7 @@ struct DialogueSnapState
  * g.Shutdown();    // Release resources
  * @endcode
  *
- * @see PlayerCharacter, Tilemap, IRenderer
+ * @see PlayerSystem, Tilemap, IRenderer
  */
 class Game
 {
@@ -337,19 +370,19 @@ public:
         if (treeActive)
         {
             m_DialogueManager.EndDialogue();
-            m_DialoguePage = 0;
+            m_DialogueUi.page = 0;
         }
-        if (m_InDialogue)
+        if (m_DialogueUi.inDialogue)
         {
-            m_InDialogue = false;
-            m_DialogueText.clear();
+            m_DialogueUi.inDialogue = false;
+            m_DialogueUi.text.clear();
         }
-        if (m_DialogueNPCIndex >= 0 && m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()))
+        if (const ecs::entity dialogueNpc = FindNPCById(m_DialogueUi.npcId))
         {
-            m_NPCs[static_cast<std::size_t>(m_DialogueNPCIndex)].SetStopped(false);
+            m_World.get<NpcIdle>(dialogueNpc).isStopped = false;
         }
-        m_DialogueNPCIndex = -1;
-        m_DialogueSnap.active = false;
+        m_DialogueUi.npcId = 0;
+        m_DialogueUi.snap.active = false;
     }
 
     /**
@@ -390,16 +423,16 @@ public:
      * Read by the developer console's `dialogue.active` command and used
      * by `npc.despawn` to refuse despawning the speaker mid-conversation.
      */
-    bool IsInSimpleDialogue() const { return m_InDialogue; }
+    bool IsInSimpleDialogue() const { return m_DialogueUi.inDialogue; }
 
     /// @brief Current simple-dialogue text (empty when no simple dialogue active).
-    const std::string& GetSimpleDialogueText() const { return m_DialogueText; }
+    const std::string& GetSimpleDialogueText() const { return m_DialogueUi.text; }
 
     /**
-     * @brief Index into m_NPCs of the NPC currently in dialogue.
-     * @return Vector index, or -1 if no NPC is currently the speaker.
+     * @brief Instance id of the NPC currently in dialogue.
+     * @return NPC instance id, or 0 if no NPC is currently the speaker.
      */
-    int GetDialogueNPCIndex() const { return m_DialogueNPCIndex; }
+    std::uint64_t GetDialogueNPCId() const { return m_DialogueUi.npcId; }
 
     /**
      * @brief GLFW scroll callback for tile picker navigation.
@@ -429,7 +462,7 @@ public:
 private:
     /// Console is an authorised mutator of game state (it's the developer's
     /// REPL). Granting friendship lets the default command bindings reach
-    /// m_Player / m_GameState / m_TimeManager / m_Tilemap / m_NPCs without
+    /// m_Player / m_GameState / m_TimeManager / m_Tilemap / m_World without
     /// adding accessors that exist solely for console use.
     friend class Console;
 
@@ -521,10 +554,17 @@ private:
      */
     void ReleaseDialogueNPC();
 
-    /// @brief Validated access to the NPC currently in dialogue.
-    /// @pre m_DialogueNPCIndex is a valid index into m_NPCs.
-    NonPlayerCharacter& GetDialogueNPC();
-    const NonPlayerCharacter& GetDialogueNPC() const;
+    /// @brief Whether m_DialogueUi.npcId currently resolves to a live NPC.
+    bool HasDialogueNPC() const;
+
+    /// @brief Resolve an NPC instance id to its entity handle.
+    /// @return The NPC entity in @ref m_World, or @c ecs::entity{} if no live NPC
+    ///         has that id (including id 0). Delegates to the registry seam
+    ///         (@ref EntityStore::FindById); the scan is O(NPC count).
+    /// @note Defined inline so header-only callers (e.g. EndAnyDialogue) need no
+    ///       out-of-line translation unit.
+    ecs::entity FindNPCById(std::uint64_t id) { return EntityStore::FindById(m_World, id); }
+    ecs::entity FindNPCById(std::uint64_t id) const { return EntityStore::FindById(m_World, id); }
 
     /**
      * @brief Close simple (non-tree) dialogue and release the NPC.
@@ -615,12 +655,6 @@ private:
     /// @}
 
     /**
-     * @brief Set up the snap alignment animation before starting dialogue.
-     * @param npcIndex Index into m_NPCs of the NPC to talk to.
-     */
-    void BeginDialogueSnap(size_t npcIndex);
-
-    /**
      * @brief Find a valid tile for the player to stand on during dialogue snap.
      *
      * Searches cardinal directions from the NPC tile, preferring the direction
@@ -692,13 +726,22 @@ private:
      * @brief Core game objects.
      * @{
      */
-    Tilemap m_Tilemap;                       ///< The game world
-    PlayerCharacter m_Player;                ///< Player-controlled character
-    std::vector<NonPlayerCharacter> m_NPCs;  ///< All NPCs in the world
-    ParticleSystem m_Particles;              ///< Ambient particle effects (fireflies, etc.)
-    TimeManager m_TimeManager;               ///< Day/night cycle time management
-    SkyRenderer m_SkyRenderer;               ///< Sky rendering (sun, moon, stars)
-    std::unique_ptr<IRenderer> m_Renderer;   ///< Graphics renderer
+    TextureStore m_TextureStore;    ///< Owns sprite textures (player/NPC) keyed by handle.
+    DialogueStore m_DialogueStore;  ///< Owns NPC dialogue trees keyed by handle.
+    AssetRegistry m_Assets;         ///< Character/NPC sprite asset paths (demoted statics).
+    /// @brief The world's NPC-AI random source, owned here and published into
+    /// globals() via WorldServices::npcRng so NpcAiSystem draws from one
+    /// world-scoped stream (replacing its former file-local static engine).
+    std::mt19937 m_NpcRng{std::random_device{}()};
+    /// @brief The ECS world. Shared services live in its globals() (WorldServices);
+    /// the entity migration (player/NPCs -> registry) is in progress.
+    ecs::registry m_World;
+    Tilemap m_Tilemap;                      ///< The game world
+    ecs::entity m_PlayerEntity{};           ///< Player entity in m_World (PlayerTag + components)
+    ParticleSystem m_Particles;             ///< Ambient particle effects (fireflies, etc.)
+    TimeManager m_TimeManager;              ///< Day/night cycle time management
+    SkyRenderer m_SkyRenderer;              ///< Sky rendering (sun, moon, stars)
+    std::unique_ptr<IRenderer> m_Renderer;  ///< Graphics renderer
     RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type
     std::vector<std::string> m_FontCandidates;     ///< Project-configured renderer font candidates.
     std::string m_SaveMapPath = "rift.save.json";  ///< Project-configured save/load JSON path.
@@ -737,31 +780,17 @@ private:
 
     /**
      * @name Collision Resolution
-     * @brief For movement rollback.
+     * @brief Per-frame NPC-collision scratch (the player plane is derived inline in
+     *        ProcessPlayerMovement; NPCs in NpcAiSystem::UpdateAll).
      * @{
      */
-    glm::vec2 m_PlayerPreviousPosition{0.0f};  ///< Position before movement (for rollback)
-    std::vector<glm::vec2> m_NpcPositions;     ///< Pre-allocated for per-frame NPC collision checks
+    std::vector<glm::vec2> m_NpcPositions;  ///< Pre-allocated for per-frame NPC collision checks
     /** @} */
 
     /// @name Render Sorting
     /// @brief Y-sorted render list reused each frame to avoid allocation.
     /// @{
-    struct RenderItem
-    {
-        enum Type
-        {
-            PLAYER_TOP = 0,
-            PLAYER_BOTTOM = 1,
-            NPC_TOP = 2,
-            NPC_BOTTOM = 3,
-            TILE = 4
-        } type;
-        float sortY;
-        Tilemap::YSortPlusTile tile;
-        const NonPlayerCharacter* npc;
-    };
-    std::vector<RenderItem> m_RenderList;
+    std::vector<Drawable> m_RenderList;
     /// @}
 
     /**
@@ -769,17 +798,9 @@ private:
      * @brief NPC dialogue UI state.
      * @{
      */
-    bool m_InDialogue = false;            ///< Dialogue mode active (simple dialogue)
-    int m_DialogueNPCIndex = -1;          ///< Index into m_NPCs of NPC being talked to (-1 = none)
-    std::string m_DialogueText;           ///< Current dialogue text (simple dialogue)
-    DialogueManager m_DialogueManager;    ///< Branching dialogue tree manager
-    GameStateManager m_GameState;         ///< Game flags and state for consequences
-    int m_DialoguePage = 0;               ///< Current page of dialogue text (for pagination)
-    int m_DialogueTotalPages = 1;         ///< Total pages (cached during rendering)
-    float m_DialogueBoxFadeTimer = 0.0f;  ///< Fade-in timer for dialogue box (seconds)
-    float m_DialogueCharReveal = -1.0f;   ///< Typewriter char count (<0 = fully revealed)
-
-    DialogueSnapState m_DialogueSnap;  ///< Snap alignment animation state
+    DialogueUiState m_DialogueUi;       ///< Active-conversation presentation state (grouped)
+    DialogueManager m_DialogueManager;  ///< Branching dialogue tree manager
+    GameStateManager m_GameState;       ///< Game flags and state for consequences
     /** @} */
 
     /// @name Input Toggle State

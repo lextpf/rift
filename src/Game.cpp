@@ -5,16 +5,35 @@
 #include "Game.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "AnimationState.hpp"
+#include "CharacterConstants.hpp"
+#include "CharacterKinematics.hpp"
+#include "CollisionGeometry.hpp"
 #include "DrawTracer.hpp"
+#include "Elevation.hpp"
+#include "ElevationAxis.hpp"
+#include "Facing.hpp"
+#include "Identity.hpp"
 #include "Logger.hpp"
 #include "MathConstants.hpp"
 #include "MathUtils.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "Motor.hpp"
+#include "NpcAiSystem.hpp"
+#include "NpcIdle.hpp"
+#include "NpcRender.hpp"
+#include "NpcTag.hpp"
 #include "OpenGLRenderer.hpp"
-#include "PlayerCharacter.hpp"
+#include "Patrol.hpp"
+#include "PatrolRoute.hpp"
+#include "PlayerModes.hpp"
+#include "PlayerMovementSystem.hpp"
+#include "PlayerSprite.hpp"
+#include "PlayerSystem.hpp"
 #include "PostFXParams.hpp"
 #include "ProjectManifest.hpp"
 #include "RendererFactory.hpp"
+#include "Speed.hpp"
+#include "Transform.hpp"
 #include "Version.hpp"
 
 #include <glad/glad.h>
@@ -94,6 +113,23 @@ Game::~Game()
 
 bool Game::Initialize()
 {
+    // Route ECS contract violations (stale handle, duplicate add, iteration
+    // lock) into the Rift log instead of the library default (stderr + abort),
+    // so a breach lands in rift.txt with context. Capture-free lambda decays to
+    // the required function pointer. Installed only here (the game), never in
+    // test setup, since the handler slot is process-global.
+    ecs::set_violation_handler([](const char* message) { Logger::Error("ECS", message); });
+
+    // Publish the shared services into the ECS world's globals() singleton so the
+    // systems (and spawn) reach them through the world rather than via per-entity
+    // back-pointers. The services outlive the registry (Game owns both).
+    m_World.globals().obtain<WorldServices>() =
+        WorldServices{&m_TextureStore, &m_DialogueStore, &m_Assets, &m_NpcRng, &m_GameState};
+
+    // Mint the player entity (PlayerTag + the player components). Sprite sheets are
+    // bound later by PlayerSystem::SwitchCharacter, which reads the services above.
+    m_PlayerEntity = EntityStore::SpawnPlayer(m_World);
+
     Logger::Info(LOG_SUBSYSTEM, "Initialize() step 1: Initializing GLFW...");
 
     if (!glfwInit())
@@ -257,8 +293,7 @@ bool Game::Initialize()
     std::vector<std::string> npcSpritePaths = manifest.ResolvePathStrings(manifest.npcSprites);
     for (const std::string& npcSpritePath : npcSpritePaths)
     {
-        NonPlayerCharacter::SetNpcAsset(NonPlayerCharacter::TypeFromSpritePath(npcSpritePath),
-                                        npcSpritePath);
+        m_Assets.SetNpcAsset(NpcType::FromSpritePath(npcSpritePath), npcSpritePath);
     }
     m_Editor.Initialize(npcSpritePaths);
 
@@ -282,7 +317,7 @@ bool Game::Initialize()
         m_ConfiguredCharacters.push_back(*characterType);
         for (const auto& [spriteType, path] : character.sprites)
         {
-            PlayerCharacter::SetCharacterAsset(
+            m_Assets.SetCharacterAsset(
                 *characterType, spriteType, manifest.ResolvePathString(path));
         }
     }
@@ -290,13 +325,13 @@ bool Game::Initialize()
     m_LastFrameTime = static_cast<float>(glfwGetTime());
 
     // Bring particles online; tile size and zones are set in LoadTitleScreenWorld.
-    m_Particles.LoadTextures();
+    m_Particles.LoadTextures(m_TextureStore);
     m_Particles.SetTileSize(m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
     m_Particles.SetMaxParticlesPerZone(50);
 
     m_TimeManager.Initialize();
     m_TimeManager.SetDayDuration(1200.0f);  // 20 real minutes = 1 in-game day
-    m_SkyRenderer.Initialize();
+    m_SkyRenderer.Initialize(m_TextureStore);
 
     m_DialogueManager.Initialize(&m_GameState);
 
@@ -510,7 +545,7 @@ void Game::Update(float deltaTime)
 
     if (isPlaying)
     {
-        m_Player.Update(deltaTime);
+        PlayerSystem::Update(m_World, m_PlayerEntity, deltaTime);
         m_TimeManager.Update(deltaTime);  // Frozen in Title so night setting holds.
     }
     m_SkyRenderer.Update(deltaTime, m_TimeManager);
@@ -538,7 +573,7 @@ void Game::Update(float deltaTime)
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
     // Bottom-center of the player sprite; used by PollenStorm / FallingLeaves
     // for hitbox-anchored avoidance.
-    m_Particles.SetPlayerPosition(m_Player.GetPosition());
+    m_Particles.SetPlayerPosition(m_World.get<Transform>(m_PlayerEntity).position);
     // Push active weather so the particle system can drive global weather
     // spawning (rain/snow/ash/etc.) across the viewport.
     m_Particles.SetWeatherState(&GetWeatherDefinition(m_TimeManager.GetWeather()),
@@ -561,124 +596,116 @@ void Game::Update(float deltaTime)
         return;
     }
 
-    glm::vec2 playerPos = m_Player.GetPosition();
+    glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
 
-    if (m_DialogueSnap.active)
+    if (m_DialogueUi.snap.active)
     {
-        if (m_DialogueNPCIndex < 0 || m_DialogueNPCIndex >= static_cast<int>(m_NPCs.size()))
+        if (!HasDialogueNPC())
         {
-            m_DialogueSnap.active = false;
+            m_DialogueUi.snap.active = false;
         }
         else
         {
-            m_DialogueSnap.timer += deltaTime;
-            float duration = std::max(0.05f, m_DialogueSnap.duration);
-            float t = std::clamp(m_DialogueSnap.timer / duration, 0.0f, 1.0f);
+            const ecs::entity npcE = FindNPCById(m_DialogueUi.npcId);
+            m_DialogueUi.snap.timer += deltaTime;
+            float duration = std::max(0.05f, m_DialogueUi.snap.duration);
+            float t = std::clamp(m_DialogueUi.snap.timer / duration, 0.0f, 1.0f);
             float smoothT = t * t * (3.0f - 2.0f * t);  // Smoothstep easing
 
             glm::vec2 blendedPlayer =
-                m_DialogueSnap.playerStart +
-                (m_DialogueSnap.playerTarget - m_DialogueSnap.playerStart) * smoothT;
-            glm::vec2 blendedNPC = m_DialogueSnap.npcStart +
-                                   (m_DialogueSnap.npcTarget - m_DialogueSnap.npcStart) * smoothT;
+                m_DialogueUi.snap.playerStart +
+                (m_DialogueUi.snap.playerTarget - m_DialogueUi.snap.playerStart) * smoothT;
+            glm::vec2 blendedNPC =
+                m_DialogueUi.snap.npcStart +
+                (m_DialogueUi.snap.npcTarget - m_DialogueUi.snap.npcStart) * smoothT;
 
-            m_Player.SetPositionRaw(blendedPlayer);
-            GetDialogueNPC().SetPosition(blendedNPC);
-            GetDialogueNPC().SetStopped(true);
-            GetDialogueNPC().ResetAnimationToIdle();
+            PlayerSystem::SetPositionRaw(m_World, m_PlayerEntity, blendedPlayer);
+            m_World.get<Transform>(npcE).position = blendedNPC;
+            m_World.get<NpcIdle>(npcE).isStopped = true;
+            CharacterKinematics::ResetAnimation(m_World.get<AnimationState>(npcE));
             playerPos = blendedPlayer;
 
             if (t >= 1.0f)
             {
-                if (m_DialogueSnap.hasPlayerTile)
+                if (m_DialogueUi.snap.hasPlayerTile)
                 {
-                    m_Player.SetTilePosition(m_DialogueSnap.playerTileX,
-                                             m_DialogueSnap.playerTileY);
+                    PlayerSystem::SetTilePosition(m_World,
+                                                  m_PlayerEntity,
+                                                  m_DialogueUi.snap.playerTileX,
+                                                  m_DialogueUi.snap.playerTileY);
                 }
                 else
                 {
-                    m_Player.SetPositionRaw(m_DialogueSnap.playerTarget);
+                    PlayerSystem::SetPositionRaw(
+                        m_World, m_PlayerEntity, m_DialogueUi.snap.playerTarget);
                 }
-                GetDialogueNPC().SetTilePosition(
-                    m_DialogueSnap.npcTileX, m_DialogueSnap.npcTileY, 16, true);
+                EntityStore::SetNpcTile(m_World.get<Transform>(npcE),
+                                        m_World.get<Patrol>(npcE),
+                                        m_World.get<PatrolRoute>(npcE),
+                                        m_DialogueUi.snap.npcTileX,
+                                        m_DialogueUi.snap.npcTileY,
+                                        16,
+                                        /*preserveRoute=*/true);
 
-                m_Player.Stop();
-                m_Player.SetDirection(m_DialogueSnap.playerFacing);
-                GetDialogueNPC().SetDirection(m_DialogueSnap.npcFacing);
-                GetDialogueNPC().SetStopped(true);
-                GetDialogueNPC().ResetAnimationToIdle();
+                PlayerSystem::Stop(m_World, m_PlayerEntity);
+                // Re-derive the player's logical plane for the snapped-to tile: a snap
+                // can cross an elevation boundary, and ProcessPlayerMovement's plane
+                // derive is gated off during a snap. (The NPC is repositioned the same
+                // way; its plane re-derives next frame in NpcAiSystem::UpdateAll.)
+                CharacterKinematics::DerivePlane(m_World.get<Elevation>(m_PlayerEntity),
+                                                 m_DialogueUi.snap.playerStart,
+                                                 m_World.get<Transform>(m_PlayerEntity).position,
+                                                 m_Tilemap);
+                m_World.get<Facing>(m_PlayerEntity).dir = m_DialogueUi.snap.playerFacing;
+                m_World.get<Facing>(npcE).dir = m_DialogueUi.snap.npcFacing;
+                m_World.get<NpcIdle>(npcE).isStopped = true;
+                CharacterKinematics::ResetAnimation(m_World.get<AnimationState>(npcE));
 
                 bool startedTree = false;
-                if (m_DialogueSnap.prefersTree)
+                if (m_DialogueUi.snap.prefersTree)
                 {
-                    startedTree = m_DialogueManager.StartDialogue(&GetDialogueNPC());
+                    startedTree = m_DialogueManager.StartDialogue(npcE, m_World);
                     if (startedTree)
                     {
-                        m_DialoguePage = 0;
-                        m_DialogueBoxFadeTimer = 0.0f;
-                        m_DialogueCharReveal = 0.0f;
+                        m_DialogueUi.page = 0;
+                        m_DialogueUi.boxFadeTimer = 0.0f;
+                        m_DialogueUi.charReveal = 0.0f;
                     }
                 }
                 if (!startedTree)
                 {
-                    m_InDialogue = true;
-                    m_DialogueText = m_DialogueSnap.fallbackText;
+                    m_DialogueUi.inDialogue = true;
+                    m_DialogueUi.text = m_DialogueUi.snap.fallbackText;
                 }
 
-                m_DialogueSnap.active = false;
-                playerPos = m_Player.GetPosition();
+                m_DialogueUi.snap.active = false;
+                playerPos = m_World.get<Transform>(m_PlayerEntity).position;
             }
         }
     }
 
     if (m_DialogueManager.IsActive())
     {
-        m_DialogueBoxFadeTimer += deltaTime;
-        if (m_DialogueCharReveal >= 0.0f)
-            m_DialogueCharReveal += 35.0f * deltaTime;
+        m_DialogueUi.boxFadeTimer += deltaTime;
+        if (m_DialogueUi.charReveal >= 0.0f)
+            m_DialogueUi.charReveal += 35.0f * deltaTime;
     }
 
-    // Update player logical plane (z-axis), axis-aware.
-    // Movement direction is this frame's delta vs m_PlayerPreviousPosition,
-    // which ProcessPlayerMovement captures right before m_Player.Move().
+    // If the dialogue speaker was removed (editor/console/nav) its id no longer
+    // resolves; drop the stale reference so nothing keeps it pinned. The old
+    // index-based identity could silently retarget to a different NPC here.
+    if (m_DialogueUi.npcId != 0 && !HasDialogueNPC())
     {
-        glm::vec2 movement = playerPos - m_PlayerPreviousPosition;
-        int dx = movement.x > 0.01f ? 1 : (movement.x < -0.01f ? -1 : 0);
-        int dy = movement.y > 0.01f ? 1 : (movement.y < -0.01f ? -1 : 0);
-
-        int playerTileX = 0;
-        int playerTileY = 0;
-        m_Tilemap.WorldToTileCoord(playerPos.x, playerPos.y, playerTileX, playerTileY);
-        int destElev = m_Tilemap.GetElevation(playerTileX, playerTileY);
-        ElevationAxis destAxis = m_Tilemap.GetElevationAxisAt(playerTileX, playerTileY);
-        m_Player.UpdatePlane(destElev, destAxis, dx, dy);
+        m_DialogueUi.npcId = 0;
     }
 
-    // Update NPCs; freeze the one in dialogue.
-    bool inAnyDialogue = m_InDialogue || m_DialogueManager.IsActive() || m_DialogueSnap.active;
-    for (auto& npc : m_NPCs)
-    {
-        if (inAnyDialogue && m_DialogueNPCIndex >= 0 &&
-            m_DialogueNPCIndex < static_cast<int>(m_NPCs.size()) && &GetDialogueNPC() == &npc)
-        {
-            continue;
-        }
-        glm::vec2 npcPosBefore = npc.GetPosition();
-        npc.Update(deltaTime, &m_Tilemap, &playerPos);
-
-        // Derive NPC plane the same way as the player.
-        glm::vec2 npcPosAfter = npc.GetPosition();
-        glm::vec2 npcMovement = npcPosAfter - npcPosBefore;
-        int ndx = npcMovement.x > 0.01f ? 1 : (npcMovement.x < -0.01f ? -1 : 0);
-        int ndy = npcMovement.y > 0.01f ? 1 : (npcMovement.y < -0.01f ? -1 : 0);
-
-        int npcTileX = 0;
-        int npcTileY = 0;
-        m_Tilemap.WorldToTileCoord(npcPosAfter.x, npcPosAfter.y, npcTileX, npcTileY);
-        int npcDestElev = m_Tilemap.GetElevation(npcTileX, npcTileY);
-        ElevationAxis npcDestAxis = m_Tilemap.GetElevationAxisAt(npcTileX, npcTileY);
-        npc.UpdatePlane(npcDestElev, npcDestAxis, ndx, ndy);
-    }
+    // Update every NPC's patrol/idle AI + logical plane; freeze the active dialogue
+    // speaker (id 0 = nobody). The per-NPC orchestration lives in NpcAiSystem::UpdateAll,
+    // symmetric with the player's PlayerSystem::Move/Update path.
+    const bool inAnyDialogue =
+        m_DialogueUi.inDialogue || m_DialogueManager.IsActive() || m_DialogueUi.snap.active;
+    const std::uint64_t frozenNpcId = inAnyDialogue ? m_DialogueUi.npcId : 0;
+    NpcAiSystem::UpdateAll(m_World, m_Tilemap, playerPos, m_NpcRng, frozenNpcId, deltaTime);
 
     m_Editor.Update(deltaTime, MakeEditorContext());
 
@@ -698,7 +725,7 @@ void Game::Update(float deltaTime)
     {
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
-    if (m_DialogueManager.IsActive() || m_InDialogue || m_DialogueSnap.active)
+    if (m_DialogueManager.IsActive() || m_DialogueUi.inDialogue || m_DialogueUi.snap.active)
     {
         arrowUp = arrowDown = arrowLeft = arrowRight = false;
     }
@@ -722,14 +749,15 @@ void Game::Update(float deltaTime)
 
     // Follow actual player position while moving (smooth), tile center when idle
     // (settles on the grid).
-    glm::vec2 playerCamPos = m_Player.GetPosition();
+    glm::vec2 playerCamPos = m_World.get<Transform>(m_PlayerEntity).position;
     glm::vec2 playerVisualCenter =
-        glm::vec2(playerCamPos.x, playerCamPos.y - PlayerCharacter::HITBOX_HEIGHT);
+        glm::vec2(playerCamPos.x, playerCamPos.y - CharacterConstants::HITBOX_HEIGHT);
     glm::vec2 smoothTarget = playerVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
-    glm::vec2 playerBottomTileCenter = m_Player.GetCurrentTileCenter();
+    glm::vec2 playerBottomTileCenter = PlayerMovementSystem::CurrentTileCenter(
+        m_World.get<Transform>(m_PlayerEntity).position, 16.0f);
     glm::vec2 tileVisualCenter = glm::vec2(
-        playerBottomTileCenter.x, playerBottomTileCenter.y - PlayerCharacter::HITBOX_HEIGHT);
+        playerBottomTileCenter.x, playerBottomTileCenter.y - CharacterConstants::HITBOX_HEIGHT);
     glm::vec2 gridTarget = tileVisualCenter - glm::vec2(worldWidth / 2.0f, worldHeight / 2.0f);
 
     glm::vec2 snappedTarget = wasdPressed ? smoothTarget : gridTarget;
@@ -738,6 +766,7 @@ void Game::Update(float deltaTime)
     camParams.deltaTime = deltaTime;
     camParams.playerFollowTarget = snappedTarget;
     camParams.playerMoving = wasdPressed;
+    camParams.playerVelocity = m_World.get<Motor>(m_PlayerEntity).velocity;
     camParams.arrowUp = arrowUp;
     camParams.arrowDown = arrowDown;
     camParams.arrowLeft = arrowLeft;
@@ -755,44 +784,8 @@ void Game::Update(float deltaTime)
     camParams.tileHeight = m_Tilemap.GetTileHeight();
     m_Camera.Update(camParams);
 
-    // Player-NPC AABB collision. Both use bottom-center anchored 16x16 hitboxes;
-    // overlapping NPCs are stopped to prevent visual overlap.
-    const float PLAYER_HALF_W = PlayerCharacter::HITBOX_WIDTH * 0.5f;
-    const float PLAYER_BOX_H = PlayerCharacter::HITBOX_HEIGHT;
-
-    // Build an AABB from a bottom-center anchor (feet); box extends up and out.
-    auto makePlayerAABB = [&](const glm::vec2& anchorPos) -> auto
-    {
-        struct AABB
-        {
-            float minX, minY, maxX, maxY;
-        };
-
-        AABB box;
-        box.minX = anchorPos.x - PLAYER_HALF_W;
-        box.maxX = anchorPos.x + PLAYER_HALF_W;
-        box.maxY = anchorPos.y;
-        box.minY = anchorPos.y - PLAYER_BOX_H;
-        return box;
-    };
-
-    auto playerBox = makePlayerAABB(playerPos);
-    auto overlaps = [](const auto& a, const auto& b)
-    { return (a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY); };
-
-    // Check for player-NPC collisions and stop NPCs while overlapping.
-    for (auto& npc : m_NPCs)
-    {
-        auto npcBox = makePlayerAABB(npc.GetPosition());
-        if (overlaps(playerBox, npcBox))
-        {
-            npc.SetStopped(true);
-        }
-        else
-        {
-            npc.SetStopped(false);
-        }
-    }
+    // Stop NPCs overlapping the player (visual de-overlap), after all positions settle.
+    NpcAiSystem::ApplyPlayerOverlapStop(m_World, playerPos);
 }
 
 void Game::Render()
@@ -925,7 +918,7 @@ void Game::Render()
     // objects lower on screen render on top. Characters split into top/bottom
     // halves for proper tile occlusion.
     m_RenderList.clear();
-    size_t estimatedSize = ySortPlusTiles.size() + m_NPCs.size() * 2 + 2;
+    size_t estimatedSize = ySortPlusTiles.size() + EntityStore::Count(m_World) * 2 + 2;
     if (m_RenderList.capacity() < estimatedSize)
     {
         m_RenderList.reserve(estimatedSize);
@@ -951,102 +944,62 @@ void Game::Render()
             m_Renderer->IsPointBehindSphere(corners[3]))
             continue;
 
-        RenderItem item;
-        item.type = RenderItem::TILE;
+        Drawable item;
+        item.cls = DrawableClass::Tile;
         item.sortY = tile.anchorY;
+        item.isYSortMinus = tile.ySortMinus;
+        item.tieBias = TIE_TILE;
         item.tile = tile;
-        item.npc = nullptr;
         m_RenderList.push_back(item);
     }
 
     // NPCs split into bottom/top halves for tile occlusion: bottom sorts at the
     // feet anchor, top sorts slightly higher so it can pass behind tall tiles.
     // Skip NPCs behind the sphere when the full globe is visible.
-    for (const auto& npc : m_NPCs)
-    {
-        glm::vec2 npcPos = npc.GetPosition();
-        float screenX = npcPos.x - renderCam.x;
-        float screenY = npcPos.y - renderCam.y;
-        if (m_Renderer->IsPointBehindSphere(glm::vec2(screenX, screenY)))
-            continue;
+    m_World.each<const Transform, const NpcTag>(
+        [&](ecs::entity e, const Transform& xf)
+        {
+            glm::vec2 npcPos = xf.position;
+            float screenX = npcPos.x - renderCam.x;
+            float screenY = npcPos.y - renderCam.y;
+            if (m_Renderer->IsPointBehindSphere(glm::vec2(screenX, screenY)))
+            {
+                return;
+            }
 
-        float anchorY = npcPos.y;
-        RenderItem bottomItem;
-        bottomItem.type = RenderItem::NPC_BOTTOM;
-        bottomItem.sortY = anchorY;
-        bottomItem.tile = {};
-        bottomItem.npc = &npc;
-        m_RenderList.push_back(bottomItem);
-        RenderItem topItem;
-        topItem.type = RenderItem::NPC_TOP;
-        topItem.sortY = anchorY - PlayerCharacter::HALF_HITBOX_HEIGHT;
-        topItem.tile = {};
-        topItem.npc = &npc;
-        m_RenderList.push_back(topItem);
-    }
+            AddNpcDrawables(m_RenderList,
+                            m_World,
+                            e,
+                            npcPos,
+                            CharacterConstants::HALF_HITBOX_HEIGHT,
+                            TIE_NPC_BOTTOM,
+                            TIE_NPC_TOP);
+        });
 
     // Player. Both halves sort at the anchor. Skipped behind the sphere (edge
     // case when zoomed out) and in Title (menu shows a clean scenic world).
     if (!m_Editor.IsActive() && m_GameMode != GameMode::Title)
     {
-        glm::vec2 playerPos = m_Player.GetPosition();
+        glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
         float playerScreenX = playerPos.x - renderCam.x;
         float playerScreenY = playerPos.y - renderCam.y;
         if (!m_Renderer->IsPointBehindSphere(glm::vec2(playerScreenX, playerScreenY)))
         {
-            float playerAnchorY = playerPos.y;
-            RenderItem playerBottomItem;
-            playerBottomItem.type = RenderItem::PLAYER_BOTTOM;
-            playerBottomItem.sortY = playerAnchorY;
-            playerBottomItem.tile = {};
-            playerBottomItem.npc = nullptr;
-            m_RenderList.push_back(playerBottomItem);
-            RenderItem playerTopItem;
-            playerTopItem.type = RenderItem::PLAYER_TOP;
-            playerTopItem.sortY = playerAnchorY;
-            playerTopItem.tile = {};
-            playerTopItem.npc = nullptr;
-            m_RenderList.push_back(playerTopItem);
+            AddPlayerDrawables(m_RenderList,
+                               m_World,
+                               m_PlayerEntity,
+                               playerPos,
+                               0.0f,
+                               TIE_PLAYER_BOTTOM,
+                               TIE_PLAYER_TOP);
         }
     }
 
-    // Lower Y renders first. Y-sort-minus tiles (anchor at top) get a half-tile
-    // offset for fair comparison against entity feet; tight epsilon avoids
-    // transition flicker. On ties, higher enum wins (TILE > PLAYER) so entities
-    // sit in front of terrain at equal depth.
-    constexpr float YSORT_MINUS_OFFSET = 8.0f;
-    constexpr float YSORT_MINUS_EPSILON = 0.1f;
-    constexpr float YSORT_DEPTH_EPSILON = 1.0f;  // ~1px sort-stability band.
-
-    std::stable_sort(
-        m_RenderList.begin(),
-        m_RenderList.end(),
-        [](const RenderItem& a, const RenderItem& b)
-        {
-            bool aIsYSortMinusTile = (a.type == RenderItem::TILE && a.tile.ySortMinus);
-            bool bIsYSortMinusTile = (b.type == RenderItem::TILE && b.tile.ySortMinus);
-
-            bool aIsEntity = (a.type <= RenderItem::NPC_BOTTOM);
-            bool bIsEntity = (b.type <= RenderItem::NPC_BOTTOM);
-
-            if ((aIsYSortMinusTile && bIsEntity) || (bIsYSortMinusTile && aIsEntity))
-            {
-                float aSortY = a.sortY + (aIsYSortMinusTile ? YSORT_MINUS_OFFSET : 0.0f);
-                float bSortY = b.sortY + (bIsYSortMinusTile ? YSORT_MINUS_OFFSET : 0.0f);
-                if (std::abs(aSortY - bSortY) > YSORT_MINUS_EPSILON)
-                {
-                    return aSortY < bSortY;
-                }
-                return a.type < b.type;
-            }
-
-            if (std::abs(a.sortY - b.sortY) > YSORT_DEPTH_EPSILON)
-            {
-                return a.sortY < b.sortY;
-            }
-
-            return a.type > b.type;
-        });
+    // Lower Y renders first; ySortMinus tiles (anchored at top) get a half-tile
+    // offset for fair comparison against entity feet; equal-depth ties resolve
+    // by tieBias so entities sit in front of terrain. The ordering lives in
+    // DrawableDepthLess (RenderDrawable.hpp) so it is unit-tested in isolation.
+    std::stable_sort(m_RenderList.begin(), m_RenderList.end(), DrawableDepthLess);
 
     // Perspective state is sticky across iterations: tiles want it enabled,
     // entities suspended. Flip only on transitions so contiguous runs stay in
@@ -1066,34 +1019,24 @@ void Game::Render()
     bool ySortSuspended = true;
     for (const auto& item : m_RenderList)
     {
-        bool wantSuspend = (item.type != RenderItem::TILE);
+        bool wantSuspend = (item.cls == DrawableClass::Entity);
         if (ySortSuspended != wantSuspend)
         {
             m_Renderer->SuspendPerspective(wantSuspend);
             ySortSuspended = wantSuspend;
         }
-        switch (item.type)
+        if (item.cls == DrawableClass::Entity)
         {
-            case RenderItem::TILE:
-                m_Tilemap.RenderSingleTile(*m_Renderer,
-                                           item.tile.x,
-                                           item.tile.y,
-                                           item.tile.layer,
-                                           m_Camera.GetState().position,
-                                           item.tile.noProjection ? 1 : 0);
-                break;
-            case RenderItem::NPC_BOTTOM:
-                item.npc->RenderBottomHalf(*m_Renderer, m_Camera.GetState().position);
-                break;
-            case RenderItem::NPC_TOP:
-                item.npc->RenderTopHalf(*m_Renderer, m_Camera.GetState().position);
-                break;
-            case RenderItem::PLAYER_BOTTOM:
-                m_Player.RenderBottomHalf(*m_Renderer, m_Camera.GetState().position);
-                break;
-            case RenderItem::PLAYER_TOP:
-                m_Player.RenderTopHalf(*m_Renderer, m_Camera.GetState().position);
-                break;
+            item.drawHalf(item, *m_Renderer, m_Camera.GetState().position, item.topHalf);
+        }
+        else
+        {
+            m_Tilemap.RenderSingleTile(*m_Renderer,
+                                       item.tile.x,
+                                       item.tile.y,
+                                       item.tile.layer,
+                                       m_Camera.GetState().position,
+                                       item.tile.noProjection ? 1 : 0);
         }
     }
     if (!ySortSuspended)
@@ -1210,7 +1153,7 @@ void Game::Render()
     m_Renderer->SetAmbientColor(glm::vec3(1.0f));
 
     // Fallback head text for NPCs without dialogue trees.
-    if (m_InDialogue)
+    if (m_DialogueUi.inDialogue)
     {
         IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
         RenderNPCHeadText();
@@ -1237,7 +1180,7 @@ void Game::Render()
         char fpsText[32];
         snprintf(fpsText, sizeof(fpsText), "FPS: %d", static_cast<int>(m_Fps.currentFps + 0.5f));
 
-        glm::vec2 playerPos = m_Player.GetPosition();
+        glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
         int playerTileX = static_cast<int>(std::floor(playerPos.x / m_Tilemap.GetTileWidth()));
         int playerTileY = static_cast<int>(std::floor(playerPos.y / m_Tilemap.GetTileHeight()));
 
@@ -1611,15 +1554,12 @@ bool Game::SwitchRenderer(RendererAPI api)
         glm::mat4 projection = CameraController::GetOrthoProjection(worldWidth, worldHeight);
         m_Renderer->SetProjection(projection);
 
-        // Re-upload textures to the new renderer.
+        // Re-upload textures to the new renderer. The tileset is a Tilemap
+        // texture; every other texture (player + NPC sprite sheets, plus the
+        // particle + sky procedural textures) now lives in m_TextureStore and
+        // re-uploads in a single pass.
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
-        m_Player.UploadTextures(*m_Renderer);
-        for (auto& npc : m_NPCs)
-        {
-            npc.UploadTextures(*m_Renderer);
-        }
-        m_Particles.UploadTextures(*m_Renderer);
-        m_SkyRenderer.UploadTextures(*m_Renderer);
+        m_TextureStore.UploadAll(*m_Renderer);
 
         // Re-pack characters into the freshly-uploaded atlas. PackCharactersIntoAtlas
         // also re-uploads the tile atlas, so this must run AFTER the per-texture
@@ -1759,17 +1699,10 @@ EditorContext Game::MakeEditorContext()
                          m_ScreenHeight,
                          m_TilesVisibleWidth,
                          m_TilesVisibleHeight,
-                         m_Camera.GetState().position,
-                         m_Camera.GetState().followTarget,
-                         m_Camera.GetState().hasFollowTarget,
-                         m_Camera.GetState().zoom,
-                         m_Camera.GetState().freeMode,
-                         m_Camera.GetState().enable3DEffect,
-                         m_Camera.GetState().tilt,
-                         m_Camera.GetState().globeSphereRadius,
+                         m_Camera.GetState(),
                          m_Tilemap,
-                         m_Player,
-                         m_NPCs,
+                         m_PlayerEntity,
+                         m_World,
                          *m_Renderer,
                          m_Particles,
                          m_SaveMapPath};
