@@ -1,9 +1,11 @@
 #pragma once
 
+#include <ecs.hpp>
+
 #include <vector>
 
 class Tilemap;
-class NonPlayerCharacter;
+struct NpcRecord;
 
 /**
  * @brief Free-function helpers for navigation map / NPC patrol synchronization.
@@ -68,13 +70,12 @@ class NonPlayerCharacter;
 /// @brief Move out NPCs whose tile is currently non-walkable; returns them.
 /// The tilemap is read-only here; the caller is expected to have already
 /// applied the navigation flips.
-std::vector<NonPlayerCharacter> SnapshotAndEraseNPCsOnNonWalkable(
-    const Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs);
+std::vector<NpcRecord> SnapshotAndEraseNPCsOnNonWalkable(const Tilemap& tilemap,
+                                                         ecs::registry& npcs);
 
 /// @brief Push the snapshotted NPCs back onto npcs and clear the snapshot.
-void RestoreErasedNPCs(std::vector<NonPlayerCharacter>& npcs,
-                       std::vector<NonPlayerCharacter>& snapshot);
+void RestoreErasedNPCs(ecs::registry& npcs, std::vector<NpcRecord>& snapshot);
 
 /// @brief Reinitialize each NPC's patrol route against the current tilemap.
 /// Idempotent: callable any number of times. Skips NPCs without a valid route.
-void RebuildPatrolRoutes(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs);
+void RebuildPatrolRoutes(Tilemap& tilemap, ecs::registry& npcs);

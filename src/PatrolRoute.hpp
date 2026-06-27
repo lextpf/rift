@@ -144,7 +144,7 @@ class Tilemap;
  * - O(V) for visited state during traversal
  * - O(2V) worst case for stored waypoints (full backtracks)
  *
- * @see NonPlayerCharacter, Tilemap
+ * @see NpcAiSystem, Tilemap
  */
 class PatrolRoute
 {

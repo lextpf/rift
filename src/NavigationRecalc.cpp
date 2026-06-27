@@ -1,10 +1,17 @@
 #include "NavigationRecalc.hpp"
 
+#include "EntityStore.hpp"
 #include "Logger.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "NpcAiSystem.hpp"
+#include "NpcIdle.hpp"
+#include "NpcRecord.hpp"
+#include "NpcTag.hpp"
+#include "Patrol.hpp"
+#include "PatrolRoute.hpp"
 #include "Tilemap.hpp"
+#include "WorldServices.hpp"
 
-#include <algorithm>
+#include <random>
 #include <utility>
 
 namespace
@@ -12,48 +19,61 @@ namespace
 constexpr const char* LOG_SUBSYSTEM = "Nav";
 }  // namespace
 
-std::vector<NonPlayerCharacter> SnapshotAndEraseNPCsOnNonWalkable(
-    const Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+std::vector<NpcRecord> SnapshotAndEraseNPCsOnNonWalkable(const Tilemap& tilemap,
+                                                         ecs::registry& npcs)
 {
-    std::vector<NonPlayerCharacter> snapshot;
-    auto it = std::remove_if(npcs.begin(),
-                             npcs.end(),
-                             [&](NonPlayerCharacter& npc)
-                             {
-                                 if (!tilemap.GetNavigation(npc.GetTileX(), npc.GetTileY()))
-                                 {
-                                     Logger::InfoF(
-                                         LOG_SUBSYSTEM,
-                                         "Removing NPC at tile ({}, {}) - no longer on navigation",
-                                         npc.GetTileX(),
-                                         npc.GetTileY());
-                                     snapshot.push_back(std::move(npc));
-                                     return true;
-                                 }
-                                 return false;
-                             });
-    npcs.erase(it, npcs.end());
+    // Collect the displaced entities first; destroying components while iterating
+    // the same pool is a fault.
+    std::vector<ecs::entity> doomed;
+    npcs.each<const Patrol, const NpcTag>(
+        [&](ecs::entity e, const Patrol& patrol)
+        {
+            if (!tilemap.GetNavigation(patrol.tileX, patrol.tileY))
+            {
+                Logger::InfoF(LOG_SUBSYSTEM,
+                              "Removing NPC at tile ({}, {}) - no longer on navigation",
+                              patrol.tileX,
+                              patrol.tileY);
+                doomed.push_back(e);
+            }
+        });
+
+    std::vector<NpcRecord> snapshot;
+    snapshot.reserve(doomed.size());
+    for (const ecs::entity e : doomed)
+    {
+        snapshot.push_back(EntityStore::SnapshotNpc(npcs, e));
+        EntityStore::Remove(npcs, e);
+    }
     return snapshot;
 }
 
-void RestoreErasedNPCs(std::vector<NonPlayerCharacter>& npcs,
-                       std::vector<NonPlayerCharacter>& snapshot)
+void RestoreErasedNPCs(ecs::registry& npcs, std::vector<NpcRecord>& snapshot)
 {
-    for (auto& npc : snapshot)
-        npcs.push_back(std::move(npc));
+    for (const NpcRecord& rec : snapshot)
+        EntityStore::SpawnNpc(npcs, rec);
     snapshot.clear();
 }
 
-void RebuildPatrolRoutes(Tilemap& tilemap, std::vector<NonPlayerCharacter>& npcs)
+void RebuildPatrolRoutes(Tilemap& tilemap, ecs::registry& npcs)
 {
-    for (auto& npc : npcs)
-    {
-        if (!npc.ReinitializePatrolRoute(&tilemap))
+    // Reach the world's RNG (owned by Game, published in globals). The editor
+    // recalc paths only have the registry, not Game; pulling from globals keeps
+    // the command Apply/Revert signatures free of an RNG param. A local fallback
+    // covers callers without published services (e.g. tests).
+    const WorldServices* svc = npcs.globals().find<WorldServices>();
+    std::mt19937 fallback;
+    std::mt19937& rng = (svc != nullptr && svc->npcRng != nullptr) ? *svc->npcRng : fallback;
+
+    npcs.each<NpcIdle, Patrol, PatrolRoute, NpcTag>(
+        [&](NpcIdle& idle, Patrol& patrol, PatrolRoute& route)
         {
-            Logger::WarnF(LOG_SUBSYSTEM,
-                          "NPC at ({}, {}) could not find valid patrol route",
-                          npc.GetTileX(),
-                          npc.GetTileY());
-        }
-    }
+            if (!NpcAiSystem::ReinitializePatrolRoute(idle, patrol, route, &tilemap, rng))
+            {
+                Logger::WarnF(LOG_SUBSYSTEM,
+                              "NPC at ({}, {}) could not find valid patrol route",
+                              patrol.tileX,
+                              patrol.tileY);
+            }
+        });
 }
