@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ecs.hpp>
+
 #include <glm/glm.hpp>
 
 #include <span>
@@ -16,9 +18,7 @@ class Editor;
 class Game;
 class GameStateManager;
 class IRenderer;
-class NonPlayerCharacter;
 class ParticleSystem;
-class PlayerCharacter;
 class TimeManager;
 class Tilemap;
 
@@ -38,11 +38,11 @@ class Tilemap;
 struct CommandContext
 {
     ConsoleBuffer& out;
-    PlayerCharacter* player = nullptr;
+    ecs::entity playerEntity{};  ///< Player entity; resolve via @ref npcs (the world).
     GameStateManager* gameState = nullptr;
     TimeManager* time = nullptr;
     Tilemap* tilemap = nullptr;
-    std::vector<NonPlayerCharacter>* npcs = nullptr;
+    ecs::registry* npcs = nullptr;  ///< Live NPC store (ECS registry) for npc.* commands.
     const ConsoleCommandRegistry* registry = nullptr;
     Editor* editor = nullptr;             ///< Level editor state and toggles.
     CameraController* camera = nullptr;   ///< Camera (3D effect, globe radius/tilt).
@@ -91,6 +91,10 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
 bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MoveAccel(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MoveDecel(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MoveLookahead(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_MoveDump(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx);
@@ -158,6 +162,7 @@ bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& c
 bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_EcsValidate(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx);
 
 // Bookmarks (the bookmark map is owned by Console; passed in as an extra

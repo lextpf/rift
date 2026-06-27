@@ -1,22 +1,37 @@
 #include "ConsoleCommands.hpp"
 
+#include "Appearance.hpp"
+#include "AssetRegistry.hpp"
 #include "CameraController.hpp"
 #include "Console.hpp"
+#include "Dialogue.hpp"
 #include "DialogueManager.hpp"
 #include "DialogueTypes.hpp"
 #include "DrawTracer.hpp"
 #include "Editor.hpp"
+#include "EntityStore.hpp"
 #include "EnumTraits.hpp"
+#include "Facing.hpp"
 #include "Game.hpp"
 #include "GameStateManager.hpp"
+#include "Identity.hpp"
 #include "IRenderer.hpp"
-#include "NonPlayerCharacter.hpp"
+#include "Motor.hpp"
+#include "NpcIdle.hpp"
+#include "NpcRecord.hpp"
+#include "NpcTag.hpp"
 #include "ParticleSystem.hpp"
 #include "Pathfinding.hpp"
-#include "PlayerCharacter.hpp"
+#include "Patrol.hpp"
+#include "PatrolRoute.hpp"
+#include "PlayerModes.hpp"
+#include "PlayerSystem.hpp"
 #include "Tilemap.hpp"
+#include "TileMath.hpp"
 #include "TimeManager.hpp"
+#include "Transform.hpp"
 #include "Version.hpp"
+#include "WorldServices.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -49,6 +64,25 @@ bool ParseInt(std::string_view text, int& out)
     }
     out = value;
     return true;
+}
+
+/// NPC console commands address NPCs by index in npc.list order. Resolve an
+/// index to its entity handle, or @c ecs::entity{} if out of range (callers
+/// test the result with @c operator bool). The order is stable within one
+/// command invocation; idx can shift across npc.spawn / npc.despawn (npc.list
+/// warns about this).
+ecs::entity NpcAtIndex(ecs::registry& world, int idx)
+{
+    if (idx < 0)
+    {
+        return ecs::entity{};
+    }
+    const std::vector<ecs::entity> entities = EntityStore::Entities(world);
+    if (static_cast<std::size_t>(idx) >= entities.size())
+    {
+        return ecs::entity{};
+    }
+    return entities[static_cast<std::size_t>(idx)];
 }
 
 /// Parse a finite float from @p text. Accepts optional sign, decimal point.
@@ -191,7 +225,7 @@ bool Cmd_Clear(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 
 bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("teleport: player unavailable");
         return false;
@@ -208,7 +242,7 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("teleport: tile coords must be non-negative integers");
         return false;
     }
-    ctx.player->SetTilePosition(tx, ty);
+    PlayerSystem::SetTilePosition(*ctx.npcs, ctx.playerEntity, tx, ty);
     ctx.out.Print("teleported player to tile (" + std::to_string(tx) + ", " + std::to_string(ty) +
                   ")");
     return true;
@@ -330,7 +364,8 @@ bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.tilemap == nullptr || ctx.npcs == nullptr || ctx.player == nullptr)
+    if (ctx.tilemap == nullptr || ctx.npcs == nullptr ||
+        (ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("map.load: world refs unavailable");
         return false;
@@ -353,7 +388,7 @@ bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
     }
     if (playerTileX >= 0 && playerTileY >= 0)
     {
-        ctx.player->SetTilePosition(playerTileX, playerTileY);
+        PlayerSystem::SetTilePosition(*ctx.npcs, ctx.playerEntity, playerTileX, playerTileY);
     }
     ctx.out.Print("map.load: loaded '" + filename + "'");
     return true;
@@ -361,19 +396,18 @@ bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
-    if (ctx.player == nullptr || ctx.time == nullptr || ctx.gameState == nullptr ||
-        ctx.npcs == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.time == nullptr ||
+        ctx.gameState == nullptr || ctx.npcs == nullptr)
     {
         ctx.out.PrintError("state.dump: refs unavailable");
         return false;
     }
 
-    const glm::vec2 pos = ctx.player->GetPosition();
-    const int tileX = static_cast<int>(std::floor(pos.x / CONSOLE_TILE_SIZE));
-    // Player Y is at the feet (bottom of tile); subtract a small epsilon to
-    // pull the floor() onto the correct tile when standing exactly on the
-    // boundary, matching how dialogue/teleport code computes the tile.
-    const int tileY = static_cast<int>(std::floor((pos.y - 0.1f) / CONSOLE_TILE_SIZE));
+    const glm::vec2 pos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    const int tileX = TileMath::TileIndex(pos.x, static_cast<float>(CONSOLE_TILE_SIZE));
+    // Standing-tile row (feet nudged up so a boundary-standing player counts as
+    // the tile above) -- matches dialogue/teleport tile math. See TileMath.
+    const int tileY = TileMath::StandingTileRow(pos.y, static_cast<float>(CONSOLE_TILE_SIZE));
 
     const float hours = ctx.time->GetTimeOfDay();
     const auto activeQuests = ctx.gameState->GetActiveQuests();
@@ -392,7 +426,7 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     std::snprintf(buf, sizeof(buf), "time: %.2fh", static_cast<double>(hours));
     ctx.out.Print(buf);
 
-    std::snprintf(buf, sizeof(buf), "npcs: %zu", static_cast<std::size_t>(ctx.npcs->size()));
+    std::snprintf(buf, sizeof(buf), "npcs: %zu", EntityStore::Count(*ctx.npcs));
     ctx.out.Print(buf);
 
     std::snprintf(
@@ -407,7 +441,7 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
 
 bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("player.speed: player unavailable");
         return false;
@@ -415,7 +449,10 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
     if (args.empty())
     {
         char line[64];
-        std::snprintf(line, sizeof(line), "player.speed: %.3f", ctx.player->GetSpeedMultiplier());
+        std::snprintf(line,
+                      sizeof(line),
+                      "player.speed: %.3f",
+                      ctx.npcs->get<PlayerModes>(ctx.playerEntity).speedMultiplier);
         ctx.out.Print(line);
         return true;
     }
@@ -435,7 +472,7 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
         ctx.out.PrintError("player.speed: multiplier must be > 0");
         return false;
     }
-    ctx.player->SetSpeedMultiplier(m);
+    ctx.npcs->get<PlayerModes>(ctx.playerEntity).speedMultiplier = m;
     char line[64];
     std::snprintf(line, sizeof(line), "player.speed: %.3f", m);
     ctx.out.Print(line);
@@ -444,12 +481,12 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
 
 bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("noclip: player unavailable");
         return false;
     }
-    bool target = !ctx.player->IsNoClip();  // default: toggle
+    bool target = !ctx.npcs->get<PlayerModes>(ctx.playerEntity).noClip;  // default: toggle
     if (args.size() == 1)
     {
         if (args[0] == "on" || args[0] == "1" || args[0] == "true")
@@ -471,7 +508,7 @@ bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("noclip: usage 'noclip [on|off]'");
         return false;
     }
-    ctx.player->SetNoClip(target);
+    ctx.npcs->get<PlayerModes>(ctx.playerEntity).noClip = target;
     ctx.out.Print(std::string("noclip: ") + (target ? "ON" : "OFF"));
     return true;
 }
@@ -495,7 +532,8 @@ bool Cmd_Editor(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr || ctx.npcs == nullptr || ctx.renderer == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.npcs == nullptr ||
+        ctx.renderer == nullptr)
     {
         ctx.out.PrintError("appearance.copy: world refs unavailable");
         return false;
@@ -505,44 +543,48 @@ bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& 
         ctx.out.PrintError("appearance.copy: usage 'appearance.copy'");
         return false;
     }
-    if (ctx.npcs->empty())
+    if (EntityStore::Count(*ctx.npcs) == 0)
     {
         ctx.out.PrintError("appearance.copy: no NPCs loaded");
         return false;
     }
     constexpr float APPEARANCE_COPY_RANGE = 32.0f;
-    const glm::vec2 playerPos = ctx.player->GetPosition();
-    NonPlayerCharacter* nearest = nullptr;
+    const glm::vec2 playerPos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    ecs::entity nearest{};
     float nearestDist = APPEARANCE_COPY_RANGE + 1.0f;
-    for (auto& npc : *ctx.npcs)
-    {
-        const glm::vec2 npcPos = npc.GetPosition();
-        const float dist = glm::length(npcPos - playerPos);
-        if (dist < nearestDist && dist <= APPEARANCE_COPY_RANGE)
+    ctx.npcs->each<const Transform, const NpcTag>(
+        [&](ecs::entity e, const Transform& xf)
         {
-            nearestDist = dist;
-            nearest = &npc;
-        }
-    }
-    if (nearest == nullptr)
+            const float dist = glm::length(xf.position - playerPos);
+            if (dist < nearestDist && dist <= APPEARANCE_COPY_RANGE)
+            {
+                nearestDist = dist;
+                nearest = e;
+            }
+        });
+    if (!nearest)
     {
         ctx.out.PrintError("appearance.copy: no NPC within 32px");
         return false;
     }
-    const std::string spritePath = nearest->GetSpritePath();
-    if (!ctx.player->CopyAppearanceFrom(spritePath))
+    const std::string& npcType = ctx.npcs->get<Dialogue>(nearest).type;
+    const WorldServices* svc = ctx.npcs->globals().find<WorldServices>();
+    const std::string spritePath = (svc != nullptr && svc->assets != nullptr)
+                                       ? svc->assets->ResolveNpcAsset(npcType)
+                                       : std::string();
+    if (!PlayerSystem::CopyAppearanceFrom(*ctx.npcs, ctx.playerEntity, spritePath))
     {
         ctx.out.PrintError("appearance.copy: failed to load sprite '" + spritePath + "'");
         return false;
     }
-    ctx.player->UploadTextures(*ctx.renderer);
-    ctx.out.Print("appearance.copy: copied from '" + nearest->GetType() + "'");
+    PlayerSystem::UploadTextures(*ctx.npcs, ctx.playerEntity, *ctx.renderer);
+    ctx.out.Print("appearance.copy: copied from '" + npcType + "'");
     return true;
 }
 
 bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr || ctx.renderer == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.renderer == nullptr)
     {
         ctx.out.PrintError("appearance.restore: refs unavailable");
         return false;
@@ -552,20 +594,20 @@ bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContex
         ctx.out.PrintError("appearance.restore: usage 'appearance.restore'");
         return false;
     }
-    if (!ctx.player->IsUsingCopiedAppearance())
+    if (!ctx.npcs->get<Appearance>(ctx.playerEntity).usingCopiedAppearance)
     {
         ctx.out.Print("appearance.restore: already on original appearance");
         return true;
     }
-    ctx.player->RestoreOriginalAppearance();
-    ctx.player->UploadTextures(*ctx.renderer);
+    PlayerSystem::RestoreOriginalAppearance(*ctx.npcs, ctx.playerEntity);
+    PlayerSystem::UploadTextures(*ctx.npcs, ctx.playerEntity, *ctx.renderer);
     ctx.out.Print("appearance.restore: restored");
     return true;
 }
 
 bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("character.set: player unavailable");
         return false;
@@ -584,7 +626,7 @@ bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ct
                            "' (valid: BW1_MALE BW1_FEMALE BW2_MALE BW2_FEMALE CC_FEMALE)");
         return false;
     }
-    if (!ctx.player->SwitchCharacter(*parsed))
+    if (!PlayerSystem::SwitchCharacter(*ctx.npcs, ctx.playerEntity, *parsed))
     {
         ctx.out.PrintError(std::string("character.set: failed to load sprites for ") +
                            std::string(EnumTraits<CharacterType>::ToString(*parsed)));
@@ -597,7 +639,7 @@ bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ct
 
 bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("character.next: player unavailable");
         return false;
@@ -607,8 +649,8 @@ bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& c
         ctx.out.PrintError("character.next: usage 'character.next'");
         return false;
     }
-    const CharacterType next = NextEnum(ctx.player->GetCharacterType());
-    if (!ctx.player->SwitchCharacter(next))
+    const CharacterType next = NextEnum(ctx.npcs->get<Appearance>(ctx.playerEntity).characterType);
+    if (!PlayerSystem::SwitchCharacter(*ctx.npcs, ctx.playerEntity, next))
     {
         ctx.out.PrintError(std::string("character.next: failed to load sprites for ") +
                            std::string(EnumTraits<CharacterType>::ToString(next)));
@@ -874,7 +916,7 @@ bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& 
 
 bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("player.pos: player unavailable");
         return false;
@@ -884,11 +926,11 @@ bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("player.pos: usage 'player.pos'");
         return false;
     }
-    const glm::vec2 p = ctx.player->GetPosition();
-    const int tileX = static_cast<int>(std::floor(p.x / CONSOLE_TILE_SIZE));
-    const int tileY = static_cast<int>(std::floor((p.y - 0.1f) / CONSOLE_TILE_SIZE));
+    const glm::vec2 p = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    const int tileX = TileMath::TileIndex(p.x, static_cast<float>(CONSOLE_TILE_SIZE));
+    const int tileY = TileMath::StandingTileRow(p.y, static_cast<float>(CONSOLE_TILE_SIZE));
     const char* facing = "DOWN";
-    switch (ctx.player->GetDirection())
+    switch (ctx.npcs->get<Facing>(ctx.playerEntity).dir)
     {
         case CharacterDirection::DOWN:
             facing = "DOWN";
@@ -918,35 +960,178 @@ bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("player.bicycle: player unavailable");
         return false;
     }
     bool target = false;
-    if (!ParseToggleArg(args, ctx.player->IsBicycling(), "player.bicycle", ctx.out, target))
+    if (!ParseToggleArg(args,
+                        ctx.npcs->get<PlayerModes>(ctx.playerEntity).isBicycling,
+                        "player.bicycle",
+                        ctx.out,
+                        target))
     {
         return false;
     }
-    ctx.player->SetBicycling(target);
+    ctx.npcs->get<PlayerModes>(ctx.playerEntity).isBicycling = target;
     ctx.out.Print(std::string("player.bicycle: ") + (target ? "ON" : "OFF"));
     return true;
 }
 
 bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("player.run: player unavailable");
         return false;
     }
     bool target = false;
-    if (!ParseToggleArg(args, ctx.player->IsRunning(), "player.run", ctx.out, target))
+    if (!ParseToggleArg(args,
+                        ctx.npcs->get<PlayerModes>(ctx.playerEntity).isRunning,
+                        "player.run",
+                        ctx.out,
+                        target))
     {
         return false;
     }
-    ctx.player->SetRunning(target);
+    ctx.npcs->get<PlayerModes>(ctx.playerEntity).isRunning = target;
     ctx.out.Print(std::string("player.run: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+bool Cmd_MoveAccel(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
+    {
+        ctx.out.PrintError("move.accel: player unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        char line[64];
+        std::snprintf(line,
+                      sizeof(line),
+                      "move.accel: %.1f px/s^2",
+                      ctx.npcs->get<Motor>(ctx.playerEntity).params.accel);
+        ctx.out.Print(line);
+        return true;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("move.accel: usage 'move.accel [px/s^2]'");
+        return false;
+    }
+    float v = 0.0f;
+    if (!ParseFloat(args[0], v) || v <= 0.0f)
+    {
+        ctx.out.PrintError("move.accel: value must be a number > 0");
+        return false;
+    }
+    ctx.npcs->get<Motor>(ctx.playerEntity).params.accel = v;
+    char line[64];
+    std::snprintf(line, sizeof(line), "move.accel: %.1f px/s^2", v);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_MoveDecel(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
+    {
+        ctx.out.PrintError("move.decel: player unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        char line[64];
+        std::snprintf(line,
+                      sizeof(line),
+                      "move.decel: %.1f px/s^2",
+                      ctx.npcs->get<Motor>(ctx.playerEntity).params.decel);
+        ctx.out.Print(line);
+        return true;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("move.decel: usage 'move.decel [px/s^2]'");
+        return false;
+    }
+    float v = 0.0f;
+    if (!ParseFloat(args[0], v) || v <= 0.0f)
+    {
+        ctx.out.PrintError("move.decel: value must be a number > 0");
+        return false;
+    }
+    ctx.npcs->get<Motor>(ctx.playerEntity).params.decel = v;
+    char line[64];
+    std::snprintf(line, sizeof(line), "move.decel: %.1f px/s^2", v);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_MoveLookahead(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("move.lookahead: camera unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        char line[64];
+        std::snprintf(
+            line, sizeof(line), "move.lookahead: %.1f px", ctx.camera->GetLookAheadDistance());
+        ctx.out.Print(line);
+        return true;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("move.lookahead: usage 'move.lookahead [px]'");
+        return false;
+    }
+    float v = 0.0f;
+    if (!ParseFloat(args[0], v) || v < 0.0f)
+    {
+        ctx.out.PrintError("move.lookahead: value must be a number >= 0");
+        return false;
+    }
+    ctx.camera->SetLookAheadDistance(v);
+    char line[64];
+    std::snprintf(line, sizeof(line), "move.lookahead: %.1f px", v);
+    ctx.out.Print(line);
+    return true;
+}
+
+bool Cmd_MoveDump(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("move.dump: usage 'move.dump'");
+        return false;
+    }
+    if (ctx.npcs != nullptr && ctx.npcs->alive(ctx.playerEntity))
+    {
+        char line[96];
+        std::snprintf(line,
+                      sizeof(line),
+                      "move: accel %.1f, decel %.1f px/s^2",
+                      ctx.npcs->get<Motor>(ctx.playerEntity).params.accel,
+                      ctx.npcs->get<Motor>(ctx.playerEntity).params.decel);
+        ctx.out.Print(line);
+    }
+    if (ctx.camera != nullptr)
+    {
+        char line[64];
+        std::snprintf(
+            line, sizeof(line), "move: lookahead %.1f px", ctx.camera->GetLookAheadDistance());
+        ctx.out.Print(line);
+    }
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) && ctx.camera == nullptr)
+    {
+        ctx.out.PrintError("move.dump: player and camera unavailable");
+        return false;
+    }
     return true;
 }
 
@@ -962,28 +1147,30 @@ bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.list: usage 'npc.list'");
         return false;
     }
+    const std::vector<ecs::entity> entities = EntityStore::Entities(*ctx.npcs);
     char header[64];
-    std::snprintf(
-        header, sizeof(header), "npc.list: %zu NPC(s)", static_cast<std::size_t>(ctx.npcs->size()));
+    std::snprintf(header, sizeof(header), "npc.list: %zu NPC(s)", entities.size());
     ctx.out.Print(header);
-    if (ctx.npcs->empty())
+    if (entities.empty())
     {
         return true;
     }
     ctx.out.Print("  (idx may shift after npc.despawn)");
-    for (std::size_t i = 0; i < ctx.npcs->size(); ++i)
+    for (std::size_t i = 0; i < entities.size(); ++i)
     {
-        const auto& npc = (*ctx.npcs)[i];
+        const Dialogue& dial = ctx.npcs->get<Dialogue>(entities[i]);
+        const Patrol& patrol = ctx.npcs->get<Patrol>(entities[i]);
+        const bool stopped = ctx.npcs->get<NpcIdle>(entities[i]).isStopped;
         char line[192];
         std::snprintf(line,
                       sizeof(line),
                       "  [%zu] %s (%s) tile=(%d, %d) %s",
                       i,
-                      npc.GetName().c_str(),
-                      npc.GetType().c_str(),
-                      npc.GetTileX(),
-                      npc.GetTileY(),
-                      npc.IsStopped() ? "stopped" : "patrolling");
+                      dial.name.c_str(),
+                      dial.type.c_str(),
+                      patrol.tileX,
+                      patrol.tileY,
+                      stopped ? "stopped" : "patrolling");
         ctx.out.Print(line);
     }
     return true;
@@ -1009,12 +1196,18 @@ bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.tp: idx and tile coords must be non-negative integers");
         return false;
     }
-    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    const ecs::entity npcE = NpcAtIndex(*ctx.npcs, idx);
+    if (!npcE)
     {
         ctx.out.PrintError("npc.tp: idx out of range");
         return false;
     }
-    (*ctx.npcs)[static_cast<std::size_t>(idx)].SetTilePosition(tx, ty, CONSOLE_TILE_SIZE);
+    EntityStore::SetNpcTile(ctx.npcs->get<Transform>(npcE),
+                            ctx.npcs->get<Patrol>(npcE),
+                            ctx.npcs->get<PatrolRoute>(npcE),
+                            tx,
+                            ty,
+                            CONSOLE_TILE_SIZE);
     char line[80];
     std::snprintf(line, sizeof(line), "npc.tp: [%d] -> tile (%d, %d)", idx, tx, ty);
     ctx.out.Print(line);
@@ -1041,23 +1234,22 @@ bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
         return false;
     }
     const std::string type(args[0]);
-    NonPlayerCharacter npc;
-    if (!npc.Load(NonPlayerCharacter::ResolveAssetPath(type)))
+    NpcRecord record;
+    record.type = type;
+    record.tileX = tx;
+    record.tileY = ty;
+    record.tileSize = CONSOLE_TILE_SIZE;
+    const ecs::entity spawned = EntityStore::SpawnNpc(*ctx.npcs, record, ctx.renderer);
+    if (!spawned)
     {
         ctx.out.PrintError("npc.spawn: failed to load sprite for type '" + type + "'");
         return false;
     }
-    npc.SetTilePosition(tx, ty, CONSOLE_TILE_SIZE);
-    if (ctx.renderer != nullptr)
-    {
-        npc.UploadTextures(*ctx.renderer);
-    }
-    ctx.npcs->push_back(std::move(npc));
     char line[96];
     std::snprintf(line,
                   sizeof(line),
                   "npc.spawn: [%zu] '%s' at tile (%d, %d)",
-                  static_cast<std::size_t>(ctx.npcs->size() - 1),
+                  EntityStore::Count(*ctx.npcs) - 1,
                   type.c_str(),
                   tx,
                   ty);
@@ -1083,19 +1275,21 @@ bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.despawn: idx must be a non-negative integer");
         return false;
     }
-    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    const std::vector<ecs::entity> entities = EntityStore::Entities(*ctx.npcs);
+    if (idx < 0 || static_cast<std::size_t>(idx) >= entities.size())
     {
         ctx.out.PrintError("npc.despawn: idx out of range");
         return false;
     }
+    const ecs::entity target = entities[static_cast<std::size_t>(idx)];
     if (ctx.game != nullptr && ctx.game->IsInSimpleDialogue() &&
-        ctx.game->GetDialogueNPCIndex() == idx)
+        ctx.game->GetDialogueNPCId() == ctx.npcs->get<Identity>(target).instanceId)
     {
         ctx.out.PrintError(
             "npc.despawn: cannot despawn NPC currently in dialogue (use dialogue.end first)");
         return false;
     }
-    ctx.npcs->erase(ctx.npcs->begin() + idx);
+    EntityStore::Remove(*ctx.npcs, target);
     char line[64];
     std::snprintf(line, sizeof(line), "npc.despawn: removed [%d]", idx);
     ctx.out.Print(line);
@@ -1116,16 +1310,17 @@ bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     }
     const bool isAll = (args[0] == "all");
     int idx = -1;
+    ecs::entity npcE{};
     if (!isAll)
     {
-        if (!ParseInt(args[0], idx) || idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+        if (!ParseInt(args[0], idx) || !(npcE = NpcAtIndex(*ctx.npcs, idx)))
         {
             ctx.out.PrintError("npc.freeze: first arg must be 'all' or a valid NPC index");
             return false;
         }
     }
     std::span<const std::string_view> toggleArgs = args.subspan(1);
-    const bool current = isAll ? false : (*ctx.npcs)[static_cast<std::size_t>(idx)].IsStopped();
+    const bool current = isAll ? false : ctx.npcs->get<NpcIdle>(npcE).isStopped;
     bool target = false;
     if (!ParseToggleArg(toggleArgs, current, "npc.freeze", ctx.out, target))
     {
@@ -1133,15 +1328,12 @@ bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     }
     if (isAll)
     {
-        for (auto& n : *ctx.npcs)
-        {
-            n.SetStopped(target);
-        }
+        ctx.npcs->each<NpcIdle, NpcTag>([&](NpcIdle& idle) { idle.isStopped = target; });
         ctx.out.Print(std::string("npc.freeze all: ") + (target ? "ON" : "OFF"));
     }
     else
     {
-        (*ctx.npcs)[static_cast<std::size_t>(idx)].SetStopped(target);
+        ctx.npcs->get<NpcIdle>(npcE).isStopped = target;
         char line[64];
         std::snprintf(line, sizeof(line), "npc.freeze [%d]: %s", idx, target ? "ON" : "OFF");
         ctx.out.Print(line);
@@ -1162,7 +1354,8 @@ bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
         return false;
     }
     int idx = 0;
-    if (!ParseInt(args[0], idx) || idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    ecs::entity npcE{};
+    if (!ParseInt(args[0], idx) || !(npcE = NpcAtIndex(*ctx.npcs, idx)))
     {
         ctx.out.PrintError("npc.dialog: idx out of range");
         return false;
@@ -1176,7 +1369,7 @@ bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
         }
         text.append(args[i]);
     }
-    (*ctx.npcs)[static_cast<std::size_t>(idx)].SetDialogue(text);
+    ctx.npcs->get<Dialogue>(npcE).text = text;
     char line[96];
     std::snprintf(line, sizeof(line), "npc.dialog [%d]: set", idx);
     ctx.out.Print(line);
@@ -1874,7 +2067,8 @@ bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.tilemap == nullptr || ctx.npcs == nullptr || ctx.player == nullptr)
+    if (ctx.tilemap == nullptr || ctx.npcs == nullptr ||
+        (ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("map.save: world refs unavailable");
         return false;
@@ -1898,10 +2092,12 @@ bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
     {
         path = std::string(args[0]);
     }
-    const glm::vec2 ppos = ctx.player->GetPosition();
-    const int playerTileX = static_cast<int>(std::floor(ppos.x / CONSOLE_TILE_SIZE));
-    const int playerTileY = static_cast<int>(std::floor((ppos.y - 0.1f) / CONSOLE_TILE_SIZE));
-    const int characterType = static_cast<int>(ctx.player->GetCharacterType());
+    const glm::vec2 ppos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    const int playerTileX = TileMath::TileIndex(ppos.x, static_cast<float>(CONSOLE_TILE_SIZE));
+    const int playerTileY =
+        TileMath::StandingTileRow(ppos.y, static_cast<float>(CONSOLE_TILE_SIZE));
+    const int characterType =
+        static_cast<int>(ctx.npcs->get<Appearance>(ctx.playerEntity).characterType);
     if (!ctx.tilemap->SaveMapToJSON(path, ctx.npcs, playerTileX, playerTileY, characterType))
     {
         ctx.out.PrintError("map.save: failed to write '" + path + "'");
@@ -2353,7 +2549,7 @@ bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
                   m.GetNoProjectionStructureCount(),
                   m.GetLights().size(),
                   m.GetParticleZones() ? m.GetParticleZones()->size() : 0u,
-                  ctx.npcs ? ctx.npcs->size() : 0u);
+                  ctx.npcs ? EntityStore::Count(*ctx.npcs) : static_cast<std::size_t>(0));
     ctx.out.Print(line);
     return true;
 }
@@ -2790,21 +2986,22 @@ bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.path: idx must be a non-negative integer");
         return false;
     }
-    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    const ecs::entity npcE = NpcAtIndex(*ctx.npcs, idx);
+    if (!npcE)
     {
         ctx.out.PrintError("npc.path: idx out of range");
         return false;
     }
-    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(idx)];
-    const auto& wp = npc.GetPatrolRoute().GetWaypoints();
+    const PatrolRoute& route = ctx.npcs->get<PatrolRoute>(npcE);
+    const auto& wp = route.GetWaypoints();
     char header[96];
     std::snprintf(header,
                   sizeof(header),
                   "npc.path: [%d] %s, %zu waypoints, %s",
                   idx,
-                  npc.GetPatrolRoute().IsClosed() ? "closed" : "pingpong",
+                  route.IsClosed() ? "closed" : "pingpong",
                   wp.size(),
-                  npc.GetPatrolRoute().IsValid() ? "valid" : "no route");
+                  route.IsValid() ? "valid" : "no route");
     ctx.out.Print(header);
     constexpr std::size_t kMaxPrint = 24;
     for (std::size_t i = 0; i < wp.size() && i < kMaxPrint; ++i)
@@ -2840,20 +3037,20 @@ bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.goto: idx must be a non-negative integer");
         return false;
     }
-    if (idx < 0 || static_cast<std::size_t>(idx) >= ctx.npcs->size())
+    const ecs::entity npcE = NpcAtIndex(*ctx.npcs, idx);
+    if (!npcE)
     {
         ctx.out.PrintError("npc.goto: idx out of range");
         return false;
     }
-    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(idx)];
-    glm::vec2 pos = npc.GetPosition();
+    glm::vec2 pos = ctx.npcs->get<Transform>(npcE).position;
     CameraSnapTo(*ctx.camera, pos);
     char line[128];
     std::snprintf(line,
                   sizeof(line),
                   "npc.goto: [%d] %s -> (%.0f,%.0f)",
                   idx,
-                  npc.GetType().c_str(),
+                  ctx.npcs->get<Dialogue>(npcE).type.c_str(),
                   static_cast<double>(pos.x),
                   static_cast<double>(pos.y));
     ctx.out.Print(line);
@@ -2862,7 +3059,7 @@ bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
 
 bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.npcs == nullptr || ctx.player == nullptr)
+    if (ctx.npcs == nullptr || (ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("npc.nearest: npc list or player unavailable");
         return false;
@@ -2872,38 +3069,38 @@ bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.PrintError("npc.nearest: usage 'npc.nearest'");
         return false;
     }
-    if (ctx.npcs->empty())
+    // Players use bottom-center anchoring (mirrors Tilemap::WorldToTileCoord).
+    glm::vec2 ppos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    int ptx = TileMath::TileIndex(ppos.x, static_cast<float>(CONSOLE_TILE_SIZE));
+    int pty = TileMath::AnchorTileRow(ppos.y, static_cast<float>(CONSOLE_TILE_SIZE));
+    ecs::entity bestE{};
+    int bestDist = std::numeric_limits<int>::max();
+    ctx.npcs->each<const Patrol, const NpcTag>(
+        [&](ecs::entity e, const Patrol& patrol)
+        {
+            int d = std::abs(patrol.tileX - ptx) + std::abs(patrol.tileY - pty);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                bestE = e;
+            }
+        });
+    if (!bestE)
     {
         ctx.out.Print("npc.nearest: no NPCs");
         return true;
     }
-    // Players use bottom-center anchoring: subtract half a tile from Y to
-    // recover the occupied tile (mirrors Tilemap::WorldToTileCoord).
-    glm::vec2 ppos = ctx.player->GetPosition();
-    int ptx = static_cast<int>(std::floor(ppos.x / static_cast<float>(CONSOLE_TILE_SIZE)));
-    int pty = static_cast<int>(
-        std::floor((ppos.y - CONSOLE_TILE_SIZE * 0.5f) / static_cast<float>(CONSOLE_TILE_SIZE)));
-    int bestIdx = -1;
-    int bestDist = std::numeric_limits<int>::max();
-    for (std::size_t i = 0; i < ctx.npcs->size(); ++i)
-    {
-        const auto& npc = (*ctx.npcs)[i];
-        int d = std::abs(npc.GetTileX() - ptx) + std::abs(npc.GetTileY() - pty);
-        if (d < bestDist)
-        {
-            bestDist = d;
-            bestIdx = static_cast<int>(i);
-        }
-    }
-    const auto& npc = (*ctx.npcs)[static_cast<std::size_t>(bestIdx)];
+    const Dialogue& bestDial = ctx.npcs->get<Dialogue>(bestE);
+    const Patrol& bestPatrol = ctx.npcs->get<Patrol>(bestE);
+    const std::uint64_t bestId = ctx.npcs->get<Identity>(bestE).instanceId;
     char line[160];
     std::snprintf(line,
                   sizeof(line),
-                  "npc.nearest: [%d] \"%s\" tile=(%d,%d) dist=%d",
-                  bestIdx,
-                  npc.GetName().c_str(),
-                  npc.GetTileX(),
-                  npc.GetTileY(),
+                  "npc.nearest: id=%llu \"%s\" tile=(%d,%d) dist=%d",
+                  static_cast<unsigned long long>(bestId),
+                  bestDial.name.c_str(),
+                  bestPatrol.tileX,
+                  bestPatrol.tileY,
                   bestDist);
     ctx.out.Print(line);
     return true;
@@ -3081,9 +3278,18 @@ bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
     std::snprintf(line,
                   sizeof(line),
                   "  npcs=%zu, scrollback=%zu lines",
-                  ctx.npcs ? ctx.npcs->size() : 0u,
+                  ctx.npcs ? EntityStore::Count(*ctx.npcs) : static_cast<std::size_t>(0),
                   ctx.out.Lines().size());
     ctx.out.Print(line);
+    if (ctx.npcs != nullptr)
+    {
+        // Exact registry accounting from the ECS itself (entity table + every
+        // component pool + bookkeeping). Reports allocated pool capacity, not
+        // just the live-entity footprint.
+        std::snprintf(
+            line, sizeof(line), "  ecs registry=%zu bytes", ctx.npcs->footprint().total());
+        ctx.out.Print(line);
+    }
     if (ctx.tilemap != nullptr)
     {
         std::snprintf(line,
@@ -3094,6 +3300,32 @@ bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.Print(line);
     }
     return true;
+}
+
+bool Cmd_EcsValidate(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (!args.empty())
+    {
+        ctx.out.PrintError("ecs.validate: usage 'ecs.validate'");
+        return false;
+    }
+    if (ctx.npcs == nullptr)
+    {
+        ctx.out.PrintError("ecs.validate: registry unavailable");
+        return false;
+    }
+    // On-demand integrity check (table + pools + globals + parent/child links).
+    // O(entities + pools), so it is a manual command, never run per frame.
+    const auto result = ctx.npcs->validate();
+    if (result)
+    {
+        ctx.out.Print("ecs.validate: OK (table + pools + globals + links consistent)");
+        return true;
+    }
+    char line[224];
+    std::snprintf(line, sizeof(line), "ecs.validate: FAULT - %s", result.error().note);
+    ctx.out.PrintError(line);
+    return false;
 }
 
 bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
@@ -3157,7 +3389,7 @@ bool Cmd_BookmarkSet(std::span<const std::string_view> args,
                      CommandContext& ctx,
                      std::unordered_map<std::string, glm::ivec2>& bookmarks)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("bookmark.set: player unavailable");
         return false;
@@ -3169,10 +3401,9 @@ bool Cmd_BookmarkSet(std::span<const std::string_view> args,
     }
     // Players use bottom-center anchoring: m_Position.y is the feet edge, so
     // recover the tile by subtracting half a tile (mirrors Tilemap::WorldToTileCoord).
-    glm::vec2 pos = ctx.player->GetPosition();
-    glm::ivec2 tile{static_cast<int>(std::floor(pos.x / static_cast<float>(CONSOLE_TILE_SIZE))),
-                    static_cast<int>(std::floor((pos.y - CONSOLE_TILE_SIZE * 0.5f) /
-                                                static_cast<float>(CONSOLE_TILE_SIZE)))};
+    glm::vec2 pos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
+    glm::ivec2 tile{TileMath::TileIndex(pos.x, static_cast<float>(CONSOLE_TILE_SIZE)),
+                    TileMath::AnchorTileRow(pos.y, static_cast<float>(CONSOLE_TILE_SIZE))};
     std::string name(args[0]);
     bookmarks[name] = tile;
     char line[128];
@@ -3185,7 +3416,7 @@ bool Cmd_BookmarkTp(std::span<const std::string_view> args,
                     CommandContext& ctx,
                     std::unordered_map<std::string, glm::ivec2>& bookmarks)
 {
-    if (ctx.player == nullptr)
+    if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
     {
         ctx.out.PrintError("bookmark.tp: player unavailable");
         return false;
@@ -3204,7 +3435,7 @@ bool Cmd_BookmarkTp(std::span<const std::string_view> args,
         ctx.out.PrintError(err);
         return false;
     }
-    ctx.player->SetTilePosition(it->second.x, it->second.y);
+    PlayerSystem::SetTilePosition(*ctx.npcs, ctx.playerEntity, it->second.x, it->second.y);
     char line[128];
     std::snprintf(line,
                   sizeof(line),
@@ -3256,11 +3487,11 @@ void Console::RegisterDefaultCommands()
     {
         return CommandContext{
             /* out         */ m_Buffer,
-            /* player      */ &m_Game.m_Player,
+            /* playerEntity*/ m_Game.m_PlayerEntity,
             /* gameState   */ &m_Game.m_GameState,
             /* time        */ &m_Game.m_TimeManager,
             /* tilemap     */ &m_Game.m_Tilemap,
-            /* npcs        */ &m_Game.m_NPCs,
+            /* npcs        */ &m_Game.m_World,
             /* registry    */ &m_Registry,
             /* editor      */ &m_Game.m_Editor,
             /* camera      */ &m_Game.m_Camera,
@@ -3548,6 +3779,42 @@ void Console::RegisterDefaultCommands()
                             CommandContext ctx = makeContext();
                             (void)Cmd_PlayerRun(args, ctx);
                         });
+
+    m_Registry.Register("move.accel",
+                        "[px/s^2] - player acceleration rate (momentum ramp-up)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MoveAccel(args, ctx);
+                        },
+                        {"maccel"});
+
+    m_Registry.Register("move.decel",
+                        "[px/s^2] - player deceleration rate (momentum ramp-down)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MoveDecel(args, ctx);
+                        },
+                        {"mdecel"});
+
+    m_Registry.Register("move.lookahead",
+                        "[px] - camera look-ahead distance in travel direction",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MoveLookahead(args, ctx);
+                        },
+                        {"mlook", "lookahead"});
+
+    m_Registry.Register("move.dump",
+                        "print current accel/decel/look-ahead values",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MoveDump(args, ctx);
+                        },
+                        {"mdump"});
 
     m_Registry.Register("npc.list",
                         "list NPCs (idx, name, type, tile, AI state)",
@@ -4082,6 +4349,15 @@ void Console::RegisterDefaultCommands()
                         },
                         {"mem"});
 
+    m_Registry.Register("ecs.validate",
+                        "check ECS registry integrity (table/pools/globals/links)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_EcsValidate(args, ctx);
+                        },
+                        {});
+
     m_Registry.Register("config.dump",
                         "emit current toggles as a script-style command list",
                         [makeContext](auto args, Console&)
@@ -4178,13 +4454,13 @@ void Console::RegisterDefaultCommands()
         return out;
     };
 
-    const auto npcTypeCompletions = [](std::size_t argIndex) -> std::vector<std::string>
+    const auto npcTypeCompletions = [this](std::size_t argIndex) -> std::vector<std::string>
     {
         if (argIndex != 0)
         {
             return {};  // arg 0 is the type; args 1-2 are tile coords (numeric)
         }
-        return NonPlayerCharacter::AvailableTypes();
+        return m_Game.m_Assets.AvailableNpcTypes();
     };
 
     const auto bookmarkCompletions = [this](std::size_t argIndex) -> std::vector<std::string>

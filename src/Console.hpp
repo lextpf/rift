@@ -252,7 +252,7 @@ private:
  * Console is an authorised mutator of Game state and is declared a friend
  * of Game so handlers (defined in ConsoleCommands.cpp) can directly reach
  * private members like m_Player, m_GameState, m_TimeManager, m_Tilemap and
- * m_NPCs without forcing those onto Game's public API.
+ * m_World (the NPC registry) without forcing those onto Game's public API.
  *
  * @par Visibility State Machine
  * F12 advances `Closed -> Half -> Full -> Closed`. `Half` overlays the top
