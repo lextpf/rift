@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
+#include "../src/AssetRegistry.hpp"
+#include "../src/CharacterType.hpp"
 #include "../src/EnumTraits.hpp"
-#include "../src/PlayerCharacter.hpp"
 #include "../src/ProjectManifest.hpp"
 
 #include <algorithm>
@@ -263,11 +264,14 @@ TEST(ProjectManifestTests, PlayerCharacterAssetsCanBeRegisteredFromManifest)
     auto type = EnumTraits<CharacterType>::FromString("BW1_MALE");
     ASSERT_TRUE(type.has_value());
     const auto& character = manifest->playerCharacters.at("BW1_MALE");
+
+    // Register into an owned AssetRegistry (the demoted s_CharacterAssets static)
+    // and confirm each sprite resolves back to its manifest-resolved path.
+    AssetRegistry assets;
     for (const auto& [spriteType, spritePath] : character.sprites)
     {
-        PlayerCharacter::SetCharacterAsset(
-            *type, spriteType, manifest->ResolvePathString(spritePath));
+        const std::string resolved = manifest->ResolvePathString(spritePath);
+        assets.SetCharacterAsset(*type, spriteType, resolved);
+        EXPECT_EQ(assets.ResolveCharacterAsset(*type, spriteType), resolved);
     }
-
-    SUCCEED();
 }
