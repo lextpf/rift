@@ -19,12 +19,9 @@ float Smoothstep01(float t)
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Symmetric border-feather window for a normalized coordinate in [0,1]: exactly
-// 0 at both edges, ramping smoothly up to a flat plateau of 1 within `margin`
-// of each border. Multiplying the alpha envelope by EdgeFeather(nx)*EdgeFeather(ny)
-// forces the texture to fade to nothing on every side, so overlapping segments
-// melt into the sky with no hard seam. (The Gaussian profiles alone left a
-// residual ~25/255 lip along the top and bottom rows - a visible hard edge.)
+// Symmetric border feather for a normalized coord in [0,1]: 0 at both edges,
+// plateau of 1 within `margin`. Windowing alpha by EdgeFeather(nx)*EdgeFeather(ny)
+// fades every side to nothing (the Gaussians alone left a ~25/255 lip top/bottom).
 float EdgeFeather(float n, float margin)
 {
     return Smoothstep01(n / margin) * Smoothstep01((1.0f - n) / margin);
