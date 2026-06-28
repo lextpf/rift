@@ -23,3 +23,9 @@ external/glm/
 
 # graphify knowledge-graph output
 graphify-out/
+
+# Understand-Anything knowledge-graph tool output
+.understand-anything/
+
+# Vite dependency cache
+.vite/
