@@ -44,29 +44,37 @@ struct Event
     std::string label;  ///< Free-form description (section name or flush reason).
 };
 
-/// @brief Toggle frame capture. When disabled, all Mark/BeginFrame calls
-/// are no-ops and storage is freed.
+/**
+ * @brief Toggle frame capture. When disabled, all Mark/BeginFrame calls
+ * are no-ops and storage is freed.
+ */
 void SetEnabled(bool enabled);
 
 bool IsEnabled();
 
-/// @brief Swap the live event list to "last completed frame" and clear
-/// the live buffer for the next frame's events. Safe to call when
-/// disabled (no-op).
+/**
+ * @brief Swap the live event list to "last completed frame" and clear
+ * the live buffer for the next frame's events. Safe to call when
+ * disabled (no-op).
+ */
 void BeginFrame();
 
-/// @brief Append an event to the live frame log.
-///
-/// Caller passes the renderer's current draw-call count so events are
-/// time-stamped with the GPU-work counter (rather than wall-clock time).
-/// The label is copied; callers can construct it freely.
-///
-/// Bounded: drops events past kMaxEvents to protect against pathological
-/// frames (e.g. infinite loop) eating unbounded memory.
+/**
+ * @brief Append an event to the live frame log.
+ *
+ * Caller passes the renderer's current draw-call count so events are
+ * time-stamped with the GPU-work counter (rather than wall-clock time).
+ * The label is copied; callers can construct it freely.
+ *
+ * Bounded: drops events past kMaxEvents to protect against pathological
+ * frames (e.g. infinite loop) eating unbounded memory.
+ */
 void Mark(std::string_view label, int currentDrawCount);
 
-/// @brief Read the events captured during the most recently completed
-/// frame. Returns an empty vector before the first BeginFrame swap.
+/**
+ * @brief Read the events captured during the most recently completed
+ * frame. Returns an empty vector before the first BeginFrame swap.
+ */
 const std::vector<Event>& LastFrameEvents();
 
 /// @brief Drop any captured events without changing the enabled state.
