@@ -515,8 +515,10 @@ public:
         float sphereRadius = 2000.0f;  ///< Radius for globe projection in pixels
     };
 
-    /// @brief Get the current perspective configuration.
-    /// @return Read-only reference to the active perspective state.
+    /**
+     * @brief Get the current perspective configuration.
+     * @return Read-only reference to the active perspective state.
+     */
     const PerspectiveState& GetPerspectiveState() const { return m_Persp; }
 
     /**
@@ -931,17 +933,21 @@ public:
 protected:
     /// @name Perspective State (shared by all renderers)
     /// @{
-    /// Reference count for nested `SuspendPerspective` calls. Perspective is
-    /// suspended whenever this is greater than zero. Toggling between 0 and 1
-    /// is the only transition the OpenGL backend treats as a real state
-    /// change (and thus the only one that flushes batch buffers).
+    /**
+     * Reference count for nested `SuspendPerspective` calls. Perspective is
+     * suspended whenever this is greater than zero. Toggling between 0 and 1
+     * is the only transition the OpenGL backend treats as a real state
+     * change (and thus the only one that flushes batch buffers).
+     */
     int m_SuspensionDepth = 0;
     PerspectiveState m_Persp;
     /// @}
 
-    /// @brief Rotate four quad corners around the sprite center.
-    /// @param corners Array of 4 corner positions [TL, TR, BR, BL] (modified in-place).
-    /// @param size Sprite dimensions for center calculation.
-    /// @param rotation Rotation angle in degrees.
+    /**
+     * @brief Rotate four quad corners around the sprite center.
+     * @param corners Array of 4 corner positions [TL, TR, BR, BL] (modified in-place).
+     * @param size Sprite dimensions for center calculation.
+     * @param rotation Rotation angle in degrees.
+     */
     static void RotateCorners(glm::vec2 corners[4], glm::vec2 size, float rotation);
 };
