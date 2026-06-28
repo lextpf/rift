@@ -178,8 +178,10 @@ public:
 
     /// @}
 
-    /// @name Plain-Message Emitters
-    /// @brief One method per LogLevel; the message is written verbatim.
+    /**
+     * @name Plain-Message Emitters
+     * @brief One method per LogLevel; the message is written verbatim.
+     */
     /// @{
 
     /// @brief Emit a Trace-level entry.
@@ -205,8 +207,10 @@ public:
 
     /// @}
 
-    /// @name std::format Emitters
-    /// @brief Variadic helpers that accept a `std::format` string.
+    /**
+     * @name std::format Emitters
+     * @brief Variadic helpers that accept a `std::format` string.
+     */
     /// @{
 
     /// @brief Emit a Trace-level entry built from a format string.
@@ -253,8 +257,10 @@ public:
 
     /// @}
 
-    /// @name Field Widths
-    /// @brief Tag-field padding constants used by Emit() and exposed for tests.
+    /**
+     * @name Field Widths
+     * @brief Tag-field padding constants used by Emit() and exposed for tests.
+     */
     /// @{
 
     /// @brief Width of the bracketed level tag, e.g. `[ERROR]` = 7 chars.
@@ -263,14 +269,18 @@ public:
     /// @brief Width of the bracketed subsystem tag, e.g. `[Dialogue]` = 10 chars.
     static constexpr std::size_t SUBSYSTEM_FIELD_WIDTH = 10;
 
-    /// @brief Maximum subsystem name length that fits without truncation
-    ///        (`SUBSYSTEM_FIELD_WIDTH` minus the two enclosing brackets).
+    /**
+     * @brief Maximum subsystem name length that fits without truncation
+     *        (`SUBSYSTEM_FIELD_WIDTH` minus the two enclosing brackets).
+     */
     static constexpr std::size_t MAX_SUBSYSTEM_NAME_LENGTH = SUBSYSTEM_FIELD_WIDTH - 2;
 
     /// @}
 
-    /// @name Test Hooks
-    /// @brief Internal helpers exposed for unit tests; not for production callers.
+    /**
+     * @name Test Hooks
+     * @brief Internal helpers exposed for unit tests; not for production callers.
+     */
     /// @{
 
     /**
