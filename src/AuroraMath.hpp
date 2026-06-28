@@ -4,13 +4,27 @@
 
 #include <glm/glm.hpp>
 
-/// Pure, renderer-free math for the AuroraNight effect. Unit-tested in
-/// tests/AuroraMathTests.cpp; no GPU or IRenderer dependency.
+/**
+ * @brief Pure, renderer-free math for AuroraNight.
+ * @author Alex (https://github.com/lextpf)
+ * @ingroup Effects
+ *
+ * Every function here is a self-contained value transform with no GPU or
+ * @ref IRenderer dependency, unit-tested in tests/AuroraMathTests.cpp.
+ */
 namespace AuroraMath
 {
-/// Saturated 8-stop aurora palette (emerald -> mint -> cyan -> blue -> violet
-/// -> magenta -> pink -> teal). `phase` is wrapped to its fractional part, so
-/// integer values return the same color (continuous loop).
+/**
+ * @brief Sample the saturated 8-stop aurora palette at a looping @p phase.
+ *
+ * Stops run emerald -> teal -> cyan -> azure -> violet -> magenta -> rose ->
+ * gold and wrap continuously, so integer @p phase values return the same color
+ * (a seamless loop).
+ *
+ * @param phase  Palette position; only the fractional part is used, so the
+ *               loop repeats every 1.0.
+ * @return       Linearly interpolated RGB color at @p phase.
+ */
 inline glm::vec3 AuroraColor(float phase)
 {
     float p = phase - std::floor(phase);
@@ -32,8 +46,16 @@ inline glm::vec3 AuroraColor(float phase)
     return glm::mix(stops[i], stops[j], f);
 }
 
-/// Tangent angle (degrees) of the path from `prev` to `next`, for rotating a
-/// ribbon segment to follow its warped curve. Returns 0 for a flat ribbon.
+/**
+ * @brief Tangent angle (degrees) of the path from @p prev to @p next.
+ *
+ * Used to rotate a ribbon segment so it follows its warped curve.
+ *
+ * @param prev  Previous point on the ribbon path.
+ * @param next  Next point on the ribbon path.
+ * @return      Direction angle of @p prev -> @p next in degrees, or 0 for a
+ *              zero-length (flat) segment.
+ */
 inline float TangentAngleDeg(glm::vec2 prev, glm::vec2 next)
 {
     const float dx = next.x - prev.x;
@@ -46,10 +68,19 @@ inline float TangentAngleDeg(glm::vec2 prev, glm::vec2 next)
     return std::atan2(dy, dx) * kRadToDeg;
 }
 
-/// Travelling brightness hot-spot along a band. `segNorm` in [0,1] is the
-/// position along the ribbon; the center sweeps with time at `speed`. Returns a
-/// Gaussian boost in (0,1] of half-width `width`, peaking at the moving center.
-/// `seed` offsets each band's phase so neighbors don't pulse in sync.
+/**
+ * @brief Travelling brightness hot-spot along a band (Gaussian sweep).
+ *
+ * A single bright center sweeps along the ribbon over time; @p seed offsets
+ * each band's phase so neighbouring bands don't pulse in sync.
+ *
+ * @param segNorm  Position along the ribbon, in [0,1].
+ * @param t        Time (seconds) driving the sweep.
+ * @param speed    Rate at which the center travels along the band.
+ * @param width    Gaussian half-width of the hot-spot.
+ * @param seed     Per-band phase offset so neighbours desync.
+ * @return         Brightness boost in (0,1], peaking at the moving center.
+ */
 inline float SweepBoost(float segNorm, float t, float speed, float width, float seed)
 {
     float center = t * speed + seed;
