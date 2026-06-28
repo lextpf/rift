@@ -39,10 +39,10 @@
  * many sprites into a single draw call dramatically improves performance.
  *
  * @par Why Batching Matters
- * - Many sprites without batching: one draw call per sprite, high
- * driver overhead.
+ * - Many sprites without batching: one draw call per sprite, high driver
+ *   overhead.
  * - Many sprites with batching: one draw call per texture run, lower CPU
- * overhead.
+ *   overhead.
  *
  * @par Batch Flow
  * @htmlonly
@@ -79,8 +79,7 @@
  * @endcode
  *
  * @par Flush Triggers
- * Flush triggers include texture changes, a full batch buffer, frame end,
- * and
+ * Flush triggers include texture changes, a full batch buffer, frame end, and
  * switches between sprite, rect, particle, or text rendering paths.
  *
  * @par Batch Types
@@ -92,16 +91,12 @@
  * | Text        | m_TextBatchVertices     | Per DrawText call  |
  *
  * @section gl_shaders Shader Architecture
- * World sprites and sprite-region draws use the main
- * sprite shader:
+ * World sprites and sprite-region draws use the main sprite shader:
  * - Vertex: Transform quad corners, pass UV coordinates
- * - Fragment: Sample
- * texture, apply color tint and ambient light
+ * - Fragment: Sample texture, apply color tint and ambient light
  *
- * Additional shader programs handle specialized
- * paths such as batched text,
- * bloom prefilter/downsample/upsample, and final post-FX
- * composition.
+ * Additional shader programs handle specialized paths such as batched text,
+ * bloom prefilter/downsample/upsample, and final post-FX composition.
  *
  * @par Uniform Locations (cached at init)
  * | Uniform      | Type  | Purpose                    |
@@ -122,13 +117,14 @@
  * in the m_Characters map.
  *
  * @see IRenderer Base interface with method documentation
- * @see VulkanRenderer Alternative
- * Vulkan implementation
+ * @see VulkanRenderer Alternative Vulkan implementation
  */
 struct GLFWwindow;
 
-/// @name Debug Draw Visualization
-/// @{
+/**
+ * @name Debug Draw Visualization
+ * @{
+ */
 
 /// @brief Enable or disable per-draw-call sleep for debugging render order.
 void SetDebugDrawSleep(GLFWwindow* window, bool enabled);
@@ -149,8 +145,10 @@ public:
 
     RIFT_DECLARE_COMMON_RENDERER_METHODS;
 
-    /// Draws text from the headline atlas (logical size 96, vs body text's
-    /// logical 24) for large title-screen text such as the "RIFT" logo.
+    /**
+     * Draws text from the headline atlas (logical size 96, vs body text's
+     * logical 24) for large title-screen text such as the "RIFT" logo.
+     */
     void DrawTextLarge(const std::string& text,
                        glm::vec2 position,
                        float scale,
@@ -188,11 +186,15 @@ public:
 private:
     RendererInfo m_Info;  ///< Cached at end of Init(); returned by GetBackendInfo().
 
-    /// @name Initialization Helpers
-    /// @{
+    /**
+     * @name Initialization Helpers
+     * @{
+     */
 
-    /// @brief Ensure texture has a valid OpenGL ID for the current context, recreating if needed.
-    /// @return Valid texture ID, or 0 if the texture could not be made ready.
+    /**
+     * @brief Ensure texture has a valid OpenGL ID for the current context, recreating if needed.
+     * @return Valid texture ID, or 0 if the texture could not be made ready.
+     */
     unsigned int EnsureTextureReady(const Texture& texture);
 
     /// @brief Create VAO/VBO for the unit quad used by all sprite rendering.
@@ -201,14 +203,18 @@ private:
     /// @brief Create a 1x1 white texture for colored rectangle rendering.
     void CreateWhiteTexture();
 
-    /// @brief Load a TTF font and build both glyph atlases (body + headline).
-    /// @param fontPath Path to the .ttf font file.
+    /**
+     * @brief Load a TTF font and build both glyph atlases (body + headline).
+     * @param fontPath Path to the .ttf font file.
+     */
     void LoadFont(const std::string& fontPath);
 
     /// @}
 
-    /// @name Font Atlas
-    /// @{
+    /**
+     * @name Font Atlas
+     * @{
+     */
 
     /**
      * @brief Cached glyph metrics and atlas UV coordinates.
@@ -228,18 +234,22 @@ private:
     unsigned int m_FontAtlasTexture;
     int m_FontAtlasWidth, m_FontAtlasHeight;
 
-    /// @brief Headline glyph atlas at @c HEADLINE_FONT_PIXEL_SIZE.
-    /// Used by @ref DrawTextLarge for large title-screen text (the "RIFT" logo).
+    /**
+     * @brief Headline glyph atlas at @c HEADLINE_FONT_PIXEL_SIZE.
+     * Used by @ref DrawTextLarge for large title-screen text (the "RIFT" logo).
+     */
     std::map<char, Character> m_HeadlineCharacters;
     unsigned int m_HeadlineFontAtlasTexture = 0;
     int m_HeadlineFontAtlasWidth = 0;
     int m_HeadlineFontAtlasHeight = 0;
 
-    /// FreeType *physical* bake sizes (atlas texel resolution) plus the *logical*
-    /// sizes that DrawText/DrawTextLarge `scale` is relative to. Per-glyph metrics
-    /// are normalized by (logical / physical) so on-screen text size is independent
-    /// of the atlas texel resolution -- letting us supersample the body atlas for
-    /// crispness without changing any caller's layout.
+    /**
+     * FreeType *physical* bake sizes (atlas texel resolution) plus the *logical*
+     * sizes that DrawText/DrawTextLarge `scale` is relative to. Per-glyph metrics
+     * are normalized by (logical / physical) so on-screen text size is independent
+     * of the atlas texel resolution - letting us supersample the body atlas for
+     * crispness without changing any caller's layout.
+     */
     static constexpr int BODY_FONT_PIXEL_SIZE = 96;
     static constexpr int BODY_FONT_LOGICAL_PIXEL_SIZE = 24;
     static constexpr int HEADLINE_FONT_PIXEL_SIZE = 96;
@@ -250,16 +260,20 @@ private:
         static_cast<float>(HEADLINE_FONT_LOGICAL_PIXEL_SIZE) /
         static_cast<float>(HEADLINE_FONT_PIXEL_SIZE);
 
-    /// @brief Internal: build one atlas at @p pixelSize into the provided slots.
-    /// Used by LoadFont to emit both body and headline atlases from one face.
+    /**
+     * @brief Internal: build one atlas at @p pixelSize into the provided slots.
+     * Used by LoadFont to emit both body and headline atlases from one face.
+     */
     void BuildAtlasInto(int pixelSize,
                         std::map<char, Character>& outChars,
                         unsigned int& outTexture,
                         int& outWidth,
                         int& outHeight);
 
-    /// @brief Internal: shared body of DrawText, parameterized over the atlas.
-    /// @c chars and @c atlasTexture select between body and headline atlases.
+    /**
+     * @brief Internal: shared body of DrawText, parameterized over the atlas.
+     * @c chars and @c atlasTexture select between body and headline atlases.
+     */
     void DrawTextImpl(const std::string& text,
                       glm::vec2 position,
                       float scale,
@@ -285,8 +299,10 @@ private:
 
     /// @}
 
-    /// @name Core OpenGL Objects
-    /// @{
+    /**
+     * @name Core OpenGL Objects
+     * @{
+     */
 
     unsigned int m_VAO, m_VBO, m_EBO;  ///< Unit quad geometry.
     unsigned int m_ShaderProgram;      ///< Unified sprite/text shader.
@@ -295,8 +311,10 @@ private:
 
     /// @}
 
-    /// @name Shader Uniform Locations
-    /// @{
+    /**
+     * @name Shader Uniform Locations
+     * @{
+     */
 
     GLint m_ModelLoc;         ///< Per-sprite model matrix.
     GLint m_ProjectionLoc;    ///< Orthographic projection matrix.
@@ -306,8 +324,10 @@ private:
     GLint m_UseColorOnlyLoc;  ///< Color mode selector (0=texture, 1=uniform, 2=vertex, 3=tex*vert).
     glm::vec3 m_AmbientColor;  ///< Current ambient light value.
 
-    /// @brief Perspective state pushed to the vertex shader.
-    /// Set by `Set*Perspective` and uploaded by `PushPerspectiveUniforms`.
+    /**
+     * @brief Perspective state pushed to the vertex shader.
+     * Set by `Set*Perspective` and uploaded by `PushPerspectiveUniforms`.
+     */
     GLint m_PerspEnabledLoc;
     GLint m_PerspHasGlobeLoc;
     GLint m_PerspHasVanishingLoc;
@@ -316,25 +336,31 @@ private:
     GLint m_PerspViewSizeLoc;
     GLint m_PerspSphereRadiusLoc;
 
-    /// @brief Upload `m_Persp` to the perspective uniforms. Cheap; called at
-    /// the start of each Flush* and after `Set*Perspective`.
+    /**
+     * @brief Upload `m_Persp` to the perspective uniforms. Cheap; called at
+     * the start of each Flush* and after `Set*Perspective`.
+     */
     void PushPerspectiveUniforms();
 
     /// @}
 
-    /// @name Text Batching
-    /// @{
+    /**
+     * @name Text Batching
+     * @{
+     */
 
     /// @brief Maximum characters per DrawText call before flush.
     static constexpr size_t MAX_TEXT_QUADS = 2048;
 
-    /// @brief Vertex format for text quads.
-    ///
-    /// Per-vertex color lets a single DrawText call render outline AND
-    /// foreground in one draw: outline quads carry RGBA(0,0,0,outlineAlpha),
-    /// foreground quads carry RGBA(color.rgb, alpha). The shader runs in
-    /// "textured x vertex color" mode (useColorOnly == 3) so the glyph
-    /// alpha multiplies the per-vertex color directly.
+    /**
+     * @brief Vertex format for text quads.
+     *
+     * Per-vertex color lets a single DrawText call render outline AND
+     * foreground in one draw: outline quads carry RGBA(0,0,0,outlineAlpha),
+     * foreground quads carry RGBA(color.rgb, alpha). The shader runs in
+     * "textured x vertex color" mode (useColorOnly == 3) so the glyph
+     * alpha multiplies the per-vertex color directly.
+     */
     struct TextVertex
     {
         float x, y;             ///< Screen position.
@@ -345,9 +371,11 @@ private:
 
     std::vector<TextVertex> m_TextBatchVertices;  ///< Accumulated text geometry.
     unsigned int m_TextVAO, m_TextVBO;            ///< Text-specific buffers.
-    /// Active font atlas for the accumulated text batch. Zero when no text is
-    /// pending. Multiple DrawText calls with the same atlas batch into a single
-    /// draw; changing atlas (e.g., body -> headline) forces a flush first.
+    /**
+     * Active font atlas for the accumulated text batch. Zero when no text is
+     * pending. Multiple DrawText calls with the same atlas batch into a single
+     * draw; changing atlas (e.g., body -> headline) forces a flush first.
+     */
     unsigned int m_CurrentTextAtlas = 0;
 
     /// @brief Submit accumulated text geometry to the GPU and reset the batch.
@@ -355,19 +383,23 @@ private:
 
     /// @}
 
-    /// @name Sprite Batching
-    /// @{
+    /**
+     * @name Sprite Batching
+     * @{
+     */
 
     /// @brief Maximum sprites before automatic flush.
     static constexpr size_t MAX_BATCH_SPRITES = 10000;
     static constexpr size_t VERTICES_PER_SPRITE = 6;  ///< Two triangles.
     static constexpr size_t FLOATS_PER_VERTEX = 5;    ///< x, y, u, v, perspectiveFlag.
 
-    /// @brief Vertex format for batched sprites (screen-space pre-camera).
-    ///
-    /// `perspectiveFlag` is captured at queue time from `IsPerspectiveSuspended()`
-    /// (0 = suspended/no transform, 1 = apply perspective in the vertex shader).
-    /// This lets suspended and un-suspended geometry share a single batch.
+    /**
+     * @brief Vertex format for batched sprites (screen-space pre-camera).
+     *
+     * `perspectiveFlag` is captured at queue time from `IsPerspectiveSuspended()`
+     * (0 = suspended/no transform, 1 = apply perspective in the vertex shader).
+     * This lets suspended and un-suspended geometry share a single batch.
+     */
     struct BatchVertex
     {
         float x, y;             ///< World-space position (before perspective).
@@ -384,8 +416,10 @@ private:
 
     /// @}
 
-    /// @name Colored Rectangle Batching
-    /// @{
+    /**
+     * @name Colored Rectangle Batching
+     * @{
+     */
 
     /// @brief Vertex format with per-vertex RGBA color.
     struct ColoredVertex
@@ -402,8 +436,10 @@ private:
 
     /// @}
 
-    /// @name Colored Rectangle Helpers
-    /// @{
+    /**
+     * @name Colored Rectangle Helpers
+     * @{
+     */
 
     /// @brief Submit accumulated rects to GPU and reset batch.
     void FlushRectBatch();
@@ -413,8 +449,10 @@ private:
 
     /// @}
 
-    /// @name Particle Batching
-    /// @{
+    /**
+     * @name Particle Batching
+     * @{
+     */
 
     std::vector<ColoredVertex> m_ParticleBatchVertices;  ///< Particle geometry.
     unsigned int m_CurrentParticleTexture;               ///< Active particle texture.
@@ -425,30 +463,38 @@ private:
     /// @brief Submit accumulated particles to GPU and reset batch.
     void FlushParticleBatch();
 
-    /// @name Performance Metrics
-    /// @{
+    /**
+     * @name Performance Metrics
+     * @{
+     */
 
     int m_DrawCallCount = 0;     ///< Number of draw calls this frame (for debug display).
     bool m_Initialized = false;  ///< True after Init() completes successfully.
 
-    /// @brief Reason string for the next batch flush, or nullptr.
-    ///
-    /// Set by call sites just before invoking Flush*Batch (see PrepFlushReason
-    /// helper). Read and cleared by the flush methods when DrawTracer is
-    /// enabled, so the trace records why each GPU submission happened
-    /// (texture change, batch full, projection swap, end of pass, etc.)
-    /// without changing the FlushBatch signature.
+    /**
+     * @brief Reason string for the next batch flush, or nullptr.
+     *
+     * Set by call sites just before invoking Flush*Batch (see PrepFlushReason
+     * helper). Read and cleared by the flush methods when DrawTracer is
+     * enabled, so the trace records why each GPU submission happened
+     * (texture change, batch full, projection swap, end of pass, etc.)
+     * without changing the FlushBatch signature.
+     */
     const char* m_PendingFlushReason = nullptr;
 
-    /// @brief Stamp the next flush(es) with a reason. No-op when DrawTracer
-    /// is disabled, so call sites can sprinkle these freely without
-    /// per-frame cost when tracing is off.
+    /**
+     * @brief Stamp the next flush(es) with a reason. No-op when DrawTracer
+     * is disabled, so call sites can sprinkle these freely without
+     * per-frame cost when tracing is off.
+     */
     inline void PrepFlushReason(const char* reason) { m_PendingFlushReason = reason; }
 
     /// @}
 
-    /// @name Shader Loading
-    /// @{
+    /**
+     * @name Shader Loading
+     * @{
+     */
 
     /**
      * @brief Load shader source code from a file.
@@ -467,14 +513,18 @@ private:
 
     /// @}
 
-    /// @name Viewport tracking (for post-FX FBO sizing)
-    /// @{
+    /**
+     * @name Viewport tracking (for post-FX FBO sizing)
+     * @{
+     */
     int m_ViewportWidth = 0;
     int m_ViewportHeight = 0;
     /// @}
 
-    /// @name Post-FX Pipeline
-    /// @{
+    /**
+     * @name Post-FX Pipeline
+     * @{
+     */
 
     /// Scene FBO + color texture + depth renderbuffer. Resized on viewport change.
     unsigned int m_SceneFBO = 0;
@@ -483,9 +533,11 @@ private:
     int m_SceneFBOWidth = 0;
     int m_SceneFBOHeight = 0;
 
-    /// Bloom mip chain: progressively halved render targets for the
-    /// downsample/upsample bloom architecture. Mip 0 is half scene resolution;
-    /// each subsequent mip is half the previous. See AmbienceConfig::BLOOM_MIP_LEVELS.
+    /**
+     * Bloom mip chain: progressively halved render targets for the
+     * downsample/upsample bloom architecture. Mip 0 is half scene resolution;
+     * each subsequent mip is half the previous. See AmbienceConfig::BLOOM_MIP_LEVELS.
+     */
     static constexpr int kBloomMipLevels = 5;
     unsigned int m_BloomMipFBO[kBloomMipLevels] = {};
     unsigned int m_BloomMipTex[kBloomMipLevels] = {};
