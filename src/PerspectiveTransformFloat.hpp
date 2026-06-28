@@ -6,8 +6,8 @@
 #include <cmath>
 
 /**
- * @file PerspectiveTransformFloat.hpp
  * @brief Single-precision mirror of the GLSL perspective math.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Rendering
  *
  * `shaders/Geometry.vert::applyPerspective` runs in 32-bit float; the
