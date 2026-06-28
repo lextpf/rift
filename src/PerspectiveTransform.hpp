@@ -71,7 +71,9 @@ inline constexpr double kBaseCullHeightScale = 1.0;
 inline constexpr double kCullRefGlobeRadiusXScale = 1.0;
 inline constexpr double kCullRefGlobeRadiusYScale = 0.72;
 
-/// Return the world-cull width multiplier for perspective rendering.
+/**
+ * @brief Return the world-cull width multiplier for perspective rendering.
+ */
 inline double GetPerspectiveCullWidthScale(bool hasGlobe)
 {
     if (!hasGlobe)
@@ -81,7 +83,9 @@ inline double GetPerspectiveCullWidthScale(bool hasGlobe)
     return kBaseCullWidthScale * ovalFactor;
 }
 
-/// Return the world-cull height multiplier for perspective rendering.
+/**
+ * @brief Return the world-cull height multiplier for perspective rendering.
+ */
 inline double GetPerspectiveCullHeightScale(bool hasGlobe)
 {
     if (!hasGlobe)
@@ -164,7 +168,9 @@ inline void TransformPoint(double& x, double& y, const Params& p)
     }
 }
 
-/// @brief Function pointer type for a TransformPoint specialization.
+/**
+ * @brief Function pointer type for a TransformPoint specialization.
+ */
 using TransformFn = void (*)(double&, double&, const Params&);
 
 /**
@@ -184,7 +190,9 @@ inline constexpr TransformFn kTransformDispatch[2][2] = {
     {TransformPoint<true, false>, TransformPoint<true, true>},
 };
 
-/// @brief Select the appropriate TransformPoint specialization at runtime.
+/**
+ * @brief Select the appropriate TransformPoint specialization at runtime.
+ */
 inline TransformFn GetTransformFn(bool applyGlobe, bool applyVanishing)
 {
     return kTransformDispatch[applyGlobe][applyVanishing];
@@ -223,16 +231,22 @@ inline void TransformCorners(glm::vec2 corners[4], const Params& p)
     }
 }
 
-/// @brief Function pointer type for a TransformCorners specialization.
+/**
+ * @brief Function pointer type for a TransformCorners specialization.
+ */
 using TransformCornersFn = void (*)(glm::vec2[4], const Params&);
 
-/// @brief Compile-time dispatch table for TransformCorners.
+/**
+ * @brief Compile-time dispatch table for TransformCorners.
+ */
 inline constexpr TransformCornersFn kTransformCornersDispatch[2][2] = {
     {TransformCorners<false, false>, TransformCorners<false, true>},
     {TransformCorners<true, false>, TransformCorners<true, true>},
 };
 
-/// @brief Select the appropriate TransformCorners specialization at runtime.
+/**
+ * @brief Select the appropriate TransformCorners specialization at runtime.
+ */
 inline TransformCornersFn GetTransformCornersFn(bool applyGlobe, bool applyVanishing)
 {
     return kTransformCornersDispatch[applyGlobe][applyVanishing];
