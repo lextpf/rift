@@ -137,14 +137,16 @@ public:
     /// @brief Vulkan uses same Y-flip convention as OpenGL for UV compatibility.
     bool RequiresYFlip() const override { return true; }
 
-    /// @brief Set the global ambient (day/night) tint.
-    ///
-    /// Ambient is a deferred uniform - FlushSpriteBatch() bakes the current
-    /// m_AmbientColor into the push constants at flush time, and the sprite
-    /// batch flushes lazily. Drain queued sprites with the current ambient
-    /// before changing it, or a later flush retroactively recolors them (e.g.
-    /// the sky pass sets ambient to white while night foreground tiles are
-    /// still queued, flashing them to "day"). Mirrors OpenGLRenderer.
+    /**
+     * @brief Set the global ambient (day/night) tint.
+     *
+     * Ambient is a deferred uniform - FlushSpriteBatch() bakes the current
+     * m_AmbientColor into the push constants at flush time, and the sprite
+     * batch flushes lazily. Drain queued sprites with the current ambient
+     * before changing it, or a later flush retroactively recolors them (e.g.
+     * the sky pass sets ambient to white while night foreground tiles are
+     * still queued, flashing them to "day"). Mirrors OpenGLRenderer.
+     */
     void SetAmbientColor(const glm::vec3& color) override
     {
         if (color == m_AmbientColor)
@@ -158,8 +160,10 @@ public:
 private:
     RendererInfo m_Info;  ///< Cached at end of Init(); returned by GetBackendInfo().
 
-    /// @name Sprite Helpers
-    /// @{
+    /**
+     * @name Sprite Helpers
+     * @{
+     */
 
     /**
      * @struct SpriteVertex
@@ -176,24 +180,28 @@ private:
         float perspectiveFlag;  ///< 0 = skip perspective, 1 = apply in shader.
     };
 
-    /// @brief Build 6 vertices (2 triangles) from 4 screen-space corners and UV coords.
-    /// @param outVertices Output array of 6 vertices.
-    /// @param corners Screen-space quad corners [TL, TR, BR, BL].
-    /// @param texCoords UV coordinates matching each corner.
-    /// @param perspectiveFlag 0 = skip perspective in shader, 1 = apply.
+    /**
+     * @brief Build 6 vertices (2 triangles) from 4 screen-space corners and UV coords.
+     * @param outVertices Output array of 6 vertices.
+     * @param corners Screen-space quad corners [TL, TR, BR, BL].
+     * @param texCoords UV coordinates matching each corner.
+     * @param perspectiveFlag 0 = skip perspective in shader, 1 = apply.
+     */
     static void BuildQuadVertices(SpriteVertex outVertices[6],
                                   const glm::vec2 corners[4],
                                   const glm::vec2 texCoords[4],
                                   float perspectiveFlag = 0.0f);
 
-    /// @brief Write a quad into the vertex buffer and flush if texture changes.
-    /// @param descriptorSet Descriptor set binding the quad's texture.
-    /// @param vertices Pre-built 6-vertex quad.
-    /// @param spriteColor RGB color tint.
-    /// @param spriteAlpha Transparency multiplier.
-    /// @param useColorOnly True to render solid color instead of texture.
-    /// @param colorOnly RGBA color when useColorOnly is true.
-    /// @return True if the quad was successfully submitted.
+    /**
+     * @brief Write a quad into the vertex buffer and flush if texture changes.
+     * @param descriptorSet Descriptor set binding the quad's texture.
+     * @param vertices Pre-built 6-vertex quad.
+     * @param spriteColor RGB color tint.
+     * @param spriteAlpha Transparency multiplier.
+     * @param useColorOnly True to render solid color instead of texture.
+     * @param colorOnly RGBA color when useColorOnly is true.
+     * @return True if the quad was successfully submitted.
+     */
     bool SubmitQuad(VkDescriptorSet descriptorSet,
                     const SpriteVertex vertices[6],
                     glm::vec3 spriteColor,
@@ -202,14 +210,18 @@ private:
                     glm::vec4 colorOnly = glm::vec4(0.0f));
     /// @}
 
-    /// @name Performance Metrics
-    /// @{
+    /**
+     * @name Performance Metrics
+     * @{
+     */
     int m_DrawCallCount = 0;         ///< Draw calls this frame.
     glm::vec3 m_AmbientColor{1.0f};  ///< Current ambient light color.
     /// @}
 
-    /// @name Text Rendering (FreeType)
-    /// @{
+    /**
+     * @name Text Rendering (FreeType)
+     * @{
+     */
 
     /**
      * @struct Glyph
@@ -228,11 +240,13 @@ private:
     /// @brief Load TTF font and create per-glyph Vulkan textures.
     void LoadFont();
 
-    /// @brief Create a Vulkan image from RGBA pixel data for a single glyph.
-    /// @param width Glyph width in pixels.
-    /// @param height Glyph height in pixels.
-    /// @param rgbaData RGBA pixel data.
-    /// @param outGlyph Output glyph with populated Vulkan handles.
+    /**
+     * @brief Create a Vulkan image from RGBA pixel data for a single glyph.
+     * @param width Glyph width in pixels.
+     * @param height Glyph height in pixels.
+     * @param rgbaData RGBA pixel data.
+     * @param outGlyph Output glyph with populated Vulkan handles.
+     */
     void CreateGlyphTexture(int width,
                             int height,
                             const std::vector<unsigned char>& rgbaData,
@@ -248,8 +262,10 @@ private:
 
     /// @}
 
-    /// @name Vulkan Instance and Device
-    /// @{
+    /**
+     * @name Vulkan Instance and Device
+     * @{
+     */
     VkInstance m_Instance{VK_NULL_HANDLE};              ///< Vulkan API entry point.
     VkPhysicalDevice m_PhysicalDevice{VK_NULL_HANDLE};  ///< Selected GPU.
     VkDevice m_Device{VK_NULL_HANDLE};                  ///< Logical device for commands.
@@ -257,8 +273,10 @@ private:
     VkQueue m_PresentQueue{VK_NULL_HANDLE};             ///< Queue for presentation.
     /// @}
 
-    /// @name Surface and Swapchain
-    /// @{
+    /**
+     * @name Surface and Swapchain
+     * @{
+     */
     VkSurfaceKHR m_Surface{VK_NULL_HANDLE};          ///< Window surface.
     VkSwapchainKHR m_Swapchain{VK_NULL_HANDLE};      ///< Presentation swapchain.
     std::vector<VkImage> m_SwapchainImages;          ///< Swapchain images.
@@ -268,21 +286,27 @@ private:
     VkFormat m_SwapchainImageFormat{VK_FORMAT_UNDEFINED};  ///< Pixel format.
     /// @}
 
-    /// @name Render Pass and Pipeline
-    /// @{
+    /**
+     * @name Render Pass and Pipeline
+     * @{
+     */
     VkRenderPass m_RenderPass{VK_NULL_HANDLE};          ///< Defines attachment usage.
     VkPipelineLayout m_PipelineLayout{VK_NULL_HANDLE};  ///< Descriptor/push constant layout.
     VkPipeline m_GraphicsPipeline{VK_NULL_HANDLE};      ///< Compiled shader + state.
     /// @}
 
-    /// @name Command Recording
-    /// @{
+    /**
+     * @name Command Recording
+     * @{
+     */
     VkCommandPool m_CommandPool{VK_NULL_HANDLE};    ///< Command buffer allocator.
     std::vector<VkCommandBuffer> m_CommandBuffers;  ///< Per-frame command buffers.
     /// @}
 
-    /// @name Synchronization
-    /// @{
+    /**
+     * @name Synchronization
+     * @{
+     */
     std::vector<VkSemaphore> m_ImageAvailableSemaphores;  ///< Swapchain image ready.
     std::vector<VkSemaphore> m_RenderFinishedSemaphores;  ///< Rendering complete.
     std::vector<VkFence> m_InFlightFences;                ///< CPU-GPU sync.
@@ -290,8 +314,10 @@ private:
     VkFence m_TransferFence{VK_NULL_HANDLE};  ///< Fence for synchronous transfer operations.
     /// @}
 
-    /// @name Frame State
-    /// @{
+    /**
+     * @name Frame State
+     * @{
+     */
     size_t m_CurrentFrame{0};       ///< Current frame index (0 or 1).
     uint32_t m_ImageIndex{0};       ///< Acquired swapchain image index.
     bool m_FrameActive{false};      ///< True after BeginFrame started a render pass.
@@ -299,8 +325,10 @@ private:
     glm::mat4 m_Projection{1.0f};   ///< Current orthographic projection.
     /// @}
 
-    /// @name Vertex Buffers (Double-Buffered)
-    /// @{
+    /**
+     * @name Vertex Buffers (Double-Buffered)
+     * @{
+     */
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
     static constexpr uint32_t DESCRIPTOR_POOL_MAX_SETS = 1000;
     VkBuffer m_VertexBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
@@ -312,23 +340,29 @@ private:
     uint32_t m_CurrentVertexCount{0};
     /// @}
 
-    /// @name Sprite Batching
-    /// @{
+    /**
+     * @name Sprite Batching
+     * @{
+     */
     VkImageView m_BatchImageView{VK_NULL_HANDLE};          ///< Current batched texture.
     VkDescriptorSet m_BatchDescriptorSet{VK_NULL_HANDLE};  ///< Descriptor for batch.
     uint32_t m_BatchStartVertex{0};                        ///< Batch start in buffer.
     void FlushSpriteBatch();                               ///< Submit batch to GPU.
     /// @}
 
-    /// @name Staging Buffer
-    /// @{
+    /**
+     * @name Staging Buffer
+     * @{
+     */
     VkBuffer m_StagingBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_StagingBufferMemory{VK_NULL_HANDLE};
     void* m_StagingBufferMapped{nullptr};
     /// @}
 
-    /// @name Descriptors
-    /// @{
+    /**
+     * @name Descriptors
+     * @{
+     */
     VkDescriptorPool m_DescriptorPool{VK_NULL_HANDLE};
     VkDescriptorSetLayout m_DescriptorSetLayout{VK_NULL_HANDLE};
     VkSampler m_TextureSampler{VK_NULL_HANDLE};  ///< Shared texture sampler.
@@ -337,8 +371,10 @@ private:
     bool m_DescriptorPoolWarned{false};
     /// @}
 
-    /// @name Perspective UBO (set 1, binding 0 in shader)
-    /// @{
+    /**
+     * @name Perspective UBO (set 1, binding 0 in shader)
+     * @{
+     */
     /// Layout mirrors GLSL `PerspectiveBlock` in shaders/Geometry.vert (3x vec4 = 48 B).
     struct PerspectiveBlock
     {
@@ -353,24 +389,30 @@ private:
     VkDeviceMemory m_PerspUBOMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
     void* m_PerspUBOMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};
     VkDescriptorSet m_PerspDescriptorSets[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-    /// True until UpdatePerspectiveUBO has propagated the latest m_Persp into
-    /// both frame-in-flight UBOs; clears after each frame consumes its copy.
+    /**
+     * True until UpdatePerspectiveUBO has propagated the latest m_Persp into
+     * both frame-in-flight UBOs; clears after each frame consumes its copy.
+     */
     bool m_PerspUBODirty[MAX_FRAMES_IN_FLIGHT]{true, true};
 
     void CreatePerspectiveUBO();
     void UpdatePerspectiveUBO();
     /// @}
 
-    /// @name White Texture (for colored rects)
-    /// @{
+    /**
+     * @name White Texture (for colored rects)
+     * @{
+     */
     VkImage m_WhiteTextureImage{VK_NULL_HANDLE};
     VkDeviceMemory m_WhiteTextureImageMemory{VK_NULL_HANDLE};
     VkImageView m_WhiteTextureImageView{VK_NULL_HANDLE};
     VkSampler m_WhiteTextureSampler{VK_NULL_HANDLE};
     /// @}
 
-    /// @name Texture Cache
-    /// @{
+    /**
+     * @name Texture Cache
+     * @{
+     */
 
     /**
      * @struct TextureResources
@@ -388,8 +430,10 @@ private:
     std::unordered_set<const Texture*> m_UploadedTextureSet;  ///< O(1) dedup for uploads.
     /// @}
 
-    /// @name Initialization Helpers
-    /// @{
+    /**
+     * @name Initialization Helpers
+     * @{
+     */
     /// @brief Create VkInstance with validation layers.
     void CreateInstance();
     /// @brief Create window surface via GLFW.
@@ -414,11 +458,13 @@ private:
     void CreateCommandBuffers();
     /// @brief Create semaphores and fences for frame synchronization.
     void CreateSyncObjects();
-    /// @brief Destroy and recreate the image-available semaphore for a given
-    /// frame slot. Used after vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR
-    /// or after an EndFrame submit-path failure, both of which leave the
-    /// semaphore in an ambiguous "signaled but never waited" state that would
-    /// trip a validation error on the next acquire.
+    /**
+     * @brief Destroy and recreate the image-available semaphore for a given
+     * frame slot. Used after vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR
+     * or after an EndFrame submit-path failure, both of which leave the
+     * semaphore in an ambiguous "signaled but never waited" state that would
+     * trip a validation error on the next acquire.
+     */
     void RecreateImageAvailableSemaphore(size_t frame);
     /// @brief Create vertex and index buffers with persistent mapping.
     void CreateBuffers();
@@ -435,77 +481,103 @@ private:
     bool m_FramebufferResized{false};  ///< Set by resize callback to trigger swapchain recreation.
     /// @}
 
-    /// @name Texture Helpers
-    /// @{
-    /// @brief Get cached Vulkan resources for a texture or a white fallback entry.
-    /// @param texture CPU-side texture to look up.
+    /**
+     * @name Texture Helpers
+     * @{
+     */
+    /**
+     * @brief Get cached Vulkan resources for a texture or a white fallback entry.
+     * @param texture CPU-side texture to look up.
+     */
     TextureResources& GetOrCreateTexture(const Texture& texture);
-    /// @brief Get or allocate a descriptor set for an image view.
-    /// @param imageView Image view to bind.
+    /**
+     * @brief Get or allocate a descriptor set for an image view.
+     * @param imageView Image view to bind.
+     */
     VkDescriptorSet GetOrCreateDescriptorSet(VkImageView imageView);
-    /// @brief Compute a model matrix for sprite positioning.
-    /// @param position World position.
-    /// @param size Sprite dimensions.
-    /// @param rotation Rotation in degrees.
+    /**
+     * @brief Compute a model matrix for sprite positioning.
+     * @param position World position.
+     * @param size Sprite dimensions.
+     * @param rotation Rotation in degrees.
+     */
     glm::mat4 CalculateModelMatrix(glm::vec2 position, glm::vec2 size, float rotation);
     /// @}
 
-    /// @name Buffer Helpers
-    /// @{
-    /// @brief Find a suitable memory type index for the given requirements.
-    /// @param typeFilter Bit mask of acceptable memory type indices.
-    /// @param properties Required memory property flags.
+    /**
+     * @name Buffer Helpers
+     * @{
+     */
+    /**
+     * @brief Find a suitable memory type index for the given requirements.
+     * @param typeFilter Bit mask of acceptable memory type indices.
+     * @param properties Required memory property flags.
+     */
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    /// @brief Create a Vulkan buffer with backing memory.
-    /// @param size Buffer size in bytes.
-    /// @param usage Buffer usage flags.
-    /// @param properties Memory property flags.
-    /// @param buffer Output buffer handle.
-    /// @param bufferMemory Output memory handle.
+    /**
+     * @brief Create a Vulkan buffer with backing memory.
+     * @param size Buffer size in bytes.
+     * @param usage Buffer usage flags.
+     * @param properties Memory property flags.
+     * @param buffer Output buffer handle.
+     * @param bufferMemory Output memory handle.
+     */
     void CreateBuffer(VkDeviceSize size,
                       VkBufferUsageFlags usage,
                       VkMemoryPropertyFlags properties,
                       VkBuffer& buffer,
                       VkDeviceMemory& bufferMemory);
-    /// @brief Copy data between two Vulkan buffers using a one-shot command.
-    /// @param srcBuffer Source buffer.
-    /// @param dstBuffer Destination buffer.
-    /// @param size Number of bytes to copy.
+    /**
+     * @brief Copy data between two Vulkan buffers using a one-shot command.
+     * @param srcBuffer Source buffer.
+     * @param dstBuffer Destination buffer.
+     * @param size Number of bytes to copy.
+     */
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-    /// @brief Transition a Vulkan image between layouts.
-    /// @param image Image to transition.
-    /// @param format Image format.
-    /// @param oldLayout Current layout.
-    /// @param newLayout Target layout.
+    /**
+     * @brief Transition a Vulkan image between layouts.
+     * @param image Image to transition.
+     * @param format Image format.
+     * @param oldLayout Current layout.
+     * @param newLayout Target layout.
+     */
     void TransitionImageLayout(VkImage image,
                                VkFormat format,
                                VkImageLayout oldLayout,
                                VkImageLayout newLayout);
-    /// @brief Copy buffer contents to a Vulkan image.
-    /// @param buffer Source staging buffer.
-    /// @param image Destination image.
-    /// @param width Image width in pixels.
-    /// @param height Image height in pixels.
+    /**
+     * @brief Copy buffer contents to a Vulkan image.
+     * @param buffer Source staging buffer.
+     * @param image Destination image.
+     * @param width Image width in pixels.
+     * @param height Image height in pixels.
+     */
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-    /// @brief Upload staging buffer to image with layout transitions.
-    /// @param stagingBuffer Source staging buffer.
-    /// @param image Destination image.
-    /// @param width Image width in pixels.
-    /// @param height Image height in pixels.
+    /**
+     * @brief Upload staging buffer to image with layout transitions.
+     * @param stagingBuffer Source staging buffer.
+     * @param image Destination image.
+     * @param width Image width in pixels.
+     * @param height Image height in pixels.
+     */
     void UploadStagingBufferToImage(VkBuffer stagingBuffer,
                                     VkImage image,
                                     uint32_t width,
                                     uint32_t height);
     /// @}
 
-    /// @name Queue Families
-    /// @{
+    /**
+     * @name Queue Families
+     * @{
+     */
     uint32_t m_GraphicsFamily{0};
     uint32_t m_PresentFamily{0};
     /// @}
 
-    /// @name Validation and Extensions
-    /// @{
+    /**
+     * @name Validation and Extensions
+     * @{
+     */
     const std::vector<const char*> m_ValidationLayers = {"VK_LAYER_KHRONOS_validation"};
     const std::vector<const char*> m_DeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     bool CheckValidationLayerSupport();
