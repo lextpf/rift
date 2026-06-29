@@ -1,13 +1,15 @@
 #pragma once
 
-/// @file CharacterConstants.hpp
-/// @brief Shared character tuning constants, extracted from the GameCharacter base.
-/// @ingroup Entities
-///
-/// These were `static constexpr` members of the former GameCharacter base. With
-/// that base dissolved into ECS components, the constants live here as free
-/// `constexpr` so the player, NPCs, and the systems that operate on their
-/// components can reference them without a base class.
+/**
+ * @brief Shared character tuning constants, extracted from the GameCharacter base.
+ * @author Alex (https://github.com/lextpf)
+ * @ingroup Entities
+ *
+ * These were `static constexpr` members of the former GameCharacter base. With
+ * that base dissolved into ECS components, the constants live here as free
+ * `constexpr` so the player, NPCs, and the systems that operate on their
+ * components can reference them without a base class.
+ */
 
 namespace CharacterConstants
 {
@@ -18,8 +20,10 @@ inline constexpr int SPRITE_HEIGHT = 32;
 /// @brief Float twins of the sprite cell size (for vec2 / pixel math).
 inline constexpr float SPRITE_WIDTH_F = static_cast<float>(SPRITE_WIDTH);
 inline constexpr float SPRITE_HEIGHT_F = static_cast<float>(SPRITE_HEIGHT);
-/// @brief Animation frames per direction in a sprite row (the 3 cells walked
-/// through by @ref WALK_SEQUENCE; distinct from @ref WALK_SEQUENCE_LENGTH = 4).
+/**
+ * @brief Animation frames per direction in a sprite row (the 3 cells walked
+ * through by @ref WALK_SEQUENCE; distinct from @ref WALK_SEQUENCE_LENGTH = 4).
+ */
 inline constexpr int WALK_FRAME_COUNT = 3;
 /// @brief Seconds per walk/animation frame.
 inline constexpr float ANIM_FRAME_DURATION = 0.15f;
@@ -43,9 +47,11 @@ inline constexpr float BICYCLE_SPEED_MULTIPLIER = 2.25f;
 inline constexpr int WALK_SEQUENCE[4] = {1, 0, 2, 0};
 /// @brief Length of @ref WALK_SEQUENCE.
 inline constexpr int WALK_SEQUENCE_LENGTH = 4;
-/// @brief Maximum elevation delta (pixels) the plane can change in one step.
-///
-/// Larger deltas are rejected by the plane-update rule so a character cannot
-/// jump directly from ground onto a deck without using a ramp.
+/**
+ * @brief Maximum elevation delta (pixels) the plane can change in one step.
+ *
+ * Larger deltas are rejected by the plane-update rule so a character cannot
+ * jump directly from ground onto a deck without using a ramp.
+ */
 inline constexpr int MAX_STEP_HEIGHT = 8;
 }  // namespace CharacterConstants
