@@ -37,14 +37,14 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "NPC";
 
-/// Default greeting seeded into a spawned NPC's simple dialogue (matches the
-/// former NonPlayerCharacter constructor).
+// Default greeting seeded into a spawned NPC's simple dialogue (matches the
+// former NonPlayerCharacter constructor).
 constexpr const char* DEFAULT_NPC_TEXT = "Hello! How are you today?";
 
-/// Monotonic source of per-session NPC instance ids (was a file-local static in
-/// NonPlayerCharacter.cpp). Gives each NPC a stable identity distinct from its
-/// entity handle so dialogue/editor/console references survive despawn/undo.
-/// Single-threaded (NPCs are only created on the game thread). Not serialized.
+// Monotonic source of per-session NPC instance ids (was a file-local static in
+// NonPlayerCharacter.cpp). Gives each NPC a stable identity distinct from its
+// entity handle so dialogue/editor/console references survive despawn/undo.
+// Single-threaded (NPCs are only created on the game thread). Not serialized.
 std::uint64_t NextNpcInstanceId()
 {
     static std::uint64_t s_Next = 1;
