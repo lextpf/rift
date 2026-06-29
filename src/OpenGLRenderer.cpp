@@ -42,6 +42,8 @@ bool IsDebugDrawSleepEnabled()
     return s_DebugDrawSleep;
 }
 
+// Step-through debug aid: pushes the partially-drawn frame to the screen and
+// pauses, so each draw call can be watched landing in submission order.
 static void DebugAfterDraw(const char* label, int count)
 {
     if (s_DebugDrawSleep && s_DebugWindow)
@@ -58,6 +60,8 @@ unsigned int OpenGLRenderer::EnsureTextureReady(const Texture& texture)
 {
     unsigned int texID = texture.GetID();
     const std::uint64_t currentGen = Texture::GetCurrentOpenGLContextGeneration();
+    // A renderer/context hot-swap invalidates every GL texture id; a generation
+    // mismatch (or id 0) means this one is stale, so rebuild it from its CPU copy.
     if (texture.GetOpenGLContextGeneration() != currentGen || texID == 0)
     {
         texture.RecreateOpenGLTexture();
@@ -384,6 +388,7 @@ void OpenGLRenderer::EnsureSceneFramebuffer(int width, int height)
 
     glGenTextures(1, &m_SceneColorTex);
     glBindTexture(GL_TEXTURE_2D, m_SceneColorTex);
+    // HDR float target (RGB16F) so highlights keep values >1.0 for bloom threshold + tonemapping.
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -574,7 +579,6 @@ void OpenGLRenderer::RunBloomPrep()
         glUniform2f(m_BloomUpULoc_SrcTexelSize,
                     1.0f / static_cast<float>(m_BloomMipWidth[i]),
                     1.0f / static_cast<float>(m_BloomMipHeight[i]));
-        // Additive draw - BloomUpsample.frag's output is GL_ONE * src + GL_ONE * dst.
         glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
@@ -935,7 +939,8 @@ void OpenGLRenderer::SetVanishingPointPerspective(
     PrepFlushReason("SetVanishingPointPerspective");
     FlushTextBatch();
     IRenderer::SetVanishingPointPerspective(enabled, horizonY, horizonScale, viewWidth, viewHeight);
-    // Flushes left the shader program bound, so uniform writes target it.
+    // Re-bind our geometry program: an all-empty flush set may not have bound it,
+    // and PushPerspectiveUniforms writes into whatever program is currently active.
     glUseProgram(m_ShaderProgram);
     PushPerspectiveUniforms();
 }
@@ -997,7 +1002,8 @@ void OpenGLRenderer::UploadTexture(const Texture& texture)
 
 void OpenGLRenderer::SetupQuad()
 {
-    // Unit quad (0,0)-(1,1) for immediate-mode sprite rendering.
+    // Unit quad (0,0)-(1,1). Uploaded here but never bound for a draw; all sprites
+    // go through the batch VAO set up below.
     // Each vertex: 4 floats - position (x,y) then UV (u,v).
     float vertices[] = {                          // pos      // tex
                         0.0f, 1.0f, 0.0f, 1.0f,   // Bottom-left
@@ -1037,8 +1043,8 @@ void OpenGLRenderer::SetupQuad()
 
     glBindVertexArray(0);
 
-    // Text uses dynamic batching all characters in a DrawText call are
-    // uploaded at once and drawn with two draw calls (outline + main text)
+    // Text batches dynamically: every glyph in a DrawText call is uploaded at once
+    // and drawn in a single call (outline strokes + foreground share one stream).
     glGenVertexArrays(1, &m_TextVAO);
     glGenBuffers(1, &m_TextVBO);
 
@@ -1222,8 +1228,8 @@ void OpenGLRenderer::DrawSpriteRegion(const Texture& texture,
     float vTop = finalTexYTop;
     float vBottom = finalTexYBottom;
 
-    // Per-tile mirror: swap UV before rotation so the composition is
-    // flip-then-rotate (geometrically correct order for reflections).
+    // Per-tile mirror in texture space: swap UVs to flip horizontally (tileFlipX)
+    // or vertically (tileFlipY); independent of the geometry rotation below.
     if (tileFlipX)
     {
         std::swap(u0, u1);
@@ -1315,7 +1321,9 @@ void OpenGLRenderer::DrawSpriteAtlas(const Texture& texture,
         DrawTracer::Mark(buf, m_DrawCallCount);
     }
 
-    // Atlas variant of DrawSpriteAlpha - custom UV instead of full texture.
+    // General path behind DrawSpriteAlpha and atlas draws. Routes into the
+    // per-vertex-color particle batch (not the plain sprite batch) so each vertex
+    // carries its own RGBA tint/alpha.
 
     // Flush other batch types before switching to the particle batch.
     if (!m_BatchVertices.empty())
@@ -1647,8 +1655,8 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
         // GL Y-flip for textures loaded with stb_image.
         float finalTexYTop = texH - texCoord.y;
         float finalTexYBottom = texH - (texCoord.y + texSize.y);
-        v0 = finalTexYBottom / texH;  // Top vertex uses bottom V
-        v1 = finalTexYTop / texH;     // Bottom vertex uses top V
+        v0 = finalTexYBottom / texH;  // sampled by bottom quad verts (BL/BR)
+        v1 = finalTexYTop / texH;     // sampled by top quad verts (TL/TR)
     }
     else
     {
@@ -1666,11 +1674,8 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
         std::swap(v0, v1);
     }
 
-    // Map UV coordinates to corners: [TL, TR, BR, BL]
-    // TL (screen top) -> texture top, BR (screen bottom) -> texture bottom
-    // With flipY, v0=visual top, v1=visual bottom, so:
-    // TL/TR (top of quad) -> v1 (bottom of texture = visual top after flip)
-    // BL/BR (bottom of quad) -> v0 (top of texture = visual bottom after flip)
+    // Corner->UV mapping [TL, TR, BR, BL]: top vertices take v1, bottom take v0.
+    // Orientation is already baked into v0/v1 by the flipY branch above.
     glm::vec2 uvs[4] = {
         {u0, v1},  // TL - top of quad gets visual top of texture
         {u1, v1},  // TR
@@ -1693,6 +1698,8 @@ void OpenGLRenderer::DrawWarpedQuad(const Texture& texture,
     m_BatchVertices.push_back({corners[2].x, corners[2].y, uvs[2].x, uvs[2].y, kWarpedFlag});
 }
 
+// Rects (UI/debug colored quads) batch separately from the textured sprite
+// path: per-vertex color, white placeholder texture, own blend mode.
 void OpenGLRenderer::FlushRectBatch()
 {
     if (m_RectBatchVertices.empty() || !m_Initialized)
@@ -2394,6 +2401,8 @@ void OpenGLRenderer::FlushTextBatch()
         return;
     }
 
+    // Glyphs buffered but no atlas bound (or renderer not initialized): drop them,
+    // nothing to draw against.
     if (m_CurrentTextAtlas == 0 || !m_Initialized)
     {
         m_TextBatchVertices.clear();
