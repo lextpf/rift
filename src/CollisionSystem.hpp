@@ -11,7 +11,6 @@ struct PlayerMovementState;
 class Tilemap;
 
 /**
- * @file CollisionSystem.hpp
  * @brief Stateless player collision detection, wall sliding, and idle-snap logic.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
@@ -41,17 +40,21 @@ class Tilemap;
  */
 namespace CollisionSystem
 {
-/// @name Collision Queries
-/// @brief Pure queries that test positions without modifying player state.
-/// @{
+/**
+ * @name Collision Queries
+ * @brief Pure queries that test positions without modifying player state.
+ * @{
+ */
 
 /// @brief Check if a feet position collides with any NPC hitbox.
 bool CollidesWithNPC(const Hitbox& hitbox,
                      const glm::vec2& feetPos,
                      const std::vector<glm::vec2>* npcPositions);
 
-/// @brief Full-hitbox collision check against the tilemap (walking mode). A
-/// collision tile only blocks when its elevation is at-or-below @p plane.
+/**
+ * @brief Full-hitbox collision check against the tilemap (walking mode). A
+ * collision tile only blocks when its elevation is at-or-below @p plane.
+ */
 bool CollidesWithTilesStrict(const Hitbox& hitbox,
                              const glm::vec2& feetPos,
                              const Tilemap* tilemap,
@@ -77,20 +80,26 @@ glm::vec2 FindClosestSafeTileCenter(const Hitbox& hitbox,
                                     const Tilemap* tilemap,
                                     const std::vector<glm::vec2>* npcPositions);
 
-/// @brief Calculate exponential smoothing alpha for camera/snap following.
-/// Pure (hitbox-independent): @p deltaTime / @p settleTime in seconds, @p epsilon
-/// convergence threshold (default 1%). Returns alpha in [0,1] for use with lerp.
+/**
+ * @brief Calculate exponential smoothing alpha for camera/snap following.
+ * Pure (hitbox-independent): @p deltaTime / @p settleTime in seconds, @p epsilon
+ * convergence threshold (default 1%). Returns alpha in [0,1] for use with lerp.
+ */
 float CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon = 0.01f);
 
 /// @}
 
-/// @name Movement Resolution
-/// @brief Resolve blocked movement using (and mutating) the supplied
-/// PlayerMovementState hysteresis - never any stored player state.
-/// @{
+/**
+ * @name Movement Resolution
+ * @brief Resolve blocked movement using (and mutating) the supplied
+ * PlayerMovementState hysteresis - never any stored player state.
+ * @{
+ */
 
-/// @brief Attempt axis-aligned slide movement when the direct path is blocked.
-/// @return Achievable movement vector (may be zero if fully blocked).
+/**
+ * @brief Attempt axis-aligned slide movement when the direct path is blocked.
+ * @return Achievable movement vector (may be zero if fully blocked).
+ */
 glm::vec2 TrySlideMovement(const Hitbox& hitbox,
                            glm::vec2 playerPos,
                            PlayerMovementState& movement,
@@ -118,8 +127,10 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
                             int moveDx,
                             int moveDy);
 
-/// @brief Resolve stuck state: return a teleport-out feet position if embedded in
-/// a solid tile, else std::nullopt (and update movement.lastSafeTileCenter).
+/**
+ * @brief Resolve stuck state: return a teleport-out feet position if embedded in
+ * a solid tile, else std::nullopt (and update movement.lastSafeTileCenter).
+ */
 std::optional<glm::vec2> HandleStuckRecovery(const Hitbox& hitbox,
                                              glm::vec2 playerPos,
                                              PlayerMovementState& movement,
