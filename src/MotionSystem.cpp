@@ -5,7 +5,7 @@
 
 namespace
 {
-/// Move @p value toward @p target by at most @p maxDelta.
+// Move value toward target by at most maxDelta.
 float ApproachScalar(float value, float target, float maxDelta)
 {
     float diff = target - value;
@@ -16,20 +16,20 @@ float ApproachScalar(float value, float target, float maxDelta)
     return value + (diff > 0.0f ? maxDelta : -maxDelta);
 }
 
-/// Nearest horizontal tile center for an X coordinate.
+// Nearest horizontal tile center for an X coordinate.
 float AlignedRestX(float x, float tileSize)
 {
     return std::round((x - tileSize * 0.5f) / tileSize) * tileSize + tileSize * 0.5f;
 }
 
-/// Nearest feet-at-tile-bottom line for a Y coordinate (a multiple of tileSize).
+// Nearest feet-at-tile-bottom line for a Y coordinate (a multiple of tileSize).
 float AlignedRestY(float y, float tileSize)
 {
     return std::round(y / tileSize) * tileSize;
 }
 
-/// Decelerate one axis to land exactly on @p target. Updates @p vel in place and
-/// returns this frame's displacement for the axis.
+// Decelerate one axis to land exactly on target. Updates vel in place and
+// returns this frame's displacement for the axis.
 float ResolveAxisStop(float pos, float target, float& vel, const MotorParams& p, float dt)
 {
     float toTarget = target - pos;
