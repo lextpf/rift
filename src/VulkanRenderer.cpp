@@ -1,8 +1,3 @@
-// VK_USE_PLATFORM_WIN32_KHR must be defined before <vulkan/vulkan.h> so that
-// platform surface extension prototypes (vkCreateWin32SurfaceKHR, etc.) are declared.
-// This transitively includes <windows.h>, so we define NOMINMAX first and immediately
-// #undef the DrawText macro that windows.h injects, protecting our
-// VulkanRenderer::DrawText member function from name mangling.
 #ifdef _WIN32
 #define NOMINMAX
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -60,6 +55,7 @@ static bool LoadVulkanLibrary()
 
 namespace
 {
+// Validation layers are enabled only in debug builds (gated by NDEBUG).
 bool ShouldEnableValidationLayers()
 {
 #ifndef NDEBUG
@@ -70,7 +66,7 @@ bool ShouldEnableValidationLayers()
 }
 }  // namespace
 
-/// Push constants layout shared by all Vulkan draw calls.
+// Push constants layout shared by all Vulkan draw calls.
 struct CombinedPushConstants
 {
     glm::mat4 projection;    // 0-63
@@ -84,6 +80,7 @@ struct CombinedPushConstants
 static_assert(sizeof(CombinedPushConstants) == 176,
               "CombinedPushConstants must be 176 bytes to match SPIR-V shader layout");
 
+// Zero-initialize every Vulkan handle to VK_NULL_HANDLE; real bring-up is in Init().
 VulkanRenderer::VulkanRenderer(GLFWwindow* window)
     : m_Instance(VK_NULL_HANDLE),
       m_PhysicalDevice(VK_NULL_HANDLE),
@@ -128,11 +125,16 @@ VulkanRenderer::~VulkanRenderer()
     Shutdown();
 }
 
+// Record the project-configured font search paths; consumed later by LoadFont().
 void VulkanRenderer::SetFontCandidates(const std::vector<std::string>& fontCandidates)
 {
     m_FontCandidates = fontCandidates;
 }
 
+// Full renderer bring-up: load the Vulkan loader, then run the create-* steps in
+// dependency order (instance -> surface -> device -> swapchain -> render pass ->
+// pipeline -> resources -> font), and cache device info for GetBackendInfo. Every
+// step may throw; failures are caught here, logged, and reported as false.
 bool VulkanRenderer::Init()
 {
     try
@@ -223,11 +225,16 @@ bool VulkanRenderer::Init()
     }
 }
 
+// Return the cached backend/device info populated at the end of Init().
 RendererInfo VulkanRenderer::GetBackendInfo() const
 {
     return m_Info;
 }
 
+// Tear down every Vulkan object in reverse creation order after idling the device.
+// Safe to call more than once (guards on m_Device / m_Instance) and tolerant of a
+// lost device. Releases resources owned by uploaded Texture objects first, since
+// they must outlive neither the device nor this teardown.
 void VulkanRenderer::Shutdown()
 {
     if (m_Device != VK_NULL_HANDLE)
@@ -438,6 +445,8 @@ void VulkanRenderer::Shutdown()
 #endif
 }
 
+// Destroy the swapchain-derived objects (framebuffers, image views, and the
+// swapchain itself) ahead of a resize-driven recreate. Leaves the device intact.
 void VulkanRenderer::CleanupSwapchain()
 {
     for (auto framebuffer : m_SwapchainFramebuffers)
@@ -462,6 +471,9 @@ void VulkanRenderer::CleanupSwapchain()
     m_ImagesInFlight.clear();
 }
 
+// Rebuild the swapchain and its dependents after a resize or out-of-date result.
+// Blocks while the window is minimized (zero-size), idles the device, then recreates
+// swapchain + image views + framebuffers.
 void VulkanRenderer::RecreateSwapchain()
 {
     int width = 0, height = 0;
@@ -485,6 +497,8 @@ void VulkanRenderer::RecreateSwapchain()
     m_FramebufferResized = false;
 }
 
+// Create the VkInstance with the GLFW-required extensions, wiring up the debug
+// messenger and validation layers in debug builds.
 void VulkanRenderer::CreateInstance()
 {
     VkApplicationInfo appInfo{};
@@ -548,11 +562,14 @@ void VulkanRenderer::CreateInstance()
     VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 }
 
+// Create the window surface we render into (platform-specific, delegated to GLFW).
 void VulkanRenderer::CreateSurface()
 {
     VK_CHECK(glfwCreateWindowSurface(m_Instance, m_Window, nullptr, &m_Surface));
 }
 
+// Select the first GPU that exposes both a graphics queue family and a queue that
+// can present to our surface, recording those family indices. Throws if none fits.
 void VulkanRenderer::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
@@ -612,6 +629,8 @@ void VulkanRenderer::PickPhysicalDevice()
     }
 }
 
+// Create the logical device and retrieve the graphics and present queues (one queue
+// each; the two families may coincide, so they are de-duplicated).
 void VulkanRenderer::CreateLogicalDevice()
 {
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -654,6 +673,9 @@ void VulkanRenderer::CreateLogicalDevice()
     vkGetDeviceQueue(m_Device, m_PresentFamily, 0, &m_PresentQueue);
 }
 
+// Create the swapchain: prefer B8G8R8A8_UNORM (to match OpenGL's non-sRGB output)
+// and an uncapped present mode (IMMEDIATE > MAILBOX > FIFO) so app-side FPS limiting
+// works, sized to the current framebuffer. Retrieves the swapchain images.
 void VulkanRenderer::CreateSwapchain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -783,6 +805,7 @@ void VulkanRenderer::CreateSwapchain()
     m_SwapchainImageFormat = surfaceFormat.format;
 }
 
+// Create a 2D color image view for each swapchain image.
 void VulkanRenderer::CreateImageViews()
 {
     m_SwapchainImageViews.resize(m_SwapchainImages.size());
@@ -808,6 +831,8 @@ void VulkanRenderer::CreateImageViews()
     }
 }
 
+// Create the single-subpass render pass: one color attachment cleared on load and
+// stored for present, with an external dependency ordering the color-output stage.
 void VulkanRenderer::CreateRenderPass()
 {
     VkAttachmentDescription colorAttachment{};
@@ -849,6 +874,11 @@ void VulkanRenderer::CreateRenderPass()
     VK_CHECK(vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass));
 }
 
+// Build the one graphics pipeline shared by every draw: the SpriteVertex input
+// layout (pos + uv + perspectiveFlag), alpha blending, dynamic viewport/scissor (for
+// the Y-flip), the combined 176-byte push-constant range, and two descriptor sets
+// (set 0 = per-draw sampler, set 1 = per-frame perspective UBO). Loads the SPIR-V
+// shaders and throws if they are missing or the pipeline fails to create.
 void VulkanRenderer::CreateGraphicsPipeline()
 {
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() step 1: Starting...");
@@ -1119,6 +1149,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() complete!");
 }
 
+// Create one framebuffer per swapchain image view, bound to the render pass.
 void VulkanRenderer::CreateFramebuffers()
 {
     m_SwapchainFramebuffers.resize(m_SwapchainImageViews.size());
@@ -1141,6 +1172,7 @@ void VulkanRenderer::CreateFramebuffers()
     }
 }
 
+// Create the graphics-family command pool (individually resettable buffers).
 void VulkanRenderer::CreateCommandPool()
 {
     VkCommandPoolCreateInfo poolInfo{};
@@ -1151,6 +1183,7 @@ void VulkanRenderer::CreateCommandPool()
     VK_CHECK(vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_CommandPool));
 }
 
+// Allocate one primary command buffer per swapchain framebuffer.
 void VulkanRenderer::CreateCommandBuffers()
 {
     m_CommandBuffers.resize(m_SwapchainFramebuffers.size());
@@ -1164,6 +1197,9 @@ void VulkanRenderer::CreateCommandBuffers()
     VK_CHECK(vkAllocateCommandBuffers(m_Device, &allocInfo, m_CommandBuffers.data()));
 }
 
+// Create the per-frame-in-flight sync objects (image-available and render-finished
+// semaphores, in-flight fences created signaled) plus the transfer fence used for
+// synchronous buffer/image uploads.
 void VulkanRenderer::CreateSyncObjects()
 {
     m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1193,6 +1229,9 @@ void VulkanRenderer::CreateSyncObjects()
     VK_CHECK(vkCreateFence(m_Device, &transferFenceInfo, nullptr, &m_TransferFence));
 }
 
+// Destroy and recreate one frame's image-available semaphore. Needed after an
+// acquire returns OUT_OF_DATE/error with a pending signal, since reusing such a
+// semaphore on the next acquire is illegal (VUID-...-semaphore-01779).
 void VulkanRenderer::RecreateImageAvailableSemaphore(size_t frame)
 {
     if (frame >= m_ImageAvailableSemaphores.size() || m_Device == VK_NULL_HANDLE)
@@ -1215,6 +1254,7 @@ void VulkanRenderer::RecreateImageAvailableSemaphore(size_t frame)
     }
 }
 
+// Return whether every requested validation layer is available on this instance.
 bool VulkanRenderer::CheckValidationLayerSupport()
 {
     Logger::Debug(
@@ -1275,6 +1315,8 @@ bool VulkanRenderer::CheckValidationLayerSupport()
     return true;
 }
 
+// Collect the instance extensions to enable: GLFW's required set, plus the
+// debug-utils extension when validation layers are active.
 std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
 {
     Logger::Debug(LOG_SUBSYSTEM,
@@ -1316,6 +1358,10 @@ std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
     return extensions;
 }
 
+// Start a frame: reset per-frame batch state, refresh this frame's perspective UBO,
+// wait on the in-flight fence, and acquire the next swapchain image (recreating the
+// swapchain on OUT_OF_DATE). Then begin the command buffer + render pass and bind the
+// pipeline with a Y-flipped dynamic viewport (to match OpenGL's coordinate space).
 void VulkanRenderer::BeginFrame()
 {
     // Suspension depth must net to zero across frames: any unbalanced
@@ -1473,6 +1519,8 @@ void VulkanRenderer::BeginFrame()
     }
 }
 
+// Offscreen scene-target phase hook. Vulkan PostFX is a later phase, so this
+// renders straight to the swapchain with no bloom/grading/vignette/grain.
 void VulkanRenderer::BeginScene()
 {
     // Vulkan Post-FX is a later phase - the path currently renders directly
@@ -1480,11 +1528,16 @@ void VulkanRenderer::BeginScene()
     // Vulkan users see the unprocessed scene.
 }
 
+// PostFX composite hook. No-op on Vulkan for now (see BeginScene).
 void VulkanRenderer::EndSceneApplyPostFX(const PostFXParams& /*params*/)
 {
     // No-op: see BeginScene() comment.
 }
 
+// Finish the frame: flush the pending sprite batch, end the render pass and command
+// buffer, submit (waiting on image-available, signaling render-finished), present,
+// and advance the frame index. Recreates the swapchain on resize/out-of-date and
+// recovers the sync objects on any mid-submit failure so the next frame can proceed.
 void VulkanRenderer::EndFrame()
 {
     if (!m_FrameActive)
@@ -1623,6 +1676,8 @@ void VulkanRenderer::EndFrame()
     m_FrameActive = false;
 }
 
+// Flag a swapchain recreate when the requested size differs from the current extent.
+// The actual viewport is set dynamically in BeginFrame; x/y are unused here.
 void VulkanRenderer::SetViewport(int x, int y, int width, int height)
 {
     (void)x;
@@ -1635,17 +1690,23 @@ void VulkanRenderer::SetViewport(int x, int y, int width, int height)
     }
 }
 
+// Set the projection matrix for subsequent draws. Flushes the current batch first
+// since the matrix is a push constant and cannot change mid-batch.
 void VulkanRenderer::SetProjection(const glm::mat4& projection)
 {
     FlushSpriteBatch();
     m_Projection = projection;
 }
 
+// No-op: the color clear happens in BeginFrame via the render pass load op.
 void VulkanRenderer::Clear(float r, float g, float b, float a)
 {
     // No-op: clear is handled in BeginFrame via the render pass.
 }
 
+// Expand four quad corners and their UVs into the six vertices of two triangles,
+// tagging each with perspectiveFlag (1 = apply the globe/vanishing-point warp in the
+// shader, 0 = screen-space / no warp).
 void VulkanRenderer::BuildQuadVertices(SpriteVertex outVertices[6],
                                        const glm::vec2 corners[4],
                                        const glm::vec2 texCoords[4],
@@ -1665,6 +1726,10 @@ void VulkanRenderer::BuildQuadVertices(SpriteVertex outVertices[6],
         {corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}, perspectiveFlag};
 }
 
+// Append one quad's six vertices to this frame's vertex buffer and record an
+// immediate 6-vertex draw with the given color/alpha/color-only push constants (plus
+// the per-frame perspective UBO). Returns false if there is no active frame or the
+// vertex buffer is full.
 bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                                 const SpriteVertex vertices[6],
                                 glm::vec3 spriteColor,
@@ -1729,6 +1794,7 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
     return true;
 }
 
+// Draw a whole texture as a sprite (a full-texture DrawSpriteRegion, honoring rotation).
 void VulkanRenderer::DrawSprite(
     const Texture& texture, glm::vec2 position, glm::vec2 size, float rotation, glm::vec3 color)
 {
@@ -1745,6 +1811,10 @@ void VulkanRenderer::DrawSprite(
         false);
 }
 
+// Draw a sub-rectangle of a texture as an (optionally rotated/mirrored) sprite. The
+// main tile/sprite workhorse: normalizes the pixel region to UVs (with optional
+// stb-style Y-flip), applies per-tile mirror as flip-then-rotate, and submits the
+// quad. Falls back to the white texture if the texture has not been uploaded yet.
 void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
                                       glm::vec2 position,
                                       glm::vec2 size,
@@ -1856,6 +1926,8 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     SubmitQuad(descriptorSet, vertices, color, 1.0f);
 }
 
+// Draw a full texture with an explicit alpha (color.a). Additive blending is not yet
+// implemented on Vulkan (see TODO), so the additive flag is currently ignored.
 void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
                                      glm::vec2 position,
                                      glm::vec2 size,
@@ -1906,6 +1978,8 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
 }
 
+// Draw a sprite from an atlas region given directly in UV space (uvMin..uvMax)
+// rather than in pixels. Additive blending is not yet implemented (see TODO).
 void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
                                      glm::vec2 position,
                                      glm::vec2 size,
@@ -1959,6 +2033,8 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
     SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
 }
 
+// Draw a solid-color rectangle (no texture) via the white texture and the shader's
+// color-only path. Additive blending is not yet implemented (see TODO).
 void VulkanRenderer::DrawColoredRect(glm::vec2 position,
                                      glm::vec2 size,
                                      glm::vec4 color,
@@ -1995,6 +2071,10 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position,
     SubmitQuad(descriptorSet, vertices, glm::vec3(1.0f), 1.0f, true, color);
 }
 
+// Draw a textured quad whose four corners are already projected (used for the
+// sphere-warped no-projection structures), so the shader applies no further
+// perspective (perspectiveFlag defaults to 0). Requires the texture to be uploaded;
+// bails otherwise.
 void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
                                     const glm::vec2 corners[4],
                                     glm::vec2 texCoord,
@@ -2071,6 +2151,9 @@ void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
     SubmitQuad(descriptorSet, vertices, color, 1.0f);
 }
 
+// Return the combined-image-sampler descriptor set for an image view, creating and
+// caching it on first use. Spills into an overflow descriptor pool when the main pool
+// is exhausted. Returns VK_NULL_HANDLE on a null view or allocation failure.
 VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
 {
     if (imageView == VK_NULL_HANDLE || m_DescriptorPool == VK_NULL_HANDLE)
@@ -2170,6 +2253,10 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     return descriptorSet;
 }
 
+// Emit a single draw for the sprite vertices accumulated in the current batch range
+// (m_BatchStartVertex..m_CurrentVertexCount) with the batch's bound texture, then
+// advance the batch cursor. Returns early when the range is empty or no batch
+// texture/descriptor is bound.
 void VulkanRenderer::FlushSpriteBatch()
 {
     if (m_CurrentVertexCount == m_BatchStartVertex)
@@ -2224,6 +2311,9 @@ void VulkanRenderer::FlushSpriteBatch()
     m_BatchDescriptorSet = VK_NULL_HANDLE;
 }
 
+// Build the model matrix for a quad: translate to position, rotate about the quad's
+// center, then scale unit (0..1) vertices up to `size`. Matches the OpenGL path (the
+// vertex Y is pre-flipped so the math is identical).
 glm::mat4 VulkanRenderer::CalculateModelMatrix(glm::vec2 position, glm::vec2 size, float rotation)
 {
     // Matches OpenGL: vertices are 0..1 (top-left to bottom-right). Vulkan
@@ -2251,6 +2341,9 @@ glm::mat4 VulkanRenderer::CalculateModelMatrix(glm::vec2 position, glm::vec2 siz
     return model;
 }
 
+// Upload a texture's pixels to the GPU (creating its Vulkan image/view/memory) and
+// register it for cleanup at shutdown. Must be called at load time, outside a frame,
+// so the render path never stalls the queue on a mid-render cache miss.
 void VulkanRenderer::UploadTexture(const Texture& texture)
 {
     // Upload the texture to the GPU. CreateVulkanTexture is logically const
@@ -2265,6 +2358,8 @@ void VulkanRenderer::UploadTexture(const Texture& texture)
     }
 }
 
+// Return the maximum glyph ascent (bearing.y) across loaded glyphs, scaled by
+// `scale`. Falls back to 24px when no glyphs are loaded.
 float VulkanRenderer::GetTextAscent(float scale) const
 {
     // Find the maximum bearing.y (ascent) across all loaded glyphs
@@ -2283,6 +2378,7 @@ float VulkanRenderer::GetTextAscent(float scale) const
     return static_cast<float>(maxAscent) * scale;
 }
 
+// Return the pixel width of `text` at the given scale, summing per-glyph advances.
 float VulkanRenderer::GetTextWidth(const std::string& text, float scale) const
 {
     if (m_Glyphs.empty() || text.empty())
@@ -2302,6 +2398,9 @@ float VulkanRenderer::GetTextWidth(const std::string& text, float scale) const
     return width;
 }
 
+// Draw a string as textured glyph quads at `position`, laying out left-to-right with
+// '\n' line breaks. Renders a black outline in four cardinal offsets first, then the
+// main colored text on top. Text bypasses perspective (it is a UI overlay).
 void VulkanRenderer::DrawText(const std::string& text,
                               glm::vec2 position,
                               float scale,
@@ -2366,7 +2465,7 @@ void VulkanRenderer::DrawText(const std::string& text,
                 float perspectiveFlag;
             };
 
-            // Text always passes through perspective (UI overlay).
+            // perspectiveFlag = 0: text bypasses the perspective warp (UI overlay).
             Vertex vertices[6] = {
                 {{0.0f, 0.0f}, {0.0f, 0.0f}, 0.0f},  // Top-left
                 {{1.0f, 1.0f}, {1.0f, 1.0f}, 0.0f},  // Bottom-right
@@ -2457,6 +2556,8 @@ void VulkanRenderer::DrawText(const std::string& text,
     renderTextPass(position, color);
 }
 
+// Create a sampled R8G8B8A8 image + view for one glyph and upload its RGBA bitmap via
+// a staging buffer. Zero-sized glyphs fall back to the shared white texture view.
 void VulkanRenderer::CreateGlyphTexture(int width,
                                         int height,
                                         const std::vector<unsigned char>& rgbaData,
@@ -2532,6 +2633,9 @@ void VulkanRenderer::CreateGlyphTexture(int width,
     VK_CHECK(vkCreateImageView(m_Device, &viewInfo, nullptr, &outGlyph.imageView));
 }
 
+// Load the first available font (project candidates, then OS fallbacks) via FreeType
+// and rasterize ASCII 0-127 into per-glyph textures. No-op with a warning when
+// FreeType is unavailable or no font is found (text is then skipped at draw time).
 void VulkanRenderer::LoadFont()
 {
 #ifdef USE_FREETYPE
