@@ -49,26 +49,26 @@ namespace
 // Maximum slide distance for corner-cutting (pixels).
 constexpr float MAX_SLIDE_DISTANCE = 16.0f;
 
-/// @brief Transient per-tile overlap evaluation context, built once per
-/// overlapping tile inside CollidesWithTilesStrict() and passed to the tolerance
-/// helpers so they decide without redundant recalculation. Implementation detail
-/// (never a component); all positions use the bottom-center (feet) convention.
+// Transient per-tile overlap evaluation context, built once per
+// overlapping tile inside CollidesWithTilesStrict() and passed to the tolerance
+// helpers so they decide without redundant recalculation. Implementation detail
+// (never a component); all positions use the bottom-center (feet) convention.
 struct TileOverlapContext
 {
-    glm::vec2 bottomCenterPos;  ///< Player feet position being tested
-    glm::vec2 hitboxCenter;     ///< Center of the player hitbox AABB
-    float hitboxArea;           ///< Total hitbox area in pixels squared
-    float overlapW;             ///< Horizontal overlap between hitbox and tile (pixels)
-    float overlapH;             ///< Vertical overlap between hitbox and tile (pixels)
-    float overlapRatio;         ///< Overlap area as a fraction of hitbox area (0-1)
-    int tx, ty;                 ///< Tile grid coordinates of the overlapping tile
-    float tileMinX, tileMaxX;   ///< Tile AABB horizontal bounds (world pixels)
-    float tileMinY, tileMaxY;   ///< Tile AABB vertical bounds (world pixels)
-    int playerTileX;            ///< Tile column the player's feet center occupies
-    int playerTileY;            ///< Tile row the player's feet center occupies
-    int moveDx, moveDy;         ///< Movement direction signs (-1, 0, or +1)
-    bool diagonalInput;         ///< True if two directional keys are held simultaneously
-    float tileW, tileH;         ///< Tile dimensions in pixels (typically 16x16)
+    glm::vec2 bottomCenterPos;  // Player feet position being tested
+    glm::vec2 hitboxCenter;     // Center of the player hitbox AABB
+    float hitboxArea;           // Total hitbox area in pixels squared
+    float overlapW;             // Horizontal overlap between hitbox and tile (pixels)
+    float overlapH;             // Vertical overlap between hitbox and tile (pixels)
+    float overlapRatio;         // Overlap area as a fraction of hitbox area (0-1)
+    int tx, ty;                 // Tile grid coordinates of the overlapping tile
+    float tileMinX, tileMaxX;   // Tile AABB horizontal bounds (world pixels)
+    float tileMinY, tileMaxY;   // Tile AABB vertical bounds (world pixels)
+    int playerTileX;            // Tile column the player's feet center occupies
+    int playerTileY;            // Tile row the player's feet center occupies
+    int moveDx, moveDy;         // Movement direction signs (-1, 0, or +1)
+    bool diagonalInput;         // True if two directional keys are held simultaneously
+    float tileW, tileH;         // Tile dimensions in pixels (typically 16x16)
 };
 
 // Check if a diagonal corner tile should be ignored during cardinal movement.
@@ -610,8 +610,8 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
         return tilemap->GetTileCollision(tx, ty);
     };
 
-    // === Detect corner type based on the CLOSEST ACTUAL CORNER to player's center ===
-    // For multi-tile walls, only the END tiles are corners - middle tiles have no perpendicular
+    // Detect corner type based on the CLOSEST ACTUAL CORNER to player's center
+    // for multi-tile walls, only the END tiles are corners - middle tiles have no perpendicular
     // opening We need to find the nearest tile that actually has a corner (perpendicular opening)
     bool cornerEmptyAbove = false;
     bool cornerEmptyBelow = false;
