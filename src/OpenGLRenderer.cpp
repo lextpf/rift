@@ -825,6 +825,17 @@ RendererInfo OpenGLRenderer::GetBackendInfo() const
 
 void OpenGLRenderer::SetAmbientColor(const glm::vec3& color)
 {
+    // Ambient is a deferred uniform: FlushBatch() bakes the CURRENT m_AmbientColor
+    // into the sprite shader at flush time, and the sprite batch flushes lazily
+    // (on texture/batch-type change). Changing the color without draining the
+    // pending batch retroactively recolors already-queued sprites - e.g. the sky
+    // pass sets ambient to white while night foreground tiles are still queued,
+    // so the sky's first atlas draw flushes them at white and they flash to "day".
+    // Drain first so queued geometry keeps the ambient that was live when drawn.
+    if (color == m_AmbientColor)
+        return;
+    PrepFlushReason("AmbientColorChange");
+    FlushBatch();
     m_AmbientColor = color;
 }
 

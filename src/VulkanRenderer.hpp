@@ -137,7 +137,21 @@ public:
     /// @brief Vulkan uses same Y-flip convention as OpenGL for UV compatibility.
     bool RequiresYFlip() const override { return true; }
 
-    void SetAmbientColor(const glm::vec3& color) override { m_AmbientColor = color; }
+    /// @brief Set the global ambient (day/night) tint.
+    ///
+    /// Ambient is a deferred uniform - FlushSpriteBatch() bakes the current
+    /// m_AmbientColor into the push constants at flush time, and the sprite
+    /// batch flushes lazily. Drain queued sprites with the current ambient
+    /// before changing it, or a later flush retroactively recolors them (e.g.
+    /// the sky pass sets ambient to white while night foreground tiles are
+    /// still queued, flashing them to "day"). Mirrors OpenGLRenderer.
+    void SetAmbientColor(const glm::vec3& color) override
+    {
+        if (color == m_AmbientColor)
+            return;
+        FlushSpriteBatch();
+        m_AmbientColor = color;
+    }
 
     int GetDrawCallCount() const override { return m_DrawCallCount; }
 
