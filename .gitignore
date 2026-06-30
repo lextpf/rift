@@ -20,3 +20,6 @@ rift.project.log
 # Cloned dependency repos (fetched by setup.ps1; not vendored like glad/stb/json/ecs)
 external/glfw/
 external/glm/
+
+# graphify knowledge-graph output
+graphify-out/
