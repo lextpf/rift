@@ -13,8 +13,8 @@
 #include <vector>
 
 /**
- * @file EditorCommands.hpp
  * @brief Concrete EditorCommand subclasses - the catalog of undoable editor actions.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Editor
  *
  * Each class below represents one user-visible editor action that can be
@@ -202,9 +202,11 @@ private:
     std::optional<NpcRecord> m_Held;
 };
 
-/// @brief Shared entry shape for per-layer per-tile boolean flag mutations
-/// (no-projection, y-sort-plus, y-sort-minus). Type aliased into each cmd
-/// class so call sites and tests can use the cmd-specific name.
+/**
+ * @brief Shared entry shape for per-layer per-tile boolean flag mutations
+ * (no-projection, y-sort-plus, y-sort-minus). Type aliased into each cmd
+ * class so call sites and tests can use the cmd-specific name.
+ */
 struct LayerFlagEntry
 {
     int tileX;
@@ -531,16 +533,18 @@ struct ClipboardRegion
     [[nodiscard]] bool Empty() const { return width <= 0 || height <= 0 || cells.empty(); }
 };
 
-/// @brief Reflect a region in place around its geometric center.
-///
-/// Cell positions swap (columns for X-axis, rows for Y-axis), and per-tile
-/// each layer's flip flag on the chosen axis is toggled while rotation is
-/// negated (rot -> fmod(360 - rot, 360)). The transform is an involution,
-/// so applying it twice reproduces the original.
-///
-/// @param region    Region to mutate in place.
-/// @param flipXAxis True for X-reflection (mirror around vertical axis,
-///                  toggles flipX), false for Y-reflection (toggles flipY).
+/**
+ * @brief Reflect a region in place around its geometric center.
+ *
+ * Cell positions swap (columns for X-axis, rows for Y-axis), and per-tile
+ * each layer's flip flag on the chosen axis is toggled while rotation is
+ * negated (rot -> fmod(360 - rot, 360)). The transform is an involution,
+ * so applying it twice reproduces the original.
+ *
+ * @param region    Region to mutate in place.
+ * @param flipXAxis True for X-reflection (mirror around vertical axis,
+ *                  toggles flipX), false for Y-reflection (toggles flipY).
+ */
 void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis);
 
 /**
@@ -563,13 +567,17 @@ public:
     void Revert(Tilemap& tilemap, ecs::registry& npcs) override;
     [[nodiscard]] std::string DebugLabel() const override;
 
-    /// @brief Read a single tile (all 10 layers + per-tile fields) into a
-    /// ClipboardCell. Public so the editor's Ctrl+C path can snapshot a
-    /// region using the same logic this cmd uses for its own dest snapshot.
+    /**
+     * @brief Read a single tile (all 10 layers + per-tile fields) into a
+     * ClipboardCell. Public so the editor's Ctrl+C path can snapshot a
+     * region using the same logic this cmd uses for its own dest snapshot.
+     */
     [[nodiscard]] static ClipboardCell ReadCellFrom(const Tilemap& tm, int x, int y);
 
-    /// @brief Snapshot a (width x height) region starting at (x, y) into a
-    /// ClipboardRegion. Used by Editor's Ctrl+C handler.
+    /**
+     * @brief Snapshot a (width x height) region starting at (x, y) into a
+     * ClipboardRegion. Used by Editor's Ctrl+C handler.
+     */
     [[nodiscard]] static ClipboardRegion SnapshotRegion(
         const Tilemap& tm, int x, int y, int width, int height);
 
