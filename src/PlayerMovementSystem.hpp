@@ -17,13 +17,13 @@ struct Hitbox;
 class Tilemap;
 
 /**
- * @file PlayerMovementSystem.hpp
  * @brief Stateless player movement/animation/facing logic over component bundles.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
  * The free-function "system" form of the former PlayerCharacter's orchestration
  * methods (Move/Update/Stop/UpdateFacing). Each operates only on the component
- * structs passed by reference -- no instance, no hidden state -- driven over the
+ * structs passed by reference - no instance, no hidden state - driven over the
  * player entity by @ref PlayerSystem and Game's update/input paths. The collision
  * pipeline is the stateless @ref CollisionSystem free functions; the entity's
  * @ref Hitbox is passed in.
