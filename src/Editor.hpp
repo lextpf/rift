@@ -127,18 +127,24 @@ public:
      */
     void Initialize(const std::vector<std::string>& npcTypes);
 
-    /// @brief Check if the level editor is active.
-    /// @return `true` when the editor is active (toggled via `editor` console command).
+    /**
+     * @brief Check if the level editor is active.
+     * @return `true` when the editor is active (toggled via `editor` console command).
+     */
     [[nodiscard]] bool IsActive() const { return m_Active; }
 
-    /// @brief Push an on-screen status toast (e.g. from save/load).
-    /// @param message Text to display.
-    /// @param color Tint for the text (green for success, red for error).
-    /// @param durationSeconds How long the toast stays on screen.
+    /**
+     * @brief Push an on-screen status toast (e.g. from save/load).
+     * @param message Text to display.
+     * @param color Tint for the text (green for success, red for error).
+     * @param durationSeconds How long the toast stays on screen.
+     */
     void ShowStatus(std::string message, glm::vec3 color, float durationSeconds = 3.0f);
 
-    /// @brief Activate or deactivate the level editor.
-    /// @param active `true` to enable, `false` to disable.
+    /**
+     * @brief Activate or deactivate the level editor.
+     * @param active `true` to enable, `false` to disable.
+     */
     void SetActive(bool active);
 
     /**
@@ -184,20 +190,28 @@ public:
      */
     void RenderNoProjectionAnchors(const EditorContext& ctx);
 
-    /// @brief Check if debug overlays are enabled.
-    /// @return `true` when debug overlays are visible (toggled via `debug.overlays`).
+    /**
+     * @brief Check if debug overlays are enabled.
+     * @return `true` when debug overlays are visible (toggled via `debug.overlays`).
+     */
     [[nodiscard]] bool IsDebugMode() const { return m_DebugMode; }
 
-    /// @brief Check if text debug info (FPS, coords) is shown.
-    /// @return `true` when debug text is visible.
+    /**
+     * @brief Check if text debug info (FPS, coords) is shown.
+     * @return `true` when debug text is visible.
+     */
     [[nodiscard]] bool IsShowDebugInfo() const { return m_ShowDebugInfo; }
 
-    /// @brief Check if no-projection anchor markers are shown.
-    /// @return `true` when anchor markers are visible.
+    /**
+     * @brief Check if no-projection anchor markers are shown.
+     * @return `true` when anchor markers are visible.
+     */
     [[nodiscard]] bool IsShowNoProjectionAnchors() const { return m_ShowNoProjectionAnchors; }
 
-    /// @brief Check if the tile picker panel is visible.
-    /// @return `true` when the tile picker is open.
+    /**
+     * @brief Check if the tile picker panel is visible.
+     * @return `true` when the tile picker is open.
+     */
     [[nodiscard]] bool IsShowTilePicker() const { return m_ShowTilePicker; }
 
     /// @brief Toggle debug overlay rendering on/off.
@@ -206,8 +220,10 @@ public:
     /// @brief Toggle text debug info display on/off.
     void ToggleShowDebugInfo();
 
-    /// @brief Set debug overlay rendering on/off explicitly.
-    /// Mirrors the visibility of no-projection anchor markers.
+    /**
+     * @brief Set debug overlay rendering on/off explicitly.
+     * Mirrors the visibility of no-projection anchor markers.
+     */
     void SetDebugMode(bool enabled);
 
     /// @brief Set text debug info display on/off explicitly.
@@ -220,14 +236,18 @@ public:
      */
     void ResetTilePickerState();
 
-    /// @brief Drop all undo/redo history. Call on level load before mutating
-    /// the new tilemap so stale commands cannot revert against the wrong map.
+    /**
+     * @brief Drop all undo/redo history. Call on level load before mutating
+     * the new tilemap so stale commands cannot revert against the wrong map.
+     */
     void ClearUndoHistory();
 
 private:
-    /// @name Render Methods
-    /// @brief Private overlay and UI rendering routines.
-    /// @{
+    /**
+     * @name Render Methods
+     * @brief Private overlay and UI rendering routines.
+     * @{
+     */
 
     /// @brief Render editor UI elements (cursor, tile info, status text).
     void RenderEditorUI(const EditorContext& ctx);
@@ -278,11 +298,13 @@ private:
     /// @brief Lazily compute and cache no-projection structure bounds for the current frame.
     void EnsureNoProjBoundsCache(const EditorContext& ctx);
 
-    /// @brief Map rotated tile offset to source tile coordinates.
-    /// @param dx Rotated offset X.
-    /// @param dy Rotated offset Y.
-    /// @param sourceDx Output source offset X.
-    /// @param sourceDy Output source offset Y.
+    /**
+     * @brief Map rotated tile offset to source tile coordinates.
+     * @param dx Rotated offset X.
+     * @param dy Rotated offset Y.
+     * @param sourceDx Output source offset X.
+     * @param sourceDy Output source offset Y.
+     */
     void CalculateRotatedSourceTile(int dx, int dy, int& sourceDx, int& sourceDy) const;
 
     /// @brief Get tile rotation compensated for current editor rotation.
@@ -318,22 +340,24 @@ private:
     /// @brief Push an already-applied undoable command and mark the map dirty.
     void PushEditorCommand(std::unique_ptr<EditorCommand> cmd);
 
-    /// @brief Toggle a per-tile layer flag using the provided setter, with
-    /// single-tile or Shift+flood-fill behavior. Captures pre-mutation old
-    /// values so the caller can wrap the entries in the appropriate cmd
-    /// class (NoProjection / YSortPlus / YSortMinus all share the entry shape).
-    ///
-    /// Mutates the tilemap in place. Returns the entries the caller should
-    /// push onto the undo stack as a per-mode cmd. Skips no-op entries (where
-    /// old == new) so the cmd only carries actual deltas.
-    ///
-    /// @param ctx Editor context.
-    /// @param tileX Tile column.
-    /// @param tileY Tile row.
-    /// @param getter Tilemap method pointer for reading the flag.
-    /// @param setter Tilemap method pointer for setting the flag.
-    /// @param newValue Target flag value (true to set, false to clear).
-    /// @param flagName Name of the flag (for debug display).
+    /**
+     * @brief Toggle a per-tile layer flag using the provided setter, with
+     * single-tile or Shift+flood-fill behavior. Captures pre-mutation old
+     * values so the caller can wrap the entries in the appropriate cmd
+     * class (NoProjection / YSortPlus / YSortMinus all share the entry shape).
+     *
+     * Mutates the tilemap in place. Returns the entries the caller should
+     * push onto the undo stack as a per-mode cmd. Skips no-op entries (where
+     * old == new) so the cmd only carries actual deltas.
+     *
+     * @param ctx Editor context.
+     * @param tileX Tile column.
+     * @param tileY Tile row.
+     * @param getter Tilemap method pointer for reading the flag.
+     * @param setter Tilemap method pointer for setting the flag.
+     * @param newValue Target flag value (true to set, false to clear).
+     * @param flagName Name of the flag (for debug display).
+     */
     [[nodiscard]] std::vector<LayerFlagEntry> CollectYSortFlagToggle(
         const EditorContext& ctx,
         int tileX,
@@ -379,26 +403,32 @@ private:
         Animation,     ///< Applying animations to tiles (K key).
     };
 
-    /// @name Mode State
-    /// @{
+    /**
+     * @name Mode State
+     * @{
+     */
     bool m_Active;          ///< Master toggle for the level editor (`editor` cmd).
     bool m_ShowTilePicker;  ///< Whether the tile picker panel is visible.
     EditMode m_EditMode;    ///< Current sub-mode (only one active at a time).
     /// @}
 
-    /// @name Particle Zone Editing
-    /// State for drag-to-create particle emitter zones.
-    /// @{
+    /**
+     * @name Particle Zone Editing
+     * State for drag-to-create particle emitter zones.
+     * @{
+     */
     ParticleType m_CurrentParticleType;  ///< Visual type for new zones (e.g. Firefly).
     bool m_ParticleNoProjection;         ///< If true, new zones skip perspective projection.
     bool m_PlacingParticleZone;          ///< True while the user is dragging to define a zone.
     glm::vec2 m_ParticleZoneStart;       ///< World position where the current drag began.
     /// @}
 
-    /// @name Structure Editing
-    /// State for the two-anchor structure workflow: place left anchor, right anchor,
-    /// then flood-assign tiles between them to a structure ID.
-    /// @{
+    /**
+     * @name Structure Editing
+     * State for the two-anchor structure workflow: place left anchor, right anchor,
+     * then flood-assign tiles between them to a structure ID.
+     * @{
+     */
     int m_CurrentStructureId;          ///< Active structure ID, or -1 if none selected.
     int m_PlacingAnchor;               ///< Anchor step: 0 = idle, 1 = left, 2 = right.
     glm::vec2 m_TempLeftAnchor;        ///< World position of left anchor (-1 = unset).
@@ -406,15 +436,19 @@ private:
     bool m_AssigningTilesToStructure;  ///< True during tile flood-assign phase.
     /// @}
 
-    /// @name Animation Editing
-    /// @{
+    /**
+     * @name Animation Editing
+     * @{
+     */
     std::vector<int> m_AnimationFrames;  ///< Tile IDs composing the current animation sequence.
     float m_AnimationFrameDuration;      ///< Seconds each frame is shown (default 0.2s).
     int m_SelectedAnimationId;           ///< Index of the animation being edited, or -1.
     /// @}
 
-    /// @name Debug Flags
-    /// @{
+    /**
+     * @name Debug Flags
+     * @{
+     */
     bool m_DebugMode;                ///< Enables all debug overlays (`debug.overlays` cmd).
     bool m_ShowDebugInfo;            ///< Shows text debug info (FPS, tile coords, etc.).
     bool m_ShowNoProjectionAnchors;  ///< Renders no-projection anchor markers on top of UI.
@@ -424,25 +458,31 @@ private:
     static constexpr float EDITOR_HUD_HEIGHT = 40.0f;
     static constexpr float EDITOR_TOPBAR_HEIGHT = 56.0f;
 
-    /// @name Status toast
-    /// On-screen transient message (save success/failure, load result). Drawn
-    /// while m_StatusTimer > 0 and decremented by Update().
-    /// @{
+    /**
+     * @name Status toast
+     * On-screen transient message (save success/failure, load result). Drawn
+     * while m_StatusTimer > 0 and decremented by Update().
+     * @{
+     */
     std::string m_StatusMessage;       ///< Text to display; empty = hidden.
     float m_StatusTimer = 0.0f;        ///< Seconds remaining to display.
     glm::vec3 m_StatusColor{1, 1, 1};  ///< Tint (e.g. green for success, red for error).
     /// @}
 
-    /// @name Tile Selection
-    /// Currently selected tile, layer, and elevation for placement.
-    /// @{
+    /**
+     * @name Tile Selection
+     * Currently selected tile, layer, and elevation for placement.
+     * @{
+     */
     int m_SelectedTileID;    ///< Tile atlas index chosen in the tile picker.
     int m_CurrentLayer;      ///< Active tilemap layer (0-9) for placement.
     int m_CurrentElevation;  ///< Active elevation level (default 4 = ground).
     /// @}
 
-    /// @name NPC Types
-    /// @{
+    /**
+     * @name NPC Types
+     * @{
+     */
     std::vector<std::string> m_AvailableNPCTypes;  ///< Sprite paths loaded at init.
     size_t m_SelectedNPCTypeIndex;                 ///< Index into m_AvailableNPCTypes.
 
@@ -455,10 +495,12 @@ private:
     }
     /// @}
 
-    /// @name Mouse/Drag State
-    /// Tracks mouse position and per-mode drag state. "Last" tile coords use -1
-    /// as a sentinel meaning "no tile touched yet this drag".
-    /// @{
+    /**
+     * @name Mouse/Drag State
+     * Tracks mouse position and per-mode drag state. "Last" tile coords use -1
+     * as a sentinel meaning "no tile touched yet this drag".
+     * @{
+     */
     struct MouseDragState
     {
         double lastMouseX = 0.0;
@@ -479,9 +521,11 @@ private:
     MouseDragState m_Mouse;
     /// @}
 
-    /// @name Tile Picker State
-    /// Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
-    /// @{
+    /**
+     * @name Tile Picker State
+     * Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
+     * @{
+     */
     struct TilePickerCamera
     {
         float zoom = 2.0f;
@@ -493,9 +537,11 @@ private:
     TilePickerCamera m_TilePicker;
     /// @}
 
-    /// @name Multi-Tile Selection
-    /// Allows selecting and placing rectangular regions of tiles from the picker.
-    /// @{
+    /**
+     * @name Multi-Tile Selection
+     * Allows selecting and placing rectangular regions of tiles from the picker.
+     * @{
+     */
     struct MultiTileState
     {
         bool selectionMode = false;
@@ -513,17 +559,21 @@ private:
     MultiTileState m_MultiTile;
     /// @}
 
-    /// @name Key Debounce State
-    /// Per-key pressed tracking for edge-triggered input (replaces function-local statics).
-    /// @{
+    /**
+     * @name Key Debounce State
+     * Per-key pressed tracking for edge-triggered input (replaces function-local statics).
+     * @{
+     */
     std::bitset<GLFW_KEY_LAST + 1> m_KeyPressed;  ///< True while a key is held from last press.
     int m_LastDeletedTileX;                       ///< Last tile column erased during delete-drag.
     int m_LastDeletedTileY;                       ///< Last tile row erased during delete-drag.
     /// @}
 
-    /// @name No-Projection Bounds Cache
-    /// Computed once per frame and shared between overlay rendering passes.
-    /// @{
+    /**
+     * @name No-Projection Bounds Cache
+     * Computed once per frame and shared between overlay rendering passes.
+     * @{
+     */
     struct NoProjGroupBounds
     {
         int minX, maxX, minY, maxY;
@@ -532,13 +582,15 @@ private:
     bool m_NoProjBoundsCached = false;  ///< Reset at the start of each Render() call.
     /// @}
 
-    /// @name Undo / Redo
-    /// Bounded command-pattern history for editor mutations. Default capacity
-    /// is UndoRedoStack::DEFAULT_CAPACITY. Cleared on level load.
-    /// Stroke accumulators batch per-tile mutations during a drag-paint and
-    /// commit a single composite cmd at mouse-up; Drop() in ClearAllEditModes
-    /// discards an in-progress stroke when the mode changes mid-drag.
-    /// @{
+    /**
+     * @name Undo / Redo
+     * Bounded command-pattern history for editor mutations. Default capacity
+     * is UndoRedoStack::DEFAULT_CAPACITY. Cleared on level load.
+     * Stroke accumulators batch per-tile mutations during a drag-paint and
+     * commit a single composite cmd at mouse-up; Drop() in ClearAllEditModes
+     * discards an in-progress stroke when the mode changes mid-drag.
+     * @{
+     */
     UndoRedoStack m_UndoStack;
     TilePlaceStrokeAccum m_TileStroke;
     CollisionStrokeAccum m_CollisionStroke;
@@ -546,11 +598,13 @@ private:
     NavigationStrokeAccum m_NavigationStroke;
     /// @}
 
-    /// @name Region Copy/Paste (Ctrl+drag, Ctrl+C, Ctrl+V)
-    /// MapRegionSelection tracks the current rectangular tile-region the user
-    /// has selected on the map (Ctrl+left-drag to define). m_Clipboard holds
-    /// the most recently copied region; PasteRegionCmd writes from there.
-    /// @{
+    /**
+     * @name Region Copy/Paste (Ctrl+drag, Ctrl+C, Ctrl+V)
+     * MapRegionSelection tracks the current rectangular tile-region the user
+     * has selected on the map (Ctrl+left-drag to define). m_Clipboard holds
+     * the most recently copied region; PasteRegionCmd writes from there.
+     * @{
+     */
     struct MapRegionSelection
     {
         bool active = false;
