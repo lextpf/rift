@@ -12,8 +12,6 @@
 #include <string>
 #include <utility>
 
-// --- ReflectClipboardRegion -------------------------------------------------
-
 void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
 {
     const int W = region.width;
@@ -60,8 +58,6 @@ void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
     }
 }
 
-// --- PlaceTilesCmd ----------------------------------------------------------
-
 void PlaceTilesCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
@@ -89,8 +85,6 @@ std::string PlaceTilesCmd::DebugLabel() const
     return "Place " + std::to_string(m_Entries.size()) + " tile(s)";
 }
 
-// --- CollisionToggleCmd -----------------------------------------------------
-
 void CollisionToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
@@ -108,8 +102,6 @@ std::string CollisionToggleCmd::DebugLabel() const
     return "Toggle collision (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-// --- ElevationSetCmd --------------------------------------------------------
-
 void ElevationSetCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
@@ -126,8 +118,6 @@ std::string ElevationSetCmd::DebugLabel() const
 {
     return "Set elevation (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
-
-// --- PlaceNPCCmd / RemoveNPCCmd --------------------------------------------
 
 namespace
 {
@@ -199,8 +189,6 @@ std::string RemoveNPCCmd::DebugLabel() const
     return "Remove NPC (" + std::to_string(m_TileX) + ", " + std::to_string(m_TileY) + ")";
 }
 
-// --- NavigationStrokeCmd ----------------------------------------------------
-
 void NavigationStrokeCmd::Apply(Tilemap& tilemap, ecs::registry& npcs)
 {
     for (const Entry& e : m_Entries)
@@ -226,8 +214,6 @@ std::string NavigationStrokeCmd::DebugLabel() const
 {
     return "Toggle navigation (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
-
-// --- NoProjectionToggleCmd / YSortPlusToggleCmd / YSortMinusToggleCmd -------
 
 void NoProjectionToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
@@ -280,8 +266,6 @@ std::string YSortMinusToggleCmd::DebugLabel() const
     return "Toggle Y-sort-minus (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-// --- SetTileAnimationCmd ----------------------------------------------------
-
 void SetTileAnimationCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
@@ -306,8 +290,6 @@ std::string SetTileAnimationCmd::DebugLabel() const
     return "Set animation (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-// --- SetTileStructureIdsCmd -------------------------------------------------
-
 void SetTileStructureIdsCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
@@ -325,8 +307,6 @@ std::string SetTileStructureIdsCmd::DebugLabel() const
     return "Set structure id (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-// --- CompositeCmd -----------------------------------------------------------
-
 void CompositeCmd::Apply(Tilemap& tilemap, ecs::registry& npcs)
 {
     for (auto& child : m_Children)
@@ -340,8 +320,6 @@ void CompositeCmd::Revert(Tilemap& tilemap, ecs::registry& npcs)
     for (auto it = m_Children.rbegin(); it != m_Children.rend(); ++it)
         (*it)->Revert(tilemap, npcs);
 }
-
-// --- AddStructureCmd / RemoveStructureCmd -----------------------------------
 
 void AddStructureCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
@@ -403,8 +381,6 @@ std::string RemoveStructureCmd::DebugLabel() const
     return "Remove structure " + std::to_string(m_Id);
 }
 
-// --- AddParticleZoneCmd / RemoveParticleZoneCmd -----------------------------
-
 void AddParticleZoneCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     tilemap.AddParticleZone(m_Zone);
@@ -445,8 +421,6 @@ std::string RemoveParticleZoneCmd::DebugLabel() const
     return "Remove particle zone " + std::to_string(m_Index);
 }
 
-// --- AddAnimatedTileCmd -----------------------------------------------------
-
 void AddAnimatedTileCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     m_AnimId = tilemap.AddAnimatedTile(m_Anim);
@@ -461,8 +435,6 @@ std::string AddAnimatedTileCmd::DebugLabel() const
 {
     return "Add animation #" + std::to_string(m_AnimId);
 }
-
-// --- PasteRegionCmd ---------------------------------------------------------
 
 ClipboardRegion PasteRegionCmd::SnapshotRegion(
     const Tilemap& tm, int x, int y, int width, int height)
