@@ -548,7 +548,9 @@ struct ParticleBehavior<ParticleType::Snow>
 template <>
 struct ParticleBehavior<ParticleType::Fog>
 {
-    static constexpr float SpawnRate = 5.0f;
+    // Zone / ambient fog density. Halved from 5.0 so fewer large puffs overlap
+    // into a solid wall (weather fog density is the per-weather baseSpawnRate).
+    static constexpr float SpawnRate = 2.5f;
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
@@ -568,11 +570,20 @@ struct ParticleBehavior<ParticleType::Fog>
         float lifeFade = std::min(1.0f, p.lifetime / (p.maxLifetime * 0.4f));
         float fadeIn = std::min(1.0f, (p.maxLifetime - p.lifetime) / 4.0f);
 
-        // More visible during day, significantly less at night. Per-weather
-        // fogAlphaMultiplier softens the puff (1.0 = unchanged; lower values
-        // make the fog thinner so the world stays legible behind it).
-        float dayBoost = 1.0f + (1.0f - ctx.nightFactor) * 0.4f;
+        // More visible during day, significantly less at night. The day boost is
+        // kept gentle (peaks at 1.15x, not 1.4x) so daytime fog stays a light
+        // haze instead of an opaque wall.
+        float dayBoost = 1.0f + (1.0f - ctx.nightFactor) * 0.15f;
         float nightReduce = 1.0f - ctx.nightFactor * 0.6f;
+
+        // Softening multiplier on the puff alpha. Weather-driven fog
+        // (zoneIndex == WEATHER_ZONE_INDEX) follows the active weather's
+        // per-weather fogAlphaMultiplier (0.4-0.65). Editor-zone / console /
+        // ambient fog (any other zoneIndex) uses a fixed 0.5: it must NOT borrow
+        // the weather value, which defaults to 1.0 outside fog weathers and made
+        // zone fog render at full, un-softened strength under any normal weather.
+        const float fogMul =
+            (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX) ? ctx.fogAlphaMultiplier : 0.5f;
 
         // Atmospheric layering: fog thicker near the ground, thinner up high.
         // Anchored on the player's feet (playerPos.y) so the gradient tracks
@@ -583,8 +594,8 @@ struct ParticleBehavior<ParticleType::Fog>
         const float verticalFactor =
             std::clamp(1.0f - (groundRefY - p.position.y) / kFadeRange, 0.3f, 1.0f);
 
-        p.color.a = pulse * lifeFade * fadeIn * 0.40f * ctx.fogAlphaMultiplier * dayBoost *
-                    nightReduce * verticalFactor;
+        p.color.a =
+            pulse * lifeFade * fadeIn * 0.25f * fogMul * dayBoost * nightReduce * verticalFactor;
     }
 
     static void Spawn(int zoneIndex, const ParticleZone& zone, ParticleSpawnContext& ctx)
@@ -604,7 +615,9 @@ struct ParticleBehavior<ParticleType::Fog>
         p.color = glm::vec4(grey, grey, grey, 0.0f);
 
         p.size = 48.0f + ctx.dist(ctx.rng) * 48.0f;
-        p.lifetime = 18.0f + ctx.dist(ctx.rng) * 12.0f;
+        // Shorter lifetime (12-18s, was 18-30s) means fewer simultaneously-live
+        // puffs at the same spawn rate, further reducing stacked-alpha buildup.
+        p.lifetime = 12.0f + ctx.dist(ctx.rng) * 6.0f;
         p.maxLifetime = p.lifetime;
         p.phase = ctx.dist(ctx.rng) * 6.28f;
         p.rotation = 0.0f;
@@ -687,7 +700,7 @@ struct ParticleBehavior<ParticleType::Sparkles>
 template <>
 struct ParticleBehavior<ParticleType::Wisp>
 {
-    static constexpr float SpawnRate = 11.0f;
+    static constexpr float SpawnRate = 7.0f;
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
