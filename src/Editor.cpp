@@ -29,7 +29,6 @@ static constexpr glm::vec4 LAYER_COLORS[] = {
 };
 
 Editor::Editor()
-    // -- Mode flags: all sub-modes start inactive --
     : m_Active(false),
       m_ShowTilePicker(false),
       m_EditMode(EditMode::None),
