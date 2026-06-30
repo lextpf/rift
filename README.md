@@ -28,7 +28,7 @@
 <div align="center">
 <br>
 
-![Game](./PREVIEW.webm)
+![Game](./PREVIEW.png)
 
 </div>
 
