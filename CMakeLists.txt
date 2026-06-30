@@ -496,6 +496,9 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/Editor.cpp"
         "${CMAKE_SOURCE_DIR}/src/EditorRendering.cpp"
         "${CMAKE_SOURCE_DIR}/src/CameraController.cpp"
+        # AuroraTextures: pure procedural RGBA pixel-buffer builders for the
+        # AuroraNight effect; renderer-free, exercised directly by tests.
+        "${CMAKE_SOURCE_DIR}/src/AuroraTextures.cpp"
     )
 
     # Create test executable
