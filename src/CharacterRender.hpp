@@ -6,8 +6,8 @@ class IRenderer;
 class Texture;
 
 /**
- * @file CharacterRender.hpp
  * @brief Shared character sprite draw mechanics (projection + full/half draw).
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Rendering
  *
  * The renderer-touching common core of the player's and NPC's Render /
@@ -19,7 +19,9 @@ class Texture;
  */
 namespace CharacterRender
 {
-/// @brief Which slice of the sprite to draw (halves are used by the Y-sort pass).
+/**
+ * @brief Which slice of the sprite to draw (halves are used by the Y-sort pass).
+ */
 enum class Part
 {
     Full,        ///< Whole sprite.
@@ -27,18 +29,23 @@ enum class Part
     TopHalf,     ///< Upper spriteSize.y/2 band (head/torso).
 };
 
-/// @brief Project a feet (bottom-center) world position to the sprite's top-left
-/// screen render position, applying camera offset + elevation before projection.
+/**
+ * @brief Project a feet (bottom-center) world position to the sprite's top-left
+ * screen render position, applying camera offset + elevation before projection.
+ */
 glm::vec2 ComputeRenderPos(IRenderer& renderer,
                            glm::vec2 feetWorld,
                            glm::vec2 cameraPos,
                            float elevationOffset,
                            glm::vec2 spriteSize);
 
-/// @brief Draw a full sprite or a top/bottom half at @p renderPos. Halves take
-/// the upper/lower spriteSize.y/2 band of the source region. @p suspendPerspective
-/// wraps the draw in a PerspectiveSuspendGuard (the position is already projected;
-/// this avoids double-projection).
+/**
+ * @brief Draw a full sprite or a top/bottom half at @p renderPos.
+ *
+ * Halves take the upper/lower spriteSize.y/2 band of the source region.
+ * @p suspendPerspective wraps the draw in a PerspectiveSuspendGuard (the
+ * position is already projected; this avoids double-projection).
+ */
 void DrawPart(IRenderer& renderer,
               const Texture& sheet,
               glm::vec2 renderPos,
