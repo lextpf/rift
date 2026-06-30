@@ -645,6 +645,13 @@ private:
     /// @c RenderTitleFrame.
     void RenderTitleContent();
 
+    /// Draw the "rift <version>" label in the bottom-right corner (the same
+    /// footer shown on the title screen). Self-contained: it suspends
+    /// perspective and switches to a screen-space UI projection, so a caller
+    /// that draws in world space afterward must restore its own projection.
+    /// Shared by the title screen and the in-game HUD.
+    void RenderVersionFooter();
+
     /// Render the dim overlay + pause menu on top of the existing world
     /// frame. Called from inside @c Render() before the console pass.
     void RenderPauseOverlay();

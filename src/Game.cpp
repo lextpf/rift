@@ -64,6 +64,8 @@ constexpr float HORIZON_SCALE_BASE = 0.6f;
 constexpr float HORIZON_SCALE_TILT_RANGE = 0.15f;
 constexpr float DEBUG_TEXT_MARGIN = 12.0f;
 constexpr float DEBUG_CHAR_WIDTH = 12.0f;
+constexpr float DEBUG_HUD_ALPHA = 0.6f;      // Debug/FPS HUD text opacity (slightly transparent).
+constexpr float DEBUG_HUD_ALPHA_DIM = 0.5f;  // Dimmer secondary HUD lines (quest descriptions).
 constexpr float SEAM_FIX_OVERLAP = 0.1f;
 
 std::string ToLowerCopy(std::string value)
@@ -1197,19 +1199,19 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 1.0f, 0.0f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
         m_Renderer->DrawText(posText,
                              glm::vec2(DEBUG_TEXT_MARGIN, 32.0f + lineHeight * currentLine++),
                              1.0f,
                              glm::vec3(1.0f, 1.0f, 0.0f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
         m_Renderer->DrawText(tileText,
                              glm::vec2(DEBUG_TEXT_MARGIN, 32.0f + lineHeight * currentLine++),
                              1.0f,
                              glm::vec3(1.0f, 1.0f, 0.0f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         char particlesText[64];
         snprintf(particlesText,
@@ -1222,7 +1224,7 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 1.0f, 0.0f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         // Active quests with descriptions.
         auto activeQuests = m_GameState.GetActiveQuests();
@@ -1260,13 +1262,13 @@ void Game::Render()
                                      1.0f,
                                      exclamYellow,
                                      2.0f,
-                                     0.85f);
+                                     DEBUG_HUD_ALPHA);
                 m_Renderer->DrawText(displayName,
                                      glm::vec2(questTextX, 32.0f + lineHeight * currentLine++),
                                      1.0f,
                                      questGold,
                                      2.0f,
-                                     0.85f);
+                                     DEBUG_HUD_ALPHA);
 
                 std::string description = m_GameState.GetQuestDescription(quest);
                 if (!description.empty())
@@ -1284,7 +1286,7 @@ void Game::Render()
                                          0.8f,
                                          descColor,
                                          2.0f,
-                                         0.7f);
+                                         DEBUG_HUD_ALPHA_DIM);
                 }
             }
         }
@@ -1301,7 +1303,7 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 0.3f, 0.3f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         char resText[32];
         snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
@@ -1311,7 +1313,7 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 0.3f, 0.3f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         char frameTimeText[32];
         float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
@@ -1322,7 +1324,7 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 0.3f, 0.3f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         char zoomText[32];
         snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.GetState().zoom);
@@ -1332,7 +1334,7 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 0.3f, 0.3f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         // Averaged over last second.
         char drawCallText[32];
@@ -1343,9 +1345,20 @@ void Game::Render()
                              1.0f,
                              glm::vec3(1.0f, 0.3f, 0.3f),
                              2.0f,
-                             0.85f);
+                             DEBUG_HUD_ALPHA);
 
         // Restore world projection in case EndFrame flushes batches.
+        m_Renderer->SetProjection(projection);
+    }
+
+    // Build-version footer (bottom-right), mirroring the title screen. Shown
+    // during normal gameplay; suppressed in the editor (its dense UI owns the
+    // screen edges) and outside Playing (Title draws its own footer; the pause
+    // menu omits it). RenderVersionFooter switches to a UI projection, so
+    // restore the world projection afterward for EndFrame's batch flush.
+    if (m_GameMode == GameMode::Playing && !m_Editor.IsActive())
+    {
+        RenderVersionFooter();
         m_Renderer->SetProjection(projection);
     }
 

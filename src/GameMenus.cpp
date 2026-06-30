@@ -957,6 +957,7 @@ void Game::RenderTitleFrame()
         constexpr float kMargin = 12.0f;
         constexpr float kCharWidth = 12.0f;
         constexpr float kLineHeight = 28.0f;
+        constexpr float kHudAlpha = 0.6f;  // Slightly transparent overlay (matches gameplay HUD).
         const glm::vec3 kFpsColor(1.0f, 1.0f, 0.0f);
         const glm::vec3 kRightColor(1.0f, 0.3f, 0.3f);
 
@@ -972,7 +973,7 @@ void Game::RenderTitleFrame()
         char fpsText[32];
         std::snprintf(
             fpsText, sizeof(fpsText), "FPS: %d", static_cast<int>(m_Fps.currentFps + 0.5f));
-        m_Renderer->DrawText(fpsText, glm::vec2(kMargin, 32.0f), 1.0f, kFpsColor, 2.0f, 0.85f);
+        m_Renderer->DrawText(fpsText, glm::vec2(kMargin, 32.0f), 1.0f, kFpsColor, 2.0f, kHudAlpha);
 
         // Right column: renderer, resolution, frame time, zoom, draws.
         const char* rendererName = (m_RendererAPI == RendererAPI::OpenGL) ? "OpenGL" : "Vulkan";
@@ -986,7 +987,7 @@ void Game::RenderTitleFrame()
                              1.0f,
                              kRightColor,
                              2.0f,
-                             0.85f);
+                             kHudAlpha);
 
         char resText[32];
         std::snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
@@ -996,7 +997,7 @@ void Game::RenderTitleFrame()
                              1.0f,
                              kRightColor,
                              2.0f,
-                             0.85f);
+                             kHudAlpha);
 
         char frameTimeText[32];
         float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
@@ -1007,7 +1008,7 @@ void Game::RenderTitleFrame()
                              1.0f,
                              kRightColor,
                              2.0f,
-                             0.85f);
+                             kHudAlpha);
 
         char zoomText[32];
         std::snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.GetState().zoom);
@@ -1017,7 +1018,7 @@ void Game::RenderTitleFrame()
                              1.0f,
                              kRightColor,
                              2.0f,
-                             0.85f);
+                             kHudAlpha);
 
         char drawCallText[32];
         std::snprintf(drawCallText, sizeof(drawCallText), "Draws: %d", m_Fps.currentDrawCalls);
@@ -1027,7 +1028,7 @@ void Game::RenderTitleFrame()
                              1.0f,
                              kRightColor,
                              2.0f,
-                             0.85f);
+                             kHudAlpha);
     }
 
     m_Console.Render(*m_Renderer, m_ScreenWidth, m_ScreenHeight);
@@ -1087,7 +1088,23 @@ void Game::RenderTitleContent()
                              1.0f);
     }
 
-    // Version footer (bottom-right).
+    // Version footer (bottom-right) - the same label the in-game HUD shows.
+    RenderVersionFooter();
+}
+
+void Game::RenderVersionFooter()
+{
+    // Self-contained so both the title screen and the in-game HUD can call it:
+    // suspend perspective and draw in a screen-space UI projection. Callers that
+    // resume world-space drawing afterward restore their own projection.
+    IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
+    m_Renderer->SetProjection(MakeUIProjection(m_ScreenWidth, m_ScreenHeight));
+
+    const float screenW = static_cast<float>(m_ScreenWidth);
+    const float screenH = static_cast<float>(m_ScreenHeight);
+    const float uiScale = viewScaling::MenuUiScale(
+        m_ScreenWidth, m_ScreenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
+
     const std::string versionText = std::string("rift ") + RIFT_VERSION;
     const float versionWidth = m_Renderer->GetTextWidth(versionText, VERSION_TEXT_SCALE * uiScale);
     m_Renderer->DrawText(
