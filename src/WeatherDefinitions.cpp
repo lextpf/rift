@@ -63,7 +63,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
         .secondaryParticleType = WeatherParticleType::Fog,
-        .secondaryBaseSpawnRate = 45.0f,
+        .secondaryBaseSpawnRate = 27.0f,  // thinned blizzard mist (was 45)
         .secondaryMaxWeatherParticles = 10000,
         .fogAlphaMultiplier = 0.6f,  // softened so stacked fog stays translucent (was 0.85)
     },
@@ -75,8 +75,8 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.87f},
         .particleType = WeatherParticleType::Fog,
-        .baseSpawnRate = 180.0f,
-        .maxWeatherParticles = 5000,
+        .baseSpawnRate = 110.0f,      // thinned so fog reads as haze, not a wall (was 180)
+        .maxWeatherParticles = 2500,  // lower ceiling holds the thin-out when zoomed out (was 5000)
         .particleSizeScale = 1.0f,
         .windIntensity = 0.2f,
         .fogAlphaMultiplier = 0.65f,
@@ -130,7 +130,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 10000,
         .windIntensity = 0.35f,
         .secondaryParticleType = WeatherParticleType::Fog,
-        .secondaryBaseSpawnRate = 15.0f,
+        .secondaryBaseSpawnRate = 9.0f,  // lighter sakura wash (was 15)
         .secondaryMaxWeatherParticles = 10000,
         .fogAlphaMultiplier = 0.5f,
     },
@@ -156,7 +156,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     WeatherDefinition{
         .ambientTintMultiplier = {0.85f, 0.92f, 1.08f},
         .particleType = WeatherParticleType::Wisp,
-        .baseSpawnRate = 90.0f,
+        .baseSpawnRate = 35.0f,
         .maxWeatherParticles = 600,
         .particleSizeScale = 0.85f,
         .starVisibilityOverride = 0.85f,
@@ -217,7 +217,7 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 200,
         .windIntensity = 0.0f,
         .secondaryParticleType = WeatherParticleType::Fog,
-        .secondaryBaseSpawnRate = 25.0f,
+        .secondaryBaseSpawnRate = 15.0f,  // thinner mist behind the beams (was 25)
         .secondaryMaxWeatherParticles = 1500,
         .fogAlphaMultiplier = 0.40f,
     },
