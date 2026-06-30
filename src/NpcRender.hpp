@@ -17,8 +17,8 @@ struct AnimationState;
 struct NpcSprite;
 
 /**
- * @file NpcRender.hpp
  * @brief Free-function NPC sprite rendering over granular components.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Rendering
  *
  * The render half-draw mechanics carved out of the former
@@ -34,16 +34,21 @@ namespace NpcRender
 /// @brief Sprite-sheet UV top-left (pixels) for a frame + facing (NPC row map).
 glm::vec2 SpriteCoords(int frame, CharacterDirection dir);
 
-/// @brief Select the draw sheet (shared tile atlas when bound, else the per-NPC
-/// sheet from the TextureStore in globals) and, when atlas-bound, fold the atlas
-/// offset into @p spriteCoords.
+/**
+ * @brief Select the draw sheet (shared tile atlas when bound, else the per-NPC
+ * sheet from the TextureStore in globals) and, when atlas-bound, fold the atlas
+ * offset into @p spriteCoords.
+ * @return The texture to draw from - the shared atlas or the per-NPC sheet.
+ */
 const Texture& ResolveRenderSheet(const ecs::registry& world,
                                   const NpcSprite& sprite,
                                   glm::vec2& spriteCoords);
 
-/// @brief Draw the top or bottom half of an NPC sprite for the Y-sort pass.
-/// Reads the five render components; resolves sheet + UVs; defers projection +
-/// the perspective-suspended draw to @ref CharacterRender.
+/**
+ * @brief Draw the top or bottom half of an NPC sprite for the Y-sort pass.
+ * Reads the five render components; resolves sheet + UVs; defers projection +
+ * the perspective-suspended draw to @ref CharacterRender.
+ */
 void DrawHalf(const ecs::registry& world,
               IRenderer& renderer,
               glm::vec2 cameraPos,
@@ -57,6 +62,7 @@ void DrawHalf(const ecs::registry& world,
 
 /**
  * @brief Pure string utility: the NPC type identifier from a sprite path.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
  * Filename without the @c .png extension. The free-function form of the former
