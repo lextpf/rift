@@ -703,7 +703,8 @@ private:
     TextureHandle m_GlowHandle;           ///< Large soft glow for atmosphere
     TextureHandle m_LightPoolHandle;      ///< Soft circle for WorldLight pools
     TextureHandle m_AuroraCurtainHandle;  ///< Vertical streaked curtain for aurora bands
-    TextureHandle m_AuroraSmallHandle;    ///< Hand-painted small aurora particle for wisps
+    TextureHandle m_AuroraBeamHandle;     ///< Vertical oval ray/beam for aurora beams
+    TextureHandle m_AuroraSmallHandle;    ///< Procedural soft dot for aurora wisps
 
     /// Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
     /// from the atlas at the per-element pixel offsets recorded below. The
@@ -819,6 +820,9 @@ private:
 
     /// @brief Generate the procedural aurora curtain texture (vertical streaks).
     void GenerateAuroraCurtainTexture();
+
+    /// @brief Generate the procedural aurora beam texture (vertical oval ray).
+    void GenerateAuroraBeamTexture();
 
     bool m_Initialized;  ///< True after Initialize() completes successfully
     std::mt19937 m_Rng;  ///< Shared RNG for all procedural generation

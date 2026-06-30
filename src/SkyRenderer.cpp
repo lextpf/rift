@@ -2,6 +2,8 @@
 #include "TimeManager.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "AuroraMath.hpp"
+#include "AuroraTextures.hpp"
 #include "MathConstants.hpp"
 #include "ProceduralTexture.hpp"
 #include "TextureStore.hpp"
@@ -84,9 +86,11 @@ void SkyRenderer::Initialize(TextureStore& store)
 
     GenerateLightPoolTexture();
     GenerateAuroraCurtainTexture();
-    // Hand-painted small aurora particle for the floating wisp layer.
-    // Loads from disk; if missing the Texture stays default-constructed and
-    // DrawSpriteAlpha gracefully falls back to a colored rectangle.
+    GenerateAuroraBeamTexture();
+    // Hand-painted soft aurora mote for the floating sky-wisp layer (the
+    // procedural dot read worse). Falls back to a colored rect if the file is
+    // missing. Separate from the AuroraNight weather Wisp motes (ParticleSystem,
+    // ead11602...png), which drift through the world below the sky ribbons.
     Texture auroraSmallTex;
     auroraSmallTex.LoadFromFile("assets/particles/bc3ad898-4ba3-406a-af06-63256cbd45b2.png");
     m_AuroraSmallHandle = m_Store->Adopt(std::move(auroraSmallTex));
@@ -220,50 +224,22 @@ void SkyRenderer::GenerateLightPoolTexture()
 
 void SkyRenderer::GenerateAuroraCurtainTexture()
 {
-    // Curtain segment: heavy top/bottom + horizontal feathering so chained copies
-    // tile seamlessly along a warped path. Max alpha clipped <1 so the curtain
-    // reads as translucent gas rather than a solid ribbon.
     constexpr int kW = 128;
     constexpr int kH = 256;
-    std::vector<unsigned char> pixels(kW * kH * 4);
-    for (int y = 0; y < kH; ++y)
-    {
-        float ny = static_cast<float>(y) / static_cast<float>(kH);  // 0 = top, 1 = bottom
-        // Long, gentle vertical profile - peaks ~y=0.45, fades softly to
-        // both ends so segments stack vertically with no banding.
-        float topFade = std::clamp(ny / 0.45f, 0.0f, 1.0f);
-        topFade = topFade * topFade * (3.0f - 2.0f * topFade);  // smoothstep
-        float bottomFade = std::clamp((1.0f - ny) / 0.55f, 0.0f, 1.0f);
-        bottomFade = bottomFade * bottomFade * (3.0f - 2.0f * bottomFade);
-        float vertical = topFade * bottomFade;
+    std::vector<unsigned char> pixels = AuroraTextures::BuildCurtainPixels(kW, kH);
+    Texture tex;
+    tex.LoadFromData(pixels.data(), kW, kH, 4, false);
+    m_AuroraCurtainHandle = m_Store->Adopt(std::move(tex));
+}
 
-        for (int x = 0; x < kW; ++x)
-        {
-            float nx = static_cast<float>(x) / static_cast<float>(kW);  // 0..1
-
-            // Subtle vertical streak - single low frequency so segments don't
-            // strobe when chained.
-            const float kPi = static_cast<float>(rift::Pi);
-            float streak = 0.5f + 0.5f * std::sin(nx * 6.0f * kPi);
-            streak = 0.7f + 0.3f * streak;  // shallow modulation
-
-            // Strong horizontal edge fade so segments overlap into a smooth
-            // ribbon without visible seams.
-            float edgeDist = std::abs(nx * 2.0f - 1.0f);  // 0 at center, 1 at edges
-            float edge = std::pow(1.0f - edgeDist, 1.4f);
-
-            // Cap max alpha at 0.55 so the texture is inherently translucent.
-            float alpha = std::clamp(vertical * streak * edge * 0.55f, 0.0f, 1.0f);
-            int idx = (y * kW + x) * 4;
-            pixels[idx + 0] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] = static_cast<unsigned char>(alpha * 255.0f);
-        }
-    }
-    Texture auroraCurtainTex;
-    auroraCurtainTex.LoadFromData(pixels.data(), kW, kH, 4, false);
-    m_AuroraCurtainHandle = m_Store->Adopt(std::move(auroraCurtainTex));
+void SkyRenderer::GenerateAuroraBeamTexture()
+{
+    constexpr int kW = 64;
+    constexpr int kH = 256;
+    std::vector<unsigned char> pixels = AuroraTextures::BuildBeamPixels(kW, kH);
+    Texture tex;
+    tex.LoadFromData(pixels.data(), kW, kH, 4, false);
+    m_AuroraBeamHandle = m_Store->Adopt(std::move(tex));
 }
 
 void SkyRenderer::Update(float deltaTime, const TimeManager& time)
@@ -419,32 +395,20 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
 {
     // World-anchored aurora: full horizontal parallax so curtains/wisps walk past
     // the player, but Y is sky-relative so the band stays in the upper viewport.
-    // Three layers below: background wash, 14 curtains, ~36 floating wisps.
+    // Four layers below: diffuse base wash, 12 tangent-rotated curtains, oval
+    // beams rising from lit sections, and 48 floating wisps.
     const float t = static_cast<float>(m_Time);
     const float sw = static_cast<float>(screenWidth);
     const float sh = static_cast<float>(screenHeight);
 
-    // Richer 8-stop palette - saturated greens, cyans, blues, violets, magentas.
-    auto auroraColor = [](float phase) -> glm::vec3
-    {
-        float p = phase - std::floor(phase);
-        constexpr int kStops = 8;
-        const glm::vec3 stops[kStops] = {
-            {0.10f, 1.00f, 0.45f},  // saturated emerald
-            {0.20f, 1.00f, 0.75f},  // mint
-            {0.35f, 0.95f, 1.00f},  // cyan-aqua
-            {0.40f, 0.55f, 1.00f},  // electric blue
-            {0.65f, 0.30f, 1.00f},  // deep violet
-            {0.95f, 0.35f, 0.95f},  // hot magenta
-            {1.00f, 0.55f, 0.85f},  // pink
-            {0.30f, 1.00f, 0.85f},  // teal-mint
-        };
-        float pos = p * static_cast<float>(kStops);
-        int i = static_cast<int>(pos) % kStops;
-        int j = (i + 1) % kStops;
-        float f = pos - std::floor(pos);
-        return glm::mix(stops[i], stops[j], f);
-    };
+    // Aurora motion / beam tunables (see the overhaul spec, section 11).
+    constexpr float kSweepSpeed = 0.15f;    // brightness hot-spot travel speed along a band
+    constexpr float kSweepWidth = 0.20f;    // hot-spot half-width (fraction of band length)
+    constexpr int kBeamsPerCurtain = 5;     // floating oval beams per ribbon
+    constexpr float kBeamLifeSpeed = 0.4f;  // beam fade in/out speed (slow ~12-22s cycle)
+
+    // Palette, path-tangent and brightness-sweep math live in AuroraMath
+    // (pure, unit-tested in tests/AuroraMathTests.cpp).
 
     // Wrap a world-X anchor so it stays close to the camera modulo period.
     // This keeps curtains/wisps tiling across the world without needing
@@ -489,7 +453,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         // Per-curtain segment count, width, spacing -> varied ribbon length and thickness.
         const int segments = 12 + static_cast<int>(r1 * 18.0f);    // 12-30
         const float segWidth = 36.0f + r2 * 36.0f;                 // 36-72px
-        const float segSpacing = segWidth * (0.42f + r3 * 0.20f);  // overlap factor
+        const float segSpacing = segWidth * (0.34f + r3 * 0.16f);  // tighter overlap (rotated)
         const float ribbonSpan = segSpacing * static_cast<float>(segments - 1);
 
         // X anchor jittered around the even spacing so positions don't form a grid.
@@ -542,45 +506,59 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                 continue;
             }
 
+            // Warped path point for a fractional segment index, factoring the
+            // multi-frequency Y warp + tilt + x-jitter. Used to place each
+            // segment and to derive the local tangent so segments rotate to
+            // follow the curve (no staircase stepping).
+            auto samplePoint = [&](float fseg) -> glm::vec2
+            {
+                float sn = fseg / static_cast<float>(segments - 1);
+                float segOffset = fseg * segSpacing - ribbonSpan * 0.5f;
+                float sx = (worldCenterX - cameraPos.x) + segOffset;
+                float wT = fseg * waveSpatial + ti + t * waveSpeed;
+                float yw = std::sin(wT) * ampMajor + std::sin(wT * midMul + ti) * ampMid +
+                           std::sin(wT * microMul + ti * 0.5f) * ampMicro;
+                float tl = (sn - 0.5f) * 2.0f * ribbonTilt;
+                float xj = std::sin(wT * 1.9f + ti * 0.7f) * 6.0f;
+                // Return the ribbon CENTERLINE (band center), so a segment whose
+                // quad-center sits here rotates about its own anchor - adjacent
+                // segments then stay aligned along the curve (no staircase).
+                return glm::vec2(sx + xj, baseY + yw + tl + curtainH * 0.5f);
+            };
+
             for (int s = 0; s < segments; ++s)
             {
                 float fs = static_cast<float>(s);
                 float segNorm = fs / static_cast<float>(segments - 1);  // 0..1 along ribbon
-                float segOffset = fs * segSpacing - ribbonSpan * 0.5f;
-                float screenX = (worldCenterX - cameraPos.x) + segOffset;
-
-                // Multi-frequency Y warp using per-curtain spatial frequency,
-                // amplitude, and time-drift speed.
                 float waveT = fs * waveSpatial + ti + t * waveSpeed;
-                float yWarp = std::sin(waveT) * ampMajor + std::sin(waveT * midMul + ti) * ampMid +
-                              std::sin(waveT * microMul + ti * 0.5f) * ampMicro;
-                float tilt = (segNorm - 0.5f) * 2.0f * ribbonTilt;
-                float xJitter = std::sin(waveT * 1.9f + ti * 0.7f) * 6.0f;
-                float segY = baseY + yWarp + tilt;
 
-                // Color shifts gently along the noodle so different sections glow
-                // different aurora hues.
-                float colorPhase = t * 0.06f + ti * 0.20f + fs * 0.04f;
-                glm::vec3 color = auroraColor(colorPhase);
+                glm::vec2 here = samplePoint(fs);
+                glm::vec2 prev = samplePoint(std::max(0.0f, fs - 1.0f));
+                glm::vec2 next = samplePoint(std::min(static_cast<float>(segments - 1), fs + 1.0f));
+                float angleDeg = AuroraMath::TangentAngleDeg(prev, next);
 
-                // Per-segment alpha: ribbonPulse x segment-local pulse x ends
-                // fade. Translucent; overlap stacks but never becomes opaque.
-                // Bumped from (0.13+0.27) to (0.18+0.34) for more visible
-                // ribbons during AuroraNight. endsFade tightens to 2.1x then
-                // pow(0.7) for a softer, more feathered tail (was a hard
-                // linear ramp at 1.7x).
+                // Color shifts gently along the noodle so sections glow different hues.
+                glm::vec3 color = AuroraMath::AuroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
+
+                // Per-segment alpha: segment-local pulse x ribbon pulse x ends fade.
+                // Translucent; overlap stacks but never becomes opaque.
                 float segPulse = 0.5f + 0.5f * std::sin(waveT * 1.3f);
                 float endsFade = 1.0f - std::abs(segNorm - 0.5f) * 2.1f;
                 endsFade = std::pow(std::clamp(endsFade, 0.0f, 1.0f), 0.7f);
-                float alpha = (0.18f + 0.34f * segPulse) * (0.55f + 0.45f * ribbonPulse) * endsFade;
+                // Lateral sweep: a travelling hot-spot brightens sections of the
+                // band in sequence (the "dancing curtain"); 0.6 floor so the band
+                // never fully vanishes between sweeps. Beams share this envelope.
+                float sweep = AuroraMath::SweepBoost(segNorm, t, kSweepSpeed, kSweepWidth, ti);
+                float alpha = (0.26f + 0.40f * segPulse) * (0.60f + 0.40f * ribbonPulse) *
+                              endsFade * (0.78f + 0.22f * sweep);
 
                 DrawSkyElement(renderer,
                                m_AtlasTexture,
                                m_AuroraCurtainAtlasOffset,
                                m_Store->Get(m_AuroraCurtainHandle),
-                               glm::vec2(screenX - segWidth * 0.5f + xJitter, segY),
+                               glm::vec2(here.x - segWidth * 0.5f, here.y - curtainH * 0.5f),
                                glm::vec2(segWidth, curtainH),
-                               0.0f,
+                               angleDeg,
                                glm::vec4(color, alpha),
                                true);
             }
@@ -603,7 +581,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                     float screenX =
                         (worldCenterX - cameraPos.x) + fs * segSpacing - ribbonSpan * 0.5f;
                     float segY = baseY + yWarp + tilt;
-                    glm::vec3 color = auroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
+                    glm::vec3 color = AuroraMath::AuroraColor(t * 0.06f + ti * 0.20f + fs * 0.04f);
                     float glowSize = curtainH * 1.3f;
                     renderer.DrawSpriteAlpha(
                         m_Store->Get(m_GlowHandle),
@@ -613,6 +591,46 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                         glm::vec4(color, (ribbonPulse - 0.40f) * 0.50f),
                         true);
                 }
+            }
+
+            // Beams: soft, feathered vertical glows that float above the band and
+            // breathe slowly in/out on an independent lifecycle (no hard gate, no
+            // fast shimmer) with a gentle drift - so they float rather than flicker.
+            for (int b = 0; b < kBeamsPerCurtain; ++b)
+            {
+                float bn = (static_cast<float>(b) + 0.5f) / static_cast<float>(kBeamsPerCurtain);
+                float bseed = ti * 1.7f + static_cast<float>(b) * 2.3f;
+                float segNorm = std::clamp(bn + (r4 - 0.5f) * 0.12f, 0.05f, 0.95f);
+                float fseg = segNorm * static_cast<float>(segments - 1);
+
+                // Slow smooth lifecycle (~12-22s), staggered per beam so some are
+                // always softly present; squared for a gentle bloom, never a spike.
+                float lifeFreq = kBeamLifeSpeed * (0.7f + 0.6f * std::fmod(bseed, 1.0f));
+                float life = 0.5f + 0.5f * std::sin(t * lifeFreq + bseed);
+                float alpha = life * life * 0.5f;
+                if (alpha < 0.01f)
+                {
+                    continue;
+                }
+
+                glm::vec2 base = samplePoint(fseg);
+                // Gentle floating drift so beams aren't rigidly pinned to the band.
+                float driftX = std::sin(t * 0.06f + bseed) * sw * 0.025f;
+                float driftY = std::cos(t * 0.045f + bseed * 1.3f) * sh * 0.03f;
+
+                float beamW = 20.0f + r2 * 14.0f;
+                float beamH = 85.0f + r1 * 55.0f;
+                glm::vec3 color = AuroraMath::AuroraColor(t * 0.05f + ti * 0.20f + fseg * 0.04f);
+
+                // Soft oval floats centered just above the band; the texture fades
+                // on every side so there is no hard edge anywhere.
+                glm::vec2 pos(base.x - beamW * 0.5f + driftX, base.y - beamH * 0.55f + driftY);
+                renderer.DrawSpriteAlpha(m_Store->Get(m_AuroraBeamHandle),
+                                         pos,
+                                         glm::vec2(beamW, beamH),
+                                         0.0f,
+                                         glm::vec4(color, alpha),
+                                         true);
             }
         }
     }
@@ -678,7 +696,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
         // palette stops over a 7s pulse cycle - so when it re-blooms it's
         // visibly a different color than last time.
         float colorPhase = t * 0.20f + seed * 0.61f;
-        glm::vec3 color = auroraColor(colorPhase);
+        glm::vec3 color = AuroraMath::AuroraColor(colorPhase);
 
         // Alpha fully fades to 0 at troughs, peaks ~0.85 at bloom (was 0.65).
         float alpha = life * 0.85f;
@@ -1596,9 +1614,17 @@ void SkyRenderer::RenderAtmosphericGlow(IRenderer& renderer,
 
     if (auroraAlpha > 0.003f)
     {
+        // When an aurora is active, drift the wash through the same palette the
+        // bands use (dimmed) so the base arc matches the live curtains; otherwise
+        // keep the cool default tint.
+        glm::vec3 washTint(0.15f, 0.3f, 0.25f);
+        if (m_AuroraVisible)
+        {
+            washTint = AuroraMath::AuroraColor(static_cast<float>(m_Time) * 0.02f) * 0.35f;
+        }
         renderer.DrawColoredRect(glm::vec2(0, 0),
                                  glm::vec2(static_cast<float>(screenWidth), screenHeight * 0.04f),
-                                 glm::vec4(0.15f, 0.3f, 0.25f, auroraAlpha),
+                                 glm::vec4(washTint, auroraAlpha),
                                  true);
     }
 }
