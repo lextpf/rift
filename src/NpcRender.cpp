@@ -16,14 +16,14 @@
 
 namespace
 {
-/// Shared empty texture for the sheet accessor when no store is bound.
+// Shared empty texture for the sheet accessor when no store is bound.
 const Texture& EmptyNpcTexture()
 {
     static const Texture empty;
     return empty;
 }
 
-/// The NPC's per-sheet texture, resolved through the TextureStore in globals.
+// The NPC's per-sheet texture, resolved through the TextureStore in globals.
 const Texture& NpcSheet(const ecs::registry& world, const NpcSprite& sprite)
 {
     const WorldServices* svc = world.globals().find<WorldServices>();
@@ -32,6 +32,8 @@ const Texture& NpcSheet(const ecs::registry& world, const NpcSprite& sprite)
 }
 }  // namespace
 
+// Column = walk frame (wrapped to the walk count); row = facing.
+// Sheet rows: RIGHT=0, LEFT=1, DOWN=2, UP=3 (unknown facings default to DOWN).
 glm::vec2 NpcRender::SpriteCoords(int frame, CharacterDirection dir)
 {
     int spriteX = (frame % CharacterConstants::WALK_FRAME_COUNT) * CharacterConstants::SPRITE_WIDTH;
@@ -75,6 +77,9 @@ const Texture& NpcRender::ResolveRenderSheet(const ecs::registry& world,
     return NpcSheet(world, sprite);
 }
 
+// Pipeline: pick UVs (SpriteCoords) -> resolve sheet + fold atlas offset
+// (ResolveRenderSheet) -> place with elevation (ComputeRenderPos) -> draw the
+// requested half (DrawPart, perspective suspended).
 void NpcRender::DrawHalf(const ecs::registry& world,
                          IRenderer& renderer,
                          glm::vec2 cameraPos,
@@ -101,6 +106,8 @@ void NpcRender::DrawHalf(const ecs::registry& world,
         /*suspendPerspective=*/true);
 }
 
+// Type id = the sprite's filename stem: strip any directory, then a trailing
+// ".png" (case-insensitive).
 std::string NpcType::FromSpritePath(const std::string& path)
 {
     size_t lastSlash = path.find_last_of("/\\");
