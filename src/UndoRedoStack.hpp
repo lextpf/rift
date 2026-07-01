@@ -26,20 +26,40 @@ class Tilemap;
  *  - Push(cmd): pushes to undo without calling Apply. Use for stroke commits
  *    where the Touch path already mutated the tilemap during the drag - re-
  *    Applying would double-mutate.
+ *
+ * Commands are owned by the stack (via unique_ptr) and evicted oldest-first
+ * once the undo deque exceeds the capacity. Every mutating call is null-safe:
+ * a null command is a no-op.
  */
 class UndoRedoStack
 {
 public:
+    /// Undo-history depth used when no capacity is passed to the constructor.
     static constexpr std::size_t DEFAULT_CAPACITY = 100;
 
+    /// Construct a stack holding up to @ref DEFAULT_CAPACITY undo entries.
     UndoRedoStack() = default;
+
+    /**
+     * @brief Construct a stack with an explicit undo-history depth.
+     * @param capacity Maximum number of undo entries retained before the
+     *                 oldest is evicted.
+     */
     explicit UndoRedoStack(std::size_t capacity)
         : m_Capacity(capacity)
     {
     }
 
-    /// Apply the command immediately, then push it onto the undo stack.
-    /// Clears the redo stack.
+    /**
+     * @brief Apply the command immediately, then push it onto the undo stack.
+     *
+     * Clears the redo stack. Use for single-shot actions that have not been
+     * applied yet (single click, paste, etc.). A null @p cmd is ignored.
+     *
+     * @param cmd     Command to apply and record (ownership transferred).
+     * @param tilemap Target tilemap forwarded to EditorCommand::Apply.
+     * @param npcs    NPC registry forwarded to EditorCommand::Apply.
+     */
     void Execute(std::unique_ptr<EditorCommand> cmd, Tilemap& tilemap, ecs::registry& npcs)
     {
         if (!cmd)
@@ -48,8 +68,16 @@ public:
         Push(std::move(cmd));
     }
 
-    /// Push a command that was already applied (e.g., by the stroke
-    /// accumulator) onto the undo stack without calling Apply. Clears redo.
+    /**
+     * @brief Record an already-applied command onto the undo stack.
+     *
+     * Pushes @p cmd without calling Apply (e.g. a stroke accumulator that
+     * already mutated the tilemap during the drag; re-applying would double-
+     * mutate). Clears the redo stack and evicts the oldest entry once the undo
+     * deque exceeds @ref Capacity. A null @p cmd is ignored.
+     *
+     * @param cmd Already-applied command to record (ownership transferred).
+     */
     void Push(std::unique_ptr<EditorCommand> cmd)
     {
         if (!cmd)
@@ -60,8 +88,12 @@ public:
             m_Undo.pop_front();
     }
 
-    /// Pop the most recent command, revert it, move to the redo stack.
-    /// Returns false if the undo stack is empty.
+    /**
+     * @brief Revert the most recent command and move it to the redo stack.
+     * @param tilemap Target tilemap forwarded to EditorCommand::Revert.
+     * @param npcs    NPC registry forwarded to EditorCommand::Revert.
+     * @return `false` if the undo stack was empty (nothing to revert).
+     */
     bool Undo(Tilemap& tilemap, ecs::registry& npcs)
     {
         if (m_Undo.empty())
@@ -73,8 +105,12 @@ public:
         return true;
     }
 
-    /// Pop the most recent reverted command, re-apply it, move to undo.
-    /// Returns false if the redo stack is empty.
+    /**
+     * @brief Re-apply the most recently reverted command and move it back to undo.
+     * @param tilemap Target tilemap forwarded to EditorCommand::Apply.
+     * @param npcs    NPC registry forwarded to EditorCommand::Apply.
+     * @return `false` if the redo stack was empty (nothing to re-apply).
+     */
     bool Redo(Tilemap& tilemap, ecs::registry& npcs)
     {
         if (m_Redo.empty())
@@ -86,18 +122,19 @@ public:
         return true;
     }
 
+    /// Drop all history, leaving both the undo and redo stacks empty.
     void Clear()
     {
         m_Undo.clear();
         m_Redo.clear();
     }
 
-    [[nodiscard]] bool CanUndo() const { return !m_Undo.empty(); }
-    [[nodiscard]] bool CanRedo() const { return !m_Redo.empty(); }
+    [[nodiscard]] bool CanUndo() const { return !m_Undo.empty(); }  ///< Undo available.
+    [[nodiscard]] bool CanRedo() const { return !m_Redo.empty(); }  ///< Redo available.
 
-    [[nodiscard]] std::size_t UndoSize() const { return m_Undo.size(); }
-    [[nodiscard]] std::size_t RedoSize() const { return m_Redo.size(); }
-    [[nodiscard]] std::size_t Capacity() const { return m_Capacity; }
+    [[nodiscard]] std::size_t UndoSize() const { return m_Undo.size(); }  ///< Undo entry count.
+    [[nodiscard]] std::size_t RedoSize() const { return m_Redo.size(); }  ///< Redo entry count.
+    [[nodiscard]] std::size_t Capacity() const { return m_Capacity; }     ///< Max undo entries.
 
     /// Label of the next-to-undo command, or empty string if none.
     [[nodiscard]] std::string UndoLabel() const
@@ -112,7 +149,7 @@ public:
     }
 
 private:
-    std::deque<std::unique_ptr<EditorCommand>> m_Undo;
-    std::deque<std::unique_ptr<EditorCommand>> m_Redo;
-    std::size_t m_Capacity = DEFAULT_CAPACITY;
+    std::deque<std::unique_ptr<EditorCommand>> m_Undo;  ///< Undo history; newest action at back.
+    std::deque<std::unique_ptr<EditorCommand>> m_Redo;  ///< Reverted commands; cleared on mutation.
+    std::size_t m_Capacity = DEFAULT_CAPACITY;  ///< Max undo entries before oldest eviction.
 };
