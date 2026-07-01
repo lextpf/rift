@@ -36,7 +36,7 @@ constexpr const char* LOG_SUBSYSTEM = "Tilemap";
 // Extra cull padding prevents no-projection structures from popping at globe edges.
 constexpr float NO_PROJECTION_CULL_PADDING_TILES = 8.0f;
 
-/// Return true when every vertex of a warped quad is behind the sphere.
+// Return true when every vertex of a warped quad is behind the sphere.
 bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (&corners)[4])
 {
     int behindCount = 0;
@@ -49,8 +49,8 @@ bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (&corner
     return behindCount == 4;
 }
 
-/// Return true when the full no-projection structure base segment is behind the globe.
-/// We sample multiple points along the base to avoid false visibility on long bases.
+// Return true when the full no-projection structure base segment is behind the globe.
+// We sample multiple points along the base to avoid false visibility on long bases.
 bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
                                       float anchorMinScreenX,
                                       float anchorMaxScreenX,
@@ -67,8 +67,8 @@ bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
     return true;
 }
 
-/// Compute one edge point for a no-projection structure at an arbitrary world Y.
-/// Accepts continuous Y so particles can stay locked to the same warped mesh.
+// Compute one edge point for a no-projection structure at an arbitrary world Y.
+// Accepts continuous Y so particles can stay locked to the same warped mesh.
 glm::vec2 ComputeEdgePoint(IRenderer& renderer,
                            float anchorMinScreenX,
                            float anchorMaxScreenX,
@@ -96,8 +96,9 @@ glm::vec2 ComputeEdgePoint(IRenderer& renderer,
     return renderer.ComputeBuildingVertex(baseLeft, baseRight, u, v, heightWorld);
 }
 
-/// Compute horizon fade amount for no-projection structures in globe/fisheye mode.
-/// 0 = fully visible, 1 = fully faded.
+// Horizon-fade descriptor for no-projection structures in globe/fisheye mode:
+// how much of a structure to peel away as its base nears the globe's edge, and
+// in which direction. amount 0 = fully visible, 1 = fully faded.
 struct StructureHorizonFade
 {
     float amount = 0.0f;
@@ -106,6 +107,9 @@ struct StructureHorizonFade
     bool fromTop = false;
 };
 
+// Compute how far a structure has crossed into the globe's edge fade band, given
+// its base center in screen space. Returns amount 0 outside the band (no globe, or
+// well inside the disc) rising to 1 at/over the horizon, plus the peel direction.
 StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
                                                  const glm::vec2& structureBaseCenter,
                                                  float fadeBandPixels)
@@ -146,6 +150,8 @@ StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
     return result;
 }
 
+// Discrete per-tile test: is tile (tileCol, tileY) within the peeled-away band of
+// `fade`? Peels whole columns (side-on globe) or whole rows (top/bottom-on globe).
 bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
                                            int tileCol,
                                            int structureWidthTiles,
@@ -191,6 +197,9 @@ bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
     return rowFromBottom < hiddenRows;
 }
 
+// Continuous counterpart of IsNoProjectionTileHiddenByHorizonFade for a sub-tile
+// point (fractional column/row), so particles locked to a structure fade at the
+// same rate as the tiles around them.
 bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
                                             float localXTiles,
                                             int structureWidthTiles,
@@ -231,6 +240,9 @@ bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
 
 }  // namespace
 
+// Construct an empty tilemap at the default size with the standard 10-layer stack
+// (5 background + 5 foreground). Tiles are left blank; the terrain is filled in
+// later by GenerateDefaultMap once a tileset is loaded (via SetTilemapSize).
 Tilemap::Tilemap()
 {
     // Allocate storage for all layers using row-major layout: size = width * height
@@ -267,6 +279,9 @@ Tilemap::Tilemap()
 
 Tilemap::~Tilemap() = default;
 
+// Full O(width*height*layers) rebuild of the per-(layer, structure) bounding-box
+// cache used to place warped no-projection structures without a full-map scan on
+// every query. Clears the dirty flag and any pending single-structure dirty keys.
 void Tilemap::RebuildStructureBoundsCache() const
 {
     m_StructureBoundsCache.clear();
@@ -305,12 +320,18 @@ void Tilemap::RebuildStructureBoundsCache() const
     m_DirtyStructureKeys.clear();
 }
 
+// Mark the whole structure-bounds cache stale; it is lazily rebuilt on the next
+// GetCachedStructureBounds call.
 void Tilemap::InvalidateStructureBoundsCache()
 {
     m_StructureBoundsCacheDirty = true;
     m_DirtyStructureKeys.clear();
 }
 
+// Incrementally patch the structure-bounds cache after one tile's structure id
+// changes: grow the new structure's box in O(1), and mark the old structure dirty
+// for a lazy single-structure re-scan (its box may need to shrink). No-op when a
+// full rebuild is already pending.
 void Tilemap::InvalidateStructureBoundsForTile(
     size_t layerIdx, int x, int y, int oldStructId, int newStructId)
 {
@@ -348,6 +369,8 @@ void Tilemap::InvalidateStructureBoundsForTile(
     }
 }
 
+// Recompute the bounding box of a single structure by scanning only that
+// structure's layer, used to satisfy a lazy dirty mark without a full rebuild.
 void Tilemap::RebuildSingleStructureBounds(size_t layerIdx, int structId, int64_t key) const
 {
     m_StructureBoundsCache.erase(key);
@@ -389,6 +412,9 @@ void Tilemap::RebuildSingleStructureBounds(size_t layerIdx, int structId, int64_
     }
 }
 
+// Return the cached tile-space bounding box of (layerIdx, structId), rebuilding
+// the whole cache or just this structure first if either is marked dirty. Returns
+// nullptr when the structure has no tiles in that layer.
 const Tilemap::StructureBounds* Tilemap::GetCachedStructureBounds(size_t layerIdx,
                                                                   int structId) const
 {
@@ -414,6 +440,9 @@ const Tilemap::StructureBounds* Tilemap::GetCachedStructureBounds(size_t layerId
     return nullptr;
 }
 
+// Precompute, for every tile id in the atlas, whether it is fully transparent
+// (RGBA alpha 0, or the pure-black / pure-white key colors for RGB tilesets) so
+// per-tile render culling can skip the live pixel scan. Indexed by tile id.
 void Tilemap::BuildTransparencyCache()
 {
     if (!m_TilesetData || m_TilesetChannels == 0)
@@ -474,6 +503,11 @@ void Tilemap::BuildTransparencyCache()
     Logger::DebugF(LOG_SUBSYSTEM, "Built transparency cache for {} tiles", totalTiles);
 }
 
+// Load one or more tileset images and stack them vertically into a single atlas
+// texture (narrower sheets padded with transparency on the right). All sheets must
+// share a channel count. Uploads the GL-flipped atlas to the GPU, records the
+// tileset-only baseline height for PackAdditionalSheets, and builds the
+// transparency cache. Returns false on any load or channel-mismatch error.
 bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
                                    int tileWidth,
                                    int tileHeight)
@@ -679,6 +713,12 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
     return true;
 }
 
+// Re-pack the atlas: truncate back to the tileset-only baseline, then append the
+// given character/sprite sheets below it, growing the atlas height and re-uploading
+// it. Records each sheet's GL-row offset in m_CharacterAtlasOffsets. Passing an
+// empty list just shrinks the atlas back to the tileset baseline. Sheets must match
+// the atlas channel count and fit within its width. Returns false on mismatch or
+// re-upload failure.
 bool Tilemap::PackAdditionalSheets(const std::vector<AtlasPackEntry>& sheets)
 {
     if (!m_TilesetData || m_TilesetDataWidth <= 0 || m_TilesetOnlyHeight <= 0)
@@ -741,23 +781,19 @@ bool Tilemap::PackAdditionalSheets(const std::vector<AtlasPackEntry>& sheets)
     // Carry over the existing tileset data unchanged.
     std::memcpy(newData.get(), m_TilesetData.get(), static_cast<size_t>(oldHeight) * rowStride);
 
-    // Append each sheet so that after the uniform CPU pre-flip below, the
-    // resulting atlas sub-region exactly preserves the source's m_ImageData
-    // layout (just relocated). Achieved by flipping rows on copy:
+    // Append each sheet flipped row-for-row so that, after the uniform CPU pre-flip
+    // below, the sheet's atlas sub-region preserves the source's m_ImageData layout
+    // exactly (just relocated):
     //     atlas_m_ImageData[atlasOffset.y + k] == source_m_ImageData[k]
+    // This holds regardless of how the source was uploaded (LoadFromFile's stbi
+    // bottom-up rows or LoadFromData(false)'s top-down rows) - only the relative row
+    // ordering within each region matters. So both characters (DrawSpriteRegion) and
+    // sky elements (DrawSpriteAtlas) sample the same pixels from the atlas as they
+    // did from their own textures.
     //
-    // This works regardless of whether the source was uploaded via
-    // LoadFromFile (stbi-flipped to bottom-up) or LoadFromData(false)
-    // (image-space top-down) -- the only thing that matters is preserving
-    // the relative ordering inside each region. Both standalone characters
-    // (DrawSpriteRegion with flipY=false + spriteCoords.y in GL-row space)
-    // and standalone sky elements (DrawSpriteAtlas) then produce identical
-    // pixels in the atlas as they did against their own textures.
-    //
-    // atlasOffset.y is the GL-row offset of the FIRST GL row of this
-    // sheet's region: (newHeight - currentY - sheetH). Characters add
-    // standalone spriteCoords.y to this. Sky elements use it as the
-    // origin of a uv-min/uv-max rect.
+    // atlasOffset.y is the GL-row of this sheet's first GL row
+    // (newHeight - currentY - sheetH): characters add their spriteCoords.y to it;
+    // sky elements use it as the origin of a uv-min/uv-max rect.
     int currentY = oldHeight;
     for (const auto& entry : sheets)
     {
@@ -825,6 +861,10 @@ std::optional<glm::vec2> Tilemap::GetCharacterAtlasOffset(const std::string& key
     return it->second;
 }
 
+// Resize the map to width x height, rebuilding the 10-layer stack plus the
+// collision, navigation, elevation, corner-cut, and animation buffers from scratch
+// (all cleared). Regenerates a random default map when generateMap is set and a
+// tileset is loaded. Invalidates the structure-bounds cache.
 void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
 {
     m_MapWidth = width;
@@ -921,6 +961,9 @@ bool Tilemap::GetNavigation(int x, int y) const
     return m_NavigationMap.GetNavigation(x, y);
 }
 
+// Return whether the given tile id is fully transparent, using the precomputed
+// transparency cache when available and falling back to a live pixel scan of the
+// tileset otherwise. Unknown or unloaded tiles are treated as transparent.
 bool Tilemap::IsTileTransparent(int tileID) const
 {
     // Use cached result if available (massive performance improvement)
@@ -1014,6 +1057,10 @@ float Tilemap::GetElevationAtWorldPos(float worldX, float worldY) const
     return static_cast<float>(GetElevation(tileX, tileY));
 }
 
+// Decide which axis (X or Y) an elevated tile engages the player on: the long
+// dimension of the elevated region, so ramps and bridges block along their run yet
+// let entities pass under/over when crossing them. See the inline steps below for
+// the gradient-first / extent-scan fallback logic.
 ElevationAxis Tilemap::GetElevationAxisAt(int x, int y) const
 {
     int z = GetElevation(x, y);
@@ -1096,6 +1143,11 @@ bool Tilemap::GetNoProjection(int x, int y, int layer) const
     return m_Layers[layerIdx].noProjection[index];
 }
 
+// Flood-fill from (tileX, tileY) across all layers to find the tile-space bounds of
+// the connected no-projection region containing it (4-connectivity; a tile counts
+// if any layer flags it noProjection). Writes the bounds to the out params and
+// returns true, or returns false if the seed tile is out of range or not part of
+// any no-projection region.
 bool Tilemap::FindNoProjectionStructureBounds(
     int tileX, int tileY, int& outMinX, int& outMaxX, int& outMinY, int& outMaxY) const
 {
@@ -1178,6 +1230,12 @@ bool Tilemap::FindNoProjectionStructureBounds(
     return true;
 }
 
+// Project a world-space point onto the warped mesh of the no-projection structure
+// beneath it, writing the on-screen position to outScreenPos. Finds the owning
+// structure (searching a few rows down from the point), then interpolates across
+// the structure's warped column edges at the point's fractional position. Returns
+// false when there is no structure, or it is culled behind the globe or horizon
+// fade. Lets particles stay locked to a warped building's surface.
 bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
                                                 const glm::vec2& worldPos,
                                                 const glm::vec2& cameraPos,
@@ -1438,6 +1496,11 @@ void Tilemap::SetTileStructureId(int x, int y, int layer, int structId)
     InvalidateStructureBoundsForTile(layerIdx, x, y, oldStructId, structId);
 }
 
+// Rebuild and return the cached list of visible Y-sort-plus tiles (tiles that
+// interleave with entities in the depth sort). Every visible Y-sort-plus tile
+// becomes its own entry, but all tiles in a vertical column-stack take the bottom
+// tile's foot as their anchorY (and its ySortMinus flag), so the whole stack sorts
+// together. Culled to the view rect expanded by the no-projection pad.
 const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
     glm::vec2 cullCam, glm::vec2 cullSize) const
 {
@@ -1544,6 +1607,11 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
     return m_YSortPlusTilesCache;
 }
 
+// Draw a single tile at (x, y) on the given layer. Handles animation-frame lookup,
+// transparency skipping, and the three no-projection paths: flat 2D, a
+// sphere-warped quad (when the tile belongs to a structure), and a
+// perspective-suspended fallback for structure-less no-projection tiles.
+// useNoProjection: -1 = use the layer's flag, 0 = force off, 1 = force on.
 void Tilemap::RenderSingleTile(
     IRenderer& renderer, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection)
 {
@@ -1788,6 +1856,10 @@ const TileLayer& Tilemap::GetLayer(size_t index) const
     return m_Layers[index];
 }
 
+// Per-cell layer field accessors. Each get/set delegates to the GetLayerField /
+// SetLayerField templates (declared in Tilemap.hpp), which bounds-check (x, y,
+// layer) and index into the named TileLayer array. Rotation is special-cased to
+// normalize the angle into [0, 360).
 int Tilemap::GetLayerTile(int x, int y, size_t layer) const
 {
     return GetLayerField<&TileLayer::tiles>(x, y, layer);
@@ -1864,6 +1936,8 @@ void Tilemap::SetLayerYSortMinus(int x, int y, size_t layer, bool ySortMinus)
     SetLayerField<&TileLayer::ySortMinus>(x, y, layer, ySortMinus);
 }
 
+// Return layer indices sorted ascending by their renderOrder field, i.e. the order
+// the layers should be drawn (lowest renderOrder first).
 std::vector<size_t> Tilemap::GetLayerRenderOrder() const
 {
     std::vector<size_t> indices(m_Layers.size());
@@ -1878,6 +1952,9 @@ std::vector<size_t> Tilemap::GetLayerRenderOrder() const
     return indices;
 }
 
+// Draw all background (pre-player) layers in render order in a single pass over the
+// visible tile range, one tile position at a time. Skips no-projection and
+// Y-sort-plus tiles (drawn by their own passes) and transparent/empty tiles.
 void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
                                      glm::vec2 renderCam,
                                      glm::vec2 renderSize,
@@ -1995,6 +2072,8 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
     }
 }
 
+// Foreground (post-player) counterpart of RenderBackgroundLayers: the same
+// single-pass draw over the visible range, for the non-background layers.
 void Tilemap::RenderForegroundLayers(IRenderer& renderer,
                                      glm::vec2 renderCam,
                                      glm::vec2 renderSize,
@@ -2112,6 +2191,8 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
     }
 }
 
+// Draw the no-projection tiles of the background / foreground layer sets. Thin
+// wrappers selecting the layer set for the shared RenderLayersNoProjection body.
 void Tilemap::RenderBackgroundLayersNoProjection(IRenderer& renderer,
                                                  glm::vec2 renderCam,
                                                  glm::vec2 renderSize,
@@ -2130,6 +2211,12 @@ void Tilemap::RenderForegroundLayersNoProjection(IRenderer& renderer,
     RenderLayersNoProjection(renderer, renderCam, renderSize, cullCam, cullSize, false);
 }
 
+// Draw the no-projection tiles of either the background or foreground layer set.
+// In 2D mode this is a straight single pass. In any enabled perspective mode it
+// groups each structure's tiles, sorts the per-structure draw commands by layer then
+// row, and emits each tile as a warped quad. Globe/fisheye modes additionally widen
+// the cull margin for edge compression and cull/fade whole structures at the
+// horizon. Structure-less no-projection tiles are skipped in 3D.
 void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                                        glm::vec2 renderCam,
                                        glm::vec2 renderSize,
@@ -2549,6 +2636,9 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     }
 }
 
+// Fill the ground layer with random non-transparent tiles sampled from the loaded
+// tileset. Requires tileset data; logs and returns early if none is loaded or no
+// usable (non-transparent) tiles are found.
 void Tilemap::GenerateDefaultMap()
 {
     // Validate tileset is loaded
@@ -2623,6 +2713,8 @@ void Tilemap::GenerateDefaultMap()
     Logger::InfoF(LOG_SUBSYSTEM, "Generated random map with {} tiles", MapCellCount());
 }
 
+// Return the ids of every non-transparent tile in the loaded tileset, or an empty
+// list if no tileset is loaded.
 std::vector<int> Tilemap::GetValidTileIDs() const
 {
     std::vector<int> validTileIDs;
@@ -2647,6 +2739,10 @@ std::vector<int> Tilemap::GetValidTileIDs() const
     return validTileIDs;
 }
 
+// Parse a dialogue option's "when" string into a list of DialogueConditions.
+// Grammar: terms joined by " & " (all must hold); each term is "flag" (set),
+// "!flag" (not set), or "flag=value" (equals). Whitespace around a term is trimmed
+// and empty terms are ignored.
 static std::vector<DialogueCondition> ParseConditionString(const std::string& whenStr)
 {
     std::vector<DialogueCondition> conditions;
@@ -2696,6 +2792,9 @@ static std::vector<DialogueCondition> ParseConditionString(const std::string& wh
     return conditions;
 }
 
+// Parse a dialogue option's "do" array into a list of DialogueConsequences. Each
+// string is "-flag" (clear), "flag=value" (set to value), "flag:desc" (set with a
+// quest description), or "flag" (set). Non-string entries are ignored.
 static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::json& doArr)
 {
     std::vector<DialogueConsequence> consequences;
@@ -2746,6 +2845,8 @@ static std::vector<DialogueConsequence> ParseConsequenceArray(const nlohmann::js
     return consequences;
 }
 
+// Inverse of ParseConditionString: join conditions back into a " & "-separated
+// "when" string ("!flag", "flag=value", or "flag").
 static std::string SerializeConditions(const std::vector<DialogueCondition>& conditions)
 {
     if (conditions.empty())
@@ -2768,6 +2869,8 @@ static std::string SerializeConditions(const std::vector<DialogueCondition>& con
     return result;
 }
 
+// Inverse of ParseConsequenceArray: emit consequences as a JSON string array
+// ("-flag", "flag=value", "flag:desc", or "flag").
 static nlohmann::json SerializeConsequences(const std::vector<DialogueConsequence>& consequences)
 {
     nlohmann::json arr = nlohmann::json::array();
@@ -2785,6 +2888,12 @@ static nlohmann::json SerializeConsequences(const std::vector<DialogueConsequenc
     return arr;
 }
 
+// Serialize the whole map to a JSON file. Sparse by design: only non-default cells
+// are written (per-layer tile/rotation/flag data), keeping files small. Also stores
+// dimensions, collision/navigation index arrays, elevation, no-projection
+// structures, particle zones, world lights, animated tiles, corner-cut masks, the
+// NPC roster from the given registry (including dialogue trees), and the player
+// spawn. Returns false if the file cannot be opened for writing.
 bool Tilemap::SaveMapToJSON(const std::string& filename,
                             const ecs::registry* npcs,
                             int playerTileX,
@@ -3013,7 +3122,8 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
                     if (tree.startNodeId != "start")
                         treeJson["start"] = tree.startNodeId;
 
-                    // Find default speaker (most common speaker in nodes)
+                    // Default speaker: the first enumerated node's speaker (nodes is
+                    // unordered, so this is arbitrary); lets matching nodes omit theirs
                     std::string defaultSpeaker = dial.name;
                     if (!tree.nodes.empty())
                         defaultSpeaker = tree.nodes.begin()->second.speaker;
@@ -3132,6 +3242,12 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
     return true;
 }
 
+// Load a map written by SaveMapToJSON, replacing all current map state. Tolerant of
+// partial or legacy files: unknown / out-of-range entries are skipped with a capped
+// warning count, and older key names (e.g. "ySorted", "navmesh", a flat
+// "animationMap") are still accepted. SetTilemapSize resets state up front, so any
+// mid-load exception is caught and the tilemap is reset to a clean empty state
+// rather than left half-populated. Returns false on parse failure or such a reset.
 bool Tilemap::LoadMapFromJSON(const std::string& filename,
                               ecs::registry* npcs,
                               int* playerTileX,
