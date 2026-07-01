@@ -20,15 +20,19 @@ class Tilemap;
  */
 namespace Pathfinding
 {
-/// BFS shortest path from @p start to @p goal, or empty if unreachable.
-/// Returns the inclusive sequence start -> ... -> goal.
+/**
+ * BFS shortest path from @p start to @p goal, or empty if unreachable.
+ * Returns the inclusive sequence start -> ... -> goal.
+ */
 [[nodiscard]] std::vector<glm::ivec2> FindPath(const Tilemap& tilemap,
                                                glm::ivec2 start,
                                                glm::ivec2 goal);
 
-/// Count the navigable tiles reachable from @p start. Writes the bounding
-/// box of reachable tiles into @p outBoundsMin / @p outBoundsMax when count
-/// > 0. Bounds are tile coordinates, both inclusive.
+/**
+ * Count the navigable tiles reachable from @p start. Writes the bounding
+ * box of reachable tiles into @p outBoundsMin / @p outBoundsMax when count
+ * > 0. Bounds are tile coordinates, both inclusive.
+ */
 [[nodiscard]] std::size_t FloodReachable(const Tilemap& tilemap,
                                          glm::ivec2 start,
                                          glm::ivec2& outBoundsMin,
