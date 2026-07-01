@@ -36,23 +36,25 @@
 namespace
 {
 
-/// @brief Pack tile coordinates and a layer index into a stable 64-bit key
-/// suitable for unordered_map dedup during a drag stroke.
-///
-/// Layout (low bits to high):
-/// @f[ \mathit{key} = (\mathit{layer} \ll 42) \mid ((y \mathbin{\&} \mathtt{0x1FFFFF}) \ll 21) \mid
-/// (x \mathbin{\&} \mathtt{0x1FFFFF}) @f]
-///
-/// 21 bits per axis cover maps up to 2,097,152 tiles wide or tall - far
-/// beyond any conceivable hand-authored map. Layer fits in 4 of the high 22
-/// bits (10 layers today; room to grow). Negative coordinates are masked into
-/// the same 21-bit window, which is fine because per-stroke dedup only ever
-/// compares keys generated from the same coordinate system in the same frame.
-///
-/// @param x Tile column.
-/// @param y Tile row.
-/// @param layer Layer index (0-based).
-/// @return Stable 64-bit key for unordered_map lookup.
+/**
+ * @brief Pack tile coordinates and a layer index into a stable 64-bit key
+ * suitable for unordered_map dedup during a drag stroke.
+ *
+ * Layout (low bits to high):
+ * @f[ \mathit{key} = (\mathit{layer} \ll 42) \mid ((y \mathbin{\&} \mathtt{0x1FFFFF}) \ll 21) \mid
+ * (x \mathbin{\&} \mathtt{0x1FFFFF}) @f]
+ *
+ * 21 bits per axis cover maps up to 2,097,152 tiles wide or tall - far
+ * beyond any conceivable hand-authored map. Layer fits in 4 of the high 22
+ * bits (10 layers today; room to grow). Negative coordinates are masked into
+ * the same 21-bit window, which is fine because per-stroke dedup only ever
+ * compares keys generated from the same coordinate system in the same frame.
+ *
+ * @param x Tile column.
+ * @param y Tile row.
+ * @param layer Layer index (0-based).
+ * @return Stable 64-bit key for unordered_map lookup.
+ */
 inline std::uint64_t MakeStrokeKey(int x, int y, std::size_t layer)
 {
     return (static_cast<std::uint64_t>(layer) << 42) |
@@ -237,12 +239,14 @@ struct ElevationStrokeAccum
     [[nodiscard]] bool IsActive() const { return active; }
 };
 
-/// @brief Accumulator for navigation drag strokes (M mode R-drag).
-///
-/// Navigation strokes commit via Execute (not Push) because the snapshot-and-
-/// erase logic for displaced NPCs runs in the cmd's Apply, which must execute
-/// once per stroke. The nav-flag SetNavigation calls during the drag mutate
-/// in-place; the cmd's Apply re-applies them as no-ops, then handles NPCs.
+/**
+ * @brief Accumulator for navigation drag strokes (M mode R-drag).
+ *
+ * Navigation strokes commit via Execute (not Push) because the snapshot-and-
+ * erase logic for displaced NPCs runs in the cmd's Apply, which must execute
+ * once per stroke. The nav-flag SetNavigation calls during the drag mutate
+ * in-place; the cmd's Apply re-applies them as no-ops, then handles NPCs.
+ */
 struct NavigationStrokeAccum
 {
     bool active = false;
@@ -273,9 +277,11 @@ struct NavigationStrokeAccum
         }
     }
 
-    /// Commits via Execute so the cmd's Apply runs (snapshot + NPC erase +
-    /// patrol rebuild). The nav SetNavigation calls inside Apply re-apply
-    /// the values that were already set during the drag - a harmless no-op.
+    /**
+     * Commits via Execute so the cmd's Apply runs (snapshot + NPC erase +
+     * patrol rebuild). The nav SetNavigation calls inside Apply re-apply
+     * the values that were already set during the drag - a harmless no-op.
+     */
     void Commit(UndoRedoStack& stack, Tilemap& tilemap, ecs::registry& npcs)
     {
         if (active && !entries.empty())
