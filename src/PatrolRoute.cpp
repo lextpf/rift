@@ -331,7 +331,7 @@ bool PatrolRoute::GetNextWaypoint(int& tileX, int& tileY)
             if (m_CurrentWaypointIndex < 0)
             {
                 // Reached the start, turn around. Go to 1 (not 0) to avoid
-                // repeating the startpoint twice -- unless there's only 1 waypoint,
+                // repeating the startpoint twice - unless there's only 1 waypoint,
                 // in which case we stay at index 0 to prevent out-of-bounds access.
                 m_CurrentWaypointIndex = (static_cast<int>(m_Waypoints.size()) > 1) ? 1 : 0;
                 m_PingPongForward = true;
