@@ -67,15 +67,19 @@ struct NpcRecord;
  * @see UndoRedoStack, EditorCommand
  */
 
-/// @brief Move out NPCs whose tile is currently non-walkable; returns them.
-/// The tilemap is read-only here; the caller is expected to have already
-/// applied the navigation flips.
+/**
+ * @brief Move out NPCs whose tile is currently non-walkable; returns them.
+ * The tilemap is read-only here; the caller is expected to have already
+ * applied the navigation flips.
+ */
 std::vector<NpcRecord> SnapshotAndEraseNPCsOnNonWalkable(const Tilemap& tilemap,
                                                          ecs::registry& npcs);
 
 /// @brief Push the snapshotted NPCs back onto npcs and clear the snapshot.
 void RestoreErasedNPCs(ecs::registry& npcs, std::vector<NpcRecord>& snapshot);
 
-/// @brief Reinitialize each NPC's patrol route against the current tilemap.
-/// Idempotent: callable any number of times. Skips NPCs without a valid route.
+/**
+ * @brief Reinitialize each NPC's patrol route against the current tilemap.
+ * Idempotent: callable any number of times. Skips NPCs without a valid route.
+ */
 void RebuildPatrolRoutes(Tilemap& tilemap, ecs::registry& npcs);
