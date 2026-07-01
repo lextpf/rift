@@ -4,7 +4,7 @@
 
 namespace
 {
-/// Shared empty tree returned by Get() for invalid handles.
+// Shared empty tree returned by Get() for invalid handles.
 const DialogueTree& EmptyTree()
 {
     static const DialogueTree empty;
