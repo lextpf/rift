@@ -31,10 +31,12 @@ struct BrushSourceCoord
     int sourceDy;  ///< Source row index (0..height-1).
 };
 
-/// @brief Compute source brush cell for a destination cell after rotation+flip.
-/// @param dx Destination column (0..rotated_dest_width-1).
-/// @param dy Destination row (0..rotated_dest_height-1).
-/// @param bt Brush transform parameters.
+/**
+ * @brief Compute source brush cell for a destination cell after rotation+flip.
+ * @param dx Destination column (0..rotated_dest_width-1).
+ * @param dy Destination row (0..rotated_dest_height-1).
+ * @param bt Brush transform parameters.
+ */
 inline BrushSourceCoord CalculateBrushSourceTile(int dx, int dy, const BrushTransform& bt)
 {
     const int destW = (bt.rotation == 90 || bt.rotation == 270) ? bt.height : bt.width;
