@@ -2,16 +2,13 @@
 
 #include <cstdint>
 
-/// @file DialogueHandle.hpp
-/// @brief Lightweight handle into a @ref DialogueStore.
-/// @ingroup Dialogue
-
 /// @brief Dialogue-tree id type used as a @ref DialogueStore key.
 using DialogueId = std::uint32_t;
 
 /**
  * @struct DialogueHandle
  * @brief A trivially-copyable reference to a @ref DialogueTree owned by a @ref DialogueStore.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Dialogue
  *
  * Replaces an owned @ref DialogueTree member on an NPC: the store owns the
