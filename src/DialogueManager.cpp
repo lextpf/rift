@@ -26,7 +26,7 @@ bool EvaluateCondition(const GameStateManager& state, const DialogueCondition& c
         case DialogueCondition::Type::FLAG_EQUALS:
             return state.GetFlagValue(condition.key) == condition.value;
 
-            // No default case -- the compiler will warn if a new
+            // No default case - the compiler will warn if a new
             // DialogueCondition::Type enumerator is added without
             // a corresponding case here.
     }
