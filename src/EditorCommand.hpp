@@ -49,9 +49,11 @@ class EditorCommand
 public:
     virtual ~EditorCommand() = default;
 
-    /// @brief Re-apply the mutation. Called on initial Execute and on Redo.
-    /// @p npcs is the live NPC store (the ECS registry); NPC-placement commands
-    /// spawn/despawn entities through it, tile-only commands ignore it.
+    /**
+     * @brief Re-apply the mutation. Called on initial Execute and on Redo.
+     * @p npcs is the live NPC store (the ECS registry); NPC-placement commands
+     * spawn/despawn entities through it, tile-only commands ignore it.
+     */
     virtual void Apply(Tilemap& tilemap, ecs::registry& npcs) = 0;
 
     /// @brief Revert the mutation back to its pre-Apply state. Called on Undo.
