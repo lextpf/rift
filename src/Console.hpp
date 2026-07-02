@@ -31,104 +31,155 @@ class Console;
 class ConsoleBuffer
 {
 public:
-    /// Maximum number of scrollback lines retained. Older lines are dropped.
-    /// Sized large enough to hold a full per-frame draw-call trace dump
-    /// (`renderer.trace dump`) without the head being evicted as later
-    /// events scroll in. ~50 KB at one Line per ~50 chars + small overhead;
-    /// fine for desktop. For multi-frame traces, prefer `renderer.trace file`
-    /// which bypasses the scrollback entirely.
+    /**
+     * @brief Maximum number of scrollback lines retained. Older lines are dropped.
+     *
+     * Sized large enough to hold a full per-frame draw-call trace dump
+     * (`renderer.trace dump`) without the head being evicted as later
+     * events scroll in. ~50 KB at one Line per ~50 chars + small overhead;
+     * fine for desktop. For multi-frame traces, prefer `renderer.trace file`
+     * which bypasses the scrollback entirely.
+     */
     static constexpr std::size_t MAX_LINES = 8192;
 
-    /// Maximum number of submitted commands retained for Up/Down recall.
+    /**
+     * @brief Maximum number of submitted commands retained for Up/Down recall.
+     */
     static constexpr std::size_t MAX_HISTORY = 64;
 
-    /// One scrollback line: text + display color.
+    /**
+     * @brief One scrollback line: text + display color.
+     */
     struct Line
     {
         std::string text;
         glm::vec3 color{1.0f, 1.0f, 1.0f};
     };
 
-    /// Append an info-colored line.
+    /**
+     * @brief Append an info-colored line.
+     */
     void Print(std::string text, glm::vec3 color = glm::vec3(1.0f));
 
-    /// Append a red error line.
+    /**
+     * @brief Append a red error line.
+     */
     void PrintError(std::string text);
 
-    /// Drop all scrollback (does not clear input or history).
+    /**
+     * @brief Drop all scrollback (does not clear input or history).
+     */
     void Clear();
 
-    // ---------------- Input line manipulation ----------------
-
-    /// Insert a printable character at the cursor.
+    /**
+     * @brief Insert a printable character at the cursor.
+     */
     void OnChar(std::uint32_t codepoint);
 
-    /// Erase the character before the cursor (no-op if at start).
+    /**
+     * @brief Erase the character before the cursor (no-op if at start).
+     */
     void OnBackspace();
 
-    /// Delete the word before the cursor: first eat any contiguous spaces
-    /// immediately preceding the cursor, then eat one contiguous run of
-    /// non-space characters. Repeated calls walk back word-by-word until the
-    /// line is empty. Bound to Ctrl+Backspace.
+    /**
+     * @brief Delete the word before the cursor.
+     *
+     * First eat any contiguous spaces immediately preceding the cursor, then
+     * eat one contiguous run of non-space characters. Repeated calls walk back
+     * word-by-word until the line is empty. Bound to Ctrl+Backspace.
+     */
     void OnBackspaceWord();
 
-    /// Erase the character at the cursor (no-op if at end).
+    /**
+     * @brief Erase the character at the cursor (no-op if at end).
+     */
     void OnDelete();
 
-    /// Move cursor one position left (clamped at 0).
+    /**
+     * @brief Move cursor one position left (clamped at 0).
+     */
     void OnLeft();
 
-    /// Move cursor one position right (clamped at length).
+    /**
+     * @brief Move cursor one position right (clamped at length).
+     */
     void OnRight();
 
-    /// Move cursor to start of input.
+    /**
+     * @brief Move cursor to start of input.
+     */
     void OnHome();
 
-    /// Move cursor to end of input.
+    /**
+     * @brief Move cursor to end of input.
+     */
     void OnEnd();
 
-    /// Submit and clear the input line. Returns the submitted text and
-    /// resets the history navigation index.
+    /**
+     * @brief Submit and clear the input line.
+     *
+     * Returns the submitted text and resets the history navigation index.
+     */
     std::string OnEnter();
 
-    /// Replace the input line with @p text, cursor at end. Used by history
-    /// navigation and tab completion.
+    /**
+     * @brief Replace the input line with @p text, cursor at end.
+     *
+     * Used by history navigation and tab completion.
+     */
     void SetInputLine(std::string text);
 
-    // ---------------- History ----------------
-
-    /// Record a submitted command into history (capped at MAX_HISTORY).
-    /// Empty commands and exact duplicates of the most recent entry are skipped.
+    /**
+     * @brief Record a submitted command into history (capped at MAX_HISTORY).
+     *
+     * Empty commands and exact duplicates of the most recent entry are skipped.
+     */
     void RecordHistory(std::string command);
 
-    /// Walk one step back through history. Returns the recalled string, or
-    /// std::nullopt if there is nothing further back.
+    /**
+     * @brief Walk one step back through history.
+     *
+     * Returns the recalled string, or std::nullopt if there is nothing further
+     * back.
+     */
     std::optional<std::string> HistoryPrev();
 
-    /// Walk one step forward through history. Returns the next entry, an
-    /// empty string when leaving history (back to a fresh prompt), or
-    /// std::nullopt if not currently navigating history.
+    /**
+     * @brief Walk one step forward through history.
+     *
+     * Returns the next entry, an empty string when leaving history (back to a
+     * fresh prompt), or std::nullopt if not currently navigating history.
+     */
     std::optional<std::string> HistoryNext();
 
-    /// Forget the current history navigation index (call when input is
-    /// modified by typing or by submitting).
+    /**
+     * @brief Forget the current history navigation index.
+     *
+     * Call when input is modified by typing or by submitting.
+     */
     void ResetHistoryIndex();
 
-    // ---------------- Scrollback navigation ----------------
-
-    /// Adjust scroll offset by @p deltaLines. Positive scrolls toward older
-    /// lines, negative toward newer. Clamped to [0, max].
+    /**
+     * @brief Adjust scroll offset by @p deltaLines.
+     *
+     * Positive scrolls toward older lines, negative toward newer. Clamped to
+     * [0, max].
+     */
     void Scroll(int deltaLines);
 
-    /// Pin scroll to the bottom of the buffer.
+    /**
+     * @brief Pin scroll to the bottom of the buffer.
+     */
     void ResetScroll();
 
-    /// Set the absolute scroll offset (lines up from the bottom), clamped to
-    /// [0, line count]. Lets callers position the view at a specific point,
-    /// e.g. the top of a freshly printed block.
+    /**
+     * @brief Set the absolute scroll offset (lines up from the bottom), clamped
+     * to [0, line count].
+     *
+     * Lets callers position the view at a specific point, e.g. the top of a
+     * freshly printed block.
+     */
     void ScrollTo(int offsetFromBottom);
-
-    // ---------------- Read-only accessors ----------------
 
     [[nodiscard]] const std::deque<Line>& Lines() const { return m_Lines; }
     [[nodiscard]] const std::string& Input() const { return m_Input; }
@@ -159,12 +210,15 @@ class ConsoleCommandRegistry
 public:
     using Handler = std::function<void(std::span<const std::string_view> args, Console& console)>;
 
-    /// Returns the set of valid values for the @p argIndex'th positional
-    /// argument (0 = first arg after the verb). Used by the autocomplete
-    /// dropdown to suggest parameter values; return an empty vector when no
-    /// completion is available for that slot. The callback is invoked with
-    /// arbitrary indices as the user types, so it must handle out-of-range
-    /// indices gracefully.
+    /**
+     * @brief Returns the set of valid values for the @p argIndex'th positional
+     * argument (0 = first arg after the verb).
+     *
+     * Used by the autocomplete dropdown to suggest parameter values; return an
+     * empty vector when no completion is available for that slot. The callback
+     * is invoked with arbitrary indices as the user types, so it must handle
+     * out-of-range indices gracefully.
+     */
     using ArgCompletionProvider = std::function<std::vector<std::string>(std::size_t argIndex)>;
 
     struct Command
@@ -172,67 +226,95 @@ public:
         std::string name;
         std::string description;
         Handler handler;
-        /// Optional shorter / alternate spellings that resolve to this same
-        /// handler. Lookup checks aliases when the canonical name doesn't
-        /// match, and tab-completion offers them alongside canonical names.
+        /**
+         * @brief Optional shorter / alternate spellings that resolve to this
+         * same handler.
+         *
+         * Lookup checks aliases when the canonical name doesn't match, and
+         * tab-completion offers them alongside canonical names.
+         */
         std::vector<std::string> aliases;
-        /// Optional callback that supplies dropdown suggestions for positional
-        /// arguments (e.g. enum values). May be null.
+        /**
+         * @brief Optional callback that supplies dropdown suggestions for
+         * positional arguments (e.g. enum values). May be null.
+         */
         ArgCompletionProvider argCompletions;
     };
 
-    /// Register or replace a command. Empty names are rejected.
-    /// @p aliases are alternate names that resolve to the same handler.
-    /// Aliases are not stored as separate commands in the map; they're
-    /// kept on the canonical entry so `help` can show them inline.
-    /// @p argCompletions provides per-arg autocomplete values; pass nullptr
-    /// (the default) when arguments have no canned completions.
+    /**
+     * @brief Register or replace a command. Empty names are rejected.
+     *
+     * @p aliases are alternate names that resolve to the same handler. Aliases
+     * are not stored as separate commands in the map; they're kept on the
+     * canonical entry so `help` can show them inline. @p argCompletions
+     * provides per-arg autocomplete values; pass nullptr (the default) when
+     * arguments have no canned completions.
+     */
     void Register(std::string name,
                   std::string description,
                   Handler handler,
                   std::vector<std::string> aliases = {},
                   ArgCompletionProvider argCompletions = nullptr);
 
-    /// Attach (or replace) the argument-completion provider on an
-    /// already-registered command, looked up by canonical @p name. No-op if
-    /// @p name isn't registered. Lets the default command set wire completions
-    /// for many commands in one place after registration instead of threading
-    /// a provider through every @ref Register call.
+    /**
+     * @brief Attach (or replace) the argument-completion provider on an
+     * already-registered command, looked up by canonical @p name.
+     *
+     * No-op if @p name isn't registered. Lets the default command set wire
+     * completions for many commands in one place after registration instead of
+     * threading a provider through every @ref Register call.
+     */
     void SetArgCompletions(std::string_view name, ArgCompletionProvider argCompletions);
 
-    /// Look up a command by canonical name or by alias. Returns nullptr if
-    /// no match. Canonical names are O(log n); aliases are a linear fallback.
+    /**
+     * @brief Look up a command by canonical name or by alias.
+     *
+     * Returns nullptr if no match. Canonical names are O(log n); aliases are a
+     * linear fallback.
+     */
     [[nodiscard]] const Command* Lookup(std::string_view name) const;
 
-    /// All command names (canonical + aliases) whose key starts with
-    /// @p prefix, in alphabetical order. Empty prefix returns every name.
-    /// @p maxCount caps the result length (the alphabetically-earliest matches
-    /// are kept). Used by the autocomplete dropdown to fetch up to N hints.
+    /**
+     * @brief All command names (canonical + aliases) whose key starts with
+     * @p prefix, in alphabetical order.
+     *
+     * Empty prefix returns every name. @p maxCount caps the result length (the
+     * alphabetically-earliest matches are kept). Used by the autocomplete
+     * dropdown to fetch up to N hints.
+     */
     [[nodiscard]] std::vector<std::string> MatchPrefix(
         std::string_view prefix,
         std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
-    /// One entry returned by @ref MatchPrefixDetailed: the matched name
-    /// (which may be either a canonical command name or one of its aliases)
-    /// paired with the canonical command it resolves to. @c canonical is
-    /// empty when @c name is itself the canonical name; non-empty when
-    /// @c name is an alias, in which case it holds the canonical to which
-    /// the alias resolves.
+    /**
+     * @brief One entry returned by @ref MatchPrefixDetailed: the matched name
+     * paired with the canonical command it resolves to.
+     *
+     * The matched @c name may be either a canonical command name or one of its
+     * aliases. @c canonical is empty when @c name is itself the canonical name;
+     * non-empty when @c name is an alias, in which case it holds the canonical
+     * to which the alias resolves.
+     */
     struct MatchEntry
     {
         std::string name;
         std::string canonical;
     };
 
-    /// Like @ref MatchPrefix but tags each returned name with its canonical
-    /// command. Used by the autocomplete dropdown to render
-    /// `alias -> canonical` hints so the originating command for an alias
-    /// is always visible.
+    /**
+     * @brief Like @ref MatchPrefix but tags each returned name with its
+     * canonical command.
+     *
+     * Used by the autocomplete dropdown to render `alias -> canonical` hints so
+     * the originating command for an alias is always visible.
+     */
     [[nodiscard]] std::vector<MatchEntry> MatchPrefixDetailed(
         std::string_view prefix,
         std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
-    /// Read access to the underlying ordered map.
+    /**
+     * @brief Read access to the underlying ordered map.
+     */
     [[nodiscard]] const std::map<std::string, Command>& All() const { return m_Commands; }
 
 private:
@@ -289,10 +371,13 @@ private:
 class Console
 {
 public:
-    /// Visibility / size state. The toggle hotkey advances `Closed -> Half ->
-    /// Full -> Closed`. `Half` is the legacy top-50% overlay (world visible
-    /// underneath); `Full` covers the entire framebuffer for longer ops
-    /// sessions.
+    /**
+     * @brief Visibility / size state.
+     *
+     * The toggle hotkey advances `Closed -> Half -> Full -> Closed`. `Half` is
+     * the legacy top-50% overlay (world visible underneath); `Full` covers the
+     * entire framebuffer for longer ops sessions.
+     */
     enum class State : std::uint8_t
     {
         Closed,
@@ -300,108 +385,181 @@ public:
         Full
     };
 
-    /// Construct, take a Game reference, and register the default command set.
+    /**
+     * @brief Construct, take a Game reference, and register the default command set.
+     */
     explicit Console(Game& game);
 
-    /// True when the overlay is in Half or Full state.
+    /**
+     * @brief True when the overlay is in Half or Full state.
+     */
     [[nodiscard]] bool IsOpen() const { return m_State != State::Closed; }
-    /// True when the overlay covers the full framebuffer.
+    /**
+     * @brief True when the overlay covers the full framebuffer.
+     */
     [[nodiscard]] bool IsFullscreen() const { return m_State == State::Full; }
-    /// Current visibility/size state.
+    /**
+     * @brief Current visibility/size state.
+     */
     [[nodiscard]] State GetState() const { return m_State; }
-    /// F12 hotkey: open the console (to Half) if closed, otherwise close it.
-    /// Does not cycle through Full - that's @ref ToggleFullscreen via Tab.
+    /**
+     * @brief F12 hotkey: open the console (to Half) if closed, otherwise close it.
+     *
+     * Does not cycle through Full - that's @ref ToggleFullscreen via Tab.
+     */
     void Toggle();
-    /// Tab hotkey when the console is open and the input line is empty:
-    /// toggle between Half and Full. No-op when closed.
+    /**
+     * @brief Tab hotkey when the console is open and the input line is empty:
+     * toggle between Half and Full.
+     *
+     * No-op when closed.
+     */
     void ToggleFullscreen();
-    /// Open the console to the default visible state.
+    /**
+     * @brief Open the console to the default visible state.
+     */
     void Open();
-    /// Close the overlay and stop consuming console input.
+    /**
+     * @brief Close the overlay and stop consuming console input.
+     */
     void Close();
 
-    // ---------------- Input event entry points ----------------
-
-    /// GLFW char callback path. Inserts the typed glyph into the input buffer
-    /// while the console is open; no-op otherwise.
+    /**
+     * @brief GLFW char callback path.
+     *
+     * Inserts the typed glyph into the input buffer while the console is open;
+     * no-op otherwise.
+     */
     void OnChar(std::uint32_t codepoint);
 
-    /// Execute the current line or accept the active autocomplete suggestion.
+    /**
+     * @brief Execute the current line or accept the active autocomplete suggestion.
+     */
     void OnEnter();
-    /// Delete one code unit before the cursor.
+    /**
+     * @brief Delete one code unit before the cursor.
+     */
     void OnBackspace();
-    /// Delete the word before the cursor.
+    /**
+     * @brief Delete the word before the cursor.
+     */
     void OnBackspaceWord();
-    /// Delete one code unit at the cursor.
+    /**
+     * @brief Delete one code unit at the cursor.
+     */
     void OnDelete();
-    /// Complete or cycle command suggestions.
+    /**
+     * @brief Complete or cycle command suggestions.
+     */
     void OnTab();
-    /// Navigate command history or suggestions upward.
+    /**
+     * @brief Navigate command history or suggestions upward.
+     */
     void OnUp();
-    /// Navigate command history or suggestions downward.
+    /**
+     * @brief Navigate command history or suggestions downward.
+     */
     void OnDown();
-    /// Move the cursor left.
+    /**
+     * @brief Move the cursor left.
+     */
     void OnLeft();
-    /// Move the cursor right.
+    /**
+     * @brief Move the cursor right.
+     */
     void OnRight();
-    /// Move the cursor to the start of the line.
+    /**
+     * @brief Move the cursor to the start of the line.
+     */
     void OnHome();
-    /// Move the cursor to the end of the line.
+    /**
+     * @brief Move the cursor to the end of the line.
+     */
     void OnEnd();
-    /// Close the console or clear suggestion state.
+    /**
+     * @brief Close the console or clear suggestion state.
+     */
     void OnEscape();
-    /// Scroll console history by the wheel delta.
+    /**
+     * @brief Scroll console history by the wheel delta.
+     */
     void OnScroll(double yoffset);
 
-    /// Parse and execute a complete command line. Public for testability.
-    /// Empty/whitespace-only input is a no-op. Unknown verbs print an error.
+    /**
+     * @brief Parse and execute a complete command line. Public for testability.
+     *
+     * Empty/whitespace-only input is a no-op. Unknown verbs print an error.
+     */
     void Submit(std::string_view line);
 
-    /// Render the translucent overlay. Caller passes the framebuffer size;
-    /// this method installs an orthographic projection internally and
-    /// suspends perspective via PerspectiveSuspendGuard.
+    /**
+     * @brief Render the translucent overlay.
+     *
+     * Caller passes the framebuffer size; this method installs an orthographic
+     * projection internally and suspends perspective via PerspectiveSuspendGuard.
+     */
     void Render(IRenderer& renderer, int screenWidth, int screenHeight);
 
-    /// Split @p line on ASCII whitespace runs into views into @p line.
-    /// The caller must keep @p line alive for the views' lifetime. Public
-    /// and static so unit tests can exercise tokenization directly.
+    /**
+     * @brief Split @p line on ASCII whitespace runs into views into @p line.
+     *
+     * The caller must keep @p line alive for the views' lifetime. Public and
+     * static so unit tests can exercise tokenization directly.
+     */
     [[nodiscard]] static std::vector<std::string_view> Tokenize(std::string_view line);
 
-    // ---------------- Accessors used by command handlers ----------------
-
-    /// Mutable output/input buffer used by command handlers.
+    /**
+     * @brief Mutable output/input buffer used by command handlers.
+     */
     [[nodiscard]] ConsoleBuffer& Buffer() { return m_Buffer; }
-    /// Read-only output/input buffer for render and inspection paths.
+    /**
+     * @brief Read-only output/input buffer for render and inspection paths.
+     */
     [[nodiscard]] const ConsoleBuffer& Buffer() const { return m_Buffer; }
-    /// Game instance that owns this console.
+    /**
+     * @brief Game instance that owns this console.
+     */
     [[nodiscard]] Game& GetGame() { return m_Game; }
-    /// Registered command table.
+    /**
+     * @brief Registered command table.
+     */
     [[nodiscard]] const ConsoleCommandRegistry& Registry() const { return m_Registry; }
 
-    /// Position the scrollback so the first line of the most recently printed
-    /// block of @p outputLineCount lines sits at the top of the visible window;
-    /// the rest fills downward (scroll down to reveal more). Used by `help` so
-    /// the listing reads from the top instead of pinning to the newest line.
-    /// Falls back to the bottom before the first Render() (visible rows unknown).
+    /**
+     * @brief Position the scrollback so the first line of the most recently
+     * printed block of @p outputLineCount lines sits at the top of the visible
+     * window; the rest fills downward (scroll down to reveal more).
+     *
+     * Used by `help` so the listing reads from the top instead of pinning to
+     * the newest line. Falls back to the bottom before the first Render()
+     * (visible rows unknown).
+     */
     void ScrollToOutputTop(std::size_t outputLineCount);
 
-    /// Session-scoped player-position bookmarks driven by `bookmark.set` /
-    /// `bookmark.tp` / `bookmark.list`. Cleared on Console destruction; not
-    /// persisted to disk.
+    /**
+     * @brief Session-scoped player-position bookmarks driven by `bookmark.set` /
+     * `bookmark.tp` / `bookmark.list`.
+     *
+     * Cleared on Console destruction; not persisted to disk.
+     */
     [[nodiscard]] std::unordered_map<std::string, glm::ivec2>& Bookmarks() { return m_Bookmarks; }
     [[nodiscard]] const std::unordered_map<std::string, glm::ivec2>& Bookmarks() const
     {
         return m_Bookmarks;
     }
 
-    /// One round of suggestion computation. `items` holds the prefix-matched
-    /// candidates (alphabetical, capped to the requested count). `wordStart`
-    /// is the index in the input where the partial word begins, so callers
-    /// can splice a chosen suggestion in: `input.substr(0, wordStart) + items[i]`.
-    /// `canonicals` is parallel to `items`: empty entries denote canonical
-    /// command matches; non-empty entries hold the canonical command that the
-    /// corresponding alias resolves to. Argument-completion items always have
-    /// an empty canonical (alias semantics don't apply to arg values).
+    /**
+     * @brief One round of suggestion computation.
+     *
+     * `items` holds the prefix-matched candidates (alphabetical, capped to the
+     * requested count). `wordStart` is the index in the input where the partial
+     * word begins, so callers can splice a chosen suggestion in:
+     * `input.substr(0, wordStart) + items[i]`. `canonicals` is parallel to
+     * `items`: empty entries denote canonical command matches; non-empty entries
+     * hold the canonical command that the corresponding alias resolves to.
+     * Argument-completion items always have an empty canonical (alias semantics
+     * don't apply to arg values).
+     */
     struct SuggestionResult
     {
         std::vector<std::string> items;
@@ -409,64 +567,104 @@ public:
         std::size_t wordStart = 0;
     };
 
-    /// Mouse cursor moved over the suggestion dropdown. If the cursor is
-    /// inside the box, snap @c m_SuggestionIndex to the row under the cursor
-    /// so hover-to-highlight matches what a click would commit.
+    /**
+     * @brief Mouse cursor moved over the suggestion dropdown.
+     *
+     * If the cursor is inside the box, snap @c m_SuggestionIndex to the row
+     * under the cursor so hover-to-highlight matches what a click would commit.
+     */
     void OnMouseHover(double mouseX, double mouseY);
 
-    /// Left-click at @p mouseX,mouseY. If the click landed inside the
-    /// dropdown box, splice the clicked suggestion into the input (same path
-    /// as Tab) and return true so the caller can swallow the click.
+    /**
+     * @brief Left-click at @p mouseX,mouseY.
+     *
+     * If the click landed inside the dropdown box, splice the clicked
+     * suggestion into the input (same path as Tab) and return true so the
+     * caller can swallow the click.
+     */
     bool OnMouseClick(double mouseX, double mouseY);
 
-    /// Mouse wheel hit-routing: if the cursor sits over the dropdown and the
-    /// suggestion list overflows the visible window, scroll the dropdown and
-    /// return true. Caller falls through to scrollback navigation otherwise.
+    /**
+     * @brief Mouse wheel hit-routing.
+     *
+     * If the cursor sits over the dropdown and the suggestion list overflows
+     * the visible window, scroll the dropdown and return true. Caller falls
+     * through to scrollback navigation otherwise.
+     */
     bool TryScrollDropdown(double mouseX, double mouseY, double yoffset);
 
 private:
-    /// Wire the built-in command set. Defined in ConsoleCommands.cpp.
+    /**
+     * @brief Wire the built-in command set. Defined in ConsoleCommands.cpp.
+     */
     void RegisterDefaultCommands();
 
-    /// Compute the up-to-@p maxCount autocomplete suggestions for the current
-    /// input line. Suggests command names while typing the verb, and falls
-    /// back to the verb's `argCompletions` callback when typing positional
-    /// arguments. Used by both the dropdown renderer and Tab completion so
-    /// the visible list and the chosen completion stay in lockstep.
+    /**
+     * @brief Compute the up-to-@p maxCount autocomplete suggestions for the
+     * current input line.
+     *
+     * Suggests command names while typing the verb, and falls back to the
+     * verb's `argCompletions` callback when typing positional arguments. Used
+     * by both the dropdown renderer and Tab completion so the visible list and
+     * the chosen completion stay in lockstep.
+     */
     [[nodiscard]] SuggestionResult ComputeSuggestions(std::size_t maxCount) const;
 
-    /// Slide @c m_SuggestionScroll so @c m_SuggestionIndex stays inside the
-    /// visible window, then clamp the scroll to a valid range. Called any
-    /// time the index or item count changes.
+    /**
+     * @brief Slide @c m_SuggestionScroll so @c m_SuggestionIndex stays inside
+     * the visible window, then clamp the scroll to a valid range.
+     *
+     * Called any time the index or item count changes.
+     */
     void ClampSuggestionScroll(std::size_t itemCount);
 
-    /// Hard cap on suggestions so a degenerate prefix can't blow up the box.
-    /// Larger than any realistic command list; raise if completion sources
-    /// ever return more.
+    /**
+     * @brief Hard cap on suggestions so a degenerate prefix can't blow up the box.
+     *
+     * Larger than any realistic command list; raise if completion sources ever
+     * return more.
+     */
     static constexpr std::size_t kMaxSuggestions = 64;
 
-    /// Maximum rows shown in the dropdown box at once. Items beyond this
-    /// scroll behind the visible window.
+    /**
+     * @brief Maximum rows shown in the dropdown box at once.
+     *
+     * Items beyond this scroll behind the visible window.
+     */
     static constexpr std::size_t kMaxVisibleSuggestions = 8;
 
     Game& m_Game;
     ConsoleBuffer m_Buffer;
     ConsoleCommandRegistry m_Registry;
     State m_State = State::Closed;
-    /// Scrollback row count from the last Render(), cached so ScrollToOutputTop
-    /// can position the view without re-deriving the overlay layout here.
+    /**
+     * @brief Scrollback row count from the last Render(), cached so
+     * ScrollToOutputTop can position the view without re-deriving the overlay
+     * layout here.
+     */
     int m_LastVisibleLines = 0;
-    /// Index of the highlighted entry in the current dropdown (across the
-    /// full item list, not just the visible window). Reset to 0 on any
-    /// input modification; clamped to the suggestion count when read.
+    /**
+     * @brief Index of the highlighted entry in the current dropdown (across the
+     * full item list, not just the visible window).
+     *
+     * Reset to 0 on any input modification; clamped to the suggestion count
+     * when read.
+     */
     std::size_t m_SuggestionIndex = 0;
-    /// First visible row in the dropdown's sliding window. Adjusted via
-    /// arrow-key navigation, mouse wheel, and ClampSuggestionScroll.
+    /**
+     * @brief First visible row in the dropdown's sliding window.
+     *
+     * Adjusted via arrow-key navigation, mouse wheel, and ClampSuggestionScroll.
+     */
     std::size_t m_SuggestionScroll = 0;
-    /// Geometry cached during Render() so input handlers (mouse hover,
-    /// click, wheel) can hit-test the dropdown without their own copy of
-    /// the layout math. Refreshed every frame; @c visible is false when
-    /// the dropdown isn't drawn this frame.
+    /**
+     * @brief Geometry cached during Render() so input handlers (mouse hover,
+     * click, wheel) can hit-test the dropdown without their own copy of the
+     * layout math.
+     *
+     * Refreshed every frame; @c visible is false when the dropdown isn't drawn
+     * this frame.
+     */
     struct DropdownRect
     {
         float x = 0.0f;
@@ -482,16 +680,23 @@ private:
     };
     DropdownRect m_LastDropdown;
 
-    /// Session-scoped bookmark storage. Keyed by user-supplied name; value is
-    /// the player's tile coordinates at the time of `bookmark.set`. Empty by
-    /// default; not persisted across program runs.
+    /**
+     * @brief Session-scoped bookmark storage.
+     *
+     * Keyed by user-supplied name; value is the player's tile coordinates at
+     * the time of `bookmark.set`. Empty by default; not persisted across
+     * program runs.
+     */
     std::unordered_map<std::string, glm::ivec2> m_Bookmarks;
 };
 
-/// Pure transition function for the console toggle cycle. Exposed as a free
-/// function (and made `constexpr`) so unit tests can validate the cycle
-/// without constructing a Console + Game pair, which would require a GL
-/// context per the test-suite constraints.
+/**
+ * @brief Pure transition function for the console toggle cycle.
+ *
+ * Exposed as a free function (and made `constexpr`) so unit tests can validate
+ * the cycle without constructing a Console + Game pair, which would require a
+ * GL context per the test-suite constraints.
+ */
 [[nodiscard]] constexpr Console::State NextConsoleState(Console::State s) noexcept
 {
     switch (s)
