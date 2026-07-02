@@ -4,7 +4,7 @@
 
 namespace
 {
-/// Shared empty texture returned for invalid handles so callers never deref null.
+// Shared empty texture returned for invalid handles so callers never deref null.
 const Texture& EmptyTexture()
 {
     static const Texture empty;
