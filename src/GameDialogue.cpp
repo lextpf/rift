@@ -16,8 +16,8 @@
 
 namespace
 {
-/// Word-wrap text to fit within @p maxWidth. ASCII/space-delimited only;
-/// UTF-8 glyphs and very long tokens are not split.
+// Word-wrap text to fit within maxWidth. ASCII/space-delimited only;
+// UTF-8 glyphs and very long tokens are not split.
 template <typename MeasureFn>
 std::vector<std::string> WrapText(const std::string& text, float maxWidth, MeasureFn measureWidth)
 {
@@ -260,7 +260,7 @@ void DrawRoundedRectBorder(IRenderer& renderer,
 
 // Dialogue panel helpers (translucent slate + ribbon + selection triangle).
 
-/// Snap to the nearest screen pixel so border edges don't fringe at fractional zoom.
+// Snap to the nearest screen pixel so border edges don't fringe at fractional zoom.
 float SnapToPixel(float value, float z)
 {
     if (z <= 0.0f)
@@ -268,9 +268,9 @@ float SnapToPixel(float value, float z)
     return std::floor(value / z + 0.5f) * z;
 }
 
-/// Translucent dark slate panel: single rgba fill + 1px lighter border.
-/// The fill's alpha lets the world show through so the panel harmonizes with
-/// whatever's behind it across day/night/grass/sky.
+// Translucent dark slate panel: single rgba fill + 1px lighter border.
+// The fill's alpha lets the world show through so the panel harmonizes with
+// whatever's behind it across day/night/grass/sky.
 void DrawSlatePanel(IRenderer& renderer, glm::vec2 pos, glm::vec2 size, float z, float fadeAlpha)
 {
     const float pxOne = 1.0f * z;
@@ -288,8 +288,8 @@ void DrawSlatePanel(IRenderer& renderer, glm::vec2 pos, glm::vec2 size, float z,
         glm::vec2(pos.x + size.x - pxOne, pos.y), glm::vec2(pxOne, size.y), border);
 }
 
-/// Small > triangle (4x7 px) marking the selected option. Widths form a
-/// symmetric kite around the width-4 peak so the bottom edge closes cleanly.
+// Small > triangle (4x7 px) marking the selected option. Widths form a
+// symmetric kite around the width-4 peak so the bottom edge closes cleanly.
 void DrawAccentTriangle(IRenderer& renderer, glm::vec2 pos, glm::vec3 accent, float z, float alpha)
 {
     static constexpr int widths[] = {1, 2, 3, 4, 3, 2, 1};  // 7-row right-pointing triangle.
@@ -304,9 +304,9 @@ void DrawAccentTriangle(IRenderer& renderer, glm::vec2 pos, glm::vec3 accent, fl
     }
 }
 
-/// Speaker name ribbon at the top-left of the dialogue panel. Background is
-/// the per-NPC accent; text is always cream + black outline (the hardcoded
-/// black outline defines text against any accent background).
+// Speaker name ribbon at the top-left of the dialogue panel. Background is
+// the per-NPC accent; text is always cream + black outline (the hardcoded
+// black outline defines text against any accent background).
 void DrawSpeakerRibbon(IRenderer& renderer,
                        glm::vec2 anchorTopLeft,
                        const std::string& name,
