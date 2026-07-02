@@ -2,9 +2,11 @@
 
 #include <cstdint>
 
-/// @file TextureHandle.hpp
-/// @brief Lightweight handle into a @ref TextureStore.
-/// @ingroup Rendering
+/**
+ * @brief Lightweight handle into a @ref TextureStore.
+ * @author Alex (https://github.com/lextpf)
+ * @ingroup Rendering
+ */
 
 /// @brief Asset id type used as a @ref TextureStore key.
 using AssetId = std::uint32_t;
