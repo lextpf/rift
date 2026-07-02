@@ -260,13 +260,11 @@
  *
  * @par Movement Modes
  * Player supports three movement modes with different speeds:
- * | Mode     | Speed  | Multiplier
- * |
- * |----------|--------|------------|
- * | Walking  | 50.0 px/s  | 1.0x  |
- * | Running  | 87.5
- * px/s  | 1.75x |
- * | Bicycle  | 112.5 px/s | 2.25x |
+ * | Mode     | Speed      | Multiplier |
+ * |----------|------------|------------|
+ * | Walking  | 50.0 px/s  | 1.0x       |
+ * | Running  | 87.5 px/s  | 1.75x      |
+ * | Bicycle  | 112.5 px/s | 2.25x      |
  *
  * @see PlayerMovementSystem, PlayerModes
  */
@@ -294,15 +292,15 @@
  * 4. **Player movement** - only in gameplay mode, outside dialogue
  *
  * @par Gameplay Controls
- * |      Key      |             Action               |
- * |---------------|----------------------------------|
- * |    W/A/S/D    | Move player (8-directional)      |
- * |     Shift     | Run (1.75x speed)                |
- * |       B       | Toggle bicycle mode
- * (2.25x speed)|
- * |       F       | Talk to NPC (when facing one)    | |  Ctrl+Scroll  | Zoom
- * camera                      | |  Arrow Keys   | Pan camera (reset when moving)   | |       Z |
- * Reset zoom to 1.0x               |
+ * |      Key      |             Action                |
+ * |---------------|-----------------------------------|
+ * |    W/A/S/D    | Move player (8-directional)       |
+ * |     Shift     | Run (1.75x speed)                 |
+ * |       B       | Toggle bicycle mode (2.25x speed) |
+ * |       F       | Talk to NPC (when facing one)     |
+ * |  Ctrl+Scroll  | Zoom camera                       |
+ * |  Arrow Keys   | Pan camera (reset when moving)    |
+ * |       Z       | Reset zoom to 1.0x                |
  *
  * @par Dialogue Controls
  * |      Key       |           Action            |
@@ -312,12 +310,12 @@
  * |     Escape     | End dialogue                |
  *
  * @par Movement Modes
- * |  Mode   |  Speed   |       Collision        |
- * |---------|----------|------------------------|
+ * |  Mode   |   Speed    |       Collision         |
+ * |---------|------------|-------------------------|
  * | Walking |  50.0 px/s | Strict full-AABB hitbox |
- * | Running |  87.5 px/s | Strict full-AABB
- * hitbox |
+ * | Running |  87.5 px/s | Strict full-AABB hitbox |
  * | Bicycle | 112.5 px/s | Strict full-AABB hitbox |
+ *
  * Diagonal movement is normalized
  * to prevent faster speed:
  * @f[
@@ -359,37 +357,22 @@
  * |         X          | Toggle corner cut blocking (debug mode only)|
  *
  * The authoritative command list is the runtime registry assembled in
+ * Console::RegisterDefaultCommands(). Use `help` in the developer console for
+ * the complete current catalog and aliases. Frequently used entry points:
  *
- * Console::RegisterDefaultCommands(). Use `help` in the developer console
- * for the complete
- * current catalog and aliases. Frequently used entry points:
- *
- * |  Canonical | Aliases | Action
- * |
- *
- * |---------------------------------|-----------------------|-----------------------------------------|
-
- * * | `help [prefix]`                 | (none)                | List registered commands |
- * |
- * `editor [on\|off\|toggle]`     | `ed`                  | Toggle level editor mode |
- * |
- * `renderer.set <opengl\|vulkan>` | `rndr.set`, `gfx`     | Switch renderer at runtime |
- * |
- * `debug.info [on\|off]`          | `dbg.info`, `fps`     | Toggle FPS/coords HUD |
- * |
- * `debug.overlays [on\|off]`      | `dbg.overlays`, `dbg` | Toggle collision/nav/anchor overlays |
-
- * * | `time.set <hours>`              | `ts`                  | Set in-game time (0.0-24.0) |
- * |
- * `weather.next`                  | (none)                | Cycle weather state |
- * | `player.pos`
- * | (none)                | Print player tile/world/facing info     |
- * | `npc.list` | `npcs` |
- * List NPCs                               |
- * | `map.save [path]`               | (none) | Save
- * map JSON                           |
- * | `renderer.trace [on\|off\|dump]`| (none) | Capture/dump
- * draw-call trace events     |
+ * | Canonical                        | Aliases            | Action                               |
+ * |----------------------------------|--------------------|--------------------------------------|
+ * | help [prefix]                    | ---                | List registered commands             |
+ * | editor [on\|off\|toggle]         | ed                 | Toggle level editor mode             |
+ * | renderer.set <opengl\|vulkan>    | rndr.set, gfx      | Switch renderer at runtime           |
+ * | debug.info [on\|off]             | dbg.info, fps      | Toggle FPS/coords HUD                |
+ * | debug.overlays [on\|off]         | dbg.overlays, dbg  | Toggle collision/nav/anchor overlays |
+ * | time.set <hours>                 | ts                 | Set in-game time (0.0-24.0)          |
+ * | weather.next                     | ---                | Cycle weather state                  |
+ * | player.pos                       | ---                | Print player tile/world/facing info  |
+ * | npc.list                         | npcs               | List NPCs                            |
+ * | map.save [path]                  | ---                | Save map JSON                        |
+ * | renderer.trace [on\|off\|dump]   | ---                | Capture/dump draw-call trace events  |
  *
  * @par Key Debouncing
  * Toggle keys use a flag pattern to prevent repeated triggers:
