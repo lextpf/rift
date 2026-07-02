@@ -163,12 +163,14 @@ public:
      */
     void Clear() { m_Flags.clear(); }
 
-    /// @name Typed Quest API
-    /// @brief Structured quest operations that enforce the naming convention.
-    ///
-    /// These methods use the same underlying flag storage as SetFlag/HasFlag
-    /// but encode the `accepted_`/`completed_` prefix convention so callers
-    /// cannot mistype flag names.
+    /**
+     * @name Typed Quest API
+     * @brief Structured quest operations that enforce the naming convention.
+     *
+     * These methods use the same underlying flag storage as SetFlag/HasFlag
+     * but encode the `accepted_`/`completed_` prefix convention so callers
+     * cannot mistype flag names.
+     */
     /// @{
 
     /**
