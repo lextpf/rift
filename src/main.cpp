@@ -193,8 +193,7 @@ int main()
 
         try
         {
-            // Slightly above 244 so spin overshoot and jitter don't drop the displayed reading to
-            // 243.
+            // Slightly above 244 so spin overshoot and slight jitter don't drop below.
             game.SetTargetFps(244.5f);
             game.Run();
         }
