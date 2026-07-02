@@ -61,18 +61,14 @@ void ConsoleBuffer::OnBackspaceWord()
     {
         return;
     }
-    // Word boundaries are spaces (between command and arguments) and dots
-    // (between dot-segmented command parts like `npc.freeze`). Treating both
-    // as stop characters lets Ctrl+Backspace walk back segment-by-segment:
-    // "npc.freeze" -> "npc." -> "" and
+    // Spaces and dots are both word boundaries, so Ctrl+Backspace walks back
+    // segment-by-segment:
     // "time.weather clear" -> "time.weather " -> "time." -> "".
     auto isBoundary = [](char c) { return c == ' ' || c == '.'; };
 
-    // First eat any boundary chars immediately before the cursor. This
-    // handles the case where the cursor sits just after a word boundary -
-    // e.g. after a prior Ctrl+Backspace left "time.weather " with the cursor
-    // at the end: the next press should remove the trailing space and the
-    // preceding word in one action.
+    // First eat any boundary chars immediately before the cursor, so a press
+    // with the cursor just after a boundary (e.g. a trailing space left by a
+    // prior Ctrl+Backspace) removes that boundary and the preceding word too.
     while (m_CursorPos > 0 && isBoundary(m_Input[m_CursorPos - 1]))
     {
         m_Input.erase(m_CursorPos - 1, 1);
@@ -371,10 +367,9 @@ Console::SuggestionResult Console::ComputeSuggestions(std::size_t maxCount) cons
 
     if (result.wordStart == 0)
     {
-        // No spaces yet - completing the verb itself. Use the detailed
-        // variant so each item carries its canonical command name (empty
-        // for canonical matches; populated for aliases). The dropdown
-        // renderer reads canonicals to draw `alias -> canonical` hints.
+        // No spaces yet - completing the verb itself. The detailed variant tags
+        // each item with its canonical name (empty for canonicals, set for
+        // aliases) so the dropdown can draw `alias -> canonical` hints.
         auto detailed = m_Registry.MatchPrefixDetailed(currentWord, maxCount);
         result.items.reserve(detailed.size());
         result.canonicals.reserve(detailed.size());
@@ -683,10 +678,9 @@ void Console::OnScroll(double yoffset)
 
 void Console::ScrollToOutputTop(std::size_t outputLineCount)
 {
-    // Put the block's first line at the top of the visible window: scroll up
-    // from the bottom by (block height - visible rows). When the block already
-    // fits in the window there's nothing to scroll. Before the first Render()
-    // the visible-row count is unknown, so fall back to the bottom.
+    // Put the block's first line at the top: scroll up from the bottom by
+    // (block height - visible rows). Before the first Render() the row count is
+    // unknown, so fall back to the bottom.
     if (m_LastVisibleLines <= 0)
     {
         m_Buffer.ResetScroll();
@@ -809,11 +803,9 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
         }
     }
 
-    // Autocomplete dropdown.
-    // Sits below the input in Half mode (extending into the world) and above
-    // the input in Full mode (no room below; floats up over scrollback).
-    // Drawn LAST so its backdrop covers any scrollback line it overlaps -
-    // otherwise scrollback text in fullscreen mode shows through the box.
+    // Autocomplete dropdown. Sits below the input in Half mode, above it in
+    // Full mode (no room below). Drawn LAST so its backdrop covers scrollback
+    // lines it overlaps (else fullscreen scrollback shows through).
     {
         m_LastDropdown.visible = false;
         const auto sugg = ComputeSuggestions(kMaxSuggestions);
@@ -850,13 +842,9 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
             const float maxBoxW = std::max(0.0f, w - 2.0f * LEFT_PAD);
             const float boxW = std::min(widest + 2.0f * LEFT_PAD + scrollbarReserve, maxBoxW);
             const float boxH = static_cast<float>(visibleRows) * lineH + 2.0f * DROPDOWN_PAD;
-            // Anchor horizontally to the start of the current word in the
-            // input. `wordStart` is the byte offset in the input where the
-            // partial token being completed begins (0 for the verb,
-            // post-space for arg completion). We measure the prompt + input
-            // up to that offset using the same text-width metric the prompt
-            // is rendered with, so the dropdown's left edge sits exactly
-            // under where the user is typing.
+            // Anchor the dropdown under the current word: `wordStart` is its
+            // byte offset in the input (0 for the verb, post-space for args).
+            // Measure prompt + input up to there with the prompt's width metric.
             const std::string anchorPrefix = "> " + m_Buffer.Input().substr(0, sugg.wordStart);
             const float anchorOffset = renderer.GetTextWidth(anchorPrefix, TEXT_SCALE);
             float boxX = LEFT_PAD + anchorOffset;
@@ -876,10 +864,9 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
             renderer.DrawColoredRect(glm::vec2(boxX, boxY),
                                      glm::vec2(boxW, boxH),
                                      glm::vec4(0.05f, 0.05f, 0.08f, 0.95f));
-            // Highlight the selected entry, but only when the selection is
-            // currently inside the visible window. (If the selected item
-            // scrolled off-screen, ClampSuggestionScroll above keeps it in
-            // view, so this branch holds in practice.)
+            // Highlight the selected entry, but only when it's inside the
+            // visible window. ClampSuggestionScroll above keeps the selection
+            // in view, so this branch holds in practice.
             if (m_SuggestionIndex >= m_SuggestionScroll &&
                 m_SuggestionIndex < m_SuggestionScroll + visibleRows)
             {
@@ -901,9 +888,8 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
                 if (idx < sugg.canonicals.size() && !sugg.canonicals[idx].empty())
                 {
                     // Alias row: append " -> canonical" in a dim color so the
-                    // originating command is always visible. Only the alias
-                    // (sugg.items[idx]) gets spliced into the input on commit;
-                    // this annotation is render-only.
+                    // origin command stays visible. Only the alias is spliced
+                    // into the input on commit; this annotation is render-only.
                     const float itemW = renderer.GetTextWidth(sugg.items[idx], TEXT_SCALE);
                     const std::string annotation =
                         std::string(kAnnotationSep) + sugg.canonicals[idx];
