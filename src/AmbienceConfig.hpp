@@ -206,4 +206,64 @@ constexpr float DIALOGUE_SELECTION_TRIANGLE_H = 6.0f;
 /// Matches the existing speaker-color gold so monochrome NPCs preserve the old look.
 constexpr glm::vec3 DIALOGUE_ACCENT_FALLBACK{0.85f, 0.75f, 0.40f};
 
+/**
+ * Weather Director (transition) tuning
+ *
+ * Transitions blend two WeatherDefinition endpoints over real seconds;
+ * see docs/superpowers/specs/2026-07-02-weather-director-design.md.
+ */
+
+/// Default duration (real seconds) of a weather transition started without an
+/// explicit duration (console `weather <name>` with no seconds arg).
+constexpr float WEATHER_TRANSITION_SECONDS = 10.0f;
+
+/// Frequency-space cutoff for blended lightning (Hz). Blended frequencies
+/// below this map to interval 0 ("off") instead of a near-infinite interval.
+constexpr float WEATHER_LIGHTNING_FREQ_EPS = 0.005f;
+
+/// Real seconds over which a held fogAlphaMultiplier eases to the destination
+/// value after a fog -> no-fog transition completes. Matches the max weather
+/// fog puff lifetime so surviving puffs die before the multiplier moves far.
+constexpr float WEATHER_FOG_HOLD_DECAY_SECONDS = 18.0f;
+
+/// Half-width (game hours) of the dawn/dusk ramp applied to the sky-color
+/// override day/night factor (replaces the binary IsDay() step).
+constexpr float WEATHER_SKY_DAYNIGHT_RAMP_HOURS = 0.5f;
+
+/// Gust envelope amplitude: peak strength swing as a fraction of base
+/// (0.35 -> strength oscillates roughly +/-35% around the weather's base).
+constexpr float WEATHER_GUST_AMP = 0.35f;
+
+/// Primary (slow surge) gust sine period, real seconds.
+constexpr float WEATHER_GUST_PERIOD_PRIMARY_S = 7.0f;
+
+/// Secondary (flutter) gust sine period, real seconds.
+constexpr float WEATHER_GUST_PERIOD_SECONDARY_S = 1.7f;
+
+/// Max wind-direction wander around CLOUD_SHADOW_WIND_DIR, degrees.
+constexpr float WEATHER_WIND_WANDER_DEG = 15.0f;
+
+/// Direction wander sine period, real seconds (slow, so drift reads as
+/// weather shifting, not jitter).
+constexpr float WEATHER_WIND_WANDER_PERIOD_S = 23.0f;
+
+/**
+ * Weather Director (forecast) tuning
+ *
+ * Day-seeded forecast math (fronts + night events); see ForecastForDay in
+ * WeatherBlend.hpp.
+ */
+
+/// Real-seconds duration for night-event transitions (night itself is only
+/// ~9 real seconds at the 24 s day, so events ramp faster than fronts).
+constexpr float WEATHER_EVENT_TRANSITION_SECONDS = 3.0f;
+
+/// Nominal weather-front length in in-game days (~96 real seconds at the
+/// 24 s day). Boundaries jitter by +/-1 day per front.
+constexpr int WEATHER_FRONT_LENGTH_DAYS = 4;
+
+/// Probability that any given night hosts a special event (aurora / meteor
+/// shower / fireflies), before moon-phase weighting picks which.
+constexpr float WEATHER_EVENT_NIGHT_CHANCE = 0.25f;
+
 }  // namespace ambience
