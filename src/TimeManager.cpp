@@ -1,5 +1,7 @@
 #include "TimeManager.hpp"
 
+#include "AmbienceConfig.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -21,6 +23,7 @@ void TimeManager::Initialize()
     m_Weather = WeatherState::Clear;
     m_WeatherIntensity = 1.0f;
     m_Paused = false;
+    ClearWeatherBlend();
 }
 
 void TimeManager::SetWeatherIntensity(float value)
@@ -118,7 +121,7 @@ int TimeManager::GetMoonPhase() const
     return phase;
 }
 
-glm::vec3 TimeManager::GetAmbientColor() const
+glm::vec3 TimeManager::ComputeAmbientColor(const WeatherDefinition& def) const
 {
     float t = m_CurrentTime;
 
@@ -202,13 +205,12 @@ glm::vec3 TimeManager::GetAmbientColor() const
 
     // Weather modulates ambient color. Intensity scales the effect:
     // intensity 0 -> no weather tint; intensity 1 -> full tint.
-    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
     glm::vec3 weatherTint =
         glm::mix(glm::vec3(1.0f), def.ambientTintMultiplier, m_WeatherIntensity);
     return result * weatherTint;
 }
 
-glm::vec3 TimeManager::GetSkyColor() const
+glm::vec3 TimeManager::NaturalSkyColor() const
 {
     float t = m_CurrentTime;
 
@@ -220,39 +222,6 @@ glm::vec3 TimeManager::GetSkyColor() const
     glm::vec3 duskSky(0.6f, 0.4f, 0.35f);         // Muted orange
     glm::vec3 eveningSky(0.12f, 0.12f, 0.28f);    // Dark blue
     glm::vec3 nightSky(0.04f, 0.04f, 0.12f);      // Near black
-
-    // Weather override (skyColorOverride.x < 0 means "no override").
-    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
-    if (def.skyColorOverride.x >= 0.0f)
-    {
-        glm::vec3 overrideSky = def.skyColorOverride * (IsDay() ? 1.0f : 0.3f);
-        // Blend toward override by intensity so a low-intensity weather (e.g.
-        // light HeavyRain) doesn't fully wash out the natural sky.
-        // Compute the natural sky first, then mix.
-        glm::vec3 natural;
-        if (t >= NIGHT_END && t < DAWN_START)
-            natural = LerpColor(nightSky, dawnSky, GetTransitionFactor(t, NIGHT_END, DAWN_START));
-        else if (t >= DAWN_START && t < DAWN_END)
-            natural = LerpColor(dawnSky, morningSky, GetTransitionFactor(t, DAWN_START, DAWN_END));
-        else if (t >= DAWN_END && t < MORNING_END)
-            natural =
-                LerpColor(morningSky, middaySky, GetTransitionFactor(t, DAWN_END, MORNING_END));
-        else if (t >= MORNING_END && t < MIDDAY_END)
-            natural = middaySky;
-        else if (t >= MIDDAY_END && t < AFTERNOON_END)
-            natural = LerpColor(
-                middaySky, afternoonSky, GetTransitionFactor(t, MIDDAY_END, AFTERNOON_END));
-        else if (t >= AFTERNOON_END && t < DUSK_END)
-            natural =
-                LerpColor(afternoonSky, duskSky, GetTransitionFactor(t, AFTERNOON_END, DUSK_END));
-        else if (t >= DUSK_END && t < EVENING_END)
-            natural = LerpColor(duskSky, eveningSky, GetTransitionFactor(t, DUSK_END, EVENING_END));
-        else if (t >= EVENING_END)
-            natural = LerpColor(eveningSky, nightSky, GetTransitionFactor(t, EVENING_END, 24.0f));
-        else
-            natural = nightSky;
-        return glm::mix(natural, overrideSky, m_WeatherIntensity);
-    }
 
     // Smooth transitions
     if (t >= NIGHT_END && t < DAWN_START)
@@ -300,6 +269,30 @@ glm::vec3 TimeManager::GetSkyColor() const
     }
 }
 
+float TimeManager::SkyDayNightFactor() const
+{
+    // Ramped day/night factor for the sky override (was a binary IsDay()
+    // step; at 24-second days that stepped 3.3x in one frame).
+    const float ramp = ambience::WEATHER_SKY_DAYNIGHT_RAMP_HOURS;
+    float dayness =
+        GetTransitionFactor(m_CurrentTime, SUNRISE_TIME - ramp, SUNRISE_TIME + ramp) *
+        (1.0f - GetTransitionFactor(m_CurrentTime, SUNSET_TIME - ramp, SUNSET_TIME + ramp));
+    return 0.3f + 0.7f * dayness;
+}
+
+glm::vec3 TimeManager::ComputeSkyColor(const WeatherDefinition& def) const
+{
+    // Weather override (skyColorOverride.x < 0 means "no override").
+    if (def.skyColorOverride.x >= 0.0f)
+    {
+        glm::vec3 overrideSky = def.skyColorOverride * SkyDayNightFactor();
+        // Blend toward override by intensity so a low-intensity weather (e.g.
+        // light HeavyRain) doesn't fully wash out the natural sky.
+        return glm::mix(NaturalSkyColor(), overrideSky, m_WeatherIntensity);
+    }
+    return NaturalSkyColor();
+}
+
 glm::vec3 TimeManager::GetSunColor() const
 {
     float arc = GetSunArc();
@@ -332,25 +325,30 @@ glm::vec3 TimeManager::GetSunColor() const
     }
 }
 
-float TimeManager::GetStarVisibility() const
+float TimeManager::NaturalStarVisibility() const
 {
-    const WeatherDefinition& def = GetWeatherDefinition(m_Weather);
-    float t = m_CurrentTime;
-
     // Stars fade in during dusk (18:00 - 20:00)
     // Stars fully visible at night (20:00 - 5:00)
     // Stars fade out during dawn (5:00 - 7:00)
-
-    float natural;
+    float t = m_CurrentTime;
     if (t >= AFTERNOON_END && t < DUSK_END)
-        natural = GetTransitionFactor(t, AFTERNOON_END, DUSK_END);
-    else if (t >= DUSK_END || t < DAWN_START)
-        natural = 1.0f;
-    else if (t >= DAWN_START && t < DAWN_END)
-        natural = 1.0f - GetTransitionFactor(t, DAWN_START, DAWN_END);
-    else
-        natural = 0.0f;
+    {
+        return GetTransitionFactor(t, AFTERNOON_END, DUSK_END);
+    }
+    if (t >= DUSK_END || t < DAWN_START)
+    {
+        return 1.0f;
+    }
+    if (t >= DAWN_START && t < DAWN_END)
+    {
+        return 1.0f - GetTransitionFactor(t, DAWN_START, DAWN_END);
+    }
+    return 0.0f;
+}
 
+float TimeManager::ComputeStarVisibility(const WeatherDefinition& def) const
+{
+    float natural = NaturalStarVisibility();
     // Weather override: blend natural visibility toward override by intensity.
     if (def.starVisibilityOverride >= 0.0f)
     {
@@ -358,6 +356,109 @@ float TimeManager::GetStarVisibility() const
             std::lerp(natural, def.starVisibilityOverride, m_WeatherIntensity), 0.0f, 1.0f);
     }
     return natural;
+}
+
+glm::vec3 TimeManager::GetAmbientColor() const
+{
+    if (HasWeatherBlend())
+    {
+        glm::vec3 from =
+            m_HasResolvedFrom ? m_ResolvedFrom.ambient : ComputeAmbientColor(*m_BlendFrom);
+        return glm::mix(from, ComputeAmbientColor(*m_BlendTo), m_BlendT);
+    }
+    return ComputeAmbientColor(GetWeatherDefinition(m_Weather));
+}
+
+glm::vec3 TimeManager::GetSkyColor() const
+{
+    if (HasWeatherBlend())
+    {
+        glm::vec3 from = m_HasResolvedFrom ? m_ResolvedFrom.sky : ComputeSkyColor(*m_BlendFrom);
+        return glm::mix(from, ComputeSkyColor(*m_BlendTo), m_BlendT);
+    }
+    return ComputeSkyColor(GetWeatherDefinition(m_Weather));
+}
+
+float TimeManager::GetStarVisibility() const
+{
+    if (HasWeatherBlend())
+    {
+        float from =
+            m_HasResolvedFrom ? m_ResolvedFrom.starVisibility : ComputeStarVisibility(*m_BlendFrom);
+        return std::lerp(from, ComputeStarVisibility(*m_BlendTo), m_BlendT);
+    }
+    return ComputeStarVisibility(GetWeatherDefinition(m_Weather));
+}
+
+float TimeManager::GetNaturalStarVisibility() const
+{
+    return NaturalStarVisibility();
+}
+
+void TimeManager::SetWeatherBlend(const WeatherDefinition* from,
+                                  const WeatherDefinition* to,
+                                  float t,
+                                  const WeatherDefinition* effective)
+{
+    m_BlendFrom = from;
+    m_BlendTo = to;
+    m_BlendT = std::clamp(t, 0.0f, 1.0f);
+    m_BlendEffective = effective;
+    // A resolved-from capture belongs to one specific blend publication; any
+    // republish invalidates it (the caller re-applies it afterward if wanted).
+    // Without this, a capture from an old retarget silently corrupts the next
+    // transition's from-endpoint.
+    m_HasResolvedFrom = false;
+}
+
+void TimeManager::SetWeatherBlendResolvedFrom(const ResolvedWeatherChannels& resolved)
+{
+    m_ResolvedFrom = resolved;
+    m_HasResolvedFrom = true;
+}
+
+void TimeManager::ClearWeatherBlend()
+{
+    m_BlendFrom = nullptr;
+    m_BlendTo = nullptr;
+    m_BlendEffective = nullptr;
+    m_BlendT = 0.0f;
+    m_HasResolvedFrom = false;
+    m_CelestialFade = -1.0f;
+    m_AuroraFade = -1.0f;
+}
+
+const WeatherDefinition& TimeManager::GetEffectiveWeatherDefinition() const
+{
+    if (m_BlendEffective != nullptr)
+    {
+        return *m_BlendEffective;
+    }
+    return GetWeatherDefinition(m_Weather);
+}
+
+void TimeManager::SetWeatherFades(float celestialFade, float auroraFade)
+{
+    m_CelestialFade = std::clamp(celestialFade, 0.0f, 1.0f);
+    m_AuroraFade = std::clamp(auroraFade, 0.0f, 1.0f);
+}
+
+float TimeManager::GetCelestialFade() const
+{
+    if (m_CelestialFade >= 0.0f)
+    {
+        return m_CelestialFade;
+    }
+    return GetEffectiveWeatherDefinition().showCelestialBodies ? 1.0f : 0.0f;
+}
+
+float TimeManager::GetAuroraFade() const
+{
+    if (m_AuroraFade >= 0.0f)
+    {
+        return m_AuroraFade;
+    }
+    return GetEffectiveWeatherDefinition().showAurora ? 1.0f : 0.0f;
 }
 
 void TimeManager::SetTime(float hours)
