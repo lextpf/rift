@@ -38,8 +38,8 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Game";
 
-/// Atlas region keys for the player's three sprite sheets (walk, run,
-/// bicycle). Distinct from any NPC type string so collisions are impossible.
+// Atlas region keys for the player's three sprite sheets (walk, run,
+// bicycle). Distinct from any NPC type string so collisions are impossible.
 constexpr const char* kPlayerWalkAtlasKey = "__player_walk__";
 constexpr const char* kPlayerRunAtlasKey = "__player_run__";
 constexpr const char* kPlayerBicycleAtlasKey = "__player_bicycle__";
@@ -132,14 +132,14 @@ constexpr const char* PAUSE_LABELS[PAUSE_ITEM_COUNT] = {
     "Quit to Title",
 };
 
-/// Ortho projection mapping (0,0)=top-left to (screenW, screenH)=bottom-right.
+// Ortho projection mapping (0,0)=top-left to (screenW, screenH)=bottom-right.
 glm::mat4 MakeUIProjection(int screenWidth, int screenHeight)
 {
     return glm::ortho(
         0.0f, static_cast<float>(screenWidth), static_cast<float>(screenHeight), 0.0f, -1.0f, 1.0f);
 }
 
-/// Pick the text color for a menu item given its state.
+// Pick the text color for a menu item given its state.
 glm::vec3 MenuItemColor(bool selected, bool enabled)
 {
     if (!enabled)
@@ -152,7 +152,7 @@ glm::vec3 MenuItemColor(bool selected, bool enabled)
 // Hit-testing matches the renderer layout exactly. IRenderer::DrawText takes
 // y as the glyph baseline despite the "top-left" wording in the header.
 
-/// Item index under the cursor for the title menu, or -1.
+// Item index under the cursor for the title menu, or -1.
 int TitleMenuHitTest(
     IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
 {
@@ -185,7 +185,7 @@ int TitleMenuHitTest(
     return -1;
 }
 
-/// Item index under the cursor for the pause menu, or -1.
+// Item index under the cursor for the pause menu, or -1.
 int PauseMenuHitTest(
     IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
 {
@@ -216,7 +216,7 @@ int PauseMenuHitTest(
     return -1;
 }
 
-/// Confirm-overwrite modal hit test. 0 = Cancel, 1 = New Game, -1 = neither.
+// Confirm-overwrite modal hit test. 0 = Cancel, 1 = New Game, -1 = neither.
 int ConfirmPromptHitTest(
     IRenderer& renderer, int screenWidth, int screenHeight, double mouseX, double mouseY)
 {
@@ -552,6 +552,8 @@ void Game::LoadTitleScreenWorld()
     // Freeze time at night. TimeManager.Update is gated in Title mode so
     // this value holds until Continue / New Game.
     m_TimeManager.Initialize();
+    m_WeatherDirector.Reset(m_TimeManager);
+    m_WeatherDirector.SetEnabled(false);  // title weather is scripted, not directed
     m_TimeManager.SetTime(TITLE_WORLD_TIME_OF_DAY);
     // AuroraNight enables aurora curtains + floating wisps (SkyRenderer reads
     // weather each frame). Cherry blossoms still drift via the title zone.
@@ -569,6 +571,11 @@ void Game::LoadTitleScreenWorld()
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
     m_Particles.Clear();
+    // The prewarm below runs before the first Game::Update push - clear any
+    // gameplay leftovers (transition streams, gusted wind) so the title
+    // backdrop simulates with the same calm defaults as a fresh boot.
+    m_Particles.SetWeatherTransition(nullptr, nullptr, 0.0f);
+    m_Particles.SetWind(m_WeatherDirector.GetWindDirection(), m_WeatherDirector.GetWindStrength());
     const glm::vec2 prewarmCam = m_Camera.GetState().position;
     const glm::vec2 prewarmView = VisibleWorldSizeZoomed();
     constexpr float PREWARM_DURATION_S = 5.0f;
@@ -584,6 +591,8 @@ void Game::ResetWorldToDefaults()
 {
     LoadGameWorld(/*loadSave=*/false);
     m_TimeManager.Initialize();
+    m_WeatherDirector.Reset(m_TimeManager);
+    m_WeatherDirector.SetEnabled(true);
     m_GameState.Clear();
 
     // Close leftover dialogue/snap state so the next gameplay frame starts clean.
@@ -762,6 +771,8 @@ void Game::ProcessTitleInput()
             // Reset time so Continue doesn't inherit the title's 23:00 night
             // setting (LoadGameWorld doesn't touch TimeManager).
             m_TimeManager.Initialize();
+            m_WeatherDirector.Reset(m_TimeManager);
+            m_WeatherDirector.SetEnabled(true);
             LoadGameWorld(/*loadSave=*/true);
             m_GameMode = GameMode::Playing;
             break;
