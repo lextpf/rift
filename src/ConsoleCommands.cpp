@@ -1,5 +1,6 @@
 #include "ConsoleCommands.hpp"
 
+#include "AmbienceConfig.hpp"
 #include "Appearance.hpp"
 #include "AssetRegistry.hpp"
 #include "CameraController.hpp"
@@ -31,6 +32,7 @@
 #include "TimeManager.hpp"
 #include "Transform.hpp"
 #include "Version.hpp"
+#include "WeatherDirector.hpp"
 #include "WorldServices.hpp"
 
 #include <GLFW/glfw3.h>
@@ -49,7 +51,7 @@ namespace
 {
 constexpr int CONSOLE_TILE_SIZE = 16;
 
-/// Parse a non-negative integer from @p text. Returns true on success.
+// Parse a non-negative integer from text. Returns true on success.
 bool ParseInt(std::string_view text, int& out)
 {
     if (text.empty())
@@ -66,11 +68,11 @@ bool ParseInt(std::string_view text, int& out)
     return true;
 }
 
-/// NPC console commands address NPCs by index in npc.list order. Resolve an
-/// index to its entity handle, or @c ecs::entity{} if out of range (callers
-/// test the result with @c operator bool). The order is stable within one
-/// command invocation; idx can shift across npc.spawn / npc.despawn (npc.list
-/// warns about this).
+// NPC console commands address NPCs by index in npc.list order. Resolve an
+// index to its entity handle, or ecs::entity{} if out of range (callers
+// test the result with operator bool). The order is stable within one
+// command invocation; idx can shift across npc.spawn / npc.despawn (npc.list
+// warns about this).
 ecs::entity NpcAtIndex(ecs::registry& world, int idx)
 {
     if (idx < 0)
@@ -85,7 +87,7 @@ ecs::entity NpcAtIndex(ecs::registry& world, int idx)
     return entities[static_cast<std::size_t>(idx)];
 }
 
-/// Parse a finite float from @p text. Accepts optional sign, decimal point.
+// Parse a finite float from text. Accepts optional sign, decimal point.
 bool ParseFloat(std::string_view text, float& out)
 {
     if (text.empty())
@@ -107,8 +109,8 @@ bool ParseFloat(std::string_view text, float& out)
     return true;
 }
 
-/// Parse `[on|off|toggle]` (also `1`/`0`/`true`/`false`) into a target boolean.
-/// Empty args means "toggle". Any other arg pattern fails with a usage error.
+// Parse `[on|off|toggle]` (also `1`/`0`/`true`/`false`) into a target boolean.
+// Empty args means "toggle". Any other arg pattern fails with a usage error.
 bool ParseToggleArg(std::span<const std::string_view> args,
                     bool current,
                     const char* commandName,
@@ -145,9 +147,9 @@ bool ParseToggleArg(std::span<const std::string_view> args,
     return false;
 }
 
-/// Parse `<opengl|vulkan>` (case-insensitive) into a RendererAPI value.
-/// Pure helper kept at namespace scope so unit tests can exercise it without
-/// a live Game.
+// Parse `<opengl|vulkan>` (case-insensitive) into a RendererAPI value.
+// Pure helper kept at namespace scope so unit tests can exercise it without
+// a live Game.
 bool ParseRendererAPI(std::string_view text, RendererAPI& out)
 {
     if (text == "opengl" || text == "OpenGL" || text == "OPENGL" || text == "gl")
@@ -163,10 +165,10 @@ bool ParseRendererAPI(std::string_view text, RendererAPI& out)
     return false;
 }
 
-/// Build an ArgCompletionProvider that offers a fixed @p values list for the
-/// positional argument at @p slot (0 = first arg after the verb) and nothing
-/// for any other slot. Keeps the many on/off/toggle-style commands from each
-/// repeating the same lambda.
+// Build an ArgCompletionProvider that offers a fixed `values` list for the
+// positional argument at `slot` (0 = first arg after the verb) and nothing
+// for any other slot. Keeps the many on/off/toggle-style commands from each
+// repeating the same lambda.
 ConsoleCommandRegistry::ArgCompletionProvider FixedArgValues(std::vector<std::string> values,
                                                              std::size_t slot = 0)
 {
@@ -179,8 +181,78 @@ ConsoleCommandRegistry::ArgCompletionProvider FixedArgValues(std::vector<std::st
         return values;
     };
 }
+
+// What a routed weather request actually did, so callers echo honestly.
+enum class WeatherRouteResult : std::uint8_t
+{
+    Transitioned,  ///< This request started (or retargeted) a blend.
+    Instant,       ///< Hard cut (seconds <= 0 / director disabled) or bare set.
+    NoChange       ///< Same-target no-op; director state untouched.
+};
+
+// Shared route-or-fallback for the three weather-setting commands
+// (time.weather / weather.next / weather.random): route through the
+// director when present, else hard-set via ctx.time. Callers must have
+// already null-checked ctx.time (RequestWeather and SetWeather both
+// dereference it).
+//
+// Returns what THIS call actually did, derived from a before/after snapshot
+// of the director's transition state. StartWeatherChange's same-target
+// branch is a pure no-op (duration/progress untouched), so a bare post-call
+// IsTransitioning() would attribute an EARLIER in-flight transition to this
+// request and echo a duration that never took effect:
+//  - Transitioned: this request started or retargeted a blend; the caller's
+//    requested seconds are in effect -> echo "(N.Ns)".
+//  - NoChange: the director ignored the request (already at, or heading to,
+//    the target); transition pair and published weather are exactly as
+//    before -> echo "(no change)".
+//  - Instant: hard cut (seconds <= 0 or director disabled), or the
+//    null-director bare-set fallback -> echo "(instant)".
+WeatherRouteResult RouteWeatherRequest(CommandContext& ctx, WeatherState target, float seconds)
+{
+    if (ctx.weatherDirector == nullptr)
+    {
+        ctx.time->SetWeather(target);
+        return WeatherRouteResult::Instant;
+    }
+    const WeatherDirector::Transition before = ctx.weatherDirector->GetTransition();
+    const WeatherState weatherBefore = ctx.time->GetWeather();
+    ctx.weatherDirector->RequestWeather(*ctx.time, target, seconds);
+    const WeatherDirector::Transition after = ctx.weatherDirector->GetTransition();
+
+    const bool transitionUntouched =
+        after.active == before.active && after.to == before.to && after.from == before.from;
+    const bool alreadyAtTarget = target == (after.active ? after.to : ctx.time->GetWeather());
+    if (transitionUntouched && ctx.time->GetWeather() == weatherBefore && alreadyAtTarget)
+    {
+        return WeatherRouteResult::NoChange;
+    }
+    if (after.active && (!before.active || after.to != before.to))
+    {
+        return WeatherRouteResult::Transitioned;
+    }
+    return WeatherRouteResult::Instant;
+}
+
+// Echo suffix for the three RouteWeatherRequest outcomes, written into buf.
+void WeatherRouteSuffix(WeatherRouteResult result, float seconds, char* buf, std::size_t size)
+{
+    switch (result)
+    {
+        case WeatherRouteResult::Transitioned:
+            std::snprintf(buf, size, "(%.1fs)", static_cast<double>(seconds));
+            break;
+        case WeatherRouteResult::NoChange:
+            std::snprintf(buf, size, "(no change)");
+            break;
+        case WeatherRouteResult::Instant:
+            std::snprintf(buf, size, "(instant)");
+            break;
+    }
+}
 }  // namespace
 
+// help - list every registered console command with its aliases and description.
 bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
     // Bind ctx.out to a local reference up-front so the static analyzer
@@ -217,12 +289,14 @@ bool Cmd_Help(std::span<const std::string_view> /*args*/, CommandContext& ctx)
     return true;
 }
 
+// clear - wipe the console output buffer.
 bool Cmd_Clear(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
     ctx.out.Clear();
     return true;
 }
 
+// teleport <tileX> <tileY> - move the player to the given tile coordinates.
 bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -248,6 +322,7 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// flag.set <name> <value> - set a game-state flag to a string value.
 bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -267,6 +342,7 @@ bool Cmd_FlagSet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// flag.get <name> - print a game-state flag's value, or <unset> if absent.
 bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -289,6 +365,7 @@ bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.set <hours 0.0-24.0> - set the time of day.
 bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -314,6 +391,7 @@ bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.add <hours> - advance (or rewind, if negative) the time of day.
 bool Cmd_TimeAdd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -345,6 +423,7 @@ bool Cmd_TimeAdd(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.freeze [on|off|toggle] - pause/resume the day-night clock.
 bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -362,6 +441,7 @@ bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// map.load <filename> - load a map from JSON and place the player at its spawn tile.
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.npcs == nullptr ||
@@ -394,6 +474,7 @@ bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// state.dump - print player tile/world pos, time, NPC count, and active quests.
 bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.time == nullptr ||
@@ -406,7 +487,7 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     const glm::vec2 pos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
     const int tileX = TileMath::TileIndex(pos.x, static_cast<float>(CONSOLE_TILE_SIZE));
     // Standing-tile row (feet nudged up so a boundary-standing player counts as
-    // the tile above) -- matches dialogue/teleport tile math. See TileMath.
+    // the tile above) - matches dialogue/teleport tile math. See TileMath.
     const int tileY = TileMath::StandingTileRow(pos.y, static_cast<float>(CONSOLE_TILE_SIZE));
 
     const float hours = ctx.time->GetTimeOfDay();
@@ -439,6 +520,7 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     return true;
 }
 
+// player.speed [multiplier] - print or set the player movement speed multiplier (>0).
 bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -479,6 +561,7 @@ bool Cmd_PlayerSpeed(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// noclip [on|off] - toggle player collision-free movement (defaults to toggle).
 bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -513,6 +596,7 @@ bool Cmd_NoClip(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// editor [on|off|toggle] - enable/disable the in-game level editor.
 bool Cmd_Editor(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -530,6 +614,7 @@ bool Cmd_Editor(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// appearance.copy - copy the sprite of the nearest NPC within 32px onto the player.
 bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.npcs == nullptr ||
@@ -582,6 +667,7 @@ bool Cmd_AppearanceCopy(std::span<const std::string_view> args, CommandContext& 
     return true;
 }
 
+// appearance.restore - revert the player to their original appearance.
 bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)) || ctx.renderer == nullptr)
@@ -605,6 +691,7 @@ bool Cmd_AppearanceRestore(std::span<const std::string_view> args, CommandContex
     return true;
 }
 
+// character.set <BW1_MALE|BW1_FEMALE|BW2_MALE|BW2_FEMALE|CC_FEMALE> - set player character.
 bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -637,6 +724,7 @@ bool Cmd_CharacterSet(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// character.next - cycle the player to the next character type.
 bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -661,6 +749,7 @@ bool Cmd_CharacterNext(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// renderer.set <opengl|vulkan> - hot-swap the active rendering backend at runtime.
 bool Cmd_RendererSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -689,6 +778,7 @@ bool Cmd_RendererSet(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// debug.info [on|off|toggle] - toggle the editor debug-info readout.
 bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -706,6 +796,7 @@ bool Cmd_DebugInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// particles [on|off|toggle] - enable/disable particle rendering.
 bool Cmd_ParticlesToggle(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -723,6 +814,7 @@ bool Cmd_ParticlesToggle(std::span<const std::string_view> args, CommandContext&
     return true;
 }
 
+// debug.overlays [on|off|toggle] - toggle editor debug overlays.
 bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.editor == nullptr)
@@ -740,6 +832,7 @@ bool Cmd_DebugOverlays(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// fps.cap [on|off|toggle] - cap FPS at 500 or run uncapped.
 bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -758,6 +851,7 @@ bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// globe [on|off|toggle] - toggle the camera 3D globe/perspective effect.
 bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -775,6 +869,7 @@ bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.next - step to the next of 8 preset times of day, cycling round.
 bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -804,6 +899,7 @@ bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// globe.radius <50.0-500.0> - set the globe sphere radius.
 bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -834,6 +930,7 @@ bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// globe.tilt <0.0-1.0> - set the globe tilt amount.
 bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -864,6 +961,7 @@ bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// postfx [on|off|toggle] - toggle the post-processing effect chain.
 bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.postFXEnabled == nullptr)
@@ -881,6 +979,7 @@ bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// globe.intensity <up|down> - step globe radius/tilt together as one intensity knob.
 bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -894,6 +993,7 @@ bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& 
         return false;
     }
     auto& s = ctx.camera->GetState();
+    // Radius and tilt move in opposite directions, so up/down acts as one intensity knob.
     if (args[0] == "up")
     {
         s.globeSphereRadius = std::min(500.0f, s.globeSphereRadius + 10.0f);
@@ -914,6 +1014,7 @@ bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& 
     return true;
 }
 
+// player.pos - print player tile/world position and facing direction.
 bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -958,6 +1059,7 @@ bool Cmd_PlayerPos(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// player.bicycle [on|off|toggle] - toggle the player's bicycle mode.
 bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -979,6 +1081,7 @@ bool Cmd_PlayerBicycle(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// player.run [on|off|toggle] - toggle the player's running mode.
 bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -1000,6 +1103,7 @@ bool Cmd_PlayerRun(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// move.accel [px/s^2] - print or set the player's acceleration.
 bool Cmd_MoveAccel(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -1035,6 +1139,7 @@ bool Cmd_MoveAccel(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// move.decel [px/s^2] - print or set the player's deceleration.
 bool Cmd_MoveDecel(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if ((ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -1070,6 +1175,7 @@ bool Cmd_MoveDecel(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// move.lookahead [px] - print or set the camera look-ahead distance.
 bool Cmd_MoveLookahead(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -1103,6 +1209,7 @@ bool Cmd_MoveLookahead(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// move.dump - print player accel/decel and camera look-ahead distance.
 bool Cmd_MoveDump(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -1135,6 +1242,7 @@ bool Cmd_MoveDump(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.list - list NPCs with idx, name, type, tile, and patrol/stopped state.
 bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1176,6 +1284,7 @@ bool Cmd_NpcList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.tp <idx> <tileX> <tileY> - teleport the indexed NPC to the given tile.
 bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1214,6 +1323,7 @@ bool Cmd_NpcTp(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.spawn <type> <tileX> <tileY> - spawn an NPC of the given type at a tile.
 bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1257,6 +1367,7 @@ bool Cmd_NpcSpawn(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.despawn <idx> - remove an NPC; blocked if it's the active dialogue speaker.
 bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1296,6 +1407,7 @@ bool Cmd_NpcDespawn(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.freeze <idx|all> [on|off|toggle] - stop/resume NPC patrol.
 bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1320,6 +1432,7 @@ bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
         }
     }
     std::span<const std::string_view> toggleArgs = args.subspan(1);
+    // 'all' has no single current state, so toggle resolves against false (always freezes ON).
     const bool current = isAll ? false : ctx.npcs->get<NpcIdle>(npcE).isStopped;
     bool target = false;
     if (!ParseToggleArg(toggleArgs, current, "npc.freeze", ctx.out, target))
@@ -1341,6 +1454,7 @@ bool Cmd_NpcFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.dialog <idx> <text...> - set an NPC's simple dialogue text.
 bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -1376,6 +1490,7 @@ bool Cmd_NpcDialog(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// dialogue.active - print active dialogue (simple text or tree node + visible options).
 bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.dialogue == nullptr)
@@ -1425,6 +1540,7 @@ bool Cmd_DialogueActive(std::span<const std::string_view> args, CommandContext& 
     return true;
 }
 
+// dialogue.end - close any active dialogue.
 bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -1442,6 +1558,7 @@ bool Cmd_DialogueEnd(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// dialogue.skip - confirm/advance the current tree dialogue selection.
 bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.dialogue == nullptr)
@@ -1464,6 +1581,7 @@ bool Cmd_DialogueSkip(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// flag.list - list all game-state flags (sorted) with their values.
 bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -1497,6 +1615,7 @@ bool Cmd_FlagList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// flag.unset <name> - clear a game-state flag; notes if it wasn't set.
 bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -1523,6 +1642,7 @@ bool Cmd_FlagUnset(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.scale <multiplier> - set day/night time scale (must be > 0).
 bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1553,6 +1673,8 @@ bool Cmd_TimeScale(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// time.weather <name> [seconds] - set weather, blending over the given
+// duration (default ambience::WEATHER_TRANSITION_SECONDS; 0 = hard cut).
 bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1560,9 +1682,10 @@ bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx
         ctx.out.PrintError("time.weather: time manager unavailable");
         return false;
     }
-    if (args.size() != 1)
+    if (args.empty() || args.size() > 2)
     {
-        ctx.out.PrintError("time.weather: usage 'time.weather <name>' (use Tab to list states)");
+        ctx.out.PrintError(
+            "time.weather: usage 'time.weather <name> [seconds]' (Tab lists states)");
         return false;
     }
     auto parsed = EnumTraits<WeatherState>::FromString(args[0]);
@@ -1572,12 +1695,29 @@ bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx
                            std::string(args[0]) + "' (use Tab for valid names)");
         return false;
     }
-    ctx.time->SetWeather(*parsed);
-    ctx.out.Print(std::string("time.weather: ") +
-                  std::string(EnumTraits<WeatherState>::ToString(*parsed)));
+    float seconds = ambience::WEATHER_TRANSITION_SECONDS;
+    if (args.size() == 2)
+    {
+        if (!ParseFloat(args[1], seconds) || seconds < 0.0f)
+        {
+            ctx.out.PrintError("time.weather: seconds must be >= 0");
+            return false;
+        }
+    }
+    const WeatherRouteResult result = RouteWeatherRequest(ctx, *parsed, seconds);
+    char suffix[24];
+    WeatherRouteSuffix(result, seconds, suffix, sizeof(suffix));
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "time.weather: %s %s",
+                  std::string(EnumTraits<WeatherState>::ToString(*parsed)).c_str(),
+                  suffix);
+    ctx.out.Print(line);
     return true;
 }
 
+// weather.intensity <0.0-1.0> - set weather effect intensity.
 bool Cmd_WeatherIntensity(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1603,6 +1743,9 @@ bool Cmd_WeatherIntensity(std::span<const std::string_view> args, CommandContext
     return true;
 }
 
+// weather.next [seconds] - cycle to the next weather state in enum order,
+// blending over the given duration (default ambience::WEATHER_TRANSITION_SECONDS;
+// 0 = hard cut).
 bool Cmd_WeatherNext(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1610,18 +1753,37 @@ bool Cmd_WeatherNext(std::span<const std::string_view> args, CommandContext& ctx
         ctx.out.PrintError("weather.next: time manager unavailable");
         return false;
     }
-    if (!args.empty())
+    if (args.size() > 1)
     {
-        ctx.out.PrintError("weather.next: usage 'weather.next' (no args)");
+        ctx.out.PrintError("weather.next: usage 'weather.next [seconds]'");
         return false;
     }
+    float seconds = ambience::WEATHER_TRANSITION_SECONDS;
+    if (args.size() == 1)
+    {
+        if (!ParseFloat(args[0], seconds) || seconds < 0.0f)
+        {
+            ctx.out.PrintError("weather.next: seconds must be >= 0");
+            return false;
+        }
+    }
     WeatherState next = NextEnum(ctx.time->GetWeather());
-    ctx.time->SetWeather(next);
-    ctx.out.Print(std::string("weather.next: ") +
-                  std::string(EnumTraits<WeatherState>::ToString(next)));
+    const WeatherRouteResult result = RouteWeatherRequest(ctx, next, seconds);
+    char suffix[24];
+    WeatherRouteSuffix(result, seconds, suffix, sizeof(suffix));
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "weather.next: %s %s",
+                  std::string(EnumTraits<WeatherState>::ToString(next)).c_str(),
+                  suffix);
+    ctx.out.Print(line);
     return true;
 }
 
+// weather.random [seconds] - switch to a randomly picked weather state, blending
+// over the given duration (default ambience::WEATHER_TRANSITION_SECONDS; 0 = hard
+// cut).
 bool Cmd_WeatherRandom(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1629,21 +1791,189 @@ bool Cmd_WeatherRandom(std::span<const std::string_view> args, CommandContext& c
         ctx.out.PrintError("weather.random: time manager unavailable");
         return false;
     }
-    if (!args.empty())
+    if (args.size() > 1)
     {
-        ctx.out.PrintError("weather.random: usage 'weather.random' (no args)");
+        ctx.out.PrintError("weather.random: usage 'weather.random [seconds]'");
         return false;
     }
+    float seconds = ambience::WEATHER_TRANSITION_SECONDS;
+    if (args.size() == 1)
+    {
+        if (!ParseFloat(args[0], seconds) || seconds < 0.0f)
+        {
+            ctx.out.PrintError("weather.random: seconds must be >= 0");
+            return false;
+        }
+    }
+    // Seeded once on first call and reused, so repeated invocations keep advancing the sequence.
     static std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<int> dist(0,
                                             static_cast<int>(EnumTraits<WeatherState>::Count) - 1);
     auto pick = static_cast<WeatherState>(dist(rng));
-    ctx.time->SetWeather(pick);
-    ctx.out.Print(std::string("weather.random: ") +
-                  std::string(EnumTraits<WeatherState>::ToString(pick)));
+    const WeatherRouteResult result = RouteWeatherRequest(ctx, pick, seconds);
+    char suffix[24];
+    WeatherRouteSuffix(result, seconds, suffix, sizeof(suffix));
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "weather.random: %s %s",
+                  std::string(EnumTraits<WeatherState>::ToString(pick)).c_str(),
+                  suffix);
+    ctx.out.Print(line);
     return true;
 }
 
+// weather.forecast [days] - print the upcoming front/night-event forecast
+// (default 3 days, capped at 7).
+bool Cmd_WeatherForecast(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.weatherDirector == nullptr || ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.forecast: weather director/time manager unavailable");
+        return false;
+    }
+    if (args.size() > 1)
+    {
+        ctx.out.PrintError("weather.forecast: usage 'weather.forecast [days]'");
+        return false;
+    }
+    int days = 3;
+    if (args.size() == 1)
+    {
+        if (!ParseInt(args[0], days) || days < 1)
+        {
+            ctx.out.PrintError("weather.forecast: days must be a positive integer");
+            return false;
+        }
+    }
+    days = std::min(days, 7);
+    for (int i = 0; i < days; ++i)
+    {
+        const ForecastEntry entry = ctx.weatherDirector->GetForecast(*ctx.time, i);
+        char line[96];
+        std::snprintf(line,
+                      sizeof(line),
+                      "day +%d: %s",
+                      i,
+                      std::string(EnumTraits<WeatherState>::ToString(entry.front)).c_str());
+        ctx.out.Print(line);
+        if (entry.hasNightEvent)
+        {
+            char nightLine[96];
+            std::snprintf(
+                nightLine,
+                sizeof(nightLine),
+                "  night: %s",
+                std::string(EnumTraits<WeatherState>::ToString(entry.nightEvent)).c_str());
+            ctx.out.Print(nightLine);
+        }
+    }
+    return true;
+}
+
+// weather.auto [on|off] - toggle forecast-driven autonomy; no arg prints the
+// current state without changing it.
+bool Cmd_WeatherAuto(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.weatherDirector == nullptr)
+    {
+        ctx.out.PrintError("weather.auto: weather director unavailable");
+        return false;
+    }
+    if (args.empty())
+    {
+        ctx.out.Print(std::string("weather.auto: ") +
+                      (ctx.weatherDirector->IsAutoWeather() ? "on" : "off"));
+        return true;
+    }
+    if (args.size() != 1 || (args[0] != "on" && args[0] != "off"))
+    {
+        ctx.out.PrintError("weather.auto: usage 'weather.auto [on|off]'");
+        return false;
+    }
+    const bool target = (args[0] == "on");
+    ctx.weatherDirector->SetAutoWeather(target);
+    ctx.out.Print(std::string("weather.auto: ") + (target ? "on" : "off"));
+    return true;
+}
+
+// weather.status - current weather, active transition (from->to + progress%),
+// auto/manual-hold flags, and the wind readout.
+bool Cmd_WeatherStatus(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.weatherDirector == nullptr || ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.status: weather director/time manager unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("weather.status: usage 'weather.status'");
+        return false;
+    }
+    char line[160];
+    std::snprintf(line,
+                  sizeof(line),
+                  "weather.status: %s",
+                  std::string(EnumTraits<WeatherState>::ToString(ctx.time->GetWeather())).c_str());
+    ctx.out.Print(line);
+
+    if (ctx.weatherDirector->IsTransitioning())
+    {
+        const WeatherDirector::Transition t = ctx.weatherDirector->GetTransition();
+        std::snprintf(line,
+                      sizeof(line),
+                      "  transition: %s -> %s (%.0f%%)",
+                      std::string(EnumTraits<WeatherState>::ToString(t.from)).c_str(),
+                      std::string(EnumTraits<WeatherState>::ToString(t.to)).c_str(),
+                      static_cast<double>(t.progress * 100.0f));
+        ctx.out.Print(line);
+    }
+
+    std::snprintf(line,
+                  sizeof(line),
+                  "  auto=%s manualHold=%s",
+                  ctx.weatherDirector->IsAutoWeather() ? "on" : "off",
+                  ctx.weatherDirector->IsManualHold() ? "yes" : "no");
+    ctx.out.Print(line);
+
+    const glm::vec2 wind = ctx.weatherDirector->GetWindDirection();
+    std::snprintf(line,
+                  sizeof(line),
+                  "  wind: dir=(%.2f, %.2f) strength=%.2f",
+                  static_cast<double>(wind.x),
+                  static_cast<double>(wind.y),
+                  static_cast<double>(ctx.weatherDirector->GetWindStrength()));
+    ctx.out.Print(line);
+    return true;
+}
+
+// weather.wind - gusted wind direction/strength readout.
+bool Cmd_WeatherWind(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.weatherDirector == nullptr)
+    {
+        ctx.out.PrintError("weather.wind: weather director unavailable");
+        return false;
+    }
+    if (!args.empty())
+    {
+        ctx.out.PrintError("weather.wind: usage 'weather.wind'");
+        return false;
+    }
+    const glm::vec2 wind = ctx.weatherDirector->GetWindDirection();
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "weather.wind: dir=(%.2f, %.2f) strength=%.2f",
+                  static_cast<double>(wind.x),
+                  static_cast<double>(wind.y),
+                  static_cast<double>(ctx.weatherDirector->GetWindStrength()));
+    ctx.out.Print(line);
+    return true;
+}
+
+// light.add <x> <y> [r g b] [radius] [schedule] - add a world light, report its index.
 bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -1708,6 +2038,7 @@ bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// light.clear - remove all world lights, report how many were removed.
 bool Cmd_LightClear(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -1728,6 +2059,7 @@ bool Cmd_LightClear(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// light.list - list all world lights with position, color, radius, schedule.
 bool Cmd_LightList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -1764,6 +2096,7 @@ bool Cmd_LightList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// light.remove <index> - remove the world light at the given index.
 bool Cmd_LightRemove(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -1793,6 +2126,7 @@ bool Cmd_LightRemove(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// time.status - print time of day, period, weather, day/moon, time scale, pause state.
 bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -1851,6 +2185,7 @@ bool Cmd_TimeStatus(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// particle.spawn <type> <worldX> <worldY> - spawn one particle of the given type.
 bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -1896,6 +2231,7 @@ bool Cmd_ParticleSpawn(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// particle.list - print active particle counts per type plus editor zone count.
 bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -1948,6 +2284,7 @@ bool Cmd_ParticleList(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// particle.kill_all - clear all active particles.
 bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.particles == nullptr)
@@ -1965,6 +2302,7 @@ bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext&
     return true;
 }
 
+// camera.freecam [on|off|toggle] - toggle free-fly camera mode.
 bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -1982,6 +2320,7 @@ bool Cmd_CameraFreecam(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// camera.zoom <factor 0.1-10.0> - set the camera zoom factor.
 bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -2012,6 +2351,7 @@ bool Cmd_CameraZoom(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// camera.follow [on|off|toggle] - toggle player-follow camera (disables freecam when on).
 bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -2034,6 +2374,7 @@ bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// camera.info - print camera pos, zoom, tilt, 3D/freecam/follow flags, follow target.
 bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -2065,6 +2406,7 @@ bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// map.save [path] - write map JSON (default save path) with player tile and character type.
 bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.npcs == nullptr ||
@@ -2107,6 +2449,7 @@ bool Cmd_MapSave(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// map.size - print map dimensions in tiles and pixels plus the tile size.
 bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2137,6 +2480,7 @@ bool Cmd_MapSize(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// map.collision <tileX> <tileY> - report whether the given tile blocks movement.
 bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2168,6 +2512,7 @@ bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// console.copy - copy the console scrollback buffer to the clipboard.
 bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -2213,6 +2558,7 @@ bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// renderer.trace [on|off|dump|clear] - capture/inspect per-frame draw-call events.
 bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (args.size() > 1)
@@ -2243,7 +2589,7 @@ bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& c
             return;
         }
         char header[64];
-        std::snprintf(header, sizeof(header), "-- last frame: %zu events --", events.size());
+        std::snprintf(header, sizeof(header), "- last frame: %zu events -", events.size());
         ctx.out.Print(header);
         int prevDraws = 0;
         for (size_t i = 0; i < events.size(); ++i)
@@ -2295,6 +2641,7 @@ bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& c
     return false;
 }
 
+// perf - print current fps, frame time (ms), draw-call count, and target fps.
 bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.game == nullptr)
@@ -2321,6 +2668,7 @@ bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// layers.list - list tile layers with render order, background flag, tile/animated counts.
 bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2370,6 +2718,7 @@ bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// tile.info <tx> <ty> - dump a tile's collision/nav/elevation and per-layer id+flags.
 bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2429,6 +2778,7 @@ bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// tile.find <tileID> [layer] - list coords of tiles matching id, optionally one layer.
 bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2498,6 +2848,7 @@ bool Cmd_TileFind(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// map.stats - print map size, collision/navigable percentages, and object counts.
 bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2554,6 +2905,7 @@ bool Cmd_MapStats(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// tileset.info - print tileset image size, tile size, and tiles-per-row.
 bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2580,6 +2932,7 @@ bool Cmd_TilesetInfo(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// anim.list - list animated tiles with frame count, duration, and map usage count.
 bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2652,6 +3005,7 @@ void CameraSnapTo(CameraController& cam, glm::vec2 worldPos)
 }
 }  // namespace
 
+// struct.list - list no-projection structures with id, name, and left/right anchors.
 bool Cmd_StructList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2685,6 +3039,7 @@ bool Cmd_StructList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// struct.info <id> - print one no-projection structure's name and anchor points.
 bool Cmd_StructInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2723,6 +3078,7 @@ bool Cmd_StructInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// struct.goto <id> - snap the free camera to a structure's anchor midpoint.
 bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -2759,6 +3115,7 @@ bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// zone.list - list particle zones with type, position, size, and noProjection flag.
 bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2798,6 +3155,7 @@ bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// zone.goto <idx> - snap the free camera to a particle zone's center.
 bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -2835,6 +3193,7 @@ bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// light.goto <idx> - snap the free camera to a world light's position.
 bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -2871,6 +3230,7 @@ bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// nav.path <fx> <fy> <tx> <ty> - A* pathfind and print length plus waypoint chain.
 bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2924,6 +3284,7 @@ bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// nav.reachable <tx> <ty> - flood-fill from a tile; print reachable count and bounds.
 bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2968,6 +3329,7 @@ bool Cmd_NavReachable(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// npc.path <idx> - print an NPC patrol route: closed/pingpong, waypoints, validity.
 bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr)
@@ -3019,6 +3381,7 @@ bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.goto <idx> - snap the free camera to an NPC's world position.
 bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr || ctx.camera == nullptr)
@@ -3057,6 +3420,7 @@ bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// npc.nearest - find NPC closest (tile Manhattan) to player; print id/name/tile/dist.
 bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr || (ctx.npcs == nullptr || !ctx.npcs->alive(ctx.playerEntity)))
@@ -3106,6 +3470,7 @@ bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// quest.list - print active quests with descriptions plus completed_* flags as [DONE].
 bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3134,6 +3499,7 @@ bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
     }
     for (const auto& [k, v] : ctx.gameState->GetAllFlags())
     {
+        // Completed quests are persisted as game-state flags named completed_<quest>.
         constexpr std::string_view kPrefix = "completed_";
         if (k.size() <= kPrefix.size() || k.compare(0, kPrefix.size(), kPrefix) != 0)
         {
@@ -3146,6 +3512,7 @@ bool Cmd_QuestList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// quest.give <name> [description...] - accept a quest with optional joined description.
 bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3179,6 +3546,7 @@ bool Cmd_QuestGive(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// quest.complete <name> - mark the named quest complete.
 bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.gameState == nullptr)
@@ -3199,6 +3567,7 @@ bool Cmd_QuestComplete(std::span<const std::string_view> args, CommandContext& c
     return true;
 }
 
+// version - print engine version, Debug/Release build, build date/time, C++ standard.
 bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -3224,6 +3593,7 @@ bool Cmd_Version(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// renderer.info - print backend/API and GPU vendor/device/driver/maxTextureSize.
 bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.renderer == nullptr)
@@ -3255,6 +3625,7 @@ bool Cmd_RendererInfo(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
+// mem.stats - print approximate tilemap/NPC/scrollback/ECS-registry/struct/light memory use.
 bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -3302,6 +3673,7 @@ bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// ecs.validate - on-demand ECS registry integrity check (table/pools/globals/links).
 bool Cmd_EcsValidate(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -3328,6 +3700,7 @@ bool Cmd_EcsValidate(std::span<const std::string_view> args, CommandContext& ctx
     return false;
 }
 
+// config.dump - emit current time/globe/editor/postfx toggles as replayable console commands.
 bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -3346,14 +3719,28 @@ bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
         ctx.out.Print(line);
         std::snprintf(line, sizeof(line), "time.freeze %s", ctx.time->IsPaused() ? "on" : "off");
         ctx.out.Print(line);
+        // Name-based (not the raw enum int) so the dump replays through
+        // EnumTraits<WeatherState>::FromString; 0 seconds makes replay instant
+        // since a dump is a state snapshot, not a request to blend into it.
         std::snprintf(
-            line, sizeof(line), "time.weather %d", static_cast<int>(ctx.time->GetWeather()));
+            line,
+            sizeof(line),
+            "time.weather %s 0",
+            std::string(EnumTraits<WeatherState>::ToString(ctx.time->GetWeather())).c_str());
         ctx.out.Print(line);
         std::snprintf(line,
                       sizeof(line),
                       "weather.intensity %.3f",
                       static_cast<double>(ctx.time->GetWeatherIntensity()));
         ctx.out.Print(line);
+        if (ctx.weatherDirector != nullptr)
+        {
+            std::snprintf(line,
+                          sizeof(line),
+                          "weather.auto %s",
+                          ctx.weatherDirector->IsAutoWeather() ? "on" : "off");
+            ctx.out.Print(line);
+        }
     }
     if (ctx.camera != nullptr)
     {
@@ -3385,6 +3772,7 @@ bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
+// bookmark.set <name> - save the player's current tile under a bookmark name.
 bool Cmd_BookmarkSet(std::span<const std::string_view> args,
                      CommandContext& ctx,
                      std::unordered_map<std::string, glm::ivec2>& bookmarks)
@@ -3412,6 +3800,7 @@ bool Cmd_BookmarkSet(std::span<const std::string_view> args,
     return true;
 }
 
+// bookmark.tp <name> - teleport the player to a saved bookmark tile.
 bool Cmd_BookmarkTp(std::span<const std::string_view> args,
                     CommandContext& ctx,
                     std::unordered_map<std::string, glm::ivec2>& bookmarks)
@@ -3447,6 +3836,7 @@ bool Cmd_BookmarkTp(std::span<const std::string_view> args,
     return true;
 }
 
+// bookmark.list - list saved bookmarks (name and tile) sorted alphabetically.
 bool Cmd_BookmarkList(std::span<const std::string_view> args,
                       CommandContext& ctx,
                       const std::unordered_map<std::string, glm::ivec2>& bookmarks)
@@ -3500,6 +3890,7 @@ void Console::RegisterDefaultCommands()
             /* postFXEnabled */ &m_Game.m_PostFXEnabled,
             /* dialogue    */ &m_Game.m_DialogueManager,
             /* particles   */ &m_Game.m_Particles,
+            /* weatherDirector */ &m_Game.m_WeatherDirector,
         };
     };
 
@@ -3919,7 +4310,7 @@ void Console::RegisterDefaultCommands()
 
     m_Registry.Register(
         "time.weather",
-        "<name> - set weather state (Tab to list)",
+        "<name> [seconds] - set weather, blended (0 = instant; Tab lists names)",
         [makeContext](auto args, Console&)
         {
             CommandContext ctx = makeContext();
@@ -3946,7 +4337,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("weather.next",
-                        "cycle to next weather state",
+                        "[seconds] - cycle to next weather state (0 = instant)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3954,11 +4345,43 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("weather.random",
-                        "set a random weather state",
+                        "[seconds] - set a random weather state (0 = instant)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
                             (void)Cmd_WeatherRandom(args, ctx);
+                        });
+
+    m_Registry.Register("weather.forecast",
+                        "[days] - print the upcoming front/night-event forecast (default 3, cap 7)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherForecast(args, ctx);
+                        });
+
+    m_Registry.Register("weather.auto",
+                        "[on|off] - toggle forecast-driven autonomy; no arg prints current state",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherAuto(args, ctx);
+                        });
+
+    m_Registry.Register("weather.status",
+                        "current weather, active transition, auto/hold flags, and wind readout",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherStatus(args, ctx);
+                        });
+
+    m_Registry.Register("weather.wind",
+                        "gusted wind direction/strength readout",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_WeatherWind(args, ctx);
                         });
 
     m_Registry.Register(
@@ -4139,8 +4562,6 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_ConsoleCopy(args, ctx);
                         },
                         {"copy"});
-
-    // --- Wave 1 introspection commands -------------------------------------
 
     m_Registry.Register("layers.list",
                         "list every tilemap layer (name, order, fill, animations)",
@@ -4433,7 +4854,7 @@ void Console::RegisterDefaultCommands()
     };
 
     // Dynamic: read live state when the dropdown asks. Capturing makeContext is
-    // safe -- the provider is owned by m_Registry, which lives as long as this
+    // safe - the provider is owned by m_Registry, which lives as long as this
     // Console, and makeContext only holds `this`.
     const auto flagNameCompletions = [makeContext](std::size_t argIndex) -> std::vector<std::string>
     {
@@ -4493,6 +4914,7 @@ void Console::RegisterDefaultCommands()
     {
         m_Registry.SetArgCompletions(toggleCmd, toggleCompletions);
     }
+    m_Registry.SetArgCompletions("weather.auto", FixedArgValues({"on", "off"}));
     m_Registry.SetArgCompletions("renderer.set", FixedArgValues({"opengl", "vulkan"}));
     m_Registry.SetArgCompletions("renderer.trace", FixedArgValues({"on", "off", "dump", "clear"}));
     m_Registry.SetArgCompletions("globe.intensity", FixedArgValues({"up", "down"}));
