@@ -6,12 +6,14 @@
 #include "ProceduralTexture.hpp"
 #include "TextureStore.hpp"
 #include "Tilemap.hpp"
+#include "WeatherBlend.hpp"
 #include "WeatherDefinitions.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <tuple>
 #include <utility>
 
 namespace
@@ -21,7 +23,7 @@ constexpr const char* LOG_SUBSYSTEM = "Particle";
 
 // Particle behavior dispatch.
 
-/// Context passed to per-type Update specializations.
+// Context passed to per-type Update specializations.
 struct ParticleUpdateContext
 {
     float time;
@@ -29,61 +31,59 @@ struct ParticleUpdateContext
     float nightFactor;
     const std::vector<ParticleZone>* zones;
     bool hasZones;
-    /// Per-weather scaling on Fog particle base alpha. 1.0 = unchanged;
-    /// values < 1 soften the fog wall without changing density.
+    // Per-weather scaling on Fog particle base alpha. 1.0 = unchanged;
+    // values < 1 soften the fog wall without changing density.
     float fogAlphaMultiplier;
-    /// Smoothed camera velocity (world px/s). Read by Pollen / DriftingLeaf
-    /// to gate the player-avoidance push on "player is currently walking".
+    // Smoothed camera velocity (world px/s). Read by Pollen / DriftingLeaf
+    // to gate the player-avoidance push on "player is currently walking".
     glm::vec2 cameraVelocity;
-    /// Current camera position (world px); kept here so weather-particle
-    /// spawn helpers can read it from the same context as the avoidance code.
+    // Current camera position (world px); kept here so weather-particle
+    // spawn helpers can read it from the same context as the avoidance code.
     glm::vec2 cameraPos;
-    /// Visible camera area in world pixels. Used by Rain/Snow update paths
-    /// to clamp groundY into the viewport when an editor zone is larger
-    /// than the visible region (e.g., the title screen's whole-map zones -
-    /// without the clamp, splashes happen off-screen below).
+    // Visible camera area in world pixels. Used by Rain/Snow update paths
+    // to clamp groundY into the viewport when an editor zone is larger
+    // than the visible region (e.g., the title screen's whole-map zones -
+    // without the clamp, splashes happen off-screen below).
     glm::vec2 viewSize;
-    /// Bottom-center of the player's 16x32 avoidance box (player hitbox +
-    /// the tile directly above). Pollen and DriftingLeaf use this box as
-    /// the repulsion source so particles slide around the actual player
-    /// rectangle rather than around the bottom-center anchor.
+    // Bottom-center of the player's 16x32 avoidance box (player hitbox +
+    // the tile directly above). Pollen and DriftingLeaf use this box as
+    // the repulsion source so particles slide around the actual player
+    // rectangle rather than around the bottom-center anchor.
     glm::vec2 playerPos;
-    /// Out-buffer for particles that an Update wants to spawn mid-frame
-    /// (e.g., Rain splashes). Direct append to m_Particles during the
-    /// update loop would reallocate the vector and invalidate iterators,
-    /// so behaviors push here and ParticleSystem::Update merges after.
+    // Out-buffer for particles that an Update wants to spawn mid-frame
+    // (e.g., Rain splashes). Direct append to m_Particles during the
+    // update loop would reallocate the vector and invalidate iterators,
+    // so behaviors push here and ParticleSystem::Update merges after.
     std::vector<Particle>* pendingSpawns;
-    /// Shared RNG (same source as ParticleSpawnContext) so any randomized
-    /// per-frame behaviors (e.g., Rain splash count + droplet jitter) draw
-    /// from the same deterministic stream as the Spawn dispatchers.
+    // Shared RNG (same source as ParticleSpawnContext) so any randomized
+    // per-frame behaviors (e.g., Rain splash count + droplet jitter) draw
+    // from the same deterministic stream as the Spawn dispatchers.
     std::mt19937* rng;
     std::uniform_real_distribution<float>* dist;
+    // Prevailing wind direction (normalized) and gusted strength (>= 0;
+    // 0.5 = calm default). Mirrors ParticleSystem::m_WindDir/m_WindStrength.
+    glm::vec2 windDir;
+    float windStrength;
+    // Exact per-frame camera displacement (world px). Weather Rain/Snow
+    // re-base their bakedGroundY band by this so the splash band keeps its
+    // screen-relative position instead of lagging a moving camera.
+    glm::vec2 cameraDelta;
 };
 
-/// Context passed to per-type Spawn specializations.
+// Context passed to per-type Spawn specializations.
 struct ParticleSpawnContext
 {
     std::mt19937& rng;
     std::uniform_real_distribution<float>& dist;
     std::vector<Particle>& particles;
+    glm::vec2 windDir;   // Prevailing wind direction (normalized).
+    float windStrength;  // Gusted wind strength (>= 0; 0.5 = calm default).
 };
 
-/// Slip a weather particle around the player's 16x32 hitbox without
-/// disturbing its trajectory.
-///
-/// The "water dripping down a surface" model: the leaf's velocity (its
-/// wind-driven drift) is the dominant force and stays untouched. The only
-/// thing we modify is its **position** - a gentle per-frame outward nudge
-/// while it overlaps the player. So a leaf falling diagonally keeps falling
-/// diagonally; a leaf drifting east keeps drifting east. The player walking
-/// past just slightly bows the leaf's path around their body rather than
-/// carrying it along or punting it away.
-///
-/// The correction speed is capped at the remaining penetration depth so the
-/// leaf never overshoots the boundary - which is what was visibly
-/// teleporting in earlier versions. Only fires when the leaf is genuinely
-/// overlapping the player (distance below the small `kAvoidPadding` shell)
-/// and the player is moving (so an idle player doesn't tug ambient drift).
+// Slip a weather particle around the player's 16x32 hitbox by nudging only
+// its POSITION outward while overlapping (velocity/wind drift is untouched,
+// so its trajectory is preserved). The nudge is capped at the penetration
+// depth so it never overshoots, and only fires while the player is moving.
 inline void ApplyPlayerHitboxRepulsion(Particle& p,
                                        const ParticleUpdateContext& ctx,
                                        float* outProximity = nullptr)
@@ -143,11 +143,9 @@ inline void ApplyPlayerHitboxRepulsion(Particle& p,
     }
 
     // Zone B - tangential swirl: soft band from the hard shell out to 20px
-    // that curls particles around the player toward the trailing side.
-    // The tangent is whichever 90-degree rotation of `outward` points more
-    // backward along motion - that single sign-pick is what makes leaves
-    // on both sides of a moving player end up trailing behind, the natural
-    // flow-around-a-sphere pattern.
+    // that curls particles toward the trailing side. The tangent is whichever
+    // 90-degree rotation of `outward` points more backward along motion, so
+    // leaves on both sides end up trailing behind (flow-around-a-sphere).
     constexpr float kSwirlOuterRadius = 20.0f;
     constexpr float kSwirlPeak = 40.0f;
     float proximity = 0.0f;
@@ -170,11 +168,10 @@ inline void ApplyPlayerHitboxRepulsion(Particle& p,
     if (outProximity)
         *outProximity = proximity;
 
-    // Zone C - slipstream wake: elliptical region trailing behind the
-    // player along the motion axis (15px half-length, 8px half-width).
-    // Particles inside get a position push ALONG motion (drag, not push-
-    // away) so leaves that exit Zone B behind the player get caught in the
-    // wake for a moment before peeling off.
+    // Zone C - slipstream wake: elliptical region trailing the player along
+    // the motion axis (15px half-length, 8px half-width). Particles inside
+    // get a position push ALONG motion (drag, not push-away), catching leaves
+    // that exit Zone B behind the player for a moment before they peel off.
     constexpr float kWakeOffset = 15.0f;
     constexpr float kWakeHalfLen = 15.0f;
     constexpr float kWakeHalfWidth = 8.0f;
@@ -188,13 +185,10 @@ inline void ApplyPlayerHitboxRepulsion(Particle& p,
     if (wakeR < 1.0f)
     {
         const float wakeFactor = 1.0f - wakeR;
-        // Per-particle fan-out so multiple particles caught in the wake
-        // don't converge into a single line directly behind the player.
-        // Phase is randomized at spawn time, so each particle picks its
-        // own lateral offset and drag rate - they spread perpendicular to
-        // motion AND overtake/lag each other along motion. Position-only,
-        // no velocity change: this drift adds while in the wake and ends
-        // cleanly when the particle exits (no ricochet).
+        // Per-particle fan-out so wake-caught particles don't converge into
+        // one line behind the player. Spawn-randomized phase gives each its
+        // own lateral offset and drag rate (spread across motion, overtake/lag
+        // along it). Position-only, so the drift ends cleanly on exit.
         const float lateralSign = std::sin(p.phase * 2.0f);                 // [-1, 1]
         const float dragVariance = 1.0f + 0.3f * std::cos(p.phase * 1.7f);  // [0.7, 1.3]
         constexpr float kLateralScatter = 12.0f;
@@ -205,10 +199,10 @@ inline void ApplyPlayerHitboxRepulsion(Particle& p,
     }
 }
 
-/// Spawn the rain-splash droplet burst at an impact point. Called by
-/// Rain::Update from both the editor-zone ground check AND the weather
-/// bakedGroundY check so the title screen and gameplay weather share the
-/// same visual.
+// Spawn the rain-splash droplet burst at an impact point. Called by
+// Rain::Update from both the editor-zone ground check AND the weather
+// bakedGroundY check so the title screen and gameplay weather share the
+// same visual.
 inline void SpawnRainSplash(const Particle& parent, float impactY, const ParticleUpdateContext& ctx)
 {
     if (!ctx.pendingSpawns || !ctx.rng || !ctx.dist)
@@ -236,8 +230,8 @@ inline void SpawnRainSplash(const Particle& parent, float impactY, const Particl
     }
 }
 
-/// Spawn the snow-puff sparkle burst at an impact point. Same pattern as
-/// SpawnRainSplash, tuned smaller / whiter / gentler for snow.
+// Spawn the snow-puff sparkle burst at an impact point. Same pattern as
+// SpawnRainSplash, tuned smaller / whiter / gentler for snow.
 inline void SpawnSnowPuff(const Particle& parent, float impactY, const ParticleUpdateContext& ctx)
 {
     if (!ctx.pendingSpawns || !ctx.rng || !ctx.dist)
@@ -265,7 +259,7 @@ inline void SpawnSnowPuff(const Particle& parent, float impactY, const ParticleU
     }
 }
 
-/// Primary template - specialize for each ParticleType enumerator.
+// Primary template - specialize for each ParticleType enumerator.
 template <ParticleType PT>
 struct ParticleBehavior
 {
@@ -372,12 +366,10 @@ struct ParticleBehavior<ParticleType::Rain>
         // Target alpha stored in phase
         p.color.a = fadeIn * p.phase;
 
-        // Editor-zone rain (placed via the editor or the title-screen
-        // ambient zones): die when crossing the zone's bottom edge and
-        // splash on the way out, same visual as weather-spawned rain.
-        // Zones larger than the viewport (e.g. the title screen's whole-
-        // map zone) get the groundY clamped to inside the visible area so
-        // the splash isn't off-screen below.
+        // Editor-zone rain (editor- or title-ambient-placed): die and splash
+        // when crossing the zone's bottom edge, same visual as weather rain.
+        // For zones larger than the viewport (e.g. the title whole-map zone),
+        // groundY is clamped into the visible area so the splash isn't off-screen.
         if (ctx.hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(ctx.zones->size()))
         {
             const auto& zone = (*ctx.zones)[p.zoneIndex];
@@ -386,14 +378,10 @@ struct ParticleBehavior<ParticleType::Rain>
             float heightVariation =
                 std::fmod(std::abs(p.position.x * 7.3f + p.phase * 100.0f), 60.0f);
             float baseGround = zone.position.y + zone.size.y + 20.0f + heightVariation;
-            // When the zone extends past the visible viewport (e.g. the
-            // title screen's whole-map zone), spread the splash impact
-            // across a wide vertical band - same approach the in-game
-            // HeavyRain / Blizzard weather uses for its bakedGroundY -
-            // so the ground reads as an "area", not a single horizontal
-            // line. Range covers ~35%-95% down the viewport so splashes
-            // sit below the title logo / menu instead of crashing into
-            // the upper UI.
+            // For zones past the viewport (title whole-map zone), spread the
+            // impact across a wide vertical band (like HeavyRain / Blizzard
+            // bakedGroundY) so the ground reads as an area, not one line. The
+            // ~35%-95% viewport range keeps splashes below the title UI.
             float spreadT = heightVariation / 60.0f;
             float viewSplashY = ctx.cameraPos.y + ctx.viewSize.y * (0.35f + spreadT * 0.60f);
             float groundY = std::min(baseGround, viewSplashY);
@@ -404,13 +392,18 @@ struct ParticleBehavior<ParticleType::Rain>
             }
         }
 
-        // Weather-spawned rain: bakedGroundY comes from SpawnWeatherParticle
-        // and is spread across the visible viewport. Splash at impact.
-        if (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX && p.bakedGroundY > 0.0f &&
-            p.position.y > p.bakedGroundY)
+        // Weather-spawned rain: bakedGroundY (from SpawnWeatherParticle) is a
+        // screen-relative band, so it re-bases to the camera each frame. Else
+        // a camera sprinting down outruns the band and rain lands mid-screen
+        // while the revealed bottom half starves (maintainer-reported).
+        if (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX && p.bakedGroundY > 0.0f)
         {
-            SpawnRainSplash(p, p.bakedGroundY, ctx);
-            p.lifetime = 0.0f;
+            p.bakedGroundY += ctx.cameraDelta.y;
+            if (p.position.y > p.bakedGroundY)
+            {
+                SpawnRainSplash(p, p.bakedGroundY, ctx);
+                p.lifetime = 0.0f;
+            }
         }
     }
 
@@ -437,12 +430,10 @@ struct ParticleBehavior<ParticleType::Rain>
         p.rotation = -35.0f - ctx.dist(ctx.rng) * 30.0f;
         p.additive = true;
 
-        // bakedGroundY for weather-spawned rain is set later by
-        // SpawnWeatherParticle so the splash impact range can use the full
-        // viewport height (not a narrow band relative to the spawn strip)
-        // and lifetime can be sized per particle to reach it. Editor-zone
-        // rain keeps bakedGroundY == 0 and uses the zone-based ground
-        // detection above.
+        // Weather-spawned rain gets bakedGroundY (and a per-particle lifetime
+        // to reach it) later in SpawnWeatherParticle, so its splash spans the
+        // full viewport height. Editor-zone rain keeps bakedGroundY == 0 and
+        // uses the zone-based ground detection above.
 
         ctx.particles.push_back(p);
     }
@@ -461,10 +452,9 @@ struct ParticleBehavior<ParticleType::Snow>
         float drift = std::sin(ctx.time * 1.5f + p.phase) * 20.0f;
         p.position.x += drift * ctx.deltaTime;
 
-        // Blizzard gusts: weather-zone snow gets a higher-frequency jerk
-        // (~4 Hz, per-particle phase) plus a slow broad-stroke surge
-        // (~0.7 Hz) layered on top of the gentle baseline drift. Three
-        // frequencies driving X motion = jerky, gusty feel. Editor-zone
+        // Blizzard gusts: weather-zone snow layers a ~4 Hz per-particle jerk
+        // and a slow ~0.7 Hz surge on top of the baseline drift. Three
+        // frequencies driving X motion give a jerky, gusty feel; editor-zone
         // snow keeps just the smooth drift.
         if (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX)
         {
@@ -479,24 +469,20 @@ struct ParticleBehavior<ParticleType::Snow>
             rotationSpeed = -rotationSpeed;  // Half rotate clockwise, half counter-clockwise
         p.rotation += rotationSpeed * ctx.deltaTime;
 
-        // Editor-zone snow (placed via editor or title-screen ambient
-        // zones): puff at impact on the zone's bottom edge, matching the
-        // weather-snow visual. Per-particle ground-Y variation gives the
-        // puff line some scatter rather than a hard horizontal line. Zones
-        // larger than the viewport (e.g. the title screen's whole-map
-        // zone) get the groundY clamped to inside the visible area so
-        // the puff isn't off-screen below.
+        // Editor-zone snow (editor- or title-ambient-placed): puff at impact
+        // on the zone's bottom edge, matching weather snow, with per-particle
+        // ground-Y scatter. For zones larger than the viewport, groundY is
+        // clamped into the visible area so the puff isn't off-screen below.
         if (ctx.hasZones && p.zoneIndex >= 0 && p.zoneIndex < static_cast<int>(ctx.zones->size()))
         {
             const auto& zone = (*ctx.zones)[p.zoneIndex];
             float heightVariation =
                 std::fmod(std::abs(p.position.x * 5.7f + p.phase * 80.0f), 60.0f);
             float baseGround = zone.position.y + zone.size.y + 20.0f + heightVariation;
-            // Same wide vertical spread Rain uses when the zone extends
-            // past the viewport - the puff line reads as an area, not a
-            // hard horizontal stripe. Range covers ~35%-95% down the
-            // viewport so puffs stay below the title logo / menu, matching
-            // the Rain ground band.
+            // Same wide vertical spread Rain uses when the zone extends past
+            // the viewport, so the puff line reads as an area, not a stripe.
+            // The ~35%-95% viewport range keeps puffs below the title UI,
+            // matching the Rain ground band.
             float spreadT = heightVariation / 60.0f;
             float viewSplashY = ctx.cameraPos.y + ctx.viewSize.y * (0.35f + spreadT * 0.60f);
             float groundY = std::min(baseGround, viewSplashY);
@@ -507,13 +493,18 @@ struct ParticleBehavior<ParticleType::Snow>
             }
         }
 
-        // Weather-spawned snow: bakedGroundY comes from SpawnWeatherParticle
-        // and is spread across the visible viewport. Puff at impact.
-        if (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX && p.bakedGroundY > 0.0f &&
-            p.position.y > p.bakedGroundY)
+        // Weather-spawned snow: bakedGroundY (from SpawnWeatherParticle) is a
+        // screen-relative band, so it re-bases to the camera each frame. Else
+        // a camera sprinting down outruns the band and snow lands mid-screen
+        // while the revealed bottom half starves (maintainer-reported).
+        if (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX && p.bakedGroundY > 0.0f)
         {
-            SpawnSnowPuff(p, p.bakedGroundY, ctx);
-            p.lifetime = 0.0f;
+            p.bakedGroundY += ctx.cameraDelta.y;
+            if (p.position.y > p.bakedGroundY)
+            {
+                SpawnSnowPuff(p, p.bakedGroundY, ctx);
+                p.lifetime = 0.0f;
+            }
         }
     }
 
@@ -576,12 +567,10 @@ struct ParticleBehavior<ParticleType::Fog>
         float dayBoost = 1.0f + (1.0f - ctx.nightFactor) * 0.15f;
         float nightReduce = 1.0f - ctx.nightFactor * 0.6f;
 
-        // Softening multiplier on the puff alpha. Weather-driven fog
-        // (zoneIndex == WEATHER_ZONE_INDEX) follows the active weather's
-        // per-weather fogAlphaMultiplier (0.4-0.65). Editor-zone / console /
-        // ambient fog (any other zoneIndex) uses a fixed 0.5: it must NOT borrow
-        // the weather value, which defaults to 1.0 outside fog weathers and made
-        // zone fog render at full, un-softened strength under any normal weather.
+        // Softening multiplier on the puff alpha. Weather fog follows the
+        // active weather's fogAlphaMultiplier (0.4-0.65); editor/console/ambient
+        // fog uses a fixed 0.5 and must NOT borrow the weather value, which
+        // defaults to 1.0 and would render zone fog at full strength.
         const float fogMul =
             (p.zoneIndex == ParticleSystem::WEATHER_ZONE_INDEX) ? ctx.fogAlphaMultiplier : 0.5f;
 
@@ -1005,15 +994,16 @@ struct ParticleBehavior<ParticleType::DriftingLeaf>
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
-        // Wind drift along normalised wind direction with gentle Y oscillation.
-        // velocity.x carries a sign-flag from SpawnWeatherParticle: > 0 means
-        // this leaf should drift counter to the global wind so weather spawns
-        // can enter from BOTH the left and right edges. Ambient (zoneless)
-        // spawns leave velocity at zero and follow the default leftward wind.
-        glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+        // Wind drift with gentle Y oscillation, scaled by strength (0.5 = 18
+        // px/s baseline). velocity.x is a sign-flag from SpawnWeatherParticle:
+        // > 0 means drift counter to the global wind, so weather spawns enter
+        // from both edges. Ambient (zoneless) spawns stay at zero (default wind).
+        glm::vec2 wind = glm::normalize(ctx.windDir);
         if (p.velocity.x > 0.0f)
+        {
             wind.x = -wind.x;
-        p.position += wind * 18.0f * ctx.deltaTime;
+        }
+        p.position += wind * (18.0f * 2.0f * ctx.windStrength) * ctx.deltaTime;
         p.position.y += std::sin(ctx.time * 1.4f + p.phase) * 6.0f * ctx.deltaTime;
 
         // Weather-spawned leaves slide off the player's hitbox like water on
@@ -1179,13 +1169,16 @@ struct ParticleBehavior<ParticleType::Pollen>
 
     static void Update(Particle& p, const ParticleUpdateContext& ctx)
     {
-        // Horizontal drift on wind, very gentle vertical sway. velocity.x is a
-        // sign-flag set by SpawnWeatherParticle so weather pollen can drift
-        // in from either edge (see DriftingLeaf::Update for the convention).
-        glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+        // Horizontal drift on the gusted wind, very gentle vertical sway,
+        // scaled continuously by strength (0.5 = today's 8 px/s baseline).
+        // velocity.x is a sign-flag set by SpawnWeatherParticle so weather
+        // pollen can drift in from either edge (see DriftingLeaf::Update).
+        glm::vec2 wind = glm::normalize(ctx.windDir);
         if (p.velocity.x > 0.0f)
+        {
             wind.x = -wind.x;
-        p.position += wind * 8.0f * ctx.deltaTime;
+        }
+        p.position += wind * (8.0f * 2.0f * ctx.windStrength) * ctx.deltaTime;
         p.position.y += std::sin(ctx.time * 0.9f + p.phase) * 3.0f * ctx.deltaTime;
 
         // Weather-spawned pollen slides off the player's hitbox like water
@@ -1531,8 +1524,12 @@ struct ParticleBehavior<ParticleType::Sand>
         p.noProjection = zone.noProjection;
         p.position.x = zone.position.x + ctx.dist(ctx.rng) * zone.size.x;
         p.position.y = zone.position.y + ctx.dist(ctx.rng) * zone.size.y;
-        // Wind blows right (+X) by default; weather may override at spawn site.
-        p.velocity.x = 100.0f + ctx.dist(ctx.rng) * 100.0f;
+        // Wind blows right (+X) by default; the gusted strength scales the
+        // streak speed (0.5 = today's 100-200 px/s anchor). Sand keeps its
+        // own +X axis this phase - the spawn-edge bias in SpawnWeatherParticle
+        // assumes rightward travel; direction unification is deferred.
+        const float windScale = 2.0f * ctx.windStrength;
+        p.velocity.x = (100.0f + ctx.dist(ctx.rng) * 100.0f) * windScale;
         p.velocity.y = 10.0f + ctx.dist(ctx.rng) * 15.0f;  // Slight downward drift.
         p.color = glm::vec4(0.85f, 0.72f, 0.45f + ctx.dist(ctx.rng) * 0.10f, 0.0f);
         p.size = 3.0f + ctx.dist(ctx.rng) * 3.0f;
@@ -1648,7 +1645,7 @@ void ParticleSystem::BuildAtlas()
 
             if (channels == 4)
             {
-                // Already RGBA -- straight copy.
+                // Already RGBA, straight copy.
                 size_t dataSize = pixelCount * 4;
                 src.pixels.resize(dataSize);
                 if (!temp.GetImageData().empty())
@@ -1819,7 +1816,7 @@ void ParticleSystem::BuildAtlas()
             rowHeight = 0;
         }
 
-        // Guard against atlas overflow -- skip textures that don't fit.
+        // Guard against atlas overflow, skip textures that don't fit.
         if (currentY + h > atlasHeight)
         {
             Logger::ErrorF(LOG_SUBSYSTEM,
@@ -1975,8 +1972,14 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         m_PrevCameraPos = cameraPos;
         m_HasPrevCameraPos = true;
     }
-    const glm::vec2 rawCamVel =
-        (deltaTime > 1e-4f) ? (cameraPos - m_PrevCameraPos) / deltaTime : glm::vec2(0.0f);
+    glm::vec2 rawCamDelta = cameraPos - m_PrevCameraPos;
+    // Teleports / world loads produce a jump larger than the viewport; treat
+    // those as a scene cut (no band re-base - stale particles cull anyway).
+    if (std::abs(rawCamDelta.x) > viewSize.x || std::abs(rawCamDelta.y) > viewSize.y)
+    {
+        rawCamDelta = glm::vec2(0.0f);
+    }
+    const glm::vec2 rawCamVel = (deltaTime > 1e-4f) ? rawCamDelta / deltaTime : glm::vec2(0.0f);
     m_CameraVelocity = glm::mix(m_CameraVelocity, rawCamVel, 0.25f);
     m_PrevCameraPos = cameraPos;
 
@@ -1994,7 +1997,10 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
                                           m_PlayerPosition,
                                           &m_PendingSpawns,
                                           &m_Rng,
-                                          &m_Dist01};
+                                          &m_Dist01,
+                                          m_WindDir,
+                                          m_WindStrength,
+                                          rawCamDelta};
 
     // Update existing particles (mark dead ones, remove in bulk afterward)
     for (auto& p : m_Particles)
@@ -2019,13 +2025,10 @@ void ParticleSystem::Update(float deltaTime, glm::vec2 cameraPos, glm::vec2 view
         // Update position
         p.position += p.velocity * deltaTime;
 
-        // Cull weather particles that have drifted far outside the current
-        // spawn rect. Without this, fast camera moves (e.g., riding the bike
-        // down then back up) leave a "wake" of particles still alive at
-        // old world positions, which become visible all at once when the
-        // player backtracks. The cull bounds use the spawn rect's overspray
-        // edge plus a half-viewport of margin, so particles spawning at the
-        // edge of the spawn rect still have room to drift in naturally.
+        // Cull weather particles that drifted far outside the spawn rect.
+        // Without this, fast camera moves leave a "wake" of stale particles
+        // that reappear all at once when the player backtracks. Bounds are the
+        // spawn overspray edge plus a half-viewport margin, leaving drift room.
         if (p.zoneIndex == WEATHER_ZONE_INDEX)
         {
             constexpr float kSpawnOverspray = 0.20f;
@@ -2148,16 +2151,16 @@ void ParticleSystem::SpawnParticleInZone(int zoneIndex, const ParticleZone& zone
     int typeIndex = static_cast<int>(zone.type);
     if (typeIndex < 0 || typeIndex >= static_cast<int>(kSpawnDispatch.size()))
     {
-        return;  // Invalid particle type -- skip silently.
+        return;  // Invalid particle type, skip silently.
     }
-    ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles};
+    ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles, m_WindDir, m_WindStrength};
     kSpawnDispatch[typeIndex](zoneIndex, zone, ctx);
 }
 
 namespace
 {
-/// Returns a smoothstep ramp peaking near `center` (in 0-24h time).
-/// Width controls the half-width of the bump.
+// Returns a smoothstep ramp peaking near `center` (in 0-24h time).
+// Width controls the half-width of the bump.
 float TimeOfDayBump(float timeOfDay, float center, float width)
 {
     // Wrap-aware shortest distance on a 24h circle.
@@ -2277,9 +2280,27 @@ void ParticleSystem::SetWeatherState(const WeatherDefinition* def, float intensi
     m_WeatherIntensity = std::clamp(intensity, 0.0f, 1.0f);
 }
 
+void ParticleSystem::SetWeatherTransition(const WeatherDefinition* outgoing,
+                                          const WeatherDefinition* incoming,
+                                          float weight)
+{
+    m_TransitionOut = outgoing;
+    m_TransitionIn = incoming;
+    m_TransitionWeight = std::clamp(weight, 0.0f, 1.0f);
+}
+
+void ParticleSystem::SetWind(glm::vec2 direction, float strength)
+{
+    if (glm::length(direction) > 1e-4f)
+    {
+        m_WindDir = glm::normalize(direction);
+    }
+    m_WindStrength = std::max(0.0f, strength);
+}
+
 namespace
 {
-/// Map WeatherParticleType -> concrete ParticleType. Returns nullopt for None.
+// Map WeatherParticleType -> concrete ParticleType. Returns nullopt for None.
 std::optional<ParticleType> ResolveWeatherParticle(WeatherParticleType wpt)
 {
     switch (wpt)
@@ -2318,61 +2339,152 @@ std::optional<ParticleType> ResolveWeatherParticle(WeatherParticleType wpt)
 void ParticleSystem::UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize)
 {
     if (m_CurrentWeatherDef == nullptr)
+    {
         return;
+    }
+
+    // Hoisted per-type live census: one O(n) pass per frame instead of one
+    // per spawned particle (Thunderstorm spawns ~1000/s into a 10k pool).
+    // SpawnWeatherType increments its slot locally as it spawns.
+    std::array<int, 32> liveByType{};
+    static_assert(std::tuple_size_v<decltype(kSpawnDispatch)> <= 32,
+                  "widen liveByType to cover all ParticleTypes");
+    for (const auto& p : m_Particles)
+    {
+        const auto idx = static_cast<size_t>(p.type);
+        if (p.zoneIndex == WEATHER_ZONE_INDEX && idx < liveByType.size())
+        {
+            ++liveByType[idx];
+        }
+    }
+
+    if (m_TransitionOut != nullptr && m_TransitionIn != nullptr)
+    {
+        // Transition: four streams (outgoing fades out, incoming fades in).
+        // Each spawns with its OWN definition so per-weather size tuning stays
+        // correct on both sides of the cross-fade; the blended effective def
+        // (SetWeatherState) still feeds live-read channels.
+
+        // Cap rule (spec 4.3): for a type both endpoints spawn, the stream cap
+        // is the min of the two endpoints' caps (0 = uncapped). Otherwise the
+        // larger-capped stream fills the SHARED live count past the smaller
+        // endpoint's ceiling - the bug the blend-side floor exists to prevent.
+        const auto streamCap =
+            [](const WeatherDefinition& other, WeatherParticleType type, int ownSlotCap)
+        {
+            const int otherCap = WeatherCapForType(other, type);
+            if (otherCap == 0)
+            {
+                return ownSlotCap;
+            }
+            if (ownSlotCap == 0)
+            {
+                return otherCap;
+            }
+            return std::min(ownSlotCap, otherCap);
+        };
+        const WeatherDefinition& out = *m_TransitionOut;
+        const WeatherDefinition& in = *m_TransitionIn;
+        const float outWeight = 1.0f - m_TransitionWeight;
+        SpawnWeatherType(out.particleType,
+                         EffectiveRate(out.baseSpawnRate, viewSize) * outWeight,
+                         streamCap(in, out.particleType, out.maxWeatherParticles),
+                         m_WeatherSpawnTimerOut,
+                         deltaTime,
+                         cameraPos,
+                         viewSize,
+                         liveByType,
+                         m_TransitionOut);
+        SpawnWeatherType(out.secondaryParticleType,
+                         EffectiveRate(out.secondaryBaseSpawnRate, viewSize) * outWeight,
+                         streamCap(in, out.secondaryParticleType, out.secondaryMaxWeatherParticles),
+                         m_WeatherSpawnTimerOutSecondary,
+                         deltaTime,
+                         cameraPos,
+                         viewSize,
+                         liveByType,
+                         m_TransitionOut);
+        SpawnWeatherType(in.particleType,
+                         EffectiveRate(in.baseSpawnRate, viewSize) * m_TransitionWeight,
+                         streamCap(out, in.particleType, in.maxWeatherParticles),
+                         m_WeatherSpawnTimer,
+                         deltaTime,
+                         cameraPos,
+                         viewSize,
+                         liveByType,
+                         m_TransitionIn);
+        SpawnWeatherType(in.secondaryParticleType,
+                         EffectiveRate(in.secondaryBaseSpawnRate, viewSize) * m_TransitionWeight,
+                         streamCap(out, in.secondaryParticleType, in.secondaryMaxWeatherParticles),
+                         m_WeatherSpawnTimerSecondary,
+                         deltaTime,
+                         cameraPos,
+                         viewSize,
+                         liveByType,
+                         m_TransitionIn);
+        return;
+    }
+
+    // Idle: the two-stream path (Task 3), passing m_CurrentWeatherDef as the
+    // stream def.
+    // Scale base rate by intensity and visible-area ratio (see EffectiveRate).
     SpawnWeatherType(m_CurrentWeatherDef->particleType,
-                     m_CurrentWeatherDef->baseSpawnRate,
+                     EffectiveRate(m_CurrentWeatherDef->baseSpawnRate, viewSize),
                      m_CurrentWeatherDef->maxWeatherParticles,
                      m_WeatherSpawnTimer,
                      deltaTime,
                      cameraPos,
-                     viewSize);
+                     viewSize,
+                     liveByType,
+                     m_CurrentWeatherDef);
     SpawnWeatherType(m_CurrentWeatherDef->secondaryParticleType,
-                     m_CurrentWeatherDef->secondaryBaseSpawnRate,
+                     EffectiveRate(m_CurrentWeatherDef->secondaryBaseSpawnRate, viewSize),
                      m_CurrentWeatherDef->secondaryMaxWeatherParticles,
                      m_WeatherSpawnTimerSecondary,
                      deltaTime,
                      cameraPos,
-                     viewSize);
+                     viewSize,
+                     liveByType,
+                     m_CurrentWeatherDef);
+}
+
+float ParticleSystem::EffectiveRate(float baseSpawnRate, glm::vec2 viewSize) const
+{
+    // Scale base rate by visible-area ratio so density per visible pixel stays
+    // roughly constant across zoom. Reference is the 320x180 world-px window at
+    // zoom=1: zooming in shrinks viewSize and drops the rate; zooming out
+    // raises it so a downpour still feels like a downpour.
+    constexpr float kReferenceArea = 320.0f * 180.0f;
+    const float visibleArea = std::max(1.0f, viewSize.x * viewSize.y);
+    const float zoomScale = std::clamp(visibleArea / kReferenceArea, 0.25f, 4.0f);
+    return baseSpawnRate * m_WeatherIntensity * zoomScale;
 }
 
 void ParticleSystem::SpawnWeatherType(WeatherParticleType wpt,
-                                      float baseSpawnRate,
+                                      float effectiveRate,
                                       int maxWeatherParticles,
                                       float& spawnTimer,
                                       float deltaTime,
                                       glm::vec2 cameraPos,
-                                      glm::vec2 viewSize)
+                                      glm::vec2 viewSize,
+                                      std::array<int, 32>& liveByType,
+                                      const WeatherDefinition* streamDef)
 {
     auto particleTypeOpt = ResolveWeatherParticle(wpt);
     if (!particleTypeOpt.has_value())
+    {
         return;
-
-    // Scale base rate by visible-area ratio so density per visible pixel stays
-    // roughly constant as the player zooms in or out. Reference viewport is the
-    // typical pixel-art window (320x180 world px at zoom=1). When zoomed in,
-    // viewSize shrinks and the rate drops; when zoomed out, the rate rises so
-    // a downpour still feels like a downpour.
-    constexpr float kReferenceArea = 320.0f * 180.0f;
-    const float visibleArea = std::max(1.0f, viewSize.x * viewSize.y);
-    const float zoomScale = std::clamp(visibleArea / kReferenceArea, 0.25f, 4.0f);
-    float effectiveRate = baseSpawnRate * m_WeatherIntensity * zoomScale;
+    }
     if (effectiveRate <= 0.0f)
+    {
         return;
+    }
 
     // Hard cap counts only this slot's own particles (matched by ParticleType)
     // so primary and secondary streams don't fight each other for the cap.
-    auto liveOfType = [&]()
-    {
-        int n = 0;
-        for (const auto& p : m_Particles)
-        {
-            if (p.zoneIndex == WEATHER_ZONE_INDEX && p.type == *particleTypeOpt)
-                ++n;
-        }
-        return n;
-    };
-
-    if (maxWeatherParticles > 0 && liveOfType() >= maxWeatherParticles)
+    // The census is hoisted to the caller; spawns increment the slot locally.
+    int& live = liveByType[static_cast<size_t>(*particleTypeOpt)];
+    if (maxWeatherParticles > 0 && live >= maxWeatherParticles)
     {
         spawnTimer = 0.0f;  // Throttle until population drops.
         return;
@@ -2383,15 +2495,20 @@ void ParticleSystem::SpawnWeatherType(WeatherParticleType wpt,
     while (spawnTimer >= interval)
     {
         spawnTimer -= interval;
-        SpawnWeatherParticle(*particleTypeOpt, cameraPos, viewSize);
-        if (maxWeatherParticles > 0 && liveOfType() >= maxWeatherParticles)
+        const size_t before = m_Particles.size();
+        SpawnWeatherParticle(*particleTypeOpt, cameraPos, viewSize, streamDef);
+        live += static_cast<int>(m_Particles.size() - before);
+        if (maxWeatherParticles > 0 && live >= maxWeatherParticles)
+        {
             break;
+        }
     }
 }
 
 void ParticleSystem::SpawnWeatherParticle(ParticleType type,
                                           glm::vec2 cameraPos,
-                                          glm::vec2 viewSize)
+                                          glm::vec2 viewSize,
+                                          const WeatherDefinition* streamDef)
 {
     // Spawn rect: viewport with 20% overspray. Bias by particle type.
     const float overspray = 0.20f;
@@ -2419,12 +2536,10 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
             break;
         case ParticleType::DriftingLeaf:
         case ParticleType::Pollen:
-            // FallingLeaves and PollenStorm approach from BOTH sides: pick
-            // either the leftmost or rightmost 10% strip of the overspray
-            // rect (50/50). Left-edge spawns get velocity.x = 1 in the
-            // post-spawn block so their Update flips the wind X component
-            // and they drift inward; right-edge spawns ride the default
-            // leftward wind into view.
+            // FallingLeaves / PollenStorm approach from BOTH sides: pick the
+            // left or right 10% strip (50/50). Left-edge spawns get velocity.x
+            // = 1 so their Update flips the wind X and they drift inward;
+            // right-edge spawns ride the default leftward wind into view.
             leafOrPollenFromLeft = m_Dist01(m_Rng) < 0.5f;
             if (leafOrPollenFromLeft)
             {
@@ -2454,7 +2569,7 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
     int typeIndex = static_cast<int>(type);
     if (typeIndex < 0 || typeIndex >= static_cast<int>(kSpawnDispatch.size()))
         return;
-    ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles};
+    ParticleSpawnContext ctx{m_Rng, m_Dist01, m_Particles, m_WindDir, m_WindStrength};
     size_t before = m_Particles.size();
     kSpawnDispatch[typeIndex](WEATHER_ZONE_INDEX, fakeZone, ctx);
 
@@ -2462,7 +2577,7 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
     // Allows per-weather "make it bigger" tuning without modifying per-type
     // spawn defaults (used for atmosphere weathers that need denser/larger
     // fog blobs and swarm weathers that benefit from chunkier sprites).
-    const float sizeScale = m_CurrentWeatherDef ? m_CurrentWeatherDef->particleSizeScale : 1.0f;
+    const float sizeScale = streamDef ? streamDef->particleSizeScale : 1.0f;
     if (sizeScale != 1.0f)
     {
         for (size_t i = before; i < m_Particles.size(); ++i)
@@ -2471,20 +2586,20 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
         }
     }
 
-    // Wind-driven velocity boost for Snow. The Snow type's Spawn sets a
-    // gentle base velocity (12-22 px/s fall, +/-6 px/s drift) that reads as
-    // calm flurries. Blizzard (windIntensity = 1.0) multiplies these so the
-    // snow visibly hammers down at an angle - 2.5x fall, 5x horizontal blast.
-    // Regular Snow (windIntensity = 0.3) is below the threshold and stays
-    // gentle. Threshold of 0.7 keeps the boost a deliberate Blizzard-only
-    // effect rather than a smooth ramp.
-    const float windIntensity = m_CurrentWeatherDef ? m_CurrentWeatherDef->windIntensity : 0.0f;
-    if (type == ParticleType::Snow && windIntensity >= 0.7f)
+    // Wind-driven velocity boost for Snow. Base spawn velocity reads as calm
+    // flurries; this ramps it (smoothstep 0.3-0.9) up to the Blizzard look at
+    // full strength (7x horizontal along wind, 3.5x fall). The continuous ramp
+    // reaches mid-strength states, and all flakes share one drift direction.
+    if (type == ParticleType::Snow)
     {
+        const float ramp = glm::smoothstep(0.3f, 0.9f, m_WindStrength);
+        const float boostX = glm::mix(1.0f, 7.0f, ramp);
+        const float boostY = glm::mix(1.0f, 3.5f, ramp);
+        const float dirSign = (m_WindDir.x < 0.0f) ? -1.0f : 1.0f;
         for (size_t i = before; i < m_Particles.size(); ++i)
         {
-            m_Particles[i].velocity.x *= 7.0f;
-            m_Particles[i].velocity.y *= 3.5f;
+            m_Particles[i].velocity.x = std::abs(m_Particles[i].velocity.x) * boostX * dirSign;
+            m_Particles[i].velocity.y *= boostY;
         }
     }
 
@@ -2505,13 +2620,9 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
     }
 
     // Weather-rain splash impact: spread bakedGroundY uniformly across the
-    // full visible viewport (camera-relative) so splashes don't read as a
-    // hard horizontal line at a fixed distance below the spawn strip. The
-    // player can no longer outrun the splash band by moving vertically -
-    // the band tracks the camera AND every individual particle splashes at
-    // its own randomized Y. Per-particle lifetime is sized to the actual
-    // travel distance so the splash always fires before the particle dies,
-    // even at zoom-out levels with tall viewports.
+    // full visible viewport (camera-relative) so splashes aren't one line and
+    // the player can't outrun them vertically. Per-particle lifetime is sized
+    // to the travel distance so the splash always fires (re-based each frame).
     if (type == ParticleType::Rain)
     {
         const float minSplash = cameraPos.y + viewSize.y * 0.10f;
@@ -2527,11 +2638,10 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
         }
     }
 
-    // Weather-snow puff impact: same camera-relative wide-Y spread as rain
-    // so blizzard flakes "land" across the visible screen rather than form
-    // a horizontal line. Snow's 15s lifetime easily covers the travel
-    // distance at the boosted Blizzard fall speed (42-77 px/s), so no
-    // per-particle lifetime sizing required here.
+    // Weather-snow puff impact: same camera-relative wide-Y spread as rain so
+    // flakes "land" across the screen instead of on one line. Snow's 15s
+    // lifetime covers the travel at Blizzard fall speed (42-77 px/s), so no
+    // per-particle lifetime sizing is needed (re-based each frame in Update).
     if (type == ParticleType::Snow)
     {
         const float minImpact = cameraPos.y + viewSize.y * 0.10f;
@@ -2542,22 +2652,17 @@ void ParticleSystem::SpawnWeatherParticle(ParticleType type,
         }
     }
 
-    // Pre-warm: only FALLING weathers (Rain/Snow) need it. Pre-fall the particle
-    // - shift its position along its velocity by ageFraction * maxLifetime AND
-    // reduce remaining lifetime by the same fraction - so the spawn rate
-    // immediately populates the full visible Y range, not just the spawn strip at
-    // the top. Rain's bakedGroundY logic keeps working because Rain's per-particle
-    // lifetime was sized with a 1.2x buffer over the trip - the buffer survives
-    // the pre-fall.
-    //
-    // DRIFTING weathers (Fog / Leaf / Pollen / etc.) are intentionally NOT
-    // pre-aged. They already spawn anywhere in the rect, so leaving them at full
-    // lifetime lets each particle's alpha fade in smoothly over its first seconds
-    // (the fadeIn term in the per-type Update) instead of popping in at full
-    // strength, and the weather blends in gradually as the population builds
-    // rather than appearing instantly.
-    const bool isFalling = (type == ParticleType::Rain || type == ParticleType::Snow);
-    if (isFalling)
+    // Pre-warm STREAMING weathers (falling Rain/Snow/Ash, rising Ember):
+    // pre-advance each particle along its velocity by ageFraction * maxLifetime
+    // and cut remaining lifetime by the same fraction, so spawns fill the whole
+    // travel column at once instead of only the entry strip.
+
+    // DRIFTING weathers (Fog / Leaf / Pollen) are intentionally NOT pre-aged:
+    // they already spawn anywhere in the rect, and full lifetime lets their
+    // alpha fade in smoothly instead of popping in at full strength.
+    const bool isStreaming = (type == ParticleType::Rain || type == ParticleType::Snow ||
+                              type == ParticleType::Ash || type == ParticleType::Ember);
+    if (isStreaming)
     {
         for (size_t i = before; i < m_Particles.size(); ++i)
         {
@@ -2584,11 +2689,8 @@ void ParticleSystem::Render(IRenderer& renderer,
         return;
     }
 
-    // For noProjection particles, we need to:
-    // 1. Calculate positions while perspective is enabled
-    // 2. Suspend perspective
-    // 3. Draw at calculated positions
-    // 4. Resume perspective
+    // noProjection particles: compute positions while perspective is enabled,
+    // then suspend perspective, draw at the computed positions, and resume.
 
     m_NoProjectionBatch.clear();
     m_RegularBatch.clear();
