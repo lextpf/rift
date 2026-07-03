@@ -5,6 +5,7 @@
 #include "Texture.hpp"
 #include "TextureHandle.hpp"
 
+#include <array>
 #include <glm/glm.hpp>
 #include <random>
 #include <vector>
@@ -422,6 +423,40 @@ public:
     void SetWeatherState(const WeatherDefinition* def, float intensity);
 
     /**
+     * @brief Set transition spawn streams. While outgoing is non-null the
+     * weather spawner runs FOUR streams - outgoing primary/secondary at
+     * rate*(1-weight), incoming primary/secondary at rate*weight - each
+     * stream spawning with ITS OWN definition (size scale etc.), while
+     * SetWeatherState's def keeps feeding the live-read channels (fog
+     * alpha). Null outgoing = normal two-stream spawning.
+     *
+     * @param outgoing Outgoing endpoint definition, or `nullptr` to disable
+     *                 transition spawning. Pointer lifetime contract matches
+     *                 @ref SetWeatherState.
+     * @param incoming Incoming endpoint definition, or `nullptr`.
+     * @param weight   Incoming stream weight in [0, 1]; outgoing weight is
+     *                 `1 - weight`.
+     */
+    void SetWeatherTransition(const WeatherDefinition* outgoing,
+                              const WeatherDefinition* incoming,
+                              float weight);
+
+    /**
+     * @brief Set the prevailing wind used by weather particle behaviors.
+     *
+     * Wind is a global rendering input like the night factor: fed per-frame
+     * by Game from the WeatherDirector's gust envelope, and read by weather
+     * particle boosts (e.g. Snow's directional drift) rather than derived
+     * from the active WeatherDefinition directly.
+     *
+     * @param direction Wind direction; normalized on use. Near-zero vectors
+     *                  leave the previous direction unchanged.
+     * @param strength  Gusted wind strength, clamped to >= 0. 0.5 is the
+     *                  engine-wide calm default.
+     */
+    void SetWind(glm::vec2 direction, float strength);
+
+    /**
      * @brief Set the player's bottom-center world position.
      *
      * Used by PollenStorm / FallingLeaves so weather particles can "avoid"
@@ -436,52 +471,82 @@ public:
 private:
     void SpawnParticleInZone(int zoneIndex, const ParticleZone& zone);
 
-    /// @brief Maintain global ambient particle population (leaves/dust/pollen)
-    /// independent of editor zones, biased by time of day.
-    /// @param deltaTime Frame time in seconds.
-    /// @param cameraPos Camera position for spawning rect.
-    /// @param viewSize Viewport size for spawning rect.
+    /**
+     * @brief Maintain global ambient particle population (leaves/dust/pollen)
+     * independent of editor zones, biased by time of day.
+     * @param deltaTime Frame time in seconds.
+     * @param cameraPos Camera position for spawning rect.
+     * @param viewSize Viewport size for spawning rect.
+     */
     void UpdateAmbientSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize);
 
     /// @brief Spawn one global (zoneIndex = -1) ambient particle of the given type.
     void SpawnAmbientParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
 
-    /// @brief Maintain weather-driven particle spawning (rain/snow/ash/etc.)
-    /// across the visible viewport. Spawned particles are tagged with
-    /// zoneIndex = WEATHER_ZONE_INDEX (-2) so they coexist with zone particles.
-    /// Drives both the primary `particleType` and any optional secondary
-    /// declared on the active WeatherDefinition (e.g., Blizzard layers Fog
-    /// on top of Snow).
+    /**
+     * @brief Maintain weather-driven particle spawning (rain/snow/ash/etc.)
+     * across the visible viewport. Spawned particles are tagged with
+     * zoneIndex = WEATHER_ZONE_INDEX (-2) so they coexist with zone particles.
+     * Drives both the primary `particleType` and any optional secondary
+     * declared on the active WeatherDefinition (e.g., Blizzard layers Fog
+     * on top of Snow).
+     */
     void UpdateWeatherSpawning(float deltaTime, glm::vec2 cameraPos, glm::vec2 viewSize);
 
-    /// @brief Spawn one weather-particle stream. Shared between the primary
-    /// and secondary slots on WeatherDefinition. @p spawnTimer is the
-    /// accumulator for this slot (caller passes a different one per slot
-    /// so the two streams don't share state).
+    /**
+     * @brief Scale a weather stream's base spawn rate by intensity and the
+     * visible-area (zoom) ratio so density per visible pixel stays roughly
+     * constant as the player zooms in or out.
+     */
+    float EffectiveRate(float baseSpawnRate, glm::vec2 viewSize) const;
+
+    /**
+     * @brief Spawn one weather-particle stream. Shared between the primary
+     * and secondary slots on WeatherDefinition. @p spawnTimer is the
+     * accumulator for this slot (caller passes a different one per slot
+     * so the two streams don't share state). @p effectiveRate is the
+     * already-scaled rate (see EffectiveRate); @p liveByType is the
+     * per-ParticleType census hoisted by the caller and incremented here
+     * as particles spawn. @p streamDef is the definition this stream spawns
+     * from (may differ from m_CurrentWeatherDef during a transition) and is
+     * forwarded to SpawnWeatherParticle for per-stream tuning (size scale).
+     */
     void SpawnWeatherType(WeatherParticleType wpt,
-                          float baseSpawnRate,
+                          float effectiveRate,
                           int maxWeatherParticles,
                           float& spawnTimer,
                           float deltaTime,
                           glm::vec2 cameraPos,
-                          glm::vec2 viewSize);
+                          glm::vec2 viewSize,
+                          std::array<int, 32>& liveByType,
+                          const WeatherDefinition* streamDef);
 
-    /// @brief Spawn one weather particle. Implementation chooses spawn rect
-    /// edge based on the weather particle type (top for precipitation,
-    /// upwind edge for sand, anywhere for fog/ash).
-    void SpawnWeatherParticle(ParticleType type, glm::vec2 cameraPos, glm::vec2 viewSize);
+    /**
+     * @brief Spawn one weather particle. Implementation chooses spawn rect
+     * edge based on the weather particle type (top for precipitation,
+     * upwind edge for sand, anywhere for fog/ash). @p streamDef supplies the
+     * per-stream size scale (see SpawnWeatherType).
+     */
+    void SpawnWeatherParticle(ParticleType type,
+                              glm::vec2 cameraPos,
+                              glm::vec2 viewSize,
+                              const WeatherDefinition* streamDef);
 
 public:
-    /// Sentinel zoneIndex for weather-spawned particles. Public so the
-    /// per-type ParticleBehavior templates (defined at namespace scope in
-    /// ParticleSystem.cpp) can discriminate weather-driven particles from
-    /// zone/ambient spawns when their Update behavior needs to differ
-    /// (e.g. FallingLeaves applying camera-velocity drag).
+    /**
+     * Sentinel zoneIndex for weather-spawned particles. Public so the
+     * per-type ParticleBehavior templates (defined at namespace scope in
+     * ParticleSystem.cpp) can discriminate weather-driven particles from
+     * zone/ambient spawns when their Update behavior needs to differ
+     * (e.g. FallingLeaves applying camera-velocity drag).
+     */
     static constexpr int WEATHER_ZONE_INDEX = -2;
 
 private:
-    /// @name Particle Pool
-    /// @{
+    /**
+     * @name Particle Pool
+     * @{
+     */
 
     std::vector<Particle> m_Particles;         ///< Active particle pool.
     std::vector<Particle> m_PendingSpawns;     ///< Mid-update spawns (e.g., Rain splashes), merged
@@ -491,8 +556,10 @@ private:
 
     /// @}
 
-    /// @name Configuration
-    /// @{
+    /**
+     * @name Configuration
+     * @{
+     */
 
     int m_TileWidth;                           ///< Tile width for projection math.
     int m_TileHeight;                          ///< Tile height for projection math.
@@ -503,25 +570,47 @@ private:
     std::vector<float> m_ZoneSpawnTimers;      ///< Per-zone spawn accumulators.
     std::vector<size_t> m_ZoneParticleCounts;  ///< Per-zone active particle counts.
 
-    /// Per-type ambient spawn timers (only DriftingLeaf, DustMote, Pollen used).
-    /// Indexed by ParticleType enum value. Sized via EnumTraits to auto-grow
-    /// when new ParticleType values are added.
+    /**
+     * Per-type ambient spawn timers (only DriftingLeaf, DustMote, Pollen used).
+     * Indexed by ParticleType enum value. Sized via EnumTraits to auto-grow
+     * when new ParticleType values are added.
+     */
     float m_AmbientSpawnTimers[EnumTraits<ParticleType>::Count] = {};
 
-    /// @name Weather Spawning
-    /// @{
+    /**
+     * @name Weather Spawning
+     * @{
+     */
     const WeatherDefinition* m_CurrentWeatherDef{nullptr};  ///< Active weather (or null).
     float m_WeatherIntensity{1.0f};                         ///< 0-1 density scalar.
     float m_WeatherSpawnTimer{0.0f};                        ///< Primary spawn accumulator.
     float m_WeatherSpawnTimerSecondary{0.0f};               ///< Secondary spawn accumulator.
+    glm::vec2 m_WindDir{-1.0f, 0.0f};  ///< Prevailing wind direction (normalized on use).
+    float m_WindStrength{0.5f};        ///< Gusted wind strength; 0.5 = calm engine default.
+
+    /**
+     * @name Transition Spawning
+     * While m_TransitionOut is non-null, UpdateWeatherSpawning runs four
+     * streams (outgoing + incoming, primary + secondary) instead of the
+     * normal two. See SetWeatherTransition.
+     * @{
+     */
+    const WeatherDefinition* m_TransitionOut{nullptr};  ///< Outgoing endpoint (null = idle).
+    const WeatherDefinition* m_TransitionIn{nullptr};   ///< Incoming endpoint.
+    float m_TransitionWeight{0.0f};                     ///< Incoming stream weight [0, 1].
+    float m_WeatherSpawnTimerOut{0.0f};                 ///< Outgoing primary accumulator.
+    float m_WeatherSpawnTimerOutSecondary{0.0f};        ///< Outgoing secondary accumulator.
+    /// @}
     /// @}
 
-    /// @name Camera Tracking
-    /// Smoothed camera velocity, derived from per-frame deltas in Update(),
-    /// used to gate weather-particle avoidance behavior to "player is moving".
-    /// Player position is set per-frame from Game::Update and drives the
-    /// hitbox-anchored avoidance zone used by PollenStorm / FallingLeaves.
-    /// @{
+    /**
+     * @name Camera Tracking
+     * Smoothed camera velocity, derived from per-frame deltas in Update(),
+     * used to gate weather-particle avoidance behavior to "player is moving".
+     * Player position is set per-frame from Game::Update and drives the
+     * hitbox-anchored avoidance zone used by PollenStorm / FallingLeaves.
+     * @{
+     */
     glm::vec2 m_PrevCameraPos{0.0f};
     glm::vec2 m_CameraVelocity{0.0f};
     bool m_HasPrevCameraPos{false};  ///< False until the first Update() seeds m_PrevCameraPos.
@@ -530,16 +619,20 @@ private:
 
     /// @}
 
-    /// @name Random Number Generation
-    /// @{
+    /**
+     * @name Random Number Generation
+     * @{
+     */
 
     std::mt19937 m_Rng;                              ///< Mersenne Twister RNG.
     std::uniform_real_distribution<float> m_Dist01;  ///< Uniform [0, 1) distribution.
 
     /// @}
 
-    /// @name Texture Atlas
-    /// @{
+    /**
+     * @name Texture Atlas
+     * @{
+     */
 
     /**
      * @brief UV region for a particle type in the atlas.
@@ -567,8 +660,10 @@ private:
 
     /// @}
 
-    /// @name Render Batch Data
-    /// @{
+    /**
+     * @name Render Batch Data
+     * @{
+     */
 
     /**
      * @brief Pre-computed render state for a single particle.
