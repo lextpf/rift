@@ -251,9 +251,10 @@ public:
      * Safe to call more than
      * once; generated resources are replaced by the
      * current run's textures and arrays.
+     *
+     * @param store TextureStore that adopts the generated sky textures; its
+     *              UploadAll re-uploads them on a renderer switch.
      */
-    /// @param store TextureStore that adopts the generated sky textures; its
-    ///              UploadAll re-uploads them on a renderer switch.
     void Initialize(TextureStore& store);
 
     /**
@@ -286,10 +287,12 @@ public:
                          glm::vec2 auroraCurtainOffset,
                          glm::vec2 auroraSmallOffset);
 
-    /// Accessor for textures so callers can register them with an atlas
-    /// packer that copies pixel data into the atlas image at load time.
-    /// (GetLightPoolTexture is declared below alongside its original
-    /// Game::Render call site.)
+    /**
+     * Accessor for textures so callers can register them with an atlas
+     * packer that copies pixel data into the atlas image at load time.
+     * (GetLightPoolTexture is declared below alongside its original
+     * Game::Render call site.)
+     */
     const Texture& GetRayTexture() const { return m_Store->Get(m_RayHandle); }
     const Texture& GetStarTexture() const { return m_Store->Get(m_StarHandle); }
     const Texture& GetStarGlowTexture() const { return m_Store->Get(m_StarGlowHandle); }
@@ -405,9 +408,11 @@ public:
     }
 
 private:
-    /// @name Texture Generation
-    /// @brief Procedural texture creation for sky effects.
-    /// @{
+    /**
+     * @name Texture Generation
+     * @brief Procedural texture creation for sky effects.
+     * @{
+     */
 
     /**
      * @brief Generate the light ray texture.
@@ -440,9 +445,11 @@ private:
 
     /// @}
 
-    /// @name Object Generation
-    /// @brief Populate arrays with randomized sky objects.
-    /// @{
+    /**
+     * @name Object Generation
+     * @brief Populate arrays with randomized sky objects.
+     * @{
+     */
 
     /**
      * @brief Generate light ray configurations for sun and moon.
@@ -478,9 +485,11 @@ private:
 
     /// @}
 
-    /// @name Shooting Star Management
-    /// @brief Lifecycle management for meteor effects.
-    /// @{
+    /**
+     * @name Shooting Star Management
+     * @brief Lifecycle management for meteor effects.
+     * @{
+     */
 
     /**
      * @brief Update all active shooting stars.
@@ -507,9 +516,11 @@ private:
 
     /// @}
 
-    /// @name Render Functions
-    /// @brief Individual effect rendering routines.
-    /// @{
+    /**
+     * @name Render Functions
+     * @brief Individual effect rendering routines.
+     * @{
+     */
 
     /**
      * @brief Render all stars (foreground and background).
@@ -604,21 +615,27 @@ private:
                         int screenWidth,
                         int screenHeight);
 
-    /// Generate a fresh jagged lightning bolt + 0-3 sub-branches into
-    /// m_LightningBolt, sized to the cached viewport. Called once per
-    /// flash trigger from Update().
+    /**
+     * Generate a fresh jagged lightning bolt + 0-3 sub-branches into
+     * m_LightningBolt, sized to the cached viewport. Called once per
+     * flash trigger from Update().
+     */
     void GenerateLightningBolt(int screenWidth, int screenHeight);
 
-    /// Draw the previously-generated lightning bolt while m_LightningBoltTimer
-    /// is positive. Camera-locked (the bolt sits in screen space; world-anchor
-    /// parallax is a possible future polish).
+    /**
+     * Draw the previously-generated lightning bolt while m_LightningBoltTimer
+     * is positive. Camera-locked (the bolt sits in screen space; world-anchor
+     * parallax is a possible future polish).
+     */
     void RenderLightningBolt(IRenderer& renderer, int screenWidth, int screenHeight);
 
     /// @}
 
-    /// @name Morning/Dawn Effects
-    /// @brief Special effects for sunrise period.
-    /// @{
+    /**
+     * @name Morning/Dawn Effects
+     * @brief Special effects for sunrise period.
+     * @{
+     */
 
     /**
      * @brief Render warm glow at the horizon during dawn.
@@ -669,8 +686,10 @@ private:
 
     /// @}
 
-    /// @name Utility Functions
-    /// @{
+    /**
+     * @name Utility Functions
+     * @{
+     */
 
     /**
      * @brief Calculate screen position of sun or moon.
@@ -690,11 +709,15 @@ private:
 
     /// @}
 
-    /// @name Procedural Textures
-    /// @brief GPU textures generated at initialization.
-    /// @{
-    /// Sky textures live in this store (set in Initialize); UploadAll re-uploads
-    /// them on a renderer switch, replacing the old IGpuResourceOwner hook.
+    /**
+     * @name Procedural Textures
+     * @brief GPU textures generated at initialization.
+     * @{
+     */
+    /**
+     * Sky textures live in this store (set in Initialize); UploadAll re-uploads
+     * them on a renderer switch, replacing the old IGpuResourceOwner hook.
+     */
     TextureStore* m_Store = nullptr;
     TextureHandle m_RayHandle;            ///< Vertical gradient for light rays
     TextureHandle m_StarHandle;           ///< Small soft circle for stars
@@ -706,10 +729,12 @@ private:
     TextureHandle m_AuroraBeamHandle;     ///< Vertical oval ray/beam for aurora beams
     TextureHandle m_AuroraSmallHandle;    ///< Procedural soft dot for aurora wisps
 
-    /// Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
-    /// from the atlas at the per-element pixel offsets recorded below. The
-    /// pixel size of each region is read from the corresponding @c m_*Texture
-    /// at draw time, so resize-safe.
+    /**
+     * Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
+     * from the atlas at the per-element pixel offsets recorded below. The
+     * pixel size of each region is read from the corresponding @c m_*Texture
+     * at draw time, so resize-safe.
+     */
     const Texture* m_AtlasTexture{nullptr};
     glm::vec2 m_RayAtlasOffset{0.0f};
     glm::vec2 m_StarAtlasOffset{0.0f};
@@ -721,9 +746,11 @@ private:
     glm::vec2 m_AuroraSmallAtlasOffset{0.0f};
     /// @}
 
-    /// @name Sky Object Arrays
-    /// @brief Collections of sky elements to render.
-    /// @{
+    /**
+     * @name Sky Object Arrays
+     * @brief Collections of sky elements to render.
+     * @{
+     */
     std::vector<Star> m_Stars;                       ///< Foreground stars (bright, prominent)
     std::vector<Star> m_BackgroundStars;             ///< Background stars (dim, distant)
     std::vector<VisibleStar> m_VisibleStarsScratch;  ///< Per-frame scratch for two-pass star emit
@@ -733,26 +760,34 @@ private:
     std::vector<DewSparkle> m_DewSparkles;           ///< Morning dew sparkle points
     /// @}
 
-    /// @name Animation State
-    /// @brief Time tracking for animations.
-    /// @{
+    /**
+     * @name Animation State
+     * @brief Time tracking for animations.
+     * @{
+     */
     double m_Time;              ///< Accumulated time for twinkle animations (seconds)
     float m_ShootingStarTimer;  ///< Countdown to next shooting star spawn
     float m_LastScreenWidth;    ///< Cached screen width for resize detection
     float m_LastScreenHeight;   ///< Cached screen height for resize detection
     /// @}
 
-    /// @name Weather-driven sky state
-    /// @brief Cached weather data refreshed each Update.
-    /// @{
+    /**
+     * @name Weather-driven sky state
+     * @brief Cached weather data refreshed each Update.
+     * @{
+     */
     float m_LightningTimer{0.0f};        ///< Countdown to next lightning flash (s).
     float m_LightningFlashTimer{0.0f};   ///< Remaining flash visibility (s).
     bool m_AuroraVisible{false};         ///< True when current weather wants aurora.
+    float m_AuroraFade{1.0f};            ///< Master aurora alpha (transition fade).
+    float m_CelestialFade{1.0f};         ///< Sun/moon ray alpha (transition fade).
     float m_MeteorRateMultiplier{1.0f};  ///< Shooting-star spawn rate multiplier.
 
-    /// Procedurally generated lightning bolt path, regenerated each flash.
-    /// Coordinates are screen-space; the bolt is drawn camera-locked (no
-    /// parallax) for the brief duration of the strike.
+    /**
+     * Procedurally generated lightning bolt path, regenerated each flash.
+     * Coordinates are screen-space; the bolt is drawn camera-locked (no
+     * parallax) for the brief duration of the strike.
+     */
     struct LightningBolt
     {
         std::vector<glm::vec2> mainPath;               ///< Top-to-bottom jagged polyline.
@@ -763,9 +798,11 @@ private:
         0.0f};  ///< Remaining bolt visibility (s); slightly longer than the flash.
     /// @}
 
-    /// @name Texture Size Constants
-    /// @brief Dimensions for procedurally generated textures.
-    /// @{
+    /**
+     * @name Texture Size Constants
+     * @brief Dimensions for procedurally generated textures.
+     * @{
+     */
     static constexpr int RAY_TEXTURE_WIDTH = 64;        ///< Ray texture width (narrow)
     static constexpr int RAY_TEXTURE_HEIGHT = 512;      ///< Ray texture height (tall for length)
     static constexpr int STAR_TEXTURE_SIZE = 64;        ///< Star point texture size
@@ -773,9 +810,11 @@ private:
     static constexpr int GLOW_TEXTURE_SIZE = 256;       ///< Atmospheric glow texture size
     /// @}
 
-    /// @name Rendering Constants
-    /// @brief Configuration for effect counts and sizes.
-    /// @{
+    /**
+     * @name Rendering Constants
+     * @brief Configuration for effect counts and sizes.
+     * @{
+     */
     // Star arrays cover a star-field 3 viewports wide x 2 tall (the wrap
     // window in RenderStars). Counts are scaled up so per-viewport density
     // stays roughly the same as the original 600/400 single-viewport layout.
@@ -791,25 +830,29 @@ private:
     static constexpr float SUN_BAND_WIDTH =
         0.35f;  ///< Width of sun origin band (fraction of screen width)
 
-    /// @name World Parallax (full world anchoring)
-    /// @brief Per-element fraction of camera movement applied to sky positions.
-    ///
-    /// 0.0 = locked to screen, 1.0 = locked to world. Sky elements are now
-    /// anchored to world coordinates so they cover the entire map and walk
-    /// past as the player moves, instead of feeling like a screen overlay.
-    /// Stars and shooting stars use a wrap-around field (see RenderStars)
-    /// so they always remain visible in the upper sky regardless of where
-    /// the camera is.
-    /// @{
+    /**
+     * @name World Parallax (full world anchoring)
+     * @brief Per-element fraction of camera movement applied to sky positions.
+     *
+     * 0.0 = locked to screen, 1.0 = locked to world. Sky elements are now
+     * anchored to world coordinates so they cover the entire map and walk
+     * past as the player moves, instead of feeling like a screen overlay.
+     * Stars and shooting stars use a wrap-around field (see RenderStars)
+     * so they always remain visible in the upper sky regardless of where
+     * the camera is.
+     * @{
+     */
     static constexpr float SKY_PARALLAX_STARS_BG = 1.0f;  ///< Background stars (world)
     static constexpr float SKY_PARALLAX_STARS_FG = 1.0f;  ///< Foreground stars (world)
     static constexpr float SKY_PARALLAX_SUN = 1.0f;       ///< Sun + sun rays (world)
     static constexpr float SKY_PARALLAX_MOON = 1.0f;      ///< Moon + moon rays (world)
     static constexpr float SKY_PARALLAX_AURORA = 1.0f;    ///< Aurora bands (world)
 
-    /// Width of the star-field tile (in viewports). Stars wrap around the
-    /// camera modulo this period so the whole map gets stars without
-    /// requiring a per-tile generation pass.
+    /**
+     * Width of the star-field tile (in viewports). Stars wrap around the
+     * camera modulo this period so the whole map gets stars without
+     * requiring a per-tile generation pass.
+     */
     static constexpr float STAR_FIELD_X_PERIODS = 3.0f;
     static constexpr float STAR_FIELD_Y_PERIODS = 2.0f;
     /// @}
