@@ -36,6 +36,21 @@ enum class TimePeriod
 };
 
 /**
+ * @struct ResolvedWeatherChannels
+ * @brief Captured getter outputs used as an exact from-endpoint during a
+ * mid-transition retarget (WeatherDirector).
+ *
+ * Snapshotting resolved values sidesteps the sentinel formulas entirely -
+ * no inversion of the intensity/day-night math, exact at any intensity.
+ */
+struct ResolvedWeatherChannels
+{
+    glm::vec3 ambient{1.0f};     ///< GetAmbientColor output at capture time.
+    glm::vec3 sky{0.0f};         ///< GetSkyColor output at capture time.
+    float starVisibility{0.0f};  ///< GetStarVisibility output at capture time.
+};
+
+/**
  * @class TimeManager
  * @brief Controls game time, day/night cycle, and time-based visual effects.
  * @author Alex (https://github.com/lextpf)
@@ -371,6 +386,123 @@ public:
      */
     void SetWeatherIntensity(float value);
 
+    /**
+     * @brief Star visibility from time-of-day alone, ignoring weather overrides.
+     *
+     * The "how dark is the night" scalar for consumers that should follow the
+     * clock, not the storm (WorldLights, PostFX grading - spec section 4.4).
+     * @return Visibility in [0, 1].
+     */
+    float GetNaturalStarVisibility() const;
+
+    /**
+     * @brief Publish an active weather blend (WeatherDirector transition).
+     *
+     * While a blend is active, @ref GetAmbientColor, @ref GetSkyColor, and
+     * @ref GetStarVisibility mix the per-endpoint channel values by @p t
+     * instead of resolving a single weather definition, and
+     * @ref GetEffectiveWeatherDefinition serves @p effective in place of the
+     * table lookup for @ref GetWeather.
+     *
+     * Every publication invalidates any prior @ref SetWeatherBlendResolvedFrom
+     * capture - a resolved-from snapshot belongs to one specific blend and a
+     * stale capture would silently corrupt the next transition's from-endpoint.
+     * Call @ref SetWeatherBlendResolvedFrom again afterward if the new
+     * publication should also use a captured from-endpoint.
+     *
+     * @param from Outgoing weather definition. Non-owning; must outlive use
+     *             (the director publishes member storage that persists across
+     *             the frame).
+     * @param to Incoming weather definition. Non-owning, same lifetime contract.
+     * @param t Blend weight in [0, 1] (clamped); 0 = fully @p from, 1 = fully @p to.
+     * @param effective Director-owned blended definition served by
+     *                  @ref GetEffectiveWeatherDefinition. Non-owning, same
+     *                  lifetime contract.
+     */
+    void SetWeatherBlend(const WeatherDefinition* from,
+                         const WeatherDefinition* to,
+                         float t,
+                         const WeatherDefinition* effective);
+
+    /**
+     * @brief Override the blend's from-endpoint with exact captured values.
+     *
+     * Used when retargeting mid-transition: rather than inverting the
+     * intensity/day-night sentinel formulas to find what the previous
+     * from-endpoint "should" resolve to, the caller snapshots the getters at
+     * the retarget instant and republishes them here as the new from-value.
+     * Only meaningful until the next @ref SetWeatherBlend or
+     * @ref ClearWeatherBlend call, both of which clear it.
+     *
+     * @param resolved Captured channel values to use in place of the blend's
+     *                 from-endpoint formulas.
+     */
+    void SetWeatherBlendResolvedFrom(const ResolvedWeatherChannels& resolved);
+
+    /**
+     * @brief Clear any active weather blend, resolved-from capture, and
+     * published fades.
+     *
+     * Restores the single-definition getter path keyed by @ref GetWeather.
+     * Also called from @ref Initialize() so no stale blend survives a world
+     * load even if the director's own reset is missed.
+     */
+    void ClearWeatherBlend();
+
+    /**
+     * @brief Check whether a weather blend is currently published.
+     * @return true if both blend endpoints are non-null.
+     */
+    bool HasWeatherBlend() const { return m_BlendFrom != nullptr && m_BlendTo != nullptr; }
+
+    /**
+     * @brief Get the weather definition currently driving weather-dependent
+     * effects (particles, etc.).
+     *
+     * Returns the director-published effective definition while a blend is
+     * active (see @ref SetWeatherBlend), otherwise the table lookup for the
+     * current @ref GetWeather state.
+     *
+     * @return Reference to the active weather definition.
+     */
+    const WeatherDefinition& GetEffectiveWeatherDefinition() const;
+
+    /**
+     * @brief Publish explicit fade scalars for celestial bodies and aurora.
+     *
+     * Weather definitions gate celestial/aurora visibility with hard booleans
+     * (@c showCelestialBodies, @c showAurora); a blend transition needs a
+     * smooth ramp instead of a snap, so the director computes and publishes
+     * fade scalars here. Cleared together with the rest of the blend state by
+     * @ref ClearWeatherBlend.
+     *
+     * @param celestialFade Celestial-body visibility fade in [0, 1] (clamped).
+     * @param auroraFade Aurora visibility fade in [0, 1] (clamped).
+     */
+    void SetWeatherFades(float celestialFade, float auroraFade);
+
+    /**
+     * @brief Get the celestial-body visibility fade.
+     *
+     * Returns the published fade set by @ref SetWeatherFades if one is
+     * active, otherwise derives a binary value from
+     * @ref GetEffectiveWeatherDefinition's @c showCelestialBodies flag.
+     *
+     * @return Fade factor in [0, 1].
+     */
+    float GetCelestialFade() const;
+
+    /**
+     * @brief Get the aurora visibility fade.
+     *
+     * Returns the published fade set by @ref SetWeatherFades if one is
+     * active, otherwise derives a binary value from
+     * @ref GetEffectiveWeatherDefinition's @c showAurora flag.
+     *
+     * @return Fade factor in [0, 1].
+     */
+    float GetAuroraFade() const;
+
     /// @}
 
     /// @name Time Control
@@ -484,6 +616,19 @@ private:
      */
     float GetTransitionFactor(float time, float start, float end) const;
 
+    /// Natural (weatherless) sky color for the current hour.
+    glm::vec3 NaturalSkyColor() const;
+    /// Natural (weatherless) star visibility for the current hour.
+    float NaturalStarVisibility() const;
+    /// Ramped day/night factor for the sky override (replaces binary IsDay()).
+    float SkyDayNightFactor() const;
+    /// Ambient color as it would render under @p def.
+    glm::vec3 ComputeAmbientColor(const WeatherDefinition& def) const;
+    /// Sky color as it would render under @p def.
+    glm::vec3 ComputeSkyColor(const WeatherDefinition& def) const;
+    /// Star visibility as it would render under @p def.
+    float ComputeStarVisibility(const WeatherDefinition& def) const;
+
     /// @}
 
     /// @name State
@@ -491,10 +636,25 @@ private:
     float m_CurrentTime;             ///< Current time in hours (0.0-24.0)
     int m_DayCount;                  ///< Days elapsed (for moon phases)
     float m_TimeScale;               ///< Time progression multiplier (1.0 = normal)
-    float m_DayDuration;             ///< Real seconds per game day
+    float m_DayDuration;             ///< Real seconds per game day (24 s default: 1 game hour/s)
     WeatherState m_Weather;          ///< Current weather condition
     float m_WeatherIntensity{1.0f};  ///< Particle/effect density 0-1.
     bool m_Paused{false};            ///< Whether time progression is paused
+    /// @}
+
+    /// @name Weather Blend State
+    /// @brief Non-owning pointers published by WeatherDirector. Cleared by
+    /// @ref ClearWeatherBlend and never dereferenced when null; the director
+    /// is responsible for publishing storage that outlives the frame.
+    /// @{
+    const WeatherDefinition* m_BlendFrom{nullptr};       ///< Outgoing endpoint (null = no blend).
+    const WeatherDefinition* m_BlendTo{nullptr};         ///< Incoming endpoint.
+    const WeatherDefinition* m_BlendEffective{nullptr};  ///< Director-owned blended def.
+    float m_BlendT{0.0f};                                ///< Eased blend weight [0, 1].
+    bool m_HasResolvedFrom{false};  ///< Use m_ResolvedFrom instead of m_BlendFrom formulas.
+    ResolvedWeatherChannels m_ResolvedFrom{};  ///< Captured retarget from-values.
+    float m_CelestialFade{-1.0f};              ///< Published fade; < 0 = derive from def bool.
+    float m_AuroraFade{-1.0f};                 ///< Published fade; < 0 = derive from def bool.
     /// @}
 
     /// @name Time Period Boundaries
