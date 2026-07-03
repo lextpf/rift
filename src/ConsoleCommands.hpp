@@ -21,6 +21,7 @@ class IRenderer;
 class ParticleSystem;
 class TimeManager;
 class Tilemap;
+class WeatherDirector;
 
 /**
  * @struct CommandContext
@@ -51,16 +52,19 @@ struct CommandContext
     bool* postFXEnabled = nullptr;        ///< Master toggle for post-processing pipeline.
     DialogueManager* dialogue = nullptr;  ///< Branching dialogue manager (current node, options).
     ParticleSystem* particles = nullptr;  ///< Particle system (single-shot spawn, list, kill).
+    WeatherDirector* weatherDirector = nullptr;  ///< Weather transitions (time.weather routing).
 };
 
-/// @name Default console commands
-/// @brief Free functions implementing each built-in command.
-///
-/// All return `true` on success, `false` on error (the error message has
-/// already been printed to `ctx.out`). Tests call these directly with a
-/// hand-built CommandContext; the production wiring goes through
-/// Console::RegisterDefaultCommands.
-/// @{
+/**
+ * @name Default console commands
+ * @brief Free functions implementing each built-in command.
+ *
+ * All return `true` on success, `false` on error (the error message has
+ * already been printed to `ctx.out`). Tests call these directly with a
+ * hand-built CommandContext; the production wiring goes through
+ * Console::RegisterDefaultCommands.
+ * @{
+ */
 bool Cmd_Help(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_Clear(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx);
@@ -111,6 +115,10 @@ bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx
 bool Cmd_WeatherIntensity(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_WeatherNext(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_WeatherRandom(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_WeatherForecast(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_WeatherAuto(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_WeatherStatus(std::span<const std::string_view> args, CommandContext& ctx);
+bool Cmd_WeatherWind(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_LightClear(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_LightList(std::span<const std::string_view> args, CommandContext& ctx);
@@ -129,8 +137,6 @@ bool Cmd_MapCollision(std::span<const std::string_view> args, CommandContext& ct
 bool Cmd_Perf(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_RendererTrace(std::span<const std::string_view> args, CommandContext& ctx);
 bool Cmd_ConsoleCopy(std::span<const std::string_view> args, CommandContext& ctx);
-
-// --- Wave 1 introspection commands ----------------------------------------
 
 // World inspection
 bool Cmd_LayersList(std::span<const std::string_view> args, CommandContext& ctx);
