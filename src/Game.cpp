@@ -326,13 +326,13 @@ bool Game::Initialize()
 
     m_LastFrameTime = static_cast<float>(glfwGetTime());
 
-    // Bring particles online; tile size and zones are set in LoadTitleScreenWorld.
+    // Bring particles online (textures + tile size set here);
+    // zones are set later in LoadTitleScreenWorld.
     m_Particles.LoadTextures(m_TextureStore);
     m_Particles.SetTileSize(m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
     m_Particles.SetMaxParticlesPerZone(50);
 
     m_TimeManager.Initialize();
-    m_TimeManager.SetDayDuration(1200.0f);  // 20 real minutes = 1 in-game day
     m_SkyRenderer.Initialize(m_TextureStore);
 
     m_DialogueManager.Initialize(&m_GameState);
@@ -431,9 +431,10 @@ void Game::Run()
                         std::chrono::duration<double>(remaining));
                     const auto frameDeadline = clock::now() + sleepDuration;
 
-                    // Windows default timer resolution is ~15.6ms, so sleep_for(1ms)
-                    // can sleep 15ms+. Keep spinThreshold above OS granularity so
-                    // high-FPS targets (e.g. 500fps = 2ms budget) never call sleep_for.
+                    // Even with TimerPeriodGuard raising resolution to 1ms, sleep_for
+                    // can still overshoot by about a tick, so keep spinThreshold above
+                    // that granularity; high-FPS targets (e.g. 500fps = 2ms budget) then
+                    // never call sleep_for.
                     constexpr auto spinThreshold = std::chrono::milliseconds(2);
                     while (true)
                     {
@@ -549,6 +550,7 @@ void Game::Update(float deltaTime)
     {
         PlayerSystem::Update(m_World, m_PlayerEntity, deltaTime);
         m_TimeManager.Update(deltaTime);  // Frozen in Title so night setting holds.
+        m_WeatherDirector.Update(deltaTime, m_TimeManager);
     }
     m_SkyRenderer.Update(deltaTime, m_TimeManager);
 
@@ -577,8 +579,17 @@ void Game::Update(float deltaTime)
     // for hitbox-anchored avoidance.
     m_Particles.SetPlayerPosition(m_World.get<Transform>(m_PlayerEntity).position);
     // Push active weather so the particle system can drive global weather
-    // spawning (rain/snow/ash/etc.) across the viewport.
-    m_Particles.SetWeatherState(&GetWeatherDefinition(m_TimeManager.GetWeather()),
+    // spawning (rain/snow/ash/etc.) across the viewport. The effective def is
+    // the director's blended definition mid-transition, the table def otherwise
+    // (stable storage either way - see TimeManager::GetEffectiveWeatherDefinition).
+    // Wind + spawn streams come from the director's choreography; the
+    // effective def keeps feeding the live-read channels (fog alpha). In
+    // Title the director never updates, so wind stays at the calm default
+    // and the streams stay idle - the backdrop is unchanged.
+    m_Particles.SetWind(m_WeatherDirector.GetWindDirection(), m_WeatherDirector.GetWindStrength());
+    const WeatherDirector::SpawnStreams streams = m_WeatherDirector.GetSpawnStreams();
+    m_Particles.SetWeatherTransition(streams.outgoing, streams.incoming, streams.weight);
+    m_Particles.SetWeatherState(&m_TimeManager.GetEffectiveWeatherDefinition(),
                                 m_TimeManager.GetWeatherIntensity());
     m_Particles.Update(deltaTime, particleCullCam, viewSize);
 
@@ -809,8 +820,8 @@ void Game::Render()
         ~RenderGuard() { flag = false; }
     } renderGuard(m_IsRendering);
 
-    // DIAGNOSTIC: V1 minimal Title path (clear + UI only, no world geometry)
-    // to isolate whether the white-screen bug is in the regular Render pipeline.
+    // Title has its own self-contained render path (world tiles, particles, sky,
+    // PostFX) and returns before the gameplay Y-sort/entity assembly below.
     if (m_GameMode == GameMode::Title)
     {
         RenderTitleFrame();
@@ -871,7 +882,6 @@ void Game::Render()
         renderCam.y = snapToPixel(originalCamera.y, pixelStepY);
     }
 
-    // @author Codex (https://github.com/codex)
     // Perspective off: cull rect == camera viewport. Perspective on: the horizon
     // foreshortens distant tiles, so much *more* world fits above the horizon
     // than the viewport's world-space size implies. Compensate by inflating the
@@ -1167,7 +1177,7 @@ void Game::Render()
         RenderDialogueTreeBox();
     }
 
-    // Debug HUD in top-left corner (F4 toggle).
+    // Debug HUD in top-left corner (toggled via the debug.info console command).
     if (m_Editor.IsShowDebugInfo())
     {
         glm::mat4 uiProjection = glm::ortho(0.0f,
@@ -1475,7 +1485,8 @@ bool Game::SwitchRenderer(RendererAPI api)
     }
 
     // Create window + renderer + (OpenGL: GLAD) for `targetAPI`. Returns true on
-    // success; on failure, m_Window and m_Renderer may be partial - caller cleans up.
+    // success; every failure path tears down its own partial state (m_Window and
+    // m_Renderer left null), so the rollback caller just retries.
     auto setupRendererForAPI = [&](RendererAPI targetAPI) -> bool
     {
         m_RendererAPI = targetAPI;
@@ -1574,9 +1585,10 @@ bool Game::SwitchRenderer(RendererAPI api)
         m_Renderer->UploadTexture(m_Tilemap.GetTilesetTexture());
         m_TextureStore.UploadAll(*m_Renderer);
 
-        // Re-pack characters into the freshly-uploaded atlas. PackCharactersIntoAtlas
-        // also re-uploads the tile atlas, so this must run AFTER the per-texture
-        // uploads above (which create the GL resources the pack relies on).
+        // Re-pack characters into the atlas. PackCharactersIntoAtlas rebuilds and
+        // re-uploads the atlas from each sheet's retained CPU pixels (not the GL
+        // resources uploaded above), overwriting the tileset upload. Run it after
+        // the standalone uploads so they remain the fallback if packing fails.
         PackCharactersIntoAtlas();
 
         return true;
@@ -1648,7 +1660,8 @@ void Game::OnFramebufferResized(int width, int height)
         m_Tilemap.GetMapHeight() > 0)
     {
         // Grow the title world (and its particle zones) so grass keeps covering
-        // the window, then re-center. Repaints only when the tile size changes.
+        // the window, then re-center. Repaints only when the required map size
+        // (in tiles) changes.
         RefreshTitleWorldForViewport(/*forceRepaint=*/false);
     }
 
