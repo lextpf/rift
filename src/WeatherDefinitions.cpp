@@ -47,12 +47,10 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .lightningIntervalSeconds = 8.0f,
         .windIntensity = 1.0f,
     },
-    // Blizzard: heaviest snow with gusty wind. SpawnWeatherParticle randomizes
-    // per-particle horizontal wind when windIntensity >= 0.7 so the gusts catch
-    // some flakes harder than others, and stretches per-flake lifetime so the
-    // population feels persistent without spawning a huge wave each tick.
-    // Secondary Fog reads as a mix of small mist and large fog puffs (50/50
-    // tier in the post-spawn block).
+    // Blizzard: heaviest snow with gusty wind. SpawnWeatherParticle ramps the snow's
+    // wind boost with gusted strength (smoothstep 0.3-0.9, sign-coherent so flakes
+    // share one drift) up to full at windIntensity 1.0, and stretches per-flake
+    // lifetime for a persistent population. Secondary Fog is a 50/50 mist/blob mix.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
@@ -98,31 +96,29 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.0f,
         .showCelestialBodies = false,
-        .windIntensity = 1.0f,
+        // 0.5 = the calm anchor reproducing the pre-wind drift speed; raise for gustier, lower for
+        // stiller.
+        .windIntensity = 0.5f,
     },
 
     // Floral / seasonal.
-    // FallingLeaves: floats like PollenStorm. World-anchored (no overlay-feel
-    // camera drag); particles spawn at the left and right edges of the buffer
-    // and drift inward (see the side-edge spawn case in SpawnWeatherParticle).
-    // When the player moves, leaves near the camera get a rapid radial push
-    // away (particles.js-style cursor avoidance, gated on player motion).
-    // Rate matches PollenStorm so both feel like the same family of sparse
-    // ambient flurries.
+    // FallingLeaves: sparse world-anchored flurry (rate matches PollenStorm). Particles
+    // spawn at the left/right buffer edges and drift inward (side-edge case in
+    // SpawnWeatherParticle); when the player moves, nearby leaves get a rapid radial
+    // push away (particles.js-style cursor avoidance, gated on player motion).
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.95f, 0.85f},
         .particleType = WeatherParticleType::Leaf,
         .baseSpawnRate = 60.0f,
         .maxWeatherParticles = 2000,
-        .windIntensity = 0.25f,
+        // 0.5 = the calm anchor reproducing the pre-wind drift speed; raise for gustier, lower for
+        // stiller.
+        .windIntensity = 0.5f,
     },
-    // CherryBlossoms: dense flurry with strong pink wash. Per-spawn tier system
-    // in the Blossom behavior gives mixed sizes/hues so density doesn't read as
-    // uniform; a deeper alpha pulse in Update makes each petal visibly breathe.
-    // Pinker tint (R held at the white point, G/B suppressed) reads as a
-    // pronounced pink overlay without over-brightening reds past full albedo.
-    // A strongly pink-tinted Fog secondary adds a sakura wash behind the petals
-    // (tint applied in SpawnWeatherParticle).
+    // CherryBlossoms: dense pink flurry. The Blossom behavior's per-spawn tier system
+    // mixes sizes/hues so density isn't uniform, and an alpha pulse in Update makes
+    // petals breathe. Pink tint (R at white point, G/B suppressed); a pink-tinted Fog
+    // secondary adds a sakura wash behind the petals (tint in SpawnWeatherParticle).
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.80f, 0.92f},
         .particleType = WeatherParticleType::Blossom,
@@ -147,12 +143,10 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
 
     // Special / night.
-    // AuroraNight: sparse Wisp-class motes drift alongside the sky ribbons.
-    // Wisp's slow spiral motion + diverse color variety reads more as aurora
-    // dust than fireflies would. The post-spawn block in SpawnWeatherParticle
-    // restricts the palette to cool aurora hues only (emerald/cyan/violet/
-    // magenta) so the warm wisp golds/ambers don't slip in. Rate is kept low
-    // so the ribbons remain the hero element.
+    // AuroraNight: sparse Wisp-class motes drift alongside the sky ribbons; Wisp's slow
+    // spiral + color variety reads as aurora dust, not fireflies. The post-spawn block
+    // in SpawnWeatherParticle restricts the palette to cool aurora hues (emerald/cyan/
+    // violet/magenta), and the rate is kept low so the ribbons stay the hero element.
     WeatherDefinition{
         .ambientTintMultiplier = {0.85f, 0.92f, 1.08f},
         .particleType = WeatherParticleType::Wisp,
@@ -203,13 +197,10 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
 
     // Atmospheric / prismatic.
-    // GodRays: shafts of light cut through soft haze. Each Sunshine particle
-    // picks a rainbow palette tier from its phase (see the WEATHER_ZONE_INDEX
-    // branch in Sunshine::Update) so the sky reads as a spread of red /
-    // orange / yellow / green / cyan / blue / violet beams. The Fog secondary
-    // supplies the atmospheric mist that justifies the prismatic look; the
-    // existing baseAlpha curve in Sunshine::Update keeps the beams visible
-    // at night, just dimmer.
+    // GodRays: light shafts through soft haze. Each Sunshine particle picks a rainbow
+    // palette tier from its phase (WEATHER_ZONE_INDEX branch in Sunshine::Update) for a
+    // red-to-violet spread of beams; the Fog secondary supplies the mist that justifies
+    // the prismatic look. Sunshine::Update's baseAlpha curve keeps beams visible at night.
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.98f, 1.00f},
         .particleType = WeatherParticleType::Sunshine,
