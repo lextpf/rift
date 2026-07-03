@@ -420,6 +420,11 @@ if(BUILD_TESTS)
         # No renderer dependency; tests exercise GetWeatherDefinition and
         # ComputeLightIntensity directly.
         "${CMAKE_SOURCE_DIR}/src/WeatherDefinitions.cpp"
+        # WeatherBlend: pure blend math for weather transitions; renderer-free.
+        "${CMAKE_SOURCE_DIR}/src/WeatherBlend.cpp"
+        # WeatherDirector: transition state machine over the TimeManager blend
+        # surface; renderer-free (only touches TimeManager/WeatherBlend).
+        "${CMAKE_SOURCE_DIR}/src/WeatherDirector.cpp"
         # DrawTracer: tiny per-frame event log; renderer-free. Linked here
         # so ConsoleCommands.cpp's Cmd_RendererTrace resolves at test link.
         "${CMAKE_SOURCE_DIR}/src/DrawTracer.cpp"
