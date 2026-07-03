@@ -23,6 +23,7 @@
 #include "Tilemap.hpp"
 #include "TimeManager.hpp"
 #include "ViewScaling.hpp"
+#include "WeatherDirector.hpp"
 #include "WorldServices.hpp"
 
 #include <ecs.hpp>
@@ -404,8 +405,10 @@ public:
      */
     GLFWwindow* GetWindow() const { return m_Window; }
 
-    /// Visible world extent (world pixels) at the current window size; matches
-    /// the render projection. Single source of truth for camera/particle sizing.
+    /**
+     * Visible world extent (world pixels) at the current window size; matches
+     * the render projection. Single source of truth for camera/particle sizing.
+     */
     glm::vec2 VisibleWorldSize() const
     {
         return viewScaling::VisibleWorldSize(m_ScreenWidth, m_ScreenHeight, PIXEL_SCALE);
@@ -460,10 +463,12 @@ public:
     static void CharCallback(GLFWwindow* window, unsigned int codepoint);
 
 private:
-    /// Console is an authorised mutator of game state (it's the developer's
-    /// REPL). Granting friendship lets the default command bindings reach
-    /// m_Player / m_GameState / m_TimeManager / m_Tilemap / m_World without
-    /// adding accessors that exist solely for console use.
+    /**
+     * Console is an authorised mutator of game state (it's the developer's
+     * REPL). Granting friendship lets the default command bindings reach
+     * m_Player / m_GameState / m_TimeManager / m_Tilemap / m_World without
+     * adding accessors that exist solely for console use.
+     */
     friend class Console;
 
     /**
@@ -557,12 +562,14 @@ private:
     /// @brief Whether m_DialogueUi.npcId currently resolves to a live NPC.
     bool HasDialogueNPC() const;
 
-    /// @brief Resolve an NPC instance id to its entity handle.
-    /// @return The NPC entity in @ref m_World, or @c ecs::entity{} if no live NPC
-    ///         has that id (including id 0). Delegates to the registry seam
-    ///         (@ref EntityStore::FindById); the scan is O(NPC count).
-    /// @note Defined inline so header-only callers (e.g. EndAnyDialogue) need no
-    ///       out-of-line translation unit.
+    /**
+     * @brief Resolve an NPC instance id to its entity handle.
+     * @return The NPC entity in @ref m_World, or @c ecs::entity{} if no live NPC
+     *         has that id (including id 0). Delegates to the registry seam
+     *         (@ref EntityStore::FindById); the scan is O(NPC count).
+     * @note Defined inline so header-only callers (e.g. EndAnyDialogue) need no
+     *       out-of-line translation unit.
+     */
     ecs::entity FindNPCById(std::uint64_t id) { return EntityStore::FindById(m_World, id); }
     ecs::entity FindNPCById(std::uint64_t id) const { return EntityStore::FindById(m_World, id); }
 
@@ -581,48 +588,64 @@ private:
      */
     void ForceCloseTreeDialogue();
 
-    /// @name Title Screen / Pause Overlay
-    /// @brief Top-level menu state and dispatch (see @c GameMenus.cpp).
-    /// @{
+    /**
+     * @name Title Screen / Pause Overlay
+     * @brief Top-level menu state and dispatch (see @c GameMenus.cpp).
+     * @{
+     */
 
-    /// True when @c rift.save.json (or whatever the manifest configures)
-    /// exists as a regular file. Used to grey out @em Continue and to gate
-    /// the overwrite-confirmation prompt on @em New @em Game.
+    /**
+     * True when @c rift.save.json (or whatever the manifest configures)
+     * exists as a regular file. Used to grey out @em Continue and to gate
+     * the overwrite-confirmation prompt on @em New @em Game.
+     */
     [[nodiscard]] bool CheckSaveExists() const;
 
-    /// Load the game world: tilemap, NPCs, player position, camera target.
-    /// @param loadSave  True to load from @c m_SaveMapPath; false to
-    ///                  regenerate the default tilemap and place the player
-    ///                  at the default spawn.
-    /// Called from @em Continue / @em New @em Game in the title menu.
-    /// Boot uses @c LoadTitleScreenWorld instead so the user's save isn't
-    /// touched until they pick @em Continue.
+    /**
+     * Load the game world: tilemap, NPCs, player position, camera target.
+     * @param loadSave  True to load from @c m_SaveMapPath; false to
+     *                  regenerate the default tilemap and place the player
+     *                  at the default spawn.
+     * Called from @em Continue / @em New @em Game in the title menu.
+     * Boot uses @c LoadTitleScreenWorld instead so the user's save isn't
+     * touched until they pick @em Continue.
+     */
     void LoadGameWorld(bool loadSave);
 
-    /// Pack every loaded NPC sprite sheet and the active player's three
-    /// sheets into the tile atlas, then bind each character to its packed
-    /// region. Called from LoadGameWorld so character draws share the atlas
-    /// texture with tiles, collapsing the Y-sorted pass into one batch.
+    /**
+     * Pack every loaded NPC sprite sheet and the active player's three
+     * sheets into the tile atlas, then bind each character to its packed
+     * region. Called from LoadGameWorld so character draws share the atlas
+     * texture with tiles, collapsing the Y-sorted pass into one batch.
+     */
     void PackCharactersIntoAtlas();
 
-    /// Build the title world at the given tile dimensions: resize the map, paint
-    /// grass on layer 0, rebuild whole-map particle zones, and refresh the
-    /// particle system. Title screen only.
+    /**
+     * Build the title world at the given tile dimensions: resize the map, paint
+     * grass on layer 0, rebuild whole-map particle zones, and refresh the
+     * particle system. Title screen only.
+     */
     void PaintTitleWorld(int tilesWide, int tilesTall);
-    /// Size the title world to cover the current viewport (never below the base
-    /// size) and re-center the camera. forceRepaint repaints even if the size is
-    /// unchanged (use on initial load; pass false on resize to skip no-op rebuilds).
+    /**
+     * Size the title world to cover the current viewport (never below the base
+     * size) and re-center the camera. forceRepaint repaints even if the size is
+     * unchanged (use on initial load; pass false on resize to skip no-op rebuilds).
+     */
     void RefreshTitleWorldForViewport(bool forceRepaint);
 
-    /// Load the cosmetic title-screen world: a plain grass map populated
-    /// with firefly particle zones and frozen at night. No player, no NPCs.
-    /// Used at boot and on @em Quit @em to @em Title to keep the title's
-    /// scenic background separate from the player's actual save.
+    /**
+     * Load the cosmetic title-screen world: a plain grass map populated
+     * with firefly particle zones and frozen at night. No player, no NPCs.
+     * Used at boot and on @em Quit @em to @em Title to keep the title's
+     * scenic background separate from the player's actual save.
+     */
     void LoadTitleScreenWorld();
 
-    /// Reset world + per-session state back to a fresh start.
-    /// Wraps @c LoadGameWorld(false) plus @c TimeManager::Initialize and
-    /// @c GameStateManager::Clear. Does @b not touch the on-disk save.
+    /**
+     * Reset world + per-session state back to a fresh start.
+     * Wraps @c LoadGameWorld(false) plus @c TimeManager::Initialize and
+     * @c GameStateManager::Clear. Does @b not touch the on-disk save.
+     */
     void ResetWorldToDefaults();
 
     /// Process input while @c m_GameMode == Title (menu nav, confirm prompt).
@@ -631,33 +654,45 @@ private:
     /// Process input while @c m_GameMode == Paused (Resume / Quit-to-Title).
     void ProcessPauseInput();
 
-    /// Refresh @c m_TitleMenu.enabled flags based on save existence and
-    /// snap selection to the first enabled item. Call on entering Title.
+    /**
+     * Refresh @c m_TitleMenu.enabled flags based on save existence and
+     * snap selection to the first enabled item. Call on entering Title.
+     */
     void RebuildTitleMenu();
 
-    /// Render an entire Title-mode frame: BeginFrame to EndFrame, with its
-    /// own scene clear + PostFX + UI. Called as an early-return from
-    /// @c Render() so Title runs a minimal pipeline.
+    /**
+     * Render an entire Title-mode frame: BeginFrame to EndFrame, with its
+     * own scene clear + PostFX + UI. Called as an early-return from
+     * @c Render() so Title runs a minimal pipeline.
+     */
     void RenderTitleFrame();
 
-    /// Render the title screen content (logo + menu + version) into the
-    /// current frame after @c EndSceneApplyPostFX. Used by
-    /// @c RenderTitleFrame.
+    /**
+     * Render the title screen content (logo + menu + version) into the
+     * current frame after @c EndSceneApplyPostFX. Used by
+     * @c RenderTitleFrame.
+     */
     void RenderTitleContent();
 
-    /// Draw the "rift <version>" label in the bottom-right corner (the same
-    /// footer shown on the title screen). Self-contained: it suspends
-    /// perspective and switches to a screen-space UI projection, so a caller
-    /// that draws in world space afterward must restore its own projection.
-    /// Shared by the title screen and the in-game HUD.
+    /**
+     * Draw the "rift <version>" label in the bottom-right corner (the same
+     * footer shown on the title screen). Self-contained: it suspends
+     * perspective and switches to a screen-space UI projection, so a caller
+     * that draws in world space afterward must restore its own projection.
+     * Shared by the title screen and the in-game HUD.
+     */
     void RenderVersionFooter();
 
-    /// Render the dim overlay + pause menu on top of the existing world
-    /// frame. Called from inside @c Render() before the console pass.
+    /**
+     * Render the dim overlay + pause menu on top of the existing world
+     * frame. Called from inside @c Render() before the console pass.
+     */
     void RenderPauseOverlay();
 
-    /// Render the New-Game confirm-overwrite modal on top of the title
-    /// screen. Called from @c RenderTitleContent when @c m_ConfirmOverwriteShown.
+    /**
+     * Render the New-Game confirm-overwrite modal on top of the title
+     * screen. Called from @c RenderTitleContent when @c m_ConfirmOverwriteShown.
+     */
     void RenderConfirmOverwritePrompt();
     /// @}
 
@@ -682,8 +717,10 @@ private:
                                     int preferredDx,
                                     int preferredDy) const;
 
-    /// @name Window Management
-    /// @{
+    /**
+     * @name Window Management
+     * @{
+     */
     GLFWwindow* m_Window = nullptr;  ///< GLFW window handle
     int m_ScreenWidth = 1520;        ///< Window width in pixels (19 tiles * 80 px)
     int m_ScreenHeight = 800;        ///< Window height in pixels (10 tiles * 80 px)
@@ -736,17 +773,22 @@ private:
     TextureStore m_TextureStore;    ///< Owns sprite textures (player/NPC) keyed by handle.
     DialogueStore m_DialogueStore;  ///< Owns NPC dialogue trees keyed by handle.
     AssetRegistry m_Assets;         ///< Character/NPC sprite asset paths (demoted statics).
-    /// @brief The world's NPC-AI random source, owned here and published into
-    /// globals() via WorldServices::npcRng so NpcAiSystem draws from one
-    /// world-scoped stream (replacing its former file-local static engine).
+    /**
+     * @brief The world's NPC-AI random source, owned here and published into
+     * globals() via WorldServices::npcRng so NpcAiSystem draws from one
+     * world-scoped stream (replacing its former file-local static engine).
+     */
     std::mt19937 m_NpcRng{std::random_device{}()};
-    /// @brief The ECS world. Shared services live in its globals() (WorldServices);
-    /// the entity migration (player/NPCs -> registry) is in progress.
+    /**
+     * @brief The ECS world. Shared services live in its globals() (WorldServices);
+     * the entity migration (player/NPCs -> registry) is in progress.
+     */
     ecs::registry m_World;
     Tilemap m_Tilemap;                      ///< The game world
     ecs::entity m_PlayerEntity{};           ///< Player entity in m_World (PlayerTag + components)
     ParticleSystem m_Particles;             ///< Ambient particle effects (fireflies, etc.)
     TimeManager m_TimeManager;              ///< Day/night cycle time management
+    WeatherDirector m_WeatherDirector;      ///< Weather transition choreography
     SkyRenderer m_SkyRenderer;              ///< Sky rendering (sun, moon, stars)
     std::unique_ptr<IRenderer> m_Renderer;  ///< Graphics renderer
     RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type
@@ -761,27 +803,35 @@ private:
                                  ///< on mid-Update state via synchronous WM_SIZE
                                  ///< from SnapWindowToTileBoundaries().
 
-    /// @name Frame Timing
-    /// @{
+    /**
+     * @name Frame Timing
+     * @{
+     */
     float m_LastFrameTime = 0.0f;  ///< Timestamp of last frame (for delta calculation)
 
-    /// Time accumulator threaded into PostFXParams. Drives the grain noise
-    /// seed and any subtle time-based motion in the post-process pass.
-    /// Wraps periodically inside Game::Update to avoid float precision drift.
+    /**
+     * Time accumulator threaded into PostFXParams. Drives the grain noise
+     * seed and any subtle time-based motion in the post-process pass.
+     * Wraps periodically inside Game::Update to avoid float precision drift.
+     */
     float m_PostFXTime = 0.0f;
 
-    /// Master toggle for post-processing. When false, the PostFX call sites
-    /// in Game::Render() and the title-screen path skip building grading /
-    /// vignette / grain / bloom intensities, so the offscreen scene is
-    /// composited into the swapchain unmodified. Toggleable from the
-    /// developer console via the `postfx` command.
+    /**
+     * Master toggle for post-processing. When false, the PostFX call sites
+     * in Game::Render() and the title-screen path skip building grading /
+     * vignette / grain / bloom intensities, so the offscreen scene is
+     * composited into the swapchain unmodified. Toggleable from the
+     * developer console via the `postfx` command.
+     */
     bool m_PostFXEnabled = true;
     /// @}
 
     FPSCounter m_Fps;  ///< Frame rate measurement
 
-    /// @name Editor
-    /// @{
+    /**
+     * @name Editor
+     * @{
+     */
     Editor m_Editor;  ///< Level editor (extracted from Game)
     /// @}
 
@@ -794,9 +844,11 @@ private:
     std::vector<glm::vec2> m_NpcPositions;  ///< Pre-allocated for per-frame NPC collision checks
     /** @} */
 
-    /// @name Render Sorting
-    /// @brief Y-sorted render list reused each frame to avoid allocation.
-    /// @{
+    /**
+     * @name Render Sorting
+     * @brief Y-sorted render list reused each frame to avoid allocation.
+     * @{
+     */
     std::vector<Drawable> m_RenderList;
     /// @}
 
@@ -810,15 +862,19 @@ private:
     GameStateManager m_GameState;       ///< Game flags and state for consequences
     /** @} */
 
-    /// @name Input Toggle State
-    /// @brief Debounced key toggles for one-shot actions (moved from function-local statics).
-    /// @{
+    /**
+     * @name Input Toggle State
+     * @brief Debounced key toggles for one-shot actions (moved from function-local statics).
+     * @{
+     */
     KeyToggle<GLFW_KEY_Z> m_KeyZ;
     KeyToggle<GLFW_KEY_SPACE> m_KeySpaceFreeCamera;
     KeyToggle<GLFW_KEY_B> m_KeyB;
-    /// X drives the debug-only corner-cut toggle in IsDebugMode (gameplay
-    /// X for appearance copy lives in the developer console as
-    /// `appearance.copy` / `appearance.restore`).
+    /**
+     * X drives the debug-only corner-cut toggle in IsDebugMode (gameplay
+     * X for appearance copy lives in the developer console as
+     * `appearance.copy` / `appearance.restore`).
+     */
     KeyToggle<GLFW_KEY_X> m_KeyX;
     KeyToggle<GLFW_KEY_F> m_KeyF;
     /// Toggles the developer console. F12 is layout-independent.
@@ -845,47 +901,59 @@ private:
     KeyToggle<GLFW_KEY_ESCAPE> m_KeyEscape;
     /// @}
 
-    /// @name Top-Level Mode + Menu State
-    /// @{
+    /**
+     * @name Top-Level Mode + Menu State
+     * @{
+     */
     GameMode m_GameMode = GameMode::Title;     ///< Top-level game state.
     MenuLogic::ItemList m_TitleMenu;           ///< Title menu (4 items).
     MenuLogic::ItemList m_PauseMenu;           ///< Pause menu (2 items).
     bool m_ConfirmOverwriteShown = false;      ///< New-Game-with-save modal visible.
     MenuLogic::ConfirmPrompt m_ConfirmPrompt;  ///< State of the modal.
-    /// Mouse cursor + click state for menu hit-testing. Hover only updates
-    /// the selected item when the cursor actually moved this frame, so
-    /// keyboard nav isn't fought by a stationary cursor. Left-click edge
-    /// (down this frame, up last frame) triggers confirm on the hovered item.
+    /**
+     * Mouse cursor + click state for menu hit-testing. Hover only updates
+     * the selected item when the cursor actually moved this frame, so
+     * keyboard nav isn't fought by a stationary cursor. Left-click edge
+     * (down this frame, up last frame) triggers confirm on the hovered item.
+     */
     double m_MenuLastMouseX = -1.0;
     double m_MenuLastMouseY = -1.0;
     bool m_MenuMouseLeftPrev = false;
-    /// One-shot latch: the first time the console opens during a title
-    /// session, the title's ambient particle zones AND the initial weather
-    /// are cleared so the user can `weather <state>` against a clean canvas.
-    /// Stays cleared for the rest of the title session, even after the
-    /// console is closed. Reset to false when @ref LoadTitleScreenWorld
-    /// re-enters the title world (e.g., on boot or Quit-to-Title).
+    /**
+     * One-shot latch: the first time the console opens during a title
+     * session, the title's ambient particle zones AND the initial weather
+     * are cleared so the user can `weather <state>` against a clean canvas.
+     * Stays cleared for the rest of the title session, even after the
+     * console is closed. Reset to false when @ref LoadTitleScreenWorld
+     * re-enters the title world (e.g., on boot or Quit-to-Title).
+     */
     bool m_TitleAmbientCleared = false;
     int m_DefaultMapWidth = 64;   ///< Cached from manifest for ResetWorldToDefaults.
     int m_DefaultMapHeight = 48;  ///< Cached from manifest for ResetWorldToDefaults.
-    /// Player character types declared in the project manifest, in
-    /// declaration order. Cached during Initialize() so LoadGameWorld can
-    /// pick a default character without re-reading the manifest.
+    /**
+     * Player character types declared in the project manifest, in
+     * declaration order. Cached during Initialize() so LoadGameWorld can
+     * pick a default character without re-reading the manifest.
+     */
     std::vector<CharacterType> m_ConfiguredCharacters;
     /// @}
 
-    /// @name Developer Console
-    /// @{
-    /// Drains console-mode key events while the console is open. Reads
-    /// the polled GLFW key state via local KeyToggle<> instances and
-    /// forwards edge transitions to m_Console. Called as the early-return
-    /// path in ProcessInput when the console has focus.
+    /**
+     * @name Developer Console
+     * @{
+     * Drains console-mode key events while the console is open. Reads
+     * the polled GLFW key state via local KeyToggle<> instances and
+     * forwards edge transitions to m_Console. Called as the early-return
+     * path in ProcessInput when the console has focus.
+     */
     void PumpConsoleKeys();
 
     Console m_Console{*this};  ///< In-game developer REPL toggled with F12.
-    /// Edge-detection state for mouse clicks while the console is open. The
-    /// console eats clicks that land on the suggestion dropdown; this tracks
-    /// the previous-frame button state so we only fire on the press edge.
+    /**
+     * Edge-detection state for mouse clicks while the console is open. The
+     * console eats clicks that land on the suggestion dropdown; this tracks
+     * the previous-frame button state so we only fire on the press edge.
+     */
     bool m_ConsoleMouseLeftPrev = false;
     /// @}
 };
