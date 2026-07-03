@@ -151,10 +151,10 @@ void SkyRenderer::SetAtlasBinding(const Texture* atlasTex,
 
 namespace
 {
-/// Helper: route a sky-element draw through the bound atlas if any,
-/// else fall back to the per-element texture. Keeps the existing
-/// DrawSpriteAlpha semantics (full-texture sample) while collapsing
-/// the GPU-side flush count when the atlas is bound.
+// Helper: route a sky-element draw through the bound atlas if any,
+// else fall back to the per-element texture. Keeps the existing
+// DrawSpriteAlpha semantics (full-texture sample) while collapsing
+// the GPU-side flush count when the atlas is bound.
 void DrawSkyElement(IRenderer& renderer,
                     const Texture* atlasTex,
                     glm::vec2 atlasOffset,
@@ -246,15 +246,29 @@ void SkyRenderer::Update(float deltaTime, const TimeManager& time)
 {
     m_Time += static_cast<double>(deltaTime);
 
-    // Cache weather-driven flags for the upcoming Render pass.
-    const WeatherDefinition& def = GetWeatherDefinition(time.GetWeather());
-    m_AuroraVisible = def.showAurora;
+    // Cache weather-driven flags for the upcoming Render pass. The effective
+    // definition is the director's blended def mid-transition.
+    const WeatherDefinition& def = time.GetEffectiveWeatherDefinition();
+    m_AuroraFade = time.GetAuroraFade();
+    m_CelestialFade = time.GetCelestialFade();
+    m_AuroraVisible = m_AuroraFade > 0.01f;
     m_MeteorRateMultiplier = def.meteorRateMultiplier;
 
     // Lightning: only when the weather wants flashes. Decrement countdown,
     // trigger a flash, jitter the next interval.
     if (def.lightningIntervalSeconds > 0.0f)
     {
+        std::uniform_real_distribution<float> jitter(0.7f, 1.3f);
+        if (m_LightningTimer <= 0.0f)
+        {
+            // Just enabled (0 is the disabled sentinel): arm a full countdown
+            // so a ramped-in storm doesn't open with a flash.
+            m_LightningTimer = def.lightningIntervalSeconds * jitter(m_Rng);
+        }
+        // The blended interval starts huge (frequency-space blend) and tightens
+        // as a transition progresses; clamp so the countdown follows it down -
+        // without this the first flash of a ramped-in storm arrives minutes late.
+        m_LightningTimer = std::min(m_LightningTimer, def.lightningIntervalSeconds * 1.3f);
         m_LightningTimer -= deltaTime;
         if (m_LightningTimer <= 0.0f)
         {
@@ -265,7 +279,6 @@ void SkyRenderer::Update(float deltaTime, const TimeManager& time)
             GenerateLightningBolt(static_cast<int>(m_LastScreenWidth),
                                   static_cast<int>(m_LastScreenHeight));
             // +/-30% jitter on the configured interval.
-            std::uniform_real_distribution<float> jitter(0.7f, 1.3f);
             m_LightningTimer = def.lightningIntervalSeconds * jitter(m_Rng);
         }
     }
@@ -307,8 +320,6 @@ void SkyRenderer::Render(IRenderer& renderer,
     // Disable ambient color for sky rendering
     renderer.SetAmbientColor(glm::vec3(1.0f));
 
-    const WeatherDefinition& def = GetWeatherDefinition(time.GetWeather());
-
     // Dawn/morning gradient effects (rendered first as background) - these
     // are full-screen washes; no parallax.
     float dawnIntensity = time.GetDawnIntensity();
@@ -346,14 +357,14 @@ void SkyRenderer::Render(IRenderer& renderer,
     }
 
     // Sun rays - hidden when weather covers celestial bodies.
-    if (sunArc >= 0.0f && def.showCelestialBodies)
+    if (sunArc >= 0.0f && m_CelestialFade > 0.01f)
     {
         RenderSunRays(renderer, time, cameraPos, screenWidth, screenHeight);
     }
 
     // Moon rays during night - same gating.
     float moonArc = time.GetMoonArc();
-    if (moonArc >= 0.0f && starVisibility > 0.3f && def.showCelestialBodies)
+    if (moonArc >= 0.0f && starVisibility > 0.3f && m_CelestialFade > 0.01f)
     {
         RenderMoonRays(renderer, time, cameraPos, screenWidth, screenHeight);
     }
@@ -552,6 +563,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                 float alpha = (0.26f + 0.40f * segPulse) * (0.60f + 0.40f * ribbonPulse) *
                               endsFade * (0.78f + 0.22f * sweep);
 
+                // Master fade: weather transitions ramp the aurora in/out.
                 DrawSkyElement(renderer,
                                m_AtlasTexture,
                                m_AuroraCurtainAtlasOffset,
@@ -559,7 +571,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                                glm::vec2(here.x - segWidth * 0.5f, here.y - curtainH * 0.5f),
                                glm::vec2(segWidth, curtainH),
                                angleDeg,
-                               glm::vec4(color, alpha),
+                               glm::vec4(color, alpha * m_AuroraFade),
                                true);
             }
 
@@ -588,7 +600,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                         glm::vec2(screenX - glowSize * 0.5f, segY - curtainH * 0.10f),
                         glm::vec2(glowSize, glowSize * 0.85f),
                         0.0f,
-                        glm::vec4(color, (ribbonPulse - 0.40f) * 0.50f),
+                        glm::vec4(color, (ribbonPulse - 0.40f) * 0.50f * m_AuroraFade),
                         true);
                 }
             }
@@ -629,7 +641,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                                          pos,
                                          glm::vec2(beamW, beamH),
                                          0.0f,
-                                         glm::vec4(color, alpha),
+                                         glm::vec4(color, alpha * m_AuroraFade),
                                          true);
             }
         }
@@ -721,7 +733,7 @@ void SkyRenderer::RenderAurora(IRenderer& renderer,
                            pos - glm::vec2(wispSize * 0.5f),
                            glm::vec2(wispSize),
                            0.0f,
-                           glm::vec4(color, alpha),
+                           glm::vec4(color, alpha * m_AuroraFade),
                            true);
         }
     }
@@ -1306,6 +1318,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
+        // Master fade: weather transitions ramp the sun rays in/out.
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
@@ -1313,7 +1326,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
                        glowPos,
                        glm::vec2(glowWidth, glowLength),
                        rayAngleDeg,
-                       glm::vec4(rayColor, alpha * 0.4f),
+                       glm::vec4(rayColor, alpha * 0.4f * m_CelestialFade),
                        true);
 
         // Main ray
@@ -1324,7 +1337,7 @@ void SkyRenderer::RenderSunRays(IRenderer& renderer,
                        rayPos,
                        glm::vec2(rayWidth, rayLength),
                        rayAngleDeg,
-                       glm::vec4(rayColor, alpha),
+                       glm::vec4(rayColor, alpha * m_CelestialFade),
                        true);
 
         rayIndex++;
@@ -1433,6 +1446,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
         glowPos.x = rayOrigin.x - std::sin(rayAngleRad) * glowHalfLength - glowHalfWidth;
         glowPos.y = rayOrigin.y + std::cos(rayAngleRad) * glowHalfLength - glowHalfLength;
 
+        // Master fade: weather transitions ramp the moon rays in/out.
         DrawSkyElement(renderer,
                        m_AtlasTexture,
                        m_RayAtlasOffset,
@@ -1440,7 +1454,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
                        glowPos,
                        glm::vec2(glowWidth, glowLength),
                        rayAngleDeg,
-                       glm::vec4(moonColor, alpha * 0.5f),
+                       glm::vec4(moonColor, alpha * 0.5f * m_CelestialFade),
                        true);
 
         // Main beam
@@ -1451,7 +1465,7 @@ void SkyRenderer::RenderMoonRays(IRenderer& renderer,
                        rayPos,
                        glm::vec2(rayWidth, rayLength),
                        rayAngleDeg,
-                       glm::vec4(moonColor, alpha),
+                       glm::vec4(moonColor, alpha * m_CelestialFade),
                        true);
 
         rayIndex++;
