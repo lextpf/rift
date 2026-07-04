@@ -89,11 +89,11 @@ gameHours = \frac{realSeconds \times 24 \times timeScale}{dayDuration}
 $$
 
 Default configuration:
-- `TimeManager` default: `dayDuration = 24` (24 real seconds = 1 game day)
-- `Game::Initialize()` overrides this to `dayDuration = 240` (4 real minutes = 1 game day)
+- `TimeManager` default: `dayDuration = 24` (24 real seconds = 1 game day; the intended pace -
+  `Game::Initialize()` no longer overrides it)
 - `timeScale = 1.0` (normal speed)
 
-At the game startup setting, 1 real second = 0.1 game hours = 6 game minutes.
+At the default setting, 1 real second = 1 game hour.
 
 ## Celestial Bodies
 
@@ -348,8 +348,7 @@ $$
 
 ```cpp
 TimeManager time;
-time.Initialize();
-time.SetDayDuration(240.0f);  // Game startup setting: 4 minutes per day
+time.Initialize();            // 24 s per day (1 game hour per real second)
 time.SetTime(6.0f);           // Start at sunrise
 
 // In game loop:
