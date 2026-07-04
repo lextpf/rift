@@ -62,6 +62,127 @@
  * ============================================================================================== */
 ```
 
+## Project Structure
+
+The layout is shown below. `src/` is a **flat** directory; the groups under it are logical, not folders.
+
+```
+rift/
+|-- src/                          # Engine source (flat; grouped by subsystem)
+|   # Entry & orchestration
+|   |-- main.cpp                  # Program entry point
+|   |-- Game.*                    # Core loop + state (partials: GameInput, GameMenus, GameDialogue)
+|   |-- GameMode.hpp              # Title / Playing / Paused top-level state
+|   |-- WorldServices.hpp         # Non-owning service pointers published into the ECS globals
+|   |-- Version.hpp               # 4-part version, parsed by CMake
+|   |-- DoxygenGroups.hpp         # Doxygen @defgroup declarations
+|   |
+|   # Rendering backends & interface
+|   |-- IRenderer.*               # Strategy interface (OpenGL / Vulkan kept in lockstep)
+|   |-- OpenGLRenderer.*          # OpenGL 4.6 backend (batching, bloom, PostFX)
+|   |-- VulkanRenderer.*          # Vulkan 1.4 backend (+ ...Buffers, ...Helpers partials)
+|   |-- VulkanShader.*, VulkanCommon.hpp
+|   |-- RendererFactory.*, RendererAPI.hpp, RendererMacros.hpp
+|   |
+|   # Draw pipeline & textures
+|   |-- RenderDrawable.*          # Y-sorted draw-list build
+|   |-- CharacterRender.*, PlayerRender.*, NpcRender.*     # sprite draws over components
+|   |-- PerspectiveTransform.hpp, PerspectiveTransformFloat.hpp   # globe / vanishing point
+|   |-- PostFXParams.hpp          # bloom / grading / vignette / grain params
+|   |-- DrawTracer.*, ViewScaling.hpp
+|   |-- Texture.*, TextureHandle.hpp, TextureStore.*      # texture upload / ownership
+|   |-- ProceduralTexture.hpp, AuroraTextures.*, AuroraMath.hpp
+|   |
+|   # World, tilemap & collision
+|   |-- Tilemap.*                 # 10 tile layers + elevation + lights + zones; sparse JSON
+|   |-- CollisionMap.hpp, NavigationMap.hpp, BoolGrid.hpp
+|   |-- CollisionGeometry.hpp, CollisionSystem.*         # stateless AABB collision
+|   |-- TileMath.hpp, DefaultedVector.hpp, ColumnProxy.hpp
+|   |-- Pathfinding.*, NavigationRecalc.*, PatrolRoute.*
+|   |-- ProjectManifest.*, AssetRegistry.*               # manifest + asset lookup
+|   |
+|   # ECS components (plain structs, no methods) + entity store
+|   |-- Transform, Elevation, ElevationAxis, Facing       # spatial + orientation
+|   |-- AnimationState, AnimationType, Appearance         # visuals
+|   |-- Motor, MotorParams, Speed, Hitbox                 # movement body + collision box
+|   |-- Identity, PlayerTag, NpcTag                       # stable id + archetype tags
+|   |-- PlayerInputState, PlayerMovementState, PlayerModes, PlayerSprite
+|   |-- NpcIdle, NpcSprite, NpcRecord, Patrol
+|   |-- CharacterType, CharacterConstants, CharacterDirection
+|   |-- EntityStore.*             # spawn / lifecycle / query over the registry
+|   |
+|   # Systems (stateless free functions over components)
+|   |-- MotionSystem.*            # momentum kinematics over Motor
+|   |-- PlayerMovementSystem.*, PlayerSystem.*
+|   |-- NpcAiSystem.*             # patrol / idle AI
+|   |-- CharacterKinematics.*
+|   |
+|   # Time, sky, weather & particles
+|   |-- TimeManager.*             # 24h day/night cycle, moon phase
+|   |-- SkyRenderer.*             # procedural sky, stars, aurora, lightning
+|   |-- WeatherDefinitions.*      # static weather data table
+|   |-- WeatherDirector.*, WeatherBlend.*                # smooth transitions, gusts, forecast
+|   |-- ParticleSystem.*          # weather + zone particle spawning
+|   |-- AmbienceConfig.hpp        # centralized ambience / PostFX tuning constants
+|   |
+|   # Dialogue & game state
+|   |-- Dialogue.hpp, DialogueHandle.hpp, DialogueTypes.hpp
+|   |-- DialogueManager.*, DialogueStore.*, Dialogues.*
+|   |-- GameStateManager.*        # flags backing dialogue conditions / consequences
+|   |
+|   # In-game editor
+|   |-- Editor.*                  # editor state (partials: EditorInput, EditorRendering)
+|   |-- EditorCommand.hpp, EditorCommands.*, UndoRedoStack.hpp   # command-pattern undo/redo
+|   |-- EditorBrushTransform.hpp, EditorStrokeAccumulators.hpp
+|   |
+|   # Developer console
+|   |-- Console.*, ConsoleCommands.*                     # F12 console; authorized state mutator
+|   |
+|   # Camera, input & utilities
+|   |-- CameraController.*, KeyToggle.hpp
+|   |-- Logger.*, EnumTraits.hpp, MenuLogic.hpp
+|   +-- MathConstants.hpp, MathUtils.hpp
+|
+|-- shaders/                      # GLSL 450 (compiled to *.spv at build time, gitignored)
+|   |-- Geometry.vert/frag        # forward pass: sprites, tiles, particles
+|   |-- FullscreenTriangle.vert   # fullscreen VS for post-processing
+|   |-- BloomPrefilter.frag, BloomDownsample.frag, BloomUpsample.frag   # multi-mip bloom
+|   +-- PostFXComposite.frag      # composite: bloom, grading, vignette, grain
+|
+|-- tests/                        # Google Test suite (unit + system tests; run via test.bat)
+|
+|-- assets/                       # Game assets -- NOT included; provide your own (see note above)
+|   |-- fonts/                    # TTF fonts for UI / text
+|   |-- non-player/               # NPC + enemy sprites
+|   |-- overworld/                # tilesets + map images
+|   |-- player/                   # player sprite sheets
+|   |-- particles/                # particle effect images
+|   |-- sound/                    # audio assets
+|   +-- rift.save.json            # save file (path set in the manifest)
+|
+|-- docs/                         # Documentation (Markdown guides + Doxygen output)
+|   |-- ARCHITECTURE.md, RENDERING.md, TIME_SYSTEM.md, COLLISION.md
+|   |-- EDITOR.md, PROJECT_MANIFEST.md
+|   +-- SETUP.md, BUILDING.md, MAINPAGE.md
+|
+|-- external/                     # Third-party deps (fetched / cloned by setup.ps1)
+|   |-- ecs/                      # header-only ECS registry
+|   |-- glad/                     # OpenGL loader
+|   |-- glfw/                     # windowing + input
+|   |-- glm/                      # math
+|   |-- nlohmann/                 # JSON (json.hpp)
+|   +-- stb/                      # stb_image
+|
+|-- CMakeLists.txt                # Build config (game + tests share one build/ tree)
+|-- CMakePresets.json             # Presets: default / ci / compile-db
+|-- vcpkg.json                    # vcpkg manifest (glm, glfw3, freetype, gtest)
+|-- rift.project.json             # Project manifest: asset wiring, tile size, map defaults
+|-- Doxyfile.in                   # Doxygen API-docs template
+|-- setup.ps1                     # One-time dependency fetch
+|-- build.bat                     # Full dev pipeline: format -> configure -> tidy -> build -> docs
++-- test.bat                      # Configure + build + run tests
+```
+
 ## Features
 
 ### Dual Rendering Backend
@@ -396,34 +517,6 @@ doxygen Doxyfile
 - **`.png`** - Sprites (32-bit RGBA)
 - **`.ttf`** - Fonts (TrueType)
 - **`.vert/.frag`** - Shaders (GLSL 450)
-
-## Project Structure
-
-```
-rift/
-|-- src/                      # Source code
-|   |-- main.cpp              # Entry point
-|   |-- Game.cpp/hpp          # Core game loop and systems
-|   |-- IRenderer.hpp         # Renderer interface
-|   |-- OpenGLRenderer.*      # OpenGL backend
-|   |-- VulkanRenderer.*      # Vulkan backend
-|   |-- Tilemap.*             # World and tile management
-|   |-- TimeManager.*         # Day/night cycle
-|   |-- SkyRenderer.*         # Celestial rendering
-|   |-- PlayerCharacter.*     # Player entity
-|   |-- NonPlayerCharacter.*  # NPC entities
-|   +-- ...
-|-- assets/                   # Game assets
-|   |-- fonts/                # Font files (TTF) for UI and text rendering
-|   |-- non-player/           # NPC and enemy sprite images
-|   |-- overworld/            # World environment, tilesets, and map images
-|   |-- player/               # Player character sprite sheets and animations
-|   +-- particles/            # Small particle effect images (sparks, dust, etc.)
-|-- shaders/                  # GLSL shaders
-|   +-- Geometry.vert/frag    # Forward-pass rendering (sprites, tiles, particles)
-|-- docs/                     # Documentation
-+-- external/                 # Third-party dependencies
-```
 
 ## Contributing
 
