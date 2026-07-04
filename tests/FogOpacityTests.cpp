@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include "../src/ParticleSystem.hpp"
+#include "../src/TimeManager.hpp"
 #include "../src/WeatherDefinitions.hpp"
+#include "../src/WeatherDirector.hpp"
 
 #include <glm/glm.hpp>
 
@@ -56,8 +58,8 @@ int FogCount(const ParticleSystem& ps)
 TEST(FogOpacity, ZoneFogStaysLightUnderNonFogWeather)
 {
     ParticleSystem ps;
-    ps.SetTimeOfDay(12.0f);            // Midday: maximum day boost.
-    ps.SetNightFactor(0.0f);           // Full day: worst case for fog opacity.
+    ps.SetTimeOfDay(12.0f);   // Midday: maximum day boost.
+    ps.SetNightFactor(0.0f);  // Full day: worst case for fog opacity.
     ps.SetPlayerPosition({0.0f, 0.0f});
     ps.SetMaxParticlesPerZone(200);
 
@@ -129,4 +131,87 @@ TEST(FogOpacity, WeatherFogPopulationStaysBounded)
 
     EXPECT_GT(FogCount(ps), 0) << "test vacuous: no weather fog spawned";
     EXPECT_LE(FogCount(ps), 3000) << "weather fog population back to a wall";
+}
+
+// A Fog -> Clear transition must respect the alpha ceiling through the blend
+// AND through the post-transition decay window (residual puffs outlive the
+// transition by up to ~18 s; the naive hold-until-t=1 popped at completion).
+TEST(FogOpacity, FogToClearTransitionHoldsCeiling)
+{
+    ParticleSystem ps;
+    ps.SetTimeOfDay(12.0f);
+    ps.SetNightFactor(0.0f);
+    ps.SetPlayerPosition({0.0f, 0.0f});
+
+    const glm::vec2 cameraPos{0.0f, 0.0f};
+    const glm::vec2 viewSize{640.0f, 480.0f};
+
+    TimeManager time;
+    time.Initialize();
+    time.SetTime(12.0f);
+    time.SetWeather(WeatherState::Fog);
+    WeatherDirector director;
+    director.SetEnabled(true);
+
+    // Fill the fog population at steady state first.
+    ps.SetWeatherState(&time.GetEffectiveWeatherDefinition(), 1.0f);
+    for (int i = 0; i < 120; ++i)
+    {
+        ps.Update(0.2f, cameraPos, viewSize);
+    }
+    ASSERT_GT(FogCount(ps), 0) << "test vacuous: no fog at steady state";
+
+    // 10 s transition to Clear, then run 20 s past completion (decay window
+    // is 18 s). 0.2 s steps: 50 transition frames + 100 decay frames.
+    director.RequestWeather(time, WeatherState::Clear, 10.0f);
+    for (int i = 0; i < 150; ++i)
+    {
+        director.Update(0.2f, time);
+        ps.SetWind(director.GetWindDirection(), director.GetWindStrength());
+        const WeatherDirector::SpawnStreams streams = director.GetSpawnStreams();
+        ps.SetWeatherTransition(streams.outgoing, streams.incoming, streams.weight);
+        ps.SetWeatherState(&time.GetEffectiveWeatherDefinition(), time.GetWeatherIntensity());
+        ps.Update(0.2f, cameraPos, viewSize);
+        EXPECT_LE(MaxFogAlpha(ps), 0.25f) << "fog popped during transition at frame " << i;
+        EXPECT_LE(FogCount(ps), 3000) << "fog population wall at frame " << i;
+    }
+}
+
+// Fog -> Blizzard: both endpoints spawn Fog-type particles; the shared-type
+// cap floor must keep the population bounded mid-blend.
+TEST(FogOpacity, FogToBlizzardTransitionKeepsPopulationBounded)
+{
+    ParticleSystem ps;
+    ps.SetTimeOfDay(12.0f);
+    ps.SetNightFactor(0.0f);
+    ps.SetPlayerPosition({0.0f, 0.0f});
+
+    const glm::vec2 cameraPos{0.0f, 0.0f};
+    const glm::vec2 viewSize{640.0f, 480.0f};
+
+    TimeManager time;
+    time.Initialize();
+    time.SetTime(12.0f);
+    time.SetWeather(WeatherState::Fog);
+    WeatherDirector director;
+    director.SetEnabled(true);
+
+    ps.SetWeatherState(&time.GetEffectiveWeatherDefinition(), 1.0f);
+    for (int i = 0; i < 120; ++i)
+    {
+        ps.Update(0.2f, cameraPos, viewSize);
+    }
+    ASSERT_GT(FogCount(ps), 0) << "test vacuous: no fog at steady state";
+
+    director.RequestWeather(time, WeatherState::Blizzard, 10.0f);
+    for (int i = 0; i < 100; ++i)
+    {
+        director.Update(0.2f, time);
+        ps.SetWind(director.GetWindDirection(), director.GetWindStrength());
+        const WeatherDirector::SpawnStreams streams = director.GetSpawnStreams();
+        ps.SetWeatherTransition(streams.outgoing, streams.incoming, streams.weight);
+        ps.SetWeatherState(&time.GetEffectiveWeatherDefinition(), time.GetWeatherIntensity());
+        ps.Update(0.2f, cameraPos, viewSize);
+        EXPECT_LE(FogCount(ps), 3000) << "fog population wall at frame " << i;
+    }
 }
