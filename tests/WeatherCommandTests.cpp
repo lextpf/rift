@@ -9,6 +9,7 @@
 #include "../src/Tilemap.hpp"
 #include "../src/TimeManager.hpp"
 #include "../src/WeatherDefinitions.hpp"
+#include "../src/WeatherDirector.hpp"
 
 #include <span>
 #include <string>
@@ -37,6 +38,21 @@ struct ArgPack
         return std::span<const std::string_view>(views.data(), views.size());
     }
 };
+
+// Count scrollback lines that open with "day +", i.e. one per weather.forecast
+// day entry (night-event lines are indented "  night: ..." and don't match).
+int CountDayLines(const ConsoleBuffer& buf)
+{
+    int count = 0;
+    for (const auto& l : buf.Lines())
+    {
+        if (l.text.starts_with("day +"))
+        {
+            ++count;
+        }
+    }
+    return count;
+}
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -106,6 +122,36 @@ TEST(WeatherCommandTests, TimeWeatherFailsWithoutTimeManager)
     CommandContext ctx{buf};
     ArgPack args({"Clear"});
     EXPECT_FALSE(Cmd_TimeWeather(args.span(), ctx));
+}
+
+// time.weather routes through the WeatherDirector: an explicit duration starts
+// a transition; 0 hard-cuts; a missing director falls back to a bare set.
+TEST(WeatherCommandTests, TimeWeatherRoutesThroughDirector)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    const ArgPack withDuration({"Thunderstorm", "5"});
+    EXPECT_TRUE(Cmd_TimeWeather(withDuration.span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::Thunderstorm);
+    EXPECT_TRUE(director.IsTransitioning());
+
+    const ArgPack hardCut({"Fog", "0"});
+    EXPECT_TRUE(Cmd_TimeWeather(hardCut.span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::Fog);
+    EXPECT_FALSE(director.IsTransitioning());
+
+    // No director: bare set (test isolation contract of CommandContext).
+    ctx.weatherDirector = nullptr;
+    const ArgPack bare({"Clear"});
+    EXPECT_TRUE(Cmd_TimeWeather(bare.span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::Clear);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +269,412 @@ TEST(WeatherCommandTests, RandomProducesValidState)
         auto idx = static_cast<size_t>(std::to_underlying(time.GetWeather()));
         EXPECT_LT(idx, EnumTraits<WeatherState>::Count);
     }
+}
+
+// weather.next / weather.random now take an optional [seconds] arg (same
+// parse/validation as time.weather) and route through RouteWeatherRequest so
+// their echo matches time.weather's "(Ns)" vs "(instant)" wording.
+
+TEST(WeatherCommandTests, NextAcceptsOptionalSecondsAndTransitions)
+{
+    TimeManager time;
+    time.Initialize();
+    time.SetWeather(WeatherState::Clear);
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherNext(ArgPack({"5"}).span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::LightRain);
+    EXPECT_TRUE(director.IsTransitioning());
+}
+
+TEST(WeatherCommandTests, NextRejectsBadSeconds)
+{
+    TimeManager time;
+    time.Initialize();
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    EXPECT_FALSE(Cmd_WeatherNext(ArgPack({"-1"}).span(), ctx));
+    EXPECT_FALSE(Cmd_WeatherNext(ArgPack({"a", "b"}).span(), ctx));
+}
+
+TEST(WeatherCommandTests, RandomAcceptsOptionalSecondsAsHardCut)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherRandom(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(director.IsTransitioning());
+}
+
+// time.weather's echo is three-way honest: "(Ns)" only when THIS call
+// started/retargeted a blend, "(instant)" for hard cuts / disabled or null
+// director, "(no change)" when the director ignored a same-target request.
+
+TEST(WeatherCommandTests, TimeWeatherEchoesInstantWithoutDirector)
+{
+    TimeManager time;
+    time.Initialize();
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Fog", "5"}).span(), ctx));
+    ASSERT_FALSE(buf.Lines().empty());
+    EXPECT_NE(buf.Lines().back().text.find("(instant)"), std::string::npos);
+}
+
+TEST(WeatherCommandTests, TimeWeatherEchoesDurationOnlyWhenTransitioning)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Fog", "5"}).span(), ctx));
+    EXPECT_NE(buf.Lines().back().text.find("(5.0s)"), std::string::npos);
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Clear", "0"}).span(), ctx));
+    EXPECT_NE(buf.Lines().back().text.find("(instant)"), std::string::npos);
+}
+
+// Re-requesting the state a transition is already heading to is a director
+// no-op (StartWeatherChange's same-target branch): the new duration never
+// takes effect. The echo must say "(no change)" -- not claim the requested
+// seconds -- and the in-flight transition must be untouched.
+TEST(WeatherCommandTests, TimeWeatherSameTargetMidFlightEchoesNoChange)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Thunderstorm", "10"}).span(), ctx));
+    ASSERT_TRUE(director.IsTransitioning());
+    const WeatherDirector::Transition before = director.GetTransition();
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Thunderstorm", "3"}).span(), ctx));
+    EXPECT_NE(buf.Lines().back().text.find("(no change)"), std::string::npos);
+    EXPECT_EQ(buf.Lines().back().text.find("(3.0s)"), std::string::npos);
+
+    const WeatherDirector::Transition after = director.GetTransition();
+    EXPECT_TRUE(after.active);
+    EXPECT_EQ(after.from, before.from);
+    EXPECT_EQ(after.to, before.to);
+    EXPECT_FLOAT_EQ(after.progress, before.progress);
+}
+
+// ---------------------------------------------------------------------------
+// weather.auto
+// ---------------------------------------------------------------------------
+
+TEST(WeatherCommandTests, AutoTogglesDirectorState)
+{
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherAuto(ArgPack({"off"}).span(), ctx));
+    EXPECT_FALSE(director.IsAutoWeather());
+    EXPECT_TRUE(Cmd_WeatherAuto(ArgPack({"on"}).span(), ctx));
+    EXPECT_TRUE(director.IsAutoWeather());
+}
+
+TEST(WeatherCommandTests, AutoNoArgPrintsCurrentStateWithoutChangingIt)
+{
+    WeatherDirector director;
+    director.SetEnabled(true);
+    director.SetAutoWeather(false);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherAuto(ArgPack({}).span(), ctx));
+    EXPECT_FALSE(director.IsAutoWeather());
+    ASSERT_FALSE(buf.Lines().empty());
+    EXPECT_NE(buf.Lines().back().text.find("off"), std::string::npos);
+}
+
+TEST(WeatherCommandTests, AutoRejectsGarbageArg)
+{
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.weatherDirector = &director;
+
+    EXPECT_FALSE(Cmd_WeatherAuto(ArgPack({"bogus"}).span(), ctx));
+    EXPECT_TRUE(director.IsAutoWeather());  // unchanged (default true)
+}
+
+TEST(WeatherCommandTests, AutoFailsWithoutDirector)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_WeatherAuto(ArgPack({"on"}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// weather.forecast
+// ---------------------------------------------------------------------------
+
+TEST(WeatherCommandTests, ForecastDefaultsToThreeDays)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    director.SetForecastSeed(7);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherForecast(ArgPack({}).span(), ctx));
+    EXPECT_EQ(CountDayLines(buf), 3);
+}
+
+TEST(WeatherCommandTests, ForecastCapsAtSevenDays)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    director.SetForecastSeed(7);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherForecast(ArgPack({"50"}).span(), ctx));
+    EXPECT_EQ(CountDayLines(buf), 7);
+}
+
+TEST(WeatherCommandTests, ForecastRejectsNonPositiveOrGarbageDays)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_FALSE(Cmd_WeatherForecast(ArgPack({"0"}).span(), ctx));
+    EXPECT_FALSE(Cmd_WeatherForecast(ArgPack({"-2"}).span(), ctx));
+    EXPECT_FALSE(Cmd_WeatherForecast(ArgPack({"abc"}).span(), ctx));
+}
+
+TEST(WeatherCommandTests, ForecastFailsWithoutDirectorOrTime)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+
+    ConsoleBuffer bufNoDirector;
+    CommandContext ctxNoDirector{bufNoDirector};
+    ctxNoDirector.time = &time;
+    EXPECT_FALSE(Cmd_WeatherForecast(ArgPack({}).span(), ctxNoDirector));
+
+    ConsoleBuffer bufNoTime;
+    CommandContext ctxNoTime{bufNoTime};
+    ctxNoTime.weatherDirector = &director;
+    EXPECT_FALSE(Cmd_WeatherForecast(ArgPack({}).span(), ctxNoTime));
+}
+
+// ---------------------------------------------------------------------------
+// weather.status
+// ---------------------------------------------------------------------------
+
+TEST(WeatherCommandTests, StatusReportsIdleWeather)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherStatus(ArgPack({}).span(), ctx));
+    bool sawWeatherLine = false;
+    for (const auto& l : buf.Lines())
+    {
+        if (l.text.find("weather.status: Clear") != std::string::npos)
+        {
+            sawWeatherLine = true;
+        }
+    }
+    EXPECT_TRUE(sawWeatherLine);
+}
+
+TEST(WeatherCommandTests, StatusReportsTransitionPairAndManualHold)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Thunderstorm", "5"}).span(), ctx));
+    ASSERT_TRUE(director.IsTransitioning());
+    EXPECT_TRUE(director.IsManualHold());
+
+    EXPECT_TRUE(Cmd_WeatherStatus(ArgPack({}).span(), ctx));
+    bool sawTransition = false;
+    for (const auto& l : buf.Lines())
+    {
+        if (l.text.find("Clear -> Thunderstorm") != std::string::npos &&
+            l.text.find('%') != std::string::npos)
+        {
+            sawTransition = true;
+        }
+    }
+    EXPECT_TRUE(sawTransition);
+}
+
+TEST(WeatherCommandTests, StatusFailsWithoutDirectorOrTime)
+{
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+
+    ConsoleBuffer bufNoDirector;
+    CommandContext ctxNoDirector{bufNoDirector};
+    ctxNoDirector.time = &time;
+    EXPECT_FALSE(Cmd_WeatherStatus(ArgPack({}).span(), ctxNoDirector));
+
+    ConsoleBuffer bufNoTime;
+    CommandContext ctxNoTime{bufNoTime};
+    ctxNoTime.weatherDirector = &director;
+    EXPECT_FALSE(Cmd_WeatherStatus(ArgPack({}).span(), ctxNoTime));
+}
+
+// ---------------------------------------------------------------------------
+// weather.wind
+// ---------------------------------------------------------------------------
+
+TEST(WeatherCommandTests, WindReadoutReturnsTrueAndPrints)
+{
+    WeatherDirector director;
+    director.SetEnabled(true);
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherWind(ArgPack({}).span(), ctx));
+    ASSERT_FALSE(buf.Lines().empty());
+    EXPECT_NE(buf.Lines().back().text.find("weather.wind:"), std::string::npos);
+}
+
+TEST(WeatherCommandTests, WindFailsWithoutDirector)
+{
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    EXPECT_FALSE(Cmd_WeatherWind(ArgPack({}).span(), ctx));
+}
+
+// ---------------------------------------------------------------------------
+// config.dump: weather line must be name-based/replayable, plus weather.auto
+// ---------------------------------------------------------------------------
+
+// weather.auto toggles the director; weather.forecast prints per-day lines;
+// weather.status reports the transition pair; config.dump emits a replayable
+// name (not the old integer) plus the auto state. Adapted from the brief's
+// RunCommandLine shape to this file's direct Cmd_* + ArgPack pattern (no
+// RunCommandLine helper exists here).
+TEST(WeatherCommandTests, ConfigDumpEmitsReplayableWeatherNameAndAutoState)
+{
+    ConsoleBuffer buffer;
+    TimeManager time;
+    time.Initialize();
+    WeatherDirector director;
+    director.SetEnabled(true);
+    director.SetForecastSeed(7);
+
+    CommandContext ctx{buffer};
+    ctx.time = &time;
+    ctx.weatherDirector = &director;
+
+    EXPECT_TRUE(Cmd_WeatherAuto(ArgPack({"off"}).span(), ctx));
+    EXPECT_FALSE(director.IsAutoWeather());
+    EXPECT_TRUE(Cmd_WeatherAuto(ArgPack({"on"}).span(), ctx));
+    EXPECT_TRUE(director.IsAutoWeather());
+
+    EXPECT_TRUE(Cmd_WeatherForecast(ArgPack({"2"}).span(), ctx));
+    EXPECT_TRUE(Cmd_WeatherStatus(ArgPack({}).span(), ctx));
+    EXPECT_TRUE(Cmd_WeatherWind(ArgPack({}).span(), ctx));
+
+    // config.dump: the weather line must round-trip through the name parser.
+    EXPECT_TRUE(Cmd_ConfigDump(ArgPack({}).span(), ctx));
+    bool sawName = false;
+    bool sawAuto = false;
+    for (const auto& l : buffer.Lines())
+    {
+        if (l.text.find("time.weather Clear 0") != std::string::npos)
+        {
+            sawName = true;
+        }
+        if (l.text == "weather.auto on")
+        {
+            sawAuto = true;
+        }
+    }
+    EXPECT_TRUE(sawName) << "config.dump weather line not name-based/replayable";
+    EXPECT_TRUE(sawAuto) << "config.dump did not emit weather.auto state";
+}
+
+TEST(WeatherCommandTests, ConfigDumpOmitsAutoLineWithoutDirector)
+{
+    ConsoleBuffer buf;
+    TimeManager time;
+    time.Initialize();
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    EXPECT_TRUE(Cmd_ConfigDump(ArgPack({}).span(), ctx));
+    bool sawName = false;
+    bool sawAuto = false;
+    for (const auto& l : buf.Lines())
+    {
+        if (l.text.find("time.weather Clear 0") != std::string::npos)
+        {
+            sawName = true;
+        }
+        if (l.text.find("weather.auto") != std::string::npos)
+        {
+            sawAuto = true;
+        }
+    }
+    EXPECT_TRUE(sawName);
+    EXPECT_FALSE(sawAuto);
 }
 
 // ---------------------------------------------------------------------------
