@@ -63,125 +63,140 @@
  * ============================================================================================== */
 ```
 
-## Project Structure
-
-The layout is shown below. `src/` is a **flat** directory; the groups under it are logical, not folders.
-
 ```
 rift/
-|-- src/                          # Engine source (flat; grouped by subsystem)
-|   # Entry & orchestration
-|   |-- main.cpp                  # Program entry point
-|   |-- Game.*                    # Core loop + state (partials: GameInput, GameMenus, GameDialogue)
-|   |-- GameMode.hpp              # Title / Playing / Paused top-level state
-|   |-- WorldServices.hpp         # Non-owning service pointers published into the ECS globals
-|   |-- Version.hpp               # 4-part version, parsed by CMake
-|   |-- DoxygenGroups.hpp         # Doxygen @defgroup declarations
-|   |
-|   # Rendering backends & interface
-|   |-- IRenderer.*               # Strategy interface (OpenGL / Vulkan kept in lockstep)
-|   |-- OpenGLRenderer.*          # OpenGL 4.6 backend (batching, bloom, PostFX)
-|   |-- VulkanRenderer.*          # Vulkan 1.4 backend (+ ...Buffers, ...Helpers partials)
-|   |-- VulkanShader.*, VulkanCommon.hpp
-|   |-- RendererFactory.*, RendererAPI.hpp, RendererMacros.hpp
-|   |
-|   # Draw pipeline & textures
-|   |-- RenderDrawable.*          # Y-sorted draw-list build
-|   |-- CharacterRender.*, PlayerRender.*, NpcRender.*     # sprite draws over components
-|   |-- PerspectiveTransform.hpp, PerspectiveTransformFloat.hpp   # globe / vanishing point
-|   |-- PostFXParams.hpp          # bloom / grading / vignette / grain params
-|   |-- DrawTracer.*, ViewScaling.hpp
-|   |-- Texture.*, TextureHandle.hpp, TextureStore.*      # texture upload / ownership
-|   |-- ProceduralTexture.hpp, AuroraTextures.*, AuroraMath.hpp
-|   |
-|   # World, tilemap & collision
-|   |-- Tilemap.*                 # 10 tile layers + elevation + lights + zones; sparse JSON
-|   |-- CollisionMap.hpp, NavigationMap.hpp, BoolGrid.hpp
-|   |-- CollisionGeometry.hpp, CollisionSystem.*         # stateless AABB collision
-|   |-- TileMath.hpp, DefaultedVector.hpp, ColumnProxy.hpp
-|   |-- Pathfinding.*, NavigationRecalc.*, PatrolRoute.*
-|   |-- ProjectManifest.*, AssetRegistry.*               # manifest + asset lookup
-|   |
-|   # ECS components (plain structs, no methods) + entity store
-|   |-- Transform, Elevation, ElevationAxis, Facing       # spatial + orientation
-|   |-- AnimationState, AnimationType, Appearance         # visuals
-|   |-- Motor, MotorParams, Speed, Hitbox                 # movement body + collision box
-|   |-- Identity, PlayerTag, NpcTag                       # stable id + archetype tags
-|   |-- PlayerInputState, PlayerMovementState, PlayerModes, PlayerSprite
-|   |-- NpcIdle, NpcSprite, NpcRecord, Patrol
-|   |-- CharacterType, CharacterConstants, CharacterDirection
-|   |-- EntityStore.*             # spawn / lifecycle / query over the registry
-|   |
-|   # Systems (stateless free functions over components)
-|   |-- MotionSystem.*            # momentum kinematics over Motor
-|   |-- PlayerMovementSystem.*, PlayerSystem.*
-|   |-- NpcAiSystem.*             # patrol / idle AI
-|   |-- CharacterKinematics.*
-|   |
-|   # Time, sky, weather & particles
-|   |-- TimeManager.*             # 24h day/night cycle, moon phase
-|   |-- SkyRenderer.*             # procedural sky, stars, aurora, lightning
-|   |-- WeatherDefinitions.*      # static weather data table
-|   |-- WeatherDirector.*, WeatherBlend.*                # smooth transitions, gusts, forecast
-|   |-- ParticleSystem.*          # weather + zone particle spawning
-|   |-- AmbienceConfig.hpp        # centralized ambience / PostFX tuning constants
-|   |
-|   # Dialogue & game state
-|   |-- Dialogue.hpp, DialogueHandle.hpp, DialogueTypes.hpp
-|   |-- DialogueManager.*, DialogueStore.*, Dialogues.*
-|   |-- GameStateManager.*        # flags backing dialogue conditions / consequences
-|   |
-|   # In-game editor
-|   |-- Editor.*                  # editor state (partials: EditorInput, EditorRendering)
-|   |-- EditorCommand.hpp, EditorCommands.*, UndoRedoStack.hpp   # command-pattern undo/redo
-|   |-- EditorBrushTransform.hpp, EditorStrokeAccumulators.hpp
-|   |
-|   # Developer console
-|   |-- Console.*, ConsoleCommands.*                     # F12 console; authorized state mutator
-|   |
-|   # Camera, input & utilities
-|   |-- CameraController.*, KeyToggle.hpp
-|   |-- Logger.*, EnumTraits.hpp, MenuLogic.hpp
-|   +-- MathConstants.hpp, MathUtils.hpp
-|
-|-- shaders/                      # GLSL 450 (compiled to *.spv at build time, gitignored)
-|   |-- Geometry.vert/frag        # forward pass: sprites, tiles, particles
-|   |-- FullscreenTriangle.vert   # fullscreen VS for post-processing
-|   |-- BloomPrefilter.frag, BloomDownsample.frag, BloomUpsample.frag   # multi-mip bloom
-|   +-- PostFXComposite.frag      # composite: bloom, grading, vignette, grain
-|
-|-- tests/                        # Google Test suite (unit + system tests; run via test.bat)
-|
-|-- assets/                       # Game assets -- NOT included; provide your own (see note above)
-|   |-- fonts/                    # TTF fonts for UI / text
-|   |-- non-player/               # NPC + enemy sprites
-|   |-- overworld/                # tilesets + map images
-|   |-- player/                   # player sprite sheets
-|   |-- particles/                # particle effect images
-|   |-- sound/                    # audio assets
-|   +-- rift.save.json            # save file (path set in the manifest)
-|
-|-- docs/                         # Documentation (Markdown guides + Doxygen output)
-|   |-- ARCHITECTURE.md, RENDERING.md, TIME_SYSTEM.md, COLLISION.md
-|   |-- EDITOR.md, PROJECT_MANIFEST.md
-|   +-- SETUP.md, BUILDING.md, MAINPAGE.md
-|
-|-- external/                     # Third-party deps (fetched / cloned by setup.ps1)
-|   |-- ecs/                      # header-only ECS registry
-|   |-- glad/                     # OpenGL loader
-|   |-- glfw/                     # windowing + input
-|   |-- glm/                      # math
-|   |-- nlohmann/                 # JSON (json.hpp)
-|   +-- stb/                      # stb_image
-|
-|-- CMakeLists.txt                # Build config (game + tests share one build/ tree)
-|-- CMakePresets.json             # Presets: default / ci / compile-db
-|-- vcpkg.json                    # vcpkg manifest (glm, glfw3, freetype, gtest)
-|-- rift.project.json             # Project manifest: asset wiring, tile size, map defaults
-|-- Doxyfile.in                   # Doxygen API-docs template
-|-- setup.ps1                     # One-time dependency fetch
-|-- build.bat                     # Full dev pipeline: format -> configure -> tidy -> build -> docs
-+-- test.bat                      # Configure + build + run tests
+|-- src/                               # Engine source (flat; grouped by subsystem)
+|   |-- main.cpp                       # Program entry point; boots and runs Game
+|   |-- Game.*                         # Core loop + state (partials: GameInput/Menus/Dialogue)
+|   |-- GameMode.hpp                   # Title / Playing / Paused top-level mode
+|   |-- WorldServices.hpp              # Non-owning service pointers in the ECS globals
+|   |-- Version.hpp                    # 4-part version string, parsed by CMake
+|   |-- DoxygenGroups.hpp              # Doxygen @defgroup declarations
+|   |-- IRenderer.*                    # Renderer strategy interface
+|   |-- OpenGLRenderer.*               # OpenGL 4.6 backend (batching, bloom, PostFX)
+|   |-- VulkanRenderer.*               # Vulkan 1.4 backend (partials: Buffers/Helpers)
+|   |-- VulkanShader.*                 # Vulkan shader-module loading
+|   |-- VulkanCommon.hpp               # Shared Vulkan types + helpers
+|   |-- RendererFactory.*              # Creates the active backend at runtime
+|   |-- RendererAPI.hpp                # Backend selector enum (OpenGL / Vulkan)
+|   |-- RendererMacros.hpp             # Macros keeping both backends in lockstep
+|   |-- RenderDrawable.*               # Y-sorted draw-list build
+|   |-- CharacterRender.*              # Shared character sprite draw
+|   |-- PlayerRender.*                 # Player sprite draw over components
+|   |-- NpcRender.*                    # NPC sprite draw over components
+|   |-- PerspectiveTransform.hpp       # Globe / vanishing-point projection
+|   |-- PerspectiveTransformFloat.hpp  # Float-precision perspective transform
+|   |-- PostFXParams.hpp               # Bloom / grading / vignette / grain params
+|   |-- DrawTracer.*                   # Per-frame draw-call tracing
+|   |-- ViewScaling.hpp                # Resolution / view scaling helpers
+|   |-- Texture.*                      # Texture resource (upload, bind)
+|   |-- TextureHandle.hpp              # Lightweight texture handle
+|   |-- TextureStore.*                 # Owns textures; re-uploads on backend switch
+|   |-- ProceduralTexture.hpp          # CPU-generated texture helpers
+|   |-- AuroraTextures.*               # Generated aurora ribbon textures
+|   |-- AuroraMath.hpp                 # Aurora curve / noise math
+|   |-- Tilemap.*                      # 10 tile layers + elevation + lights; sparse JSON
+|   |-- CollisionMap.hpp               # Player-blocking bit grid
+|   |-- NavigationMap.hpp              # NPC-walkability bit grid
+|   |-- BoolGrid.hpp                   # Backing bit grid for both maps
+|   |-- CollisionGeometry.hpp          # Feet-anchored AABB collision geometry
+|   |-- CollisionSystem.*              # Stateless AABB collision over Hitbox
+|   |-- TileMath.hpp                   # Shared tile / feet-AABB coord helpers
+|   |-- DefaultedVector.hpp            # Sparse vector defaulting unset cells
+|   |-- ColumnProxy.hpp                # Column view into the tile grid
+|   |-- Pathfinding.*                  # A* over the navigation map
+|   |-- NavigationRecalc.*             # Rebuilds nav + patrol routes on edits
+|   |-- PatrolRoute.*                  # Runtime patrol-route cache (not a component)
+|   |-- ProjectManifest.*              # Parses rift.project.json (assets, tile size)
+|   |-- AssetRegistry.*                # Asset path lookup by handle
+|   |-- Transform.hpp                  # World position component
+|   |-- Elevation.hpp                  # Integer elevation (Z plane) component
+|   |-- ElevationAxis.hpp              # Which axis a ramp engages
+|   |-- Facing.hpp                     # Facing-direction component
+|   |-- AnimationState.hpp             # Current animation frame / timer
+|   |-- AnimationType.hpp              # Animation kind enum
+|   |-- Appearance.hpp                 # Sprite sheet / tint component
+|   |-- Motor.hpp                      # Velocity / momentum body component
+|   |-- MotorParams.hpp                # Per-entity motor tuning
+|   |-- Speed.hpp                      # Movement-speed component
+|   |-- Hitbox.hpp                     # Feet-anchored collision AABB component
+|   |-- Identity.hpp                   # Stable instance id (survives despawn)
+|   |-- PlayerTag.hpp                  # Marks the player entity
+|   |-- NpcTag.hpp                     # Marks NPC entities
+|   |-- PlayerInputState.hpp           # Buffered player input component
+|   |-- PlayerMovementState.hpp        # Slide / lane-snap / stuck hysteresis
+|   |-- PlayerModes.hpp                # Player mode flags
+|   |-- PlayerSprite.hpp               # Player sprite-sheet layout
+|   |-- NpcIdle.hpp                    # NPC idle-wait state component
+|   |-- NpcSprite.hpp                  # NPC sprite-sheet layout
+|   |-- NpcRecord.hpp                  # Serialized NPC spawn record
+|   |-- Patrol.hpp                     # NPC patrol waypoints component
+|   |-- CharacterType.hpp              # Character archetype enum
+|   |-- CharacterConstants.hpp         # Shared character tuning constants
+|   |-- CharacterDirection.hpp         # 8-way direction enum + helpers
+|   |-- EntityStore.*                  # Spawn / despawn / query over the registry
+|   |-- MotionSystem.*                 # Momentum kinematics over Motor
+|   |-- PlayerMovementSystem.*         # Player movement + collision response
+|   |-- PlayerSystem.*                 # Per-frame player update (anim, overlap-stop)
+|   |-- NpcAiSystem.*                  # Patrol / idle NPC AI (UpdateAll)
+|   |-- CharacterKinematics.*          # Shared per-entity step / kinematics
+|   |-- TimeManager.*                  # 24h day/night cycle, moon phase
+|   |-- SkyRenderer.*                  # Procedural sky, stars, aurora, lightning
+|   |-- WeatherDefinitions.*           # Static weather data table
+|   |-- WeatherDirector.*              # Weather scheduling + forecast
+|   |-- WeatherBlend.*                 # Smooth weather transitions + gusts
+|   |-- ParticleSystem.*               # Weather + zone particle spawning
+|   |-- AmbienceConfig.hpp             # Centralized ambience / PostFX tuning
+|   |-- Dialogue.hpp                   # Dialogue component (holds a handle)
+|   |-- DialogueHandle.hpp             # Stable key into the dialogue store
+|   |-- DialogueTypes.hpp              # Dialogue condition / consequence types
+|   |-- DialogueManager.*              # Branching conversation runtime
+|   |-- DialogueStore.*                # Dialogue trees keyed by handle
+|   |-- Dialogues.*                    # Authored dialogue-tree data
+|   |-- GameStateManager.*             # Flags backing dialogue conditions
+|   |-- Editor.*                       # Editor state (partials: EditorInput/Rendering)
+|   |-- EditorCommand.hpp              # Undo/redo command base interface
+|   |-- EditorCommands.*               # Concrete editor commands
+|   |-- UndoRedoStack.hpp              # Command-pattern undo/redo stack
+|   |-- EditorBrushTransform.hpp       # Brush flip / rotate transform
+|   |-- EditorStrokeAccumulators.hpp   # Batches drag-paint edits per stroke
+|   |-- Console.*                      # F12 dev console; authorized state mutator
+|   |-- ConsoleCommands.*              # Console command handlers + registry
+|   |-- CameraController.*             # Follow camera + look-ahead
+|   |-- KeyToggle.hpp                  # Edge-triggered key helper
+|   |-- Logger.*                       # Per-subsystem logging
+|   |-- EnumTraits.hpp                 # Compile-time enum reflection
+|   |-- MenuLogic.hpp                  # Menu navigation helpers
+|   |-- MathConstants.hpp              # Shared math constants
+|   +-- MathUtils.hpp                  # Shared math helpers
+|-- shaders/                           # GLSL 450 (compiled to *.spv at build; gitignored)
+|   |-- Geometry.vert/frag             # Forward pass: sprites, tiles, particles
+|   |-- FullscreenTriangle.vert        # Fullscreen VS for post-processing
+|   |-- BloomPrefilter.frag            # Bloom: bright-pass prefilter
+|   |-- BloomDownsample.frag           # Bloom: mip downsample
+|   |-- BloomUpsample.frag             # Bloom: mip upsample + combine
+|   +-- PostFXComposite.frag           # Composite: bloom, grading, vignette, grain
+|-- tests/                             # Google Test suite (unit + system; run via test.bat)
+|-- assets/                            # Game assets - NOT included; provide your own
+|-- docs/                              # Documentation (Markdown guides + Doxygen output)
+|   |-- ARCHITECTURE.md                # Architecture overview
+|   |-- RENDERING.md                   # Rendering pipeline guide
+|   |-- TIME_SYSTEM.md                 # Day/night + weather guide
+|   |-- COLLISION.md                   # Collision + navigation guide
+|   |-- EDITOR.md                      # In-game editor guide
+|   |-- PROJECT_MANIFEST.md            # rift.project.json reference
+|   |-- SETUP.md                       # First-time setup
+|   |-- BUILDING.md                    # Build instructions
+|   +-- MAINPAGE.md                    # Doxygen landing page
+|-- external/                          # Third-party deps (fetched / cloned by setup.ps1)
+|-- CMakeLists.txt                     # Build config (game + tests share one build/)
+|-- CMakePresets.json                  # Presets: default / ci / compile-db
+|-- vcpkg.json                         # vcpkg manifest (glm, glfw3, freetype, gtest)
+|-- rift.project.json                  # Project manifest: assets, tile size, defaults
+|-- Doxyfile.in                        # Doxygen API-docs template
+|-- setup.ps1                          # One-time dependency fetch
+|-- build.bat                          # Full pipeline: format -> tidy -> build -> docs
++-- test.bat                           # Configure + build + run tests
 ```
 
 ## Features
@@ -546,28 +561,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) f
 - [Codex](https://openai.com/index/openai-codex/) - AI coding assistant by OpenAI
 - [DeviantArt](https://www.deviantart.com/) - Pixel art for characters and tilesets
 - [Sora](https://openai.com/sora/) - Particle effect generation
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
