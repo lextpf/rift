@@ -16,6 +16,7 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=lextpf_wild&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=lextpf_wild)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e045fafe1dab415bb48a7485372146b0)](https://app.codacy.com/gh/lextpf/rift/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 <br/>
 [![build](https://github.com/lextpf/rift/actions/workflows/build.yml/badge.svg)](https://github.com/lextpf/rift/actions/workflows/build.yml)
 [![tests](https://github.com/lextpf/rift/actions/workflows/test.yml/badge.svg)](https://github.com/lextpf/rift/actions/workflows/test.yml)
