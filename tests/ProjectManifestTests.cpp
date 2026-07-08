@@ -125,6 +125,53 @@ TEST(ProjectManifestTests, ValidManifestParsesAndResolvesRelativePaths)
     EXPECT_EQ(manifest->ResolvePath("assets/tiles.png"), project.root / "assets/tiles.png");
 }
 
+TEST(ProjectManifestTests, ParticlesMapParsesAndValidates)
+{
+    TempProject project;
+    CreateValidAssetFixture(project);
+    project.Touch("assets/particles/aaaa.png");
+    project.Touch("assets/particles/bbbb_strip.png");
+    std::string json = ValidManifestJson();
+    // Splice a particles object into the valid manifest: one static link,
+    // one strip-only link, one dangling link.
+    const std::string needle = "\"fonts\":";
+    json.insert(json.find(needle),
+                "\"particles\": {\n"
+                "    \"smoke\": \"assets/particles/aaaa.png\",\n"
+                "    \"curse\": \"assets/particles/bbbb_strip.png\",\n"
+                "    \"ghost\": \"assets/particles/missing.png\"\n"
+                "},\n");
+
+    std::filesystem::path path = project.WriteManifest(json);
+
+    ManifestValidationResult result;
+    std::optional<ProjectManifest> manifest = ProjectManifest::LoadFromFile(path, result);
+
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_FALSE(result.HasErrors());
+    ASSERT_EQ(manifest->particleSprites.size(), 3u);
+    EXPECT_EQ(manifest->particleSprites.at("smoke"), "assets/particles/aaaa.png");
+    EXPECT_EQ(manifest->particleSprites.at("curse"), "assets/particles/bbbb_strip.png");
+    // Dangling link is a warning (particles degrade to procedural sprites),
+    // never a startup-blocking error.
+    EXPECT_TRUE(HasDiagnosticFor(result, "particles.ghost"));
+}
+
+TEST(ProjectManifestTests, MissingParticlesSectionIsOnlyAWarning)
+{
+    TempProject project;
+    CreateValidAssetFixture(project);
+    std::filesystem::path path = project.WriteManifest(ValidManifestJson());
+
+    ManifestValidationResult result;
+    std::optional<ProjectManifest> manifest = ProjectManifest::LoadFromFile(path, result);
+
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_FALSE(result.HasErrors());
+    EXPECT_TRUE(manifest->particleSprites.empty());
+    EXPECT_TRUE(HasDiagnosticFor(result, "particles"));
+}
+
 TEST(ProjectManifestTests, MalformedJsonFailsWithError)
 {
     TempProject project;
