@@ -100,6 +100,12 @@ struct ProjectManifest
     std::vector<std::string> fonts;       ///< Project font candidates tried before fallbacks.
     std::map<std::string, PlayerCharacterManifest> playerCharacters;  ///< CharacterType to sprites.
 
+    /// Particle sprite name (e.g. "smoke2") to relative asset path. The path
+    /// links one on-disk file; the particle atlas derives the animated
+    /// "_strip" sibling from it, so either the static frame or the strip may
+    /// be linked. Missing entries degrade to procedural fallback sprites.
+    std::map<std::string, std::string> particleSprites;
+
     ProjectManifest() = default;
     ProjectManifest(const ProjectManifest&) = default;
     ProjectManifest(ProjectManifest&&) noexcept = default;

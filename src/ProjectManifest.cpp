@@ -137,6 +137,33 @@ void ReadStringArray(const json& object,
     }
 }
 
+void ReadStringMap(const json& object,
+                   const char* key,
+                   std::map<std::string, std::string>& out,
+                   ManifestValidationResult& result)
+{
+    if (!object.contains(key))
+    {
+        return;
+    }
+    if (!object[key].is_object())
+    {
+        result.AddError(key, "Expected an object of name-to-path strings.");
+        return;
+    }
+
+    out.clear();
+    for (const auto& [name, valueJson] : object[key].items())
+    {
+        if (!valueJson.is_string())
+        {
+            result.AddError(std::string(key) + "." + name, "Expected a string path.");
+            continue;
+        }
+        out[name] = valueJson.get<std::string>();
+    }
+}
+
 void ReadPlayerCharacters(const json& object,
                           ProjectManifest& manifest,
                           ManifestValidationResult& result)
@@ -350,6 +377,21 @@ ManifestValidationResult ProjectManifest::Validate() const
         }
     }
 
+    if (particleSprites.empty())
+    {
+        result.AddWarning("particles",
+                          "No particle sprites configured; particle rendering falls back to "
+                          "procedural shapes.");
+    }
+    for (const auto& [particleName, particlePath] : particleSprites)
+    {
+        if (!PathExists(*this, particlePath))
+        {
+            result.AddWarning("particles." + particleName,
+                              "Missing particle sprite: " + ResolvePathString(particlePath));
+        }
+    }
+
     if (playerCharacters.empty())
     {
         result.AddError("playerCharacters", "At least one player character is required.");
@@ -497,6 +539,7 @@ std::optional<ProjectManifest> ProjectManifest::LoadFromFile(const std::filesyst
     ReadStringArray(document, "tilesets", manifest.tilesets, result);
     ReadStringArray(document, "npcSprites", manifest.npcSprites, result);
     ReadStringArray(document, "fonts", manifest.fonts, result);
+    ReadStringMap(document, "particles", manifest.particleSprites, result);
     ReadPlayerCharacters(document, manifest, result);
 
     ManifestValidationResult validation = manifest.Validate();
