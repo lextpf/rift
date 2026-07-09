@@ -194,6 +194,76 @@ glm::vec4 GetParticleTypeColor(ParticleType type, float alpha)
             return glm::vec4(1.0f, 0.6f, 0.3f, alpha);
         case ParticleType::Sunshine:
             return glm::vec4(1.0f, 0.95f, 0.6f, alpha);
+        case ParticleType::DriftingLeaf:
+            return glm::vec4(0.55f, 0.80f, 0.30f, alpha);
+        case ParticleType::DustMote:
+            return glm::vec4(0.85f, 0.80f, 0.65f, alpha);
+        case ParticleType::Pollen:
+            return glm::vec4(1.0f, 0.95f, 0.45f, alpha);
+        case ParticleType::CherryBlossom:
+            return glm::vec4(1.0f, 0.65f, 0.80f, alpha);
+        case ParticleType::Ash:
+            return glm::vec4(0.65f, 0.65f, 0.68f, alpha);
+        case ParticleType::Ember:
+            return glm::vec4(1.0f, 0.55f, 0.20f, alpha);
+        case ParticleType::Sand:
+            return glm::vec4(0.85f, 0.72f, 0.45f, alpha);
+        case ParticleType::Smoke:
+            return glm::vec4(0.55f, 0.55f, 0.55f, alpha);
+        case ParticleType::Steam:
+            return glm::vec4(0.90f, 0.92f, 0.95f, alpha);
+        case ParticleType::Aurora:
+            return glm::vec4(0.45f, 1.0f, 0.75f, alpha);
+        case ParticleType::Spark:
+            return glm::vec4(1.0f, 0.85f, 0.35f, alpha);
+        case ParticleType::PixieDust:
+            return glm::vec4(1.0f, 0.75f, 0.95f, alpha);
+        case ParticleType::Arcane:
+            return glm::vec4(0.70f, 0.50f, 1.0f, alpha);
+        case ParticleType::Enchant:
+            return glm::vec4(0.55f, 0.90f, 1.0f, alpha);
+        case ParticleType::Runes:
+            return glm::vec4(1.0f, 0.75f, 0.35f, alpha);
+        case ParticleType::Hex:
+            return glm::vec4(0.60f, 0.90f, 0.40f, alpha);
+        case ParticleType::Curse:
+            return glm::vec4(0.45f, 0.25f, 0.55f, alpha);
+        case ParticleType::Void:
+            return glm::vec4(0.30f, 0.20f, 0.50f, alpha);
+        case ParticleType::Vortex:
+            return glm::vec4(0.60f, 0.85f, 1.0f, alpha);
+        case ParticleType::Soul:
+            return glm::vec4(0.70f, 0.95f, 1.0f, alpha);
+        case ParticleType::Fairy:
+            return glm::vec4(1.0f, 0.85f, 0.60f, alpha);
+        case ParticleType::Butterfly:
+            return glm::vec4(1.0f, 0.70f, 0.45f, alpha);
+        case ParticleType::Bat:
+            return glm::vec4(0.45f, 0.40f, 0.55f, alpha);
+        case ParticleType::Bubble:
+            return glm::vec4(0.65f, 0.90f, 1.0f, alpha);
+        case ParticleType::Coin:
+            return glm::vec4(1.0f, 0.85f, 0.25f, alpha);
+        case ParticleType::Gem:
+            return glm::vec4(0.40f, 0.95f, 0.80f, alpha);
+        case ParticleType::Confetti:
+            return glm::vec4(1.0f, 0.45f, 0.65f, alpha);
+        case ParticleType::Heart:
+            return glm::vec4(1.0f, 0.40f, 0.50f, alpha);
+        case ParticleType::Zap:
+            return glm::vec4(0.65f, 0.80f, 1.0f, alpha);
+        case ParticleType::Wind:
+            return glm::vec4(0.80f, 0.90f, 0.90f, alpha);
+        case ParticleType::Zzz:
+            return glm::vec4(0.75f, 0.70f, 1.0f, alpha);
+        case ParticleType::Constellation:
+            return glm::vec4(0.85f, 0.90f, 1.0f, alpha);
+        case ParticleType::Planet:
+            return glm::vec4(0.70f, 0.60f, 0.90f, alpha);
+        case ParticleType::Moon:
+            return glm::vec4(0.95f, 0.90f, 0.70f, alpha);
+        case ParticleType::Ink:
+            return glm::vec4(0.20f, 0.20f, 0.30f, alpha);
     }
     return glm::vec4(1.0f, 1.0f, 1.0f, alpha);
 }
