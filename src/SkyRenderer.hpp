@@ -254,8 +254,12 @@ public:
      *
      * @param store TextureStore that adopts the generated sky textures; its
      *              UploadAll re-uploads them on a renderer switch.
+     * @param auroraSpritePath Hand-painted aurora mote sprite for the sky-wisp
+     *              layer, resolved by the caller from the project manifest's
+     *              "particles" links. Empty or missing falls back to a
+     *              colored rect.
      */
-    void Initialize(TextureStore& store);
+    void Initialize(TextureStore& store, const std::string& auroraSpritePath = std::string());
 
     /**
      * @brief Bind each sky texture to a region of a shared atlas.

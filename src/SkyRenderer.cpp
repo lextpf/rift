@@ -26,7 +26,7 @@ SkyRenderer::SkyRenderer()
 
 SkyRenderer::~SkyRenderer() {}
 
-void SkyRenderer::Initialize(TextureStore& store)
+void SkyRenderer::Initialize(TextureStore& store, const std::string& auroraSpritePath)
 {
     if (m_Initialized)
         return;
@@ -88,11 +88,16 @@ void SkyRenderer::Initialize(TextureStore& store)
     GenerateAuroraCurtainTexture();
     GenerateAuroraBeamTexture();
     // Hand-painted soft aurora mote for the floating sky-wisp layer (the
-    // procedural dot read worse). Falls back to a colored rect if the file is
-    // missing. Separate from the AuroraNight weather Wisp motes (ParticleSystem,
-    // ead11602...png), which drift through the world below the sky ribbons.
+    // procedural dot read worse). The path comes from the project manifest's
+    // "particles" links (asset file names are opaque GUIDs); falls back to a
+    // colored rect when unlinked or missing. Separate from the AuroraNight
+    // weather Aurora/Wisp motes (ParticleSystem), which drift through the
+    // world below the sky ribbons.
     Texture auroraSmallTex;
-    auroraSmallTex.LoadFromFile("assets/particles/bc3ad898-4ba3-406a-af06-63256cbd45b2.png");
+    if (!auroraSpritePath.empty())
+    {
+        auroraSmallTex.LoadFromFile(auroraSpritePath);
+    }
     m_AuroraSmallHandle = m_Store->Adopt(std::move(auroraSmallTex));
 
     m_Initialized = true;
