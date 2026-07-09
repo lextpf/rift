@@ -6,12 +6,14 @@
 #include "TextureHandle.hpp"
 
 #include <array>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <random>
 #include <vector>
 
 class Tilemap;
 class TextureStore;
+struct ProjectManifest;
 struct WeatherDefinition;
 enum class WeatherParticleType;
 
@@ -38,8 +40,8 @@ enum class ParticleType
     Firefly = 0,         ///< Pulsing yellow-green glow, gentle drift
     Rain = 1,            ///< Fast falling droplets, slight angle
     Snow = 2,            ///< Slow falling flakes with side drift
-    Fog = 3,             ///< Large translucent patches, very slow (also used for chimney smoke)
-    Sparkles = 4,        ///< Brief bright flashes, stationary
+    Fog = 3,             ///< Large translucent patches, very slow
+    Sparkles = 4,        ///< Brief bright twinkles, stationary
     Wisp = 5,            ///< Magical spiraling orbs, color variety
     Lantern = 6,         ///< Warm glow, night-only visibility
     Sunshine = 7,        ///< Sun rays (day=yellow) / moon beams (night=blue)
@@ -49,32 +51,58 @@ enum class ParticleType
     CherryBlossom = 11,  ///< Weather: drifting pink petals, gentle spiral
     Ash = 12,            ///< Weather: gray-white particles, slow fall + flutter
     Ember = 13,          ///< Weather: orange particles rising upward, additive flicker
-    Sand = 14            ///< Weather: tan-gold particles, fast horizontal wind
+    Sand = 14,           ///< Weather: tan-gold particles, fast horizontal wind
+
+    // Appended types (map JSON stores the underlying int - append only, never
+    // reorder the values above).
+    Smoke = 15,          ///< Rising, expanding puffs for chimneys/campfires (wind-bent)
+    Steam = 16,          ///< Fast-rising short-lived white vapor (vents, hot springs)
+    Aurora = 17,         ///< Soft aurora motes drifting on slow ribbons (night skies)
+    Spark = 18,          ///< Energetic darting crackle, brief and bright
+    PixieDust = 19,      ///< Falling glittering trail dust with heavy twinkle
+    Arcane = 20,         ///< Violet glyph motes orbiting their spawn point
+    Enchant = 21,        ///< Rising enchantment glyphs with easing deceleration
+    Runes = 22,          ///< Slow-turning rune sigils with strong glow pulse
+    Hex = 23,            ///< Counter-orbiting witch-magic motes, eerie pulse
+    Curse = 24,          ///< Dark wobbling taint, slow rise, unsettling flicker
+    Void = 25,           ///< Dark matter spiraling inward toward the spawn point
+    Vortex = 26,         ///< Fast circular swirl tightening over lifetime
+    Soul = 27,           ///< Ghostly wisp rising in a slow S-curve wander
+    Fairy = 28,          ///< Darting hover-and-dash glow (quicker than fireflies)
+    Butterfly = 29,      ///< Wandering flappy flight, daylight meadows
+    Bat = 30,            ///< Swooping erratic night flier
+    Bubble = 31,         ///< Buoyant wobbling bubble; converts to its pop strip on expiry
+    Coin = 32,           ///< Spinning coin glint (treasure rooms)
+    Gem = 33,            ///< Floating gem with periodic sparkle glints
+    Confetti = 34,       ///< Celebration popper: rare bursts of tumbling scraps
+    Heart = 35,          ///< Affection emote floating up with a sway
+    Zap = 36,            ///< Electric arc strobe with positional jitter
+    Wind = 37,           ///< Fast horizontal gust streaks riding the wind
+    Zzz = 38,            ///< Sleep emote drifting up in an easing arc
+    Constellation = 39,  ///< Near-stationary star twinkle (night events)
+    Planet = 40,         ///< Very slow drifting celestial body accent
+    Moon = 41,           ///< Stationary crescent accent with soft glow pulse
+    Ink = 42             ///< Dark blot hovering in place, billowing softly
 };
 
 /// Compile-time reflection for ParticleType.
 template <>
 struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
-    static constexpr size_t Count = 15;
-    static constexpr std::string_view Names[] = {"Firefly",
-                                                 "Rain",
-                                                 "Snow",
-                                                 "Fog",
-                                                 "Sparkles",
-                                                 "Wisp",
-                                                 "Lantern",
-                                                 "Sunshine",
-                                                 "DriftingLeaf",
-                                                 "DustMote",
-                                                 "Pollen",
-                                                 "CherryBlossom",
-                                                 "Ash",
-                                                 "Ember",
-                                                 "Sand"};
+    static constexpr size_t Count = 43;
+    static constexpr std::string_view Names[] = {
+        "Firefly",  "Rain",         "Snow",     "Fog",    "Sparkles",      "Wisp",      "Lantern",
+        "Sunshine", "DriftingLeaf", "DustMote", "Pollen", "CherryBlossom", "Ash",       "Ember",
+        "Sand",     "Smoke",        "Steam",    "Aurora", "Spark",         "PixieDust", "Arcane",
+        "Enchant",  "Runes",        "Hex",      "Curse",  "Void",          "Vortex",    "Soul",
+        "Fairy",    "Butterfly",    "Bat",      "Bubble", "Coin",          "Gem",       "Confetti",
+        "Heart",    "Zap",          "Wind",     "Zzz",    "Constellation", "Planet",    "Moon",
+        "Ink"};
 
-    static_assert(std::to_underlying(ParticleType::Sand) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::Ink) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
+    static_assert(std::size(Names) == Count,
+                  "EnumTraits<ParticleType>::Names must have one entry per enumerator");
 };
 
 /**
@@ -102,6 +130,8 @@ struct Particle
     bool noProjection;         ///< Render without perspective distortion.
     int zoneIndex;             ///< Spawning zone index, or -1 for zoneless one-shots/ambient.
     ParticleType type;         ///< Particle behavior type.
+    uint8_t variant{0};        ///< Sprite variant index (e.g. smoke/smoke2/smoke3), rolled at
+                               ///< spawn by AssignSpawnVariants against the atlas variant count.
 };
 
 /**
@@ -163,41 +193,32 @@ struct ParticleZone
  *
  *     Z1[Zone: Firefly]:::zone --> PS[ParticleSystem]:::system
  *     Z2[Zone: Rain]:::zone --> PS
-
- * *     Z3[Zone: Lantern]:::zone --> PS
+ *     Z3[Zone: Lantern]:::zone --> PS
  *     W[Weather state]:::zone --> PS
- *     A[Ambient
- * emitters]:::zone --> PS
- *     PS --> P1[Particle Pool]:::particle P1 --> R[Renderer]
+ *     A[Ambient emitters]:::zone --> PS
+ *     PS --> P1[Particle Pool]:::particle
+ *     P1 --> R[Renderer]
  * </pre>
  * @endhtmlonly
  *
  * @section particle_types Particle Type Behaviors
- * | Type     | Spawn Rate | Lifetime | Size    | Special Behavior           |
- * |----------|------------|----------|---------|----------------------------|
- * | Firefly  | 8/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
- * | Rain     | 25/s       | 2s       | 10-14px | Fast fall, angled sprite   |
- * | Snow     | 25/s       | 15s      | 1.5-3px | Slow fall, rotation        |
- * | Fog      | 5/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
- * | Sparkles | 28/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * | Wisp     | 11/s
- * | 4-7s     | 2-4px   | Spiral movement, colors    |
- * | Lantern  | 0.5/s      | 10-15s   | 4x
- * zone | Night-only glow            |
- * | Sunshine | 1.3/s      | 5-9s     | 40-64px | Angled
- * rays, day/night     |
- * | DriftingLeaf | weather | varied   | varied  | Wind-blown leaves |
- * |
- * DustMote     | weather | varied   | small   | Ambient dust motes         |
- * | Pollen       |
- * weather | varied   | small   | Slow floating pollen       |
- * | CherryBlossom | weather | varied
- * | varied  | Blossom petal drift        |
- * | Ash          | weather | varied   | small   |
- * Falling ash                |
- * | Ember        | weather | varied   | small   | Glowing ember
- * drift        |
- * | Sand         | weather | varied   | small   | Wind-driven sand           |
+ * | Type          | Spawn Rate | Lifetime | Size    | Special Behavior           |
+ * |---------------|------------|----------|---------|----------------------------|
+ * | Firefly       | 8/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
+ * | Rain          | 25/s       | 2s       | 10-14px | Fast fall, angled sprite   |
+ * | Snow          | 25/s       | 15s      | 1.5-3px | Slow fall, rotation        |
+ * | Fog           | 5/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
+ * | Sparkles      | 28/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
+ * | Wisp          | 11/s       | 4-7s     | 2-4px   | Spiral movement, colors    |
+ * | Lantern       | 0.5/s      | 10-15s   | 4x zone | Night-only glow            |
+ * | Sunshine      | 1.3/s      | 5-9s     | 40-64px | Angled rays, day/night     |
+ * | DriftingLeaf  | weather    | varied   | varied  | Wind-blown leaves          |
+ * | DustMote      | weather    | varied   | small   | Ambient dust motes         |
+ * | Pollen        | weather    | varied   | small   | Slow floating pollen       |
+ * | CherryBlossom | weather    | varied   | varied  | Blossom petal drift        |
+ * | Ash           | weather    | varied   | small   | Falling ash                |
+ * | Ember         | weather    | varied   | small   | Glowing ember drift        |
+ * | Sand          | weather    | varied   | small   | Wind-driven sand           |
  *
  * @section particle_lifecycle Particle Lifecycle
  * @htmlonly
@@ -227,23 +248,27 @@ struct ParticleZone
  *
  * @par Projection Calculation
  * For no-projection particles, the system:
- * 1. Asks
- * `Tilemap::ProjectNoProjectionStructurePoint()` to project particles
- *    covered by a
- * no-projection structure.
+ * 1. Asks `Tilemap::ProjectNoProjectionStructurePoint()` to project particles
+ *    covered by a no-projection structure.
  * 2. Uses the returned screen point so particles stay aligned with the
-
- * *    structure's stepped/projected mesh.
- * 3. Falls back to regular renderer projection when no
- * structure covers the
+ *    structure's stepped/projected mesh.
+ * 3. Falls back to regular renderer projection when no structure covers the
  *    particle point.
- * 4. Renders no-projection and regular particles
- * through separate batches.
+ * 4. Renders no-projection and regular particles through separate batches.
  *
  * @section particle_textures Texture System
- * Each particle type has a dedicated texture loaded at initialization.
- * Missing textures fall back to colored rectangles. Some textures are
- * procedurally generated.
+ * Each particle type owns one or more sprite variants (e.g. smoke/smoke2/
+ * smoke3), packed into a single atlas at initialization. Variant names
+ * resolve to on-disk files (opaque GUIDs) through the project manifest's
+ * "particles" links; from the linked file, BuildAtlas derives the
+ * `<...>_strip.png` sibling (horizontal 4-frame animation strip, sliced into
+ * per-frame UVs at draw time) and the single-frame `<...>.png`, preferring
+ * the strip. Unlinked or missing assets fall back to a procedural soft
+ * circle, and Lantern and Sunshine are fully procedural. Particles roll a
+ * random variant at spawn (some types pin the roll and use later variants as
+ * runtime states, e.g. Bubble's pop strip). Strip playback either loops on
+ * global time (offset per particle) or maps onto the particle's lifetime for
+ * one-shots such as bubble pops and Sparkles twinkles.
  *
  * @section particle_performance Performance Notes
  * - Particles are pooled in a single vector (reserved for 500)
@@ -266,15 +291,17 @@ public:
     /**
      * @brief Load all particle textures from disk.
      *
-     * Attempts to load each texture independently. Missing textures
-     * will fall back to colored rectangles during rendering.
+     * Attempts to load each texture independently, resolving asset paths
+     * through the project manifest's "particles" links. Missing links or
+     * files fall back to procedural sprites.
      *
      * @return Always true (individual failures are non-fatal).
      *
-     * @param store TextureStore that adopts the built atlas; its UploadAll re-uploads
-     *              it on a renderer switch (no per-object IGpuResourceOwner hook).
+     * @param store    TextureStore that adopts the built atlas; its UploadAll re-uploads
+     *                 it on a renderer switch (no per-object IGpuResourceOwner hook).
+     * @param manifest Project manifest supplying the particle sprite links.
      */
-    bool LoadTextures(TextureStore& store);
+    bool LoadTextures(TextureStore& store, const ProjectManifest& manifest);
 
     /**
      * @brief Set the zone list for particle spawning.
@@ -518,7 +545,7 @@ private:
                           float deltaTime,
                           glm::vec2 cameraPos,
                           glm::vec2 viewSize,
-                          std::array<int, 32>& liveByType,
+                          std::array<int, EnumTraits<ParticleType>::Count>& liveByType,
                           const WeatherDefinition* streamDef);
 
     /**
@@ -635,7 +662,7 @@ private:
      */
 
     /**
-     * @brief UV region for a particle type in the atlas.
+     * @brief UV region for a particle sprite in the atlas.
      *
      * Stores normalized UV coordinates (0-1) for sampling from the atlas.
      */
@@ -645,18 +672,54 @@ private:
         glm::vec2 uvMax;  ///< Bottom-right UV coordinate.
     };
 
+    /**
+     * @brief One packed sprite variant: UV region plus horizontal frame count.
+     *
+     * frameCount == 1 is a static sprite; > 1 is a horizontal animation strip
+     * (e.g. 64x16 = four 16x16 frames) sliced into per-frame sub-UVs at draw
+     * time. Which frame plays is decided per type (loop on global time, or
+     * mapped onto the particle's lifetime for one-shots).
+     */
+    struct AtlasSlot
+    {
+        AtlasRegion region;  ///< UVs of the whole variant sprite (all frames).
+        int frameCount{1};   ///< Horizontal frames inside the region.
+    };
+
+public:
+    /// Max sprite variants per ParticleType (e.g. dust/dust2/dust3/mote).
+    static constexpr size_t MAX_PARTICLE_VARIANTS = 4;
+
+private:
     TextureStore* m_Store = nullptr;  ///< Owns the adopted atlas (set in LoadTextures).
     TextureHandle m_AtlasHandle;      ///< Handle to the combined particle atlas in m_Store.
-    AtlasRegion m_AtlasRegions[EnumTraits<ParticleType>::Count];  ///< UV per ParticleType.
+
+    /// Per-type variant sprites. Only the first m_VariantCounts[type] entries
+    /// are valid; BuildAtlas fills them from the per-type asset list.
+    AtlasSlot m_AtlasSlots[EnumTraits<ParticleType>::Count][MAX_PARTICLE_VARIANTS];
+
+    /// Valid variant count per type (always >= 1, even before LoadTextures,
+    /// so spawn-time variant rolls stay in range in texture-less contexts
+    /// such as unit tests).
+    uint8_t m_VariantCounts[EnumTraits<ParticleType>::Count];
+
     bool m_TexturesLoaded;  ///< Whether LoadTextures() succeeded.
+
+    /**
+     * @brief Roll a random sprite variant for every particle appended at or
+     * after @p firstIndex (called right after a spawn dispatch so weather,
+     * zone, ambient, and console spawns all share the same variant mix).
+     */
+    void AssignSpawnVariants(size_t firstIndex);
 
     /**
      * @brief Build the texture atlas from individual particle textures.
      *
-     * Loads all particle textures, packs them into a single atlas,
-     * and calculates UV regions for each particle type.
+     * Loads all particle textures (paths resolved through the manifest's
+     * "particles" links), packs them into a single atlas, and calculates
+     * UV regions for each particle type and variant.
      */
-    void BuildAtlas();
+    void BuildAtlas(const ProjectManifest& manifest);
 
     /// @}
 
@@ -679,8 +742,10 @@ private:
         glm::vec4 color;
         float rotation;
         float phase;
+        float lifeT;  ///< Normalized age in [0, 1] for life-mapped strip playback.
         bool additive;
         ParticleType type;
+        uint8_t variant;  ///< Atlas variant index (bounds-checked at draw).
     };
 
     std::vector<ParticleRenderData>
