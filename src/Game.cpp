@@ -327,13 +327,18 @@ bool Game::Initialize()
     m_LastFrameTime = static_cast<float>(glfwGetTime());
 
     // Bring particles online (textures + tile size set here);
-    // zones are set later in LoadTitleScreenWorld.
-    m_Particles.LoadTextures(m_TextureStore);
+    // zones are set later in LoadTitleScreenWorld. Sprite paths resolve
+    // through the manifest's "particles" links (asset names are GUIDs).
+    m_Particles.LoadTextures(m_TextureStore, manifest);
     m_Particles.SetTileSize(m_Tilemap.GetTileWidth(), m_Tilemap.GetTileHeight());
     m_Particles.SetMaxParticlesPerZone(50);
 
     m_TimeManager.Initialize();
-    m_SkyRenderer.Initialize(m_TextureStore);
+    const auto auroraSprite = manifest.particleSprites.find("aurora");
+    m_SkyRenderer.Initialize(m_TextureStore,
+                             auroraSprite != manifest.particleSprites.end()
+                                 ? manifest.ResolvePathString(auroraSprite->second)
+                                 : std::string());
 
     m_DialogueManager.Initialize(&m_GameState);
 
