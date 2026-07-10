@@ -1735,7 +1735,8 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                                 glm::vec3 spriteColor,
                                 float spriteAlpha,
                                 bool useColorOnly,
-                                glm::vec4 colorOnly)
+                                glm::vec4 colorOnly,
+                                bool applyAmbient)
 {
     if (!m_FrameActive)
         return false;
@@ -1755,7 +1756,11 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
     pc.useColorOnly = useColorOnly ? 1.0f : 0.0f;
     pc.colorOnly = colorOnly;
     pc.spriteAlpha = spriteAlpha;
-    pc.ambientColor = m_AmbientColor;
+    // Particles and sky elements (applyAmbient=false) keep their own color
+    // instead of being tinted by the day/night ambient, matching the OpenGL
+    // particle batch (which draws them with per-vertex color only). Without
+    // this, fog/smoke/stars darken to grey as the ambient dims through the day.
+    pc.ambientColor = applyAmbient ? m_AmbientColor : glm::vec3(1.0f);
 
     VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
 
@@ -2030,7 +2035,15 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
 
     SpriteVertex vertices[6];
     BuildQuadVertices(vertices, corners, texCoords, perspFlag);
-    SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
+    // Atlas draws are particles (ParticleSystem) and sky elements (SkyRenderer),
+    // both self-lit: skip the ambient tint so they don't darken with daytime.
+    SubmitQuad(descriptorSet,
+               vertices,
+               glm::vec3(color.r, color.g, color.b),
+               color.a,
+               /*useColorOnly=*/false,
+               /*colorOnly=*/glm::vec4(0.0f),
+               /*applyAmbient=*/false);
 }
 
 // Draw a solid-color rectangle (no texture) via the white texture and the shader's

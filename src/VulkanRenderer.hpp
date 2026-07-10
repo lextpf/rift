@@ -200,6 +200,9 @@ private:
      * @param spriteAlpha Transparency multiplier.
      * @param useColorOnly True to render solid color instead of texture.
      * @param colorOnly RGBA color when useColorOnly is true.
+     * @param applyAmbient True to multiply by the day/night ambient tint (lit
+     *        surfaces); false for self-lit sprites (particles, sky) that must
+     *        keep their own color, matching the OpenGL particle batch.
      * @return True if the quad was successfully submitted.
      */
     bool SubmitQuad(VkDescriptorSet descriptorSet,
@@ -207,7 +210,8 @@ private:
                     glm::vec3 spriteColor,
                     float spriteAlpha,
                     bool useColorOnly = false,
-                    glm::vec4 colorOnly = glm::vec4(0.0f));
+                    glm::vec4 colorOnly = glm::vec4(0.0f),
+                    bool applyAmbient = true);
     /// @}
 
     /**
