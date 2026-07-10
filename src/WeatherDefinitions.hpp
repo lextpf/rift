@@ -85,19 +85,24 @@ struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<Weathe
  */
 enum class WeatherParticleType
 {
-    None = 0,  ///< No additional particles.
-    Rain,      ///< Maps to ParticleType::Rain.
-    Snow,      ///< Maps to ParticleType::Snow.
-    Fog,       ///< Maps to ParticleType::Fog.
-    Leaf,      ///< Maps to ParticleType::DriftingLeaf.
-    Blossom,   ///< Maps to ParticleType::CherryBlossom.
-    Pollen,    ///< Maps to ParticleType::Pollen.
-    Ash,       ///< Maps to ParticleType::Ash.
-    Ember,     ///< Maps to ParticleType::Ember.
-    Sand,      ///< Maps to ParticleType::Sand.
-    Firefly,   ///< Maps to ParticleType::Firefly.
-    Wisp,      ///< Maps to ParticleType::Wisp. Used by AuroraNight as a sparse aurora-dust layer.
-    Sunshine   ///< Maps to ParticleType::Sunshine. Used by GodRays for rainbow-tinted beams.
+    None = 0,      ///< No additional particles.
+    Rain,          ///< Maps to ParticleType::Rain.
+    Snow,          ///< Maps to ParticleType::Snow.
+    Fog,           ///< Maps to ParticleType::Fog.
+    Leaf,          ///< Maps to ParticleType::DriftingLeaf.
+    Blossom,       ///< Maps to ParticleType::CherryBlossom.
+    Pollen,        ///< Maps to ParticleType::Pollen.
+    Ash,           ///< Maps to ParticleType::Ash.
+    Ember,         ///< Maps to ParticleType::Ember.
+    Sand,          ///< Maps to ParticleType::Sand.
+    Firefly,       ///< Maps to ParticleType::Firefly.
+    Wisp,          ///< Maps to ParticleType::Wisp. AuroraNight's sparse aurora-dust layer.
+    Sunshine,      ///< Maps to ParticleType::Sunshine. Used by GodRays for rainbow-tinted beams.
+    Smoke,         ///< Maps to ParticleType::Smoke. Drifting haze layer for AshFall/EmberStorm.
+    Zap,           ///< Maps to ParticleType::Zap. Thunderstorm's electric crackle layer.
+    Wind,          ///< Maps to ParticleType::Wind. Sandstorm's gust-streak layer.
+    Aurora,        ///< Maps to ParticleType::Aurora. AuroraNight's hand-painted mote layer.
+    Constellation  ///< Maps to ParticleType::Constellation. MeteorShower's settling stardust.
 };
 
 /**

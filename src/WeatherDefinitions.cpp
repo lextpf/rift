@@ -35,7 +35,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
     // Thunderstorm: less frequent flashes (was 5s -> 8s) so the lightning
     // overlay reads as a punctuating event rather than a constant strobe; the
-    // flash alpha itself is tuned in SkyRenderer (see RenderSky).
+    // flash alpha itself is tuned in SkyRenderer (see RenderSky). A sparse
+    // Zap secondary scatters brief electric crackles through the downpour so
+    // the storm reads charged even between sky flashes.
     WeatherDefinition{
         .ambientTintMultiplier = {0.50f, 0.52f, 0.65f},
         .skyColorOverride = {0.30f, 0.32f, 0.42f},
@@ -46,11 +48,14 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .showCelestialBodies = false,
         .lightningIntervalSeconds = 8.0f,
         .windIntensity = 1.0f,
+        .secondaryParticleType = WeatherParticleType::Zap,
+        .secondaryBaseSpawnRate = 3.0f,
+        .secondaryMaxWeatherParticles = 80,
     },
     // Blizzard: heaviest snow with gusty wind. SpawnWeatherParticle ramps the snow's
     // wind boost with gusted strength (smoothstep 0.3-0.9, sign-coherent so flakes
-    // share one drift) up to full at windIntensity 1.0, and stretches per-flake
-    // lifetime for a persistent population. Secondary Fog is a 50/50 mist/blob mix.
+    // share one drift) up to full at windIntensity 1.0. A thinned Fog secondary
+    // supplies the whiteout mist behind the flakes.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.95f},
         .skyColorOverride = {0.78f, 0.80f, 0.85f},
@@ -67,9 +72,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
 
     // Atmosphere.
-    // Fog (merged): primary stream tiered post-spawn into 80% small mist-style
-    // puffs and 20% large fog blobs. Replaces the former separate Fog and Mist
-    // weathers. Soft per-puff alpha keeps the world legible.
+    // Fog (merged): replaces the former separate Fog and Mist weathers with
+    // one thinned stream of large soft puffs; the fogAlphaMultiplier keeps
+    // per-puff alpha low so the world stays legible.
     WeatherDefinition{
         .ambientTintMultiplier = {0.80f, 0.83f, 0.87f},
         .particleType = WeatherParticleType::Fog,
@@ -87,7 +92,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .windIntensity = 0.1f,
         .hazeAmplitude = 2.0f,
     },
-    // Sandstorm
+    // Sandstorm: a Wind secondary layers translucent gust streaks (stretched
+    // at draw time) over the sand so the airflow itself is visible, not just
+    // the grit it carries. Both streams enter from the upwind edge.
     WeatherDefinition{
         .ambientTintMultiplier = {0.75f, 0.65f, 0.50f},
         .skyColorOverride = {0.70f, 0.55f, 0.40f},
@@ -99,6 +106,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         // 0.5 = the calm anchor reproducing the pre-wind drift speed; raise for gustier, lower for
         // stiller.
         .windIntensity = 0.5f,
+        .secondaryParticleType = WeatherParticleType::Wind,
+        .secondaryBaseSpawnRate = 30.0f,
+        .secondaryMaxWeatherParticles = 500,
     },
 
     // Floral / seasonal.
@@ -117,8 +127,8 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
     // CherryBlossoms: dense pink flurry. The Blossom behavior's per-spawn tier system
     // mixes sizes/hues so density isn't uniform, and an alpha pulse in Update makes
-    // petals breathe. Pink tint (R at white point, G/B suppressed); a pink-tinted Fog
-    // secondary adds a sakura wash behind the petals (tint in SpawnWeatherParticle).
+    // petals breathe. Pink ambient tint (R at white point, G/B suppressed); a soft
+    // Fog secondary adds an atmosphere wash behind the petals.
     WeatherDefinition{
         .ambientTintMultiplier = {1.00f, 0.80f, 0.92f},
         .particleType = WeatherParticleType::Blossom,
@@ -143,31 +153,39 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
     },
 
     // Special / night.
-    // AuroraNight: sparse Wisp-class motes drift alongside the sky ribbons; Wisp's slow
-    // spiral + color variety reads as aurora dust, not fireflies. The post-spawn block
-    // in SpawnWeatherParticle restricts the palette to cool aurora hues (emerald/cyan/
-    // violet/magenta), and the rate is kept low so the ribbons stay the hero element.
+    // AuroraNight: the primary stream is the dedicated Aurora particle - the
+    // hand-painted aurora/aurora2/aurora3 motes on slow ribbon drift, night-
+    // gated in their Update so they bloom after dark. A sparse Wisp secondary
+    // keeps a little spiraling aurora dust beneath the ribbons. Rates stay
+    // low so the SkyRenderer ribbons remain the hero element.
     WeatherDefinition{
         .ambientTintMultiplier = {0.85f, 0.92f, 1.08f},
-        .particleType = WeatherParticleType::Wisp,
-        .baseSpawnRate = 35.0f,
-        .maxWeatherParticles = 600,
+        .particleType = WeatherParticleType::Aurora,
+        .baseSpawnRate = 25.0f,
+        .maxWeatherParticles = 400,
         .particleSizeScale = 0.85f,
         .starVisibilityOverride = 0.85f,
         .showAurora = true,
+        .secondaryParticleType = WeatherParticleType::Wisp,
+        .secondaryBaseSpawnRate = 12.0f,
+        .secondaryMaxWeatherParticles = 200,
     },
     // MeteorShower: rate bump to 12 collapses the spawn interval (~4s base / 12
     // ~0.3s). Per-star size/brightness boost lives in
-    // SkyRenderer::SpawnShootingStar so the weather reads as an event.
+    // SkyRenderer::SpawnShootingStar so the weather reads as an event. A very
+    // sparse Constellation stream adds night-gated star twinkles settling
+    // through the world - stardust from the show overhead.
     WeatherDefinition{
         .ambientTintMultiplier = {0.95f, 0.95f, 1.00f},
+        .particleType = WeatherParticleType::Constellation,
+        .baseSpawnRate = 8.0f,
+        .maxWeatherParticles = 120,
         .starVisibilityOverride = 1.0f,
         .meteorRateMultiplier = 12.0f,
     },
-    // FireflySwarm: denser and brighter than ambient zone fireflies. The
-    // post-spawn block in SpawnWeatherParticle rewrites the per-particle color
-    // based on m_NightFactor so daytime swarms favor cyan/green/yellow tones
-    // and nighttime swarms favor red/green/yellow tones.
+    // FireflySwarm: denser and brighter than ambient zone fireflies; the
+    // Firefly behavior's own color roulette carries the hue variety, and the
+    // animated firefly strip gives each one a visible wing pulse.
     WeatherDefinition{
         .ambientTintMultiplier = {0.90f, 1.00f, 0.85f},
         .particleType = WeatherParticleType::Firefly,
@@ -175,7 +193,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 10000,
         .particleSizeScale = 1.0f,
     },
-    // AshFall
+    // AshFall: falling ash (animated flakes) over a slow Smoke haze layer -
+    // the smoke plumes drift and expand between the flakes so the air itself
+    // reads burnt, not just speckled.
     WeatherDefinition{
         .ambientTintMultiplier = {0.70f, 0.65f, 0.60f},
         .skyColorOverride = {0.55f, 0.50f, 0.48f},
@@ -184,8 +204,13 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.2f,
         .windIntensity = 0.3f,
+        .secondaryParticleType = WeatherParticleType::Smoke,
+        .secondaryBaseSpawnRate = 10.0f,
+        .secondaryMaxWeatherParticles = 250,
     },
-    // EmberStorm
+    // EmberStorm: rising embers (animated, two sprite variants) with a
+    // thinner Smoke secondary than AshFall - enough haze to justify the glow
+    // without smothering the additive sparks.
     WeatherDefinition{
         .ambientTintMultiplier = {0.85f, 0.60f, 0.45f},
         .skyColorOverride = {0.55f, 0.30f, 0.20f},
@@ -194,6 +219,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .maxWeatherParticles = 10000,
         .starVisibilityOverride = 0.4f,
         .windIntensity = 0.7f,
+        .secondaryParticleType = WeatherParticleType::Smoke,
+        .secondaryBaseSpawnRate = 8.0f,
+        .secondaryMaxWeatherParticles = 200,
     },
 
     // Atmospheric / prismatic.
