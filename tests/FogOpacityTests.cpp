@@ -8,21 +8,31 @@
 #include <glm/glm.hpp>
 
 /// @file FogOpacityTests.cpp
-/// @brief Regression guard: fog must stay a light haze, never an opaque wall.
+/// @brief Regression guard: fog stays a readable haze - visible, never an
+/// opaque wall.
 ///
-/// Bug: fog rendered "way too strong in any weather and any particle zone." Two
-/// compounding causes in ParticleBehavior<ParticleType::Fog>::Update:
-///   1. Editor-zone fog borrowed the active weather's fogAlphaMultiplier, which
-///      defaults to 1.0 outside the four fog-bearing weathers - so a fog zone
-///      under Clear/Rain/etc. rendered fully un-softened.
-///   2. The shared base alpha (0.40) and day boost (1.4x) stacked across many
-///      large overlapping puffs into a near-opaque sheet.
+/// This guard brackets fog between two failure modes it has hit historically:
+///   - Too STRONG (the original bug): fog rendered "way too strong in any
+///     weather and any particle zone." Two compounding causes in
+///     ParticleBehavior<ParticleType::Fog>::Update: (1) editor-zone fog borrowed
+///     the active weather's fogAlphaMultiplier, which defaults to 1.0 outside the
+///     fog-bearing weathers, so a fog zone under Clear/Rain rendered un-softened;
+///     (2) a high base alpha and 1.4x day boost stacked across many large puffs
+///     into a near-opaque sheet. Per-puff peaks then were ~0.56 (zone) / ~0.36
+///     (weather).
+///   - Too WEAK (the over-correction): a later anti-wall pass thinned fog on
+///     every axis at once (base alpha, day boost, softening multiplier, spawn
+///     rate, lifetime, cap) and overshot into "barely visible." Per-puff peaks
+///     bottomed out at ~0.14 (zone) / ~0.19 (weather).
 ///
-/// These tests pin the per-puff alpha ceiling. They drive the real ParticleSystem
-/// at full-day settings (the worst case for fog opacity) and assert no live Fog
-/// particle ever exceeds a soft ceiling. They FAIL on the pre-fix constants
-/// (zone peak ~0.56, weather peak ~0.36) and pass on the tuned ones
-/// (zone peak ~0.14, weather peak ~0.19).
+/// Current tuning restores per-puff alpha partway (shared base 0.25 -> 0.40) for
+/// a readable haze that still stays clear of the old wall. These tests pin the
+/// per-puff alpha CEILING (not a floor); they drive the real ParticleSystem at
+/// full-day settings (worst case for opacity) and assert no live Fog particle
+/// exceeds the ceiling. Expected peaks now: ~0.23 (zone) / ~0.30 (weather),
+/// both comfortably under the ~0.56 / ~0.36 wall. Weather fog is cap-bound at
+/// 2500 puffs, so its on-screen density is governed by per-puff alpha here, not
+/// spawn rate.
 namespace
 {
 /// Highest alpha across all currently-live Fog particles (0 if none).
@@ -78,7 +88,7 @@ TEST(FogOpacity, ZoneFogStaysLightUnderNonFogWeather)
     for (int i = 0; i < 120; ++i)
     {
         ps.Update(0.2f, cameraPos, viewSize);
-        EXPECT_LE(MaxFogAlpha(ps), 0.20f) << "zone fog too opaque at frame " << i;
+        EXPECT_LE(MaxFogAlpha(ps), 0.28f) << "zone fog too opaque at frame " << i;
     }
 
     EXPECT_GT(FogCount(ps), 0) << "test vacuous: no fog spawned";
@@ -103,7 +113,7 @@ TEST(FogOpacity, WeatherFogStaysLight)
     for (int i = 0; i < 120; ++i)
     {
         ps.Update(0.2f, cameraPos, viewSize);
-        EXPECT_LE(MaxFogAlpha(ps), 0.25f) << "weather fog too opaque at frame " << i;
+        EXPECT_LE(MaxFogAlpha(ps), 0.34f) << "weather fog too opaque at frame " << i;
     }
 
     EXPECT_GT(FogCount(ps), 0) << "test vacuous: no weather fog spawned";
@@ -172,7 +182,11 @@ TEST(FogOpacity, FogToClearTransitionHoldsCeiling)
         ps.SetWeatherTransition(streams.outgoing, streams.incoming, streams.weight);
         ps.SetWeatherState(&time.GetEffectiveWeatherDefinition(), time.GetWeatherIntensity());
         ps.Update(0.2f, cameraPos, viewSize);
-        EXPECT_LE(MaxFogAlpha(ps), 0.25f) << "fog popped during transition at frame " << i;
+        // Same ceiling as steady-state weather fog: the behavior clamps weather
+        // fog softening to 0.65, so the fog-hold decay easing the published
+        // multiplier up toward Clear's 1.0 no longer lets dying puffs flare
+        // above the steady-state peak.
+        EXPECT_LE(MaxFogAlpha(ps), 0.34f) << "fog popped during transition at frame " << i;
         EXPECT_LE(FogCount(ps), 3000) << "fog population wall at frame " << i;
     }
 }
