@@ -190,13 +190,46 @@ TEST(WeatherDefinitionTests, OnlyLayeredWeathersHaveSecondaryParticle)
     {
         auto state = static_cast<WeatherState>(i);
         if (state == WeatherState::Blizzard || state == WeatherState::CherryBlossoms ||
-            state == WeatherState::GodRays)
+            state == WeatherState::GodRays || state == WeatherState::Thunderstorm ||
+            state == WeatherState::Sandstorm || state == WeatherState::AuroraNight ||
+            state == WeatherState::AshFall || state == WeatherState::EmberStorm)
         {
             continue;
         }
         EXPECT_EQ(GetWeatherDefinition(state).secondaryParticleType, WeatherParticleType::None)
             << "state=" << EnumTraits<WeatherState>::ToString(state);
     }
+}
+
+TEST(WeatherDefinitionTests, NewSecondaryLayersUseDedicatedParticles)
+{
+    // Sprite-variant overhaul layers: each of these weathers gained a
+    // secondary stream built on one of the new particle types.
+    const WeatherDefinition& storm = GetWeatherDefinition(WeatherState::Thunderstorm);
+    EXPECT_EQ(storm.secondaryParticleType, WeatherParticleType::Zap);
+    EXPECT_GT(storm.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(storm.secondaryMaxWeatherParticles, 0);
+
+    const WeatherDefinition& sand = GetWeatherDefinition(WeatherState::Sandstorm);
+    EXPECT_EQ(sand.secondaryParticleType, WeatherParticleType::Wind);
+    EXPECT_GT(sand.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(sand.secondaryMaxWeatherParticles, 0);
+
+    const WeatherDefinition& ashFall = GetWeatherDefinition(WeatherState::AshFall);
+    EXPECT_EQ(ashFall.secondaryParticleType, WeatherParticleType::Smoke);
+    EXPECT_GT(ashFall.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(ashFall.secondaryMaxWeatherParticles, 0);
+
+    const WeatherDefinition& embers = GetWeatherDefinition(WeatherState::EmberStorm);
+    EXPECT_EQ(embers.secondaryParticleType, WeatherParticleType::Smoke);
+    EXPECT_GT(embers.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_GT(embers.secondaryMaxWeatherParticles, 0);
+
+    // MeteorShower gained a primary Constellation stardust stream.
+    const WeatherDefinition& meteors = GetWeatherDefinition(WeatherState::MeteorShower);
+    EXPECT_EQ(meteors.particleType, WeatherParticleType::Constellation);
+    EXPECT_GT(meteors.baseSpawnRate, 0.0f);
+    EXPECT_GT(meteors.maxWeatherParticles, 0);
 }
 
 TEST(WeatherDefinitionTests, GodRaysHasSunshineAndFogSecondary)
@@ -210,17 +243,20 @@ TEST(WeatherDefinitionTests, GodRaysHasSunshineAndFogSecondary)
     EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, AuroraNightHasWispParticle)
+TEST(WeatherDefinitionTests, AuroraNightHasAuroraPrimaryAndWispSecondary)
 {
-    // Aurora companion sparks use Wisp (not Firefly) for sparser spiraling
-    // motes that complement the sky ribbons rather than reading as a
-    // firefly swarm. SpawnWeatherParticle restricts the color palette to
-    // cool aurora hues.
+    // The primary stream is the dedicated Aurora particle (hand-painted
+    // aurora/aurora2/aurora3 mote variants); a sparse Wisp secondary keeps
+    // some spiraling aurora dust beneath the sky ribbons. Rates stay low so
+    // the SkyRenderer ribbons remain the hero element.
     const WeatherDefinition& def = GetWeatherDefinition(WeatherState::AuroraNight);
     EXPECT_TRUE(def.showAurora);
-    EXPECT_EQ(def.particleType, WeatherParticleType::Wisp);
+    EXPECT_EQ(def.particleType, WeatherParticleType::Aurora);
     EXPECT_GT(def.baseSpawnRate, 0.0f);
     EXPECT_GT(def.maxWeatherParticles, 0);
+    EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::Wisp);
+    EXPECT_GT(def.secondaryBaseSpawnRate, 0.0f);
+    EXPECT_LT(def.secondaryBaseSpawnRate, def.baseSpawnRate);
 }
 
 TEST(WeatherDefinitionTests, MergedFogHasNoSecondary)
