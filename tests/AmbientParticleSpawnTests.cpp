@@ -229,12 +229,10 @@ TEST_F(AmbientParticleZoneTest, DustMoteColorsAreNeutralGreyOnly)
         }
         ++sampled;
         // Pure grey: R == G == B (within float tolerance from accumulated math).
-        EXPECT_NEAR(p.color.r, p.color.g, 1e-4f)
-            << "DustMote has non-neutral RGB: (" << p.color.r << ", " << p.color.g << ", "
-            << p.color.b << ")";
-        EXPECT_NEAR(p.color.g, p.color.b, 1e-4f)
-            << "DustMote has non-neutral RGB: (" << p.color.r << ", " << p.color.g << ", "
-            << p.color.b << ")";
+        EXPECT_NEAR(p.color.r, p.color.g, 1e-4f) << "DustMote has non-neutral RGB: (" << p.color.r
+                                                 << ", " << p.color.g << ", " << p.color.b << ")";
+        EXPECT_NEAR(p.color.g, p.color.b, 1e-4f) << "DustMote has non-neutral RGB: (" << p.color.r
+                                                 << ", " << p.color.g << ", " << p.color.b << ")";
     }
     EXPECT_GT(sampled, 0);
 }
@@ -260,8 +258,8 @@ TEST_F(AmbientParticleZoneTest, PollenIsNeverWhitish)
         const bool whitish = p.color.r >= 0.9f && p.color.g >= 0.9f && p.color.b >= 0.9f &&
                              std::abs(p.color.r - p.color.g) <= 0.10f &&
                              std::abs(p.color.g - p.color.b) <= 0.10f;
-        EXPECT_FALSE(whitish) << "Pollen rendered nearly white: (" << p.color.r << ", "
-                              << p.color.g << ", " << p.color.b << ")";
+        EXPECT_FALSE(whitish) << "Pollen rendered nearly white: (" << p.color.r << ", " << p.color.g
+                              << ", " << p.color.b << ")";
     }
     EXPECT_GT(sampled, 0);
 }
@@ -270,11 +268,51 @@ TEST(ParticleType, EnumLayoutInvariant)
 {
     // Original cozy types stay at their stable indices so saved zones in
     // existing maps deserialize the right kind. Weather-driven types live
-    // strictly after Pollen.
+    // strictly after Pollen, and the decorative/magic types added with the
+    // sprite-variant overhaul live strictly after Sand.
     EXPECT_EQ(static_cast<int>(ParticleType::Pollen), 10);
     EXPECT_EQ(static_cast<int>(ParticleType::CherryBlossom), 11);
     EXPECT_EQ(static_cast<int>(ParticleType::Ash), 12);
     EXPECT_EQ(static_cast<int>(ParticleType::Ember), 13);
     EXPECT_EQ(static_cast<int>(ParticleType::Sand), 14);
-    EXPECT_EQ(EnumTraits<ParticleType>::Count, 15u);
+    EXPECT_EQ(static_cast<int>(ParticleType::Smoke), 15);
+    EXPECT_EQ(static_cast<int>(ParticleType::Ink), 42);
+    EXPECT_EQ(EnumTraits<ParticleType>::Count, 43u);
+}
+
+TEST(ParticleType, AllTypesSpawnAndSurviveUpdate)
+{
+    // Every ParticleType must spawn through the dispatch table and survive a
+    // few Update ticks with finite state - catches a new enumerator whose
+    // behavior specialization produces NaNs or forgets core fields. Runs
+    // without LoadTextures, so it also guards the texture-less spawn path
+    // (variant counts default to 1).
+    ParticleSystem ps;
+    const glm::vec2 cameraPos{0.0f, 0.0f};
+    const glm::vec2 viewSize{640.0f, 480.0f};
+
+    for (size_t i = 0; i < EnumTraits<ParticleType>::Count; ++i)
+    {
+        const auto type = static_cast<ParticleType>(i);
+        ps.SpawnOne(type, glm::vec2(320.0f, 240.0f));
+    }
+    // Every type appends at least one particle (some, e.g. Butterfly or
+    // Confetti, may append more).
+    EXPECT_GE(ps.GetParticles().size(), EnumTraits<ParticleType>::Count);
+
+    for (int step = 0; step < 5; ++step)
+    {
+        ps.Update(0.016f, cameraPos, viewSize);
+    }
+    for (const auto& p : ps.GetParticles())
+    {
+        EXPECT_TRUE(std::isfinite(p.position.x) && std::isfinite(p.position.y))
+            << "type=" << EnumTraits<ParticleType>::ToString(p.type);
+        EXPECT_TRUE(std::isfinite(p.color.a))
+            << "type=" << EnumTraits<ParticleType>::ToString(p.type);
+        EXPECT_TRUE(std::isfinite(p.size) && p.size >= 0.0f)
+            << "type=" << EnumTraits<ParticleType>::ToString(p.type);
+        EXPECT_LT(static_cast<size_t>(p.variant), ParticleSystem::MAX_PARTICLE_VARIANTS)
+            << "type=" << EnumTraits<ParticleType>::ToString(p.type);
+    }
 }
