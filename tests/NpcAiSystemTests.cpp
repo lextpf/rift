@@ -71,7 +71,7 @@ TEST(NpcAiRng, EngineIsActuallyConsumed)
 {
     // The sequence varies (not a single constant direction), proving the rng
     // parameter is wired through to the pick rather than ignored. 16 draws from
-    // 4 options all colliding on one value has probability (1/4)^15 -- nil.
+    // 4 options all colliding on one value has probability (1/4)^15 - nil.
     const std::vector<CharacterDirection> seq = LookAroundSequence(0x1234u, 16);
     bool allSame = true;
     for (const CharacterDirection dir : seq)
