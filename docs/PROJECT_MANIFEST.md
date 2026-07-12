@@ -87,8 +87,9 @@ sequenceDiagram
 
 ## Optional Fields
 
-- `defaultMap`: missing files are allowed; Rift generates a default map using
-  `defaultMapSize`.
+- `defaultMap`: authored/persisted map loaded by Continue, used as the New Game
+  baseline, and written by the editor. Missing files are allowed; Rift generates
+  a default map using `defaultMapSize`.
 - `defaultMapSize`: used only when the default map cannot be loaded.
 - `npcSprites`: used by editor NPC placement and map-load type lookup.
 - `fonts`: project fonts tried before renderer system fallbacks.
