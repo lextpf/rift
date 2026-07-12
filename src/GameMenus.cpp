@@ -270,7 +270,10 @@ void Game::LoadGameWorld(bool loadSave)
     int loadedCharacterType = -1;
     bool mapLoaded = false;
 
-    if (loadSave)
+    // The configured map is both the persisted save and the authored starting
+    // world. New Game resets transient systems below, but should still begin on
+    // that authored landscape instead of replacing it with generated terrain.
+    if (loadSave || CheckSaveExists())
     {
         mapLoaded = m_Tilemap.LoadMapFromJSON(
             m_SaveMapPath, &m_World, &loadedPlayerTileX, &loadedPlayerTileY, &loadedCharacterType);
@@ -281,7 +284,7 @@ void Game::LoadGameWorld(bool loadSave)
         Logger::InfoF(LOG_SUBSYSTEM,
                       "{}",
                       loadSave ? "No existing save found, generating default map"
-                               : "New Game: regenerating default map");
+                               : "New Game: authored map unavailable, generating default map");
         EntityStore::Clear(m_World);
         m_Tilemap.SetTilemapSize(m_DefaultMapWidth, m_DefaultMapHeight);
     }

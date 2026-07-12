@@ -603,12 +603,13 @@ private:
 
     /**
      * Load the game world: tilemap, NPCs, player position, camera target.
-     * @param loadSave  True to load from @c m_SaveMapPath; false to
-     *                  regenerate the default tilemap and place the player
-     *                  at the default spawn.
+     * @param loadSave  True when the caller is continuing the configured map;
+     *                  false for New Game. Both paths load the configured authored
+     *                  map when it exists, falling back to generated terrain when
+     *                  unavailable; New Game separately resets transient state.
      * Called from @em Continue / @em New @em Game in the title menu.
-     * Boot uses @c LoadTitleScreenWorld instead so the user's save isn't
-     * touched until they pick @em Continue.
+     * Boot uses @c LoadTitleScreenWorld instead so gameplay content is not loaded
+     * until the player leaves the title screen.
      */
     void LoadGameWorld(bool loadSave);
 
