@@ -17,6 +17,12 @@
  * Derived must provide:
  * - `static constexpr size_t Count`
  * - `static constexpr std::string_view Names[]`
+ *
+ * ToString returns the literal "Unknown" for a value outside [0, Count) instead of failing,
+ * so a bad value can reach user-visible output unnoticed. FromString is an exact,
+ * case-sensitive linear scan of Names and returns nullopt on no match. The spellings in
+ * Names are therefore part of the contract: manifest validation and console argument
+ * parsing both branch on that exact match.
  */
 template <typename E, typename Derived>
 struct EnumTraitsBase
@@ -39,6 +45,7 @@ struct EnumTraitsBase
 /**
  * @brief Compile-time reflection traits for enum types.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * @tparam E The enum type to reflect.
  *
@@ -48,7 +55,7 @@ struct EnumTraitsBase
  *
  * ToString and FromString are provided automatically by EnumTraitsBase.
  *
- * @par Example Specialization
+ * @par Example specialization
  * @code
  * enum class Color { Red = 0, Green = 1, Blue = 2 };
  *
@@ -64,7 +71,7 @@ struct EnumTraits;
 
 /**
  * @brief Advance an enum value to the next enumerator, wrapping at Count.
- * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * @tparam E Enum type with a valid EnumTraits specialization.
  *
@@ -89,9 +96,13 @@ constexpr E NextEnum(E value)
 
 /**
  * @brief Range of all enumerator values for an enum with EnumTraits.
- * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * @tparam E Enum type with a valid EnumTraits specialization.
+ *
+ * Like @ref NextEnum, this assumes contiguous zero-based enumerators: it iterates
+ * `[0, Count)` and casts, so a sparse or offset enum yields values that were never
+ * declared.
  *
  * @par Example
  * @code
@@ -109,10 +120,14 @@ constexpr auto EnumValues()
 
 /**
  * @brief Invoke a callable for each enumerator value.
- * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
+ *
+ * Runs to completion: the callable's return value is discarded, so there is no way
+ * to break out early. Use @ref EnumValues directly when an early exit is needed.
  *
  * @tparam E  Enum type with a valid EnumTraits specialization.
  * @tparam Fn Callable accepting E.
+ * @param fn  Invoked once per enumerator, in declaration order.
  */
 template <typename E, typename Fn>
     requires requires { EnumTraits<E>::Count; }
