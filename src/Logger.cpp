@@ -21,9 +21,9 @@ constexpr const char* ANSI_WARN = "\x1b[33m";          // Yellow
 constexpr const char* ANSI_ERROR = "\x1b[91m";         // Bright red
 constexpr const char* ANSI_FATAL = "\x1b[97;41m";      // White on red
 
-// 24 readable 256-colour codes across the cool half of the spectrum
+// 24 readable 256-color codes across the cool half of the spectrum
 // (greens/cyans/blues/magentas/pinks). Yellow and red are omitted so the
-// subsystem tag never collides with WARN/ERROR/FATAL body colours.
+// subsystem tag never collides with WARN/ERROR/FATAL body colors.
 constexpr const char* SUBSYSTEM_PALETTE[] = {
     "\x1b[38;5;39m",   // azure blue
     "\x1b[38;5;41m",   // spring green
