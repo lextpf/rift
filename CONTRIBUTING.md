@@ -385,9 +385,11 @@ count++; // Includes the sentinel slot reserved during parsing.
 
 #### Block vs. one-line form
 
-* A doc comment that spans **more than one line** is a Javadoc **block**: `/**` on its own line, a leading ` * ` on every continuation line, a bare ` *` for blank separator lines, and ` */` to close.
-* A doc comment that fits on **one physical line** uses `///` (e.g. a lone `/// @brief ...` above a simple declaration, or a group marker).
+* A doc comment that fits on **one or two physical lines** uses `///` (e.g. a lone `/// @brief ...` above a simple declaration, or a group marker).
+* A doc comment that runs to **three or more lines** is a Javadoc **block**: `/**` on its own line, a leading ` * ` on every continuation line, a bare ` *` for blank separator lines, and ` */` to close.
 * Use only these two styles in headers. Do **not** use the `//!` or `/*! */` "bang" variants.
+
+This one-or-two-lines-versus-block threshold applies to **every** documented entity in a header, with no exceptions for fields or enumerators. It is a header rule only - source files keep the `//`-only rule described further below, whatever a comment's length.
 
 ```cpp
 /// @brief Reset the buffer to its empty state.
@@ -487,13 +489,21 @@ enum class LogLevel
 };
 ```
 
-When a field description is too long for a trailing `///<`, use **leading `///` lines** above the member instead. This is the one place a `///` comment may span multiple lines; never put a `/** */` block on an individual field or enumerator.
+When a description is too long for a trailing `///<`, move it above the member and apply the same threshold as everywhere else in a header: **one or two leading `///` lines**, or a **`/** */` block** once it needs three or more. Do not let a `///` comment run past two lines.
 
 ```cpp
-/// Master enable flag. When false the renderer skips the entire post-processing
-/// chain (blur, bloom, tone-mapping) and presents the raw scene texture
-/// unmodified. Toggled at runtime from the developer console.
+/// Master enable flag. When false the renderer skips the entire
+/// post-processing chain and presents the raw scene texture unmodified.
 bool postProcessEnabled{true};
+
+/**
+ * @brief Scratch buffer reused across frames.
+ *
+ * Sized once during initialization and never reallocated, so callers may hold a
+ * pointer into it for the lifetime of the owning object. `Reset()` clears the
+ * contents without releasing the capacity.
+ */
+std::vector<std::byte> m_Buffer;
 ```
 
 #### Grouping related members
