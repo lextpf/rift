@@ -1,3 +1,5 @@
+// Documentation-only header
+
 /**
  * @brief Doxygen module definitions and hierarchical documentation structure.
  * @author Alex (https://github.com/lextpf)
@@ -5,10 +7,12 @@
  * This file defines the logical groupings (modules) used throughout the codebase
  * documentation. Each module represents a cohesive subsystem of the game engine.
  *
- * @par Architecture Overview
- * The game engine is organized into five primary subsystems:
+ * @par Architecture overview
+ * The engine is organized into the eight modules declared below. An arrow means
+ * "drives or reads from"; it is a documentation grouping, not a link-time
+ * dependency graph.
  *
- * \htmlonly
+ * @htmlonly
  * <pre class="mermaid">
  * flowchart LR
  * classDef core fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
@@ -16,12 +20,18 @@
  * classDef world fill:#134e3a,stroke:#10b981,color:#e2e8f0
  * classDef entity fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
  * classDef input fill:#164e54,stroke:#06b6d4,color:#e2e8f0
+ * classDef dialogue fill:#4c1d3d,stroke:#ec4899,color:#e2e8f0
+ * classDef effects fill:#3b2a55,stroke:#a78bfa,color:#e2e8f0
+ * classDef editor fill:#3f3a1c,stroke:#eab308,color:#e2e8f0
  *
  * Core["Core Engine"]:::core
  * Rendering["Rendering System"]:::render
  * World["World System"]:::world
  * Entities["Entity System"]:::entity
  * Input["Input System"]:::input
+ * Dialogue["Dialogue System"]:::dialogue
+ * Effects["Visual Effects"]:::effects
+ * Editor["Editor and Tools"]:::editor
  *
  * Core --> Rendering
  * Core --> World
@@ -29,8 +39,15 @@
  * Core --> Input
  * Entities --> World
  * Rendering --> World
+ * Entities --> Dialogue
+ * Input --> Dialogue
+ * Input --> Editor
+ * Editor --> World
+ * Editor --> Entities
+ * Effects --> World
+ * Effects --> Rendering
  * </pre>
- * \endhtmlonly
+ * @endhtmlonly
  */
 
 /**
@@ -45,26 +62,26 @@
  * - **System Orchestration**: Coordinates updates across all subsystems
  * - **Resource Lifetime**: Manages initialization and shutdown of game resources
  *
- * @par Game Loop Model
- * The game uses a variable timestep clamped to a maximum frame delta:
- * @code
+ * @par Game loop model
+ * The loop uses a variable timestep clamped to a maximum frame delta. The delta is sampled
+ * before polling, and polling runs before input so handlers see this frame's key state.
+ * @code{.cpp}
  * while (running)
  * {
  *     float deltaTime = currentTime - lastFrameTime;
  *     glfwPollEvents();
- *
- * ProcessInput(deltaTime);
+ *     deltaTime = std::min(deltaTime, MAX_DELTA_TIME);
+ *     ProcessInput(deltaTime);
  *     Update(deltaTime);
  *     Render();
  * }
  * @endcode
  *
- * @par Update Order
- * 1. GLFW event polling
- * 2. Input processing (keyboard, mouse, console, menus)
- * 3. World update
- * (player, NPCs, particles, sky, camera as mode permits)
- * 4. Rendering
+ * @par Update order
+ * 1. GLFW event polling.
+ * 2. Input processing: keyboard, mouse, console and menus.
+ * 3. World update: player, NPCs, particles, sky and camera, as the current mode permits.
+ * 4. Rendering.
  *
  * @see Game
  */
@@ -76,23 +93,23 @@
  * The Rendering module provides a unified interface for 2D sprite rendering,
  * abstracting away the differences between graphics APIs.
  *
- * @par Design Pattern
+ * @par Design pattern
  * Uses the **Strategy Pattern** via the IRenderer interface, allowing runtime
  * selection of the graphics backend without changing game code.
  *
- * @par Coordinate System
+ * @par Coordinate system
  * - **World Space**: Game coordinates in pixels, origin at top-left
  * - **Screen Space**: Pixel coordinates after camera transformation
  * - **Normalized Device Coordinates (NDC)**: -1 to 1 range used by GPU
  *
- * @par Transformation Pipeline
+ * @par Transformation pipeline
  * @f[
  * \vec{p}_{screen} = \vec{p}_{world} - \vec{p}_{camera}
  * @f]
  * @f[
  * \vec{p}_{ndc} = M_{projection} \cdot \vec{p}_{screen}
  * @f]
- * Where \f$ M_{projection} \f$ is an orthographic projection matrix:
+ * Where @f$ M_{projection} @f$ is an orthographic projection matrix:
  * @f[
  * M_{ortho} = \begin{bmatrix}
  *   \frac{2}{w} & 0 & 0 & -1 \\
@@ -111,17 +128,17 @@
  * = \begin{pmatrix} \frac{2x}{w} - 1 \\ 1 - \frac{2y}{h} \\ 0 \\ 1 \end{pmatrix}
  * @f]
  *
- * @note In 2D rendering, \f$ z = 0 \f$ for all sprites (set in vertex shader).
+ * @note In 2D rendering @f$ z = 0 @f$ for every sprite, set in the vertex shader.
  * Depth sorting uses draw order (painter's algorithm), not z-buffer.
  *
- * @par Sprite Batching
+ * @par Sprite batching
  * Both renderers support sprite batching for efficient rendering of tilemaps
  * and multiple entities in a single draw call.
  *
- * @par Coordinate Transformation
+ * @par Coordinate transformation
  * Mouse input must be transformed through three coordinate spaces to determine
  * which tile the cursor is over. The camera can pan (move) and zoom,
- * so screen position alone doesn't tell us where in the game world the mouse is pointing.
+ * so screen position alone does not identify the world position under the mouse.
  *
  * **Step 1: Screen -> World**
  * @f[
@@ -185,7 +202,7 @@
  *
  * The World module manages the static game environment and provides spatial queries.
  *
- * @par Tilemap System
+ * @par Tilemap system
  * The tilemap uses a 10-layer architecture for depth sorting:
  *
  * | Layer | Name          | Render Order | Purpose             |
@@ -203,13 +220,13 @@
  * | 8     | Overlay2      | 130          | Additional overlay  |
  * | 9     | Overlay3      | 140          | Top-most overlay    |
  *
- * @par Tile Indexing
+ * @par Tile indexing
  * Tiles are stored in row-major order:
  * @f[
  * i = y \times w + x
  * @f]
  *
- * @par Collision Detection
+ * @par Collision detection
  * Uses Axis-Aligned Bounding Box (AABB) collision with a discrete tile grid:
  * @f[
  * c = (A_{min} < B_{max}) \land (A_{max} > B_{min})
@@ -217,7 +234,7 @@
  *
  * Applied to both X and Y axes for 2D collision.
  *
- * @par Navigation Map
+ * @par Navigation map
  * The navigation system provides walkability information for NPC pathfinding.
  * It's independent of collision (a tile can have collision but be walkable,
  * useful for triggers or special tiles).
@@ -231,7 +248,7 @@
  *
  * The Entities module manages all dynamic objects in the game world.
  *
- * @par Position Convention
+ * @par Position convention
  * All entities store their position as **anchor position** (bottom-center of sprite):
  * @f[
  * \vec{p}_{anchor} = (center_x, bottom_y)
@@ -239,7 +256,7 @@
  *
  * This convention simplifies depth sorting and tile alignment.
  *
- * @par Hitbox Model
+ * @par Hitbox model
  * Entities use rectangular hitboxes for collision detection:
  * - **Player**: 16x16 pixels, centered on tile
  * - **NPC**: 16x16 pixels, centered on tile
@@ -252,13 +269,13 @@
  * h_{max} = (anchor_x + \frac{w}{2}, anchor_y)
  * @f]
  *
- * @par Animation System
+ * @par Animation system
  * Sprites use a frame-based animation system with walk cycles:
  * - 4 directions (Down, Up, Left, Right)
  * - 3 frames per direction (Idle, Step Left, Step Right)
  * - Walk sequence: [Step Left, Idle, Step Right, Idle] (4-frame cycle)
  *
- * @par Movement Modes
+ * @par Movement modes
  * Player supports three movement modes with different speeds:
  * | Mode     | Speed      | Multiplier |
  * |----------|------------|------------|
@@ -276,7 +293,7 @@
  * The Input module processes user input and translates it into game actions.
  * Input handling is centralized in Game::ProcessInput(), which runs once per frame.
  *
- * @par Input Modes
+ * @par Input modes
  * The game operates in two mutually exclusive modes:
  * - **Gameplay Mode**: Player movement, NPC interaction, collision detection, camera control
  * - **Editor Mode**: Tile placement, collision editing, NPC spawning, navigation editing
@@ -284,14 +301,14 @@
  * Open the developer console with **F12** and run
  * `editor on` to enter editor mode.
  *
- * @par Input Priority
+ * @par Input priority
  * Input is processed hierarchically. Higher-priority handlers block lower ones:
  * 1. **Console toggle** (F12) - always processed; when open consumes all input
  * 2. **Dialogue** - blocks movement when active (Esc to dismiss)
  * 3. **Editor controls** - only when editor mode is active
  * 4. **Player movement** - only in gameplay mode, outside dialogue
  *
- * @par Gameplay Controls
+ * @par Gameplay controls
  * |      Key      |             Action                |
  * |---------------|-----------------------------------|
  * |    W/A/S/D    | Move player (8-directional)       |
@@ -302,14 +319,14 @@
  * |  Arrow Keys   | Pan camera (reset when moving)    |
  * |       Z       | Reset zoom to 1.0x                |
  *
- * @par Dialogue Controls
+ * @par Dialogue controls
  * |      Key       |           Action            |
  * |----------------|-----------------------------|
  * | W/S or Up/Down | Navigate dialogue options   |
  * |   Enter/Space  | Confirm selection / advance |
  * |     Escape     | End dialogue                |
  *
- * @par Movement Modes
+ * @par Movement modes
  * |  Mode   |   Speed    |       Collision         |
  * |---------|------------|-------------------------|
  * | Walking |  50.0 px/s | Strict full-AABB hitbox |
@@ -322,32 +339,49 @@
  * \vec{v} = \hat{d} \times speed \times \Delta t
  * @f]
  *
- * @par Editor Controls
- * |     Key      |                Action                 |
- * |--------------|---------------------------------------|
- * |     1-0      | Select tilemap layer (1-5 bg, 6-0 fg) |
- * |      T       | Toggle tile picker                    |
- * |      R       | Rotate selection 90 deg               |
- * |    Delete    | Remove tile at cursor                 |
- * |      S       | Save map to JSON                      |
- * |      L       | Load map from JSON                    |
- * |      M       | Toggle navigation editing             |
- * |      N       | Toggle NPC placement                  |
- * |      H       | Toggle elevation editing              |
- * |      B       | Toggle no-projection editing          |
- * |      Y       | Toggle Y-sort-plus editing            |
- * |      O       | Toggle Y-sort-minus editing           |
- * |      J       | Toggle particle zone editing          |
- * |      K       | Toggle animated tile editing          |
- * |    , / .     | Cycle types (NPC/particle/anim)       |
- * |  Left Click  | Place tile/NPC/zone                   |
- * | Right Click  | Toggle collision/navigation           |
- * |    Arrows    | Pan tile picker                       |
- * | Shift+Arrows | Pan tile picker (fast)                |
- * |    Scroll    | Pan tile picker                       |
- * | Ctrl+Scroll  | Zoom                                  |
+ * @par Editor controls
+ * The mode keys below only choose which sub-mode is active; what left/right
+ * click then does in each mode is tabulated on @ref Editor and is not repeated
+ * here.
  *
- * @par Debug and Visual Controls
+ * |     Key      |                       Action                        |
+ * |--------------|-----------------------------------------------------|
+ * |     1-0      | Select tilemap layer (1-5 bg, 6-0 fg)               |
+ * |      T       | Toggle tile picker                                  |
+ * |      R       | Rotate selection 90 deg                             |
+ * |      F       | Flip brush / mirror selection (Shift+F = Y axis)    |
+ * |    Delete    | Remove tile at cursor                               |
+ * |      S       | Save map to JSON                                    |
+ * |      L       | Load map from JSON                                  |
+ * |      M       | Toggle navigation editing                           |
+ * |      N       | Toggle NPC placement                                |
+ * |      G       | Toggle structure editing (anchors, flood assign)    |
+ * |      H       | Toggle elevation editing                            |
+ * |      B       | Toggle stance editing (Flat/Prop/Wall/Structure)    |
+ * |      Y       | Toggle Y-sort-plus editing                          |
+ * |      O       | Toggle Y-sort-minus editing                         |
+ * |      J       | Toggle particle zone editing (F = noProjection)     |
+ * |      K       | Toggle animated tile editing                        |
+ * |    Enter     | Commit collected frames (animation mode)            |
+ * |    Escape    | Clear region selection / cancel structure anchor    |
+ * |    , / .     | Cycle type or step value (mode-dependent)           |
+ * |    Ctrl+Z    | Undo the last editor command                        |
+ * |    Ctrl+Y    | Redo                                                |
+ * |  Ctrl+drag   | Select a rectangular map region                     |
+ * |    Ctrl+C    | Copy the selected region to the editor clipboard    |
+ * |    Ctrl+V    | Paste the clipboard with its top-left at the cursor |
+ * |  Left Click  | Place tile/NPC/zone                                 |
+ * | Right Click  | Toggle collision/navigation                         |
+ * |    Arrows    | Pan camera, or the tile picker while it is open     |
+ * | Shift+Arrows | Same, at 2.5x speed                                 |
+ * |    Scroll    | Pan tile picker                                     |
+ * | Ctrl+Scroll  | Zoom                                                |
+ *
+ * Undo/redo covers every EditorCommand, including the composite command a
+ * drag-paint stroke commits on mouse-up. The clipboard and the region
+ * selection are editor session state and are not saved with the map.
+ *
+ * @par Debug and visual controls
  * Engine controls are exposed as developer-console commands (open with **F12**).
  * The remaining keybindings are gameplay-only.
  *
@@ -360,33 +394,30 @@
  * Console::RegisterDefaultCommands(). Use `help` in the developer console for
  * the complete current catalog and aliases. Frequently used entry points:
  *
- * | Canonical                        | Aliases            | Action                               |
- * |----------------------------------|--------------------|--------------------------------------|
- * | help [prefix]                    | ---                | List registered commands             |
- * | editor [on\|off\|toggle]         | ed                 | Toggle level editor mode             |
- * | renderer.set <opengl\|vulkan>    | rndr.set, gfx      | Switch renderer at runtime           |
- * | debug.info [on\|off]             | dbg.info, fps      | Toggle FPS/coords HUD                |
- * | debug.overlays [on\|off]         | dbg.overlays, dbg  | Toggle collision/nav/anchor overlays |
- * | time.set <hours>                 | ts                 | Set in-game time (0.0-24.0)          |
- * | weather.next                     | ---                | Cycle weather state                  |
- * | player.pos                       | ---                | Print player tile/world/facing info  |
- * | npc.list                         | npcs               | List NPCs                            |
- * | map.save [path]                  | ---                | Save map JSON                        |
- * | renderer.trace [on\|off\|dump]   | ---                | Capture/dump draw-call trace events  |
+ * | Canonical                             | Aliases           | Action                           |
+ * |---------------------------------------|-------------------|----------------------------------|
+ * | help                                  | ---               | List every registered command    |
+ * | editor [on\|off\|toggle]              | ed                | Toggle level editor mode         |
+ * | renderer.set &lt;opengl\|vulkan&gt;   | rndr.set, gfx     | Switch renderer at runtime       |
+ * | debug.info [on\|off\|toggle]          | dbg.info, fps     | Toggle FPS/coords HUD            |
+ * | debug.overlays [on\|off\|toggle]      | dbg.overlays, dbg | Toggle collision/nav overlays    |
+ * | time.set &lt;hours&gt;                | ts                | Set in-game time (0.0-24.0)      |
+ * | weather.next                          | ---               | Cycle weather state              |
+ * | player.pos                            | pos, ppos         | Print player tile/world/facing   |
+ * | npc.list                              | npcs              | List NPCs                        |
+ * | map.save [path]                       | ---               | Save map JSON                    |
+ * | renderer.trace [on\|off\|dump\|clear] | draws.trace       | Capture/dump draw-call trace     |
  *
- * @par Key Debouncing
- * Toggle keys use a flag pattern to prevent repeated triggers:
- * @code{.cpp}
- * static bool keyPressed = false;
- * if (glfwGetKey(window, KEY) == GLFW_PRESS && !keyPressed) {
- *     // Handle single press
- *     keyPressed = true;
- * }
- * if (glfwGetKey(window, KEY) == GLFW_RELEASE)
- *     keyPressed = false;
- * @endcode
+ * `help` takes no arguments - it always prints the whole catalog, and Cmd_Help
+ * ignores whatever follows the verb. Narrow the listing by tab-completing a
+ * partial verb instead.
  *
- * @see Game::ProcessInput, PlayerSystem::Move
+ * @par Key debouncing
+ * A toggle key must fire once per press rather than once per frame. @ref KeyToggle holds the
+ * pressed flag and edge detection for that, so handlers test it instead of calling glfwGetKey
+ * directly.
+ *
+ * @see Game::ProcessInput, PlayerSystem::Move, KeyToggle
  */
 
 /**
@@ -397,12 +428,16 @@
  * interactions with branching dialogue trees and conditional responses.
  *
  * @par Architecture
- * The dialogue system consists of three main components:
- * - **DialogueManager**: Orchestrates dialogue flow and rendering
- * - **DialogueTypes**: Manages dialogue data and conversation state
- * - **DialogueNode/DialogueOption**: Data structures for dialogue trees
+ * - **DialogueTypes**: passive aggregates only - DialogueTree, DialogueNode,
+ *   DialogueOption, DialogueCondition, DialogueConsequence. No runtime state.
+ * - **DialogueStore**: owns every DialogueTree; the single source of tree data.
+ * - **DialogueHandle**: trivially-copyable store key held by the ECS Dialogue
+ *   component, so an NPC references a tree without owning or copying it.
+ * - **DialogueManager**: the only conversation *state* - it copies the active
+ *   tree into m_ActiveTree, tracks m_CurrentNode, filters the visible options,
+ *   and drives the typewriter/selection UI.
  *
- * @par Dialogue Flow
+ * @par Dialogue flow
  * @code
  * Player presses F near NPC
  *         v
@@ -417,21 +452,25 @@
  * Repeat until end node or player exits
  * @endcode
  *
- * @par Dialogue Node Types
- * | Type      | Description                              |
- * |-----------|------------------------------------------|
- * | Text      | Simple text display, advances on input   |
- * | Choice    | Multiple selectable options              |
- * | Condition | Branch based on game state               |
- * | End       | Terminates the conversation              |
+ * @par The node model
+ * There is no node "type" tag. Every DialogueNode is the same shape - an `id`,
+ * a `speaker`, a `text` body, and a list of `options` - and its role follows
+ * from what that list contains:
+ * - No options, or every option with an empty `nextNodeId`: terminal.
+ *   DialogueNode::IsTerminal() derives this; nothing stores it.
+ * - One or more options with a `nextNodeId`: a branch, and the player picks.
+ * - Branching on game state is a property of the *option*, not the node:
+ *   DialogueManager hides any option whose DialogueConditions fail, so the same
+ *   node presents different choices as flags change. DialogueConsequences on
+ *   the chosen option then write back through GameStateManager.
  *
- * @par Input Handling
+ * @par Input handling
  * During active dialogue, normal game input is blocked:
  * - **Up/Down/W/S**: Navigate options
  * - **Enter/Space**: Confirm selection or advance
  * - **Escape**: Exit dialogue early
  *
- * @see DialogueManager, DialogueNode, DialogueOption
+ * @see DialogueManager, DialogueStore, DialogueHandle, DialogueNode, DialogueOption
  */
 
 /**
@@ -441,23 +480,32 @@
  * The Effects module provides dynamic visual elements that enhance the game's
  * atmosphere without affecting gameplay mechanics.
  *
- * @par Particle System
+ * @par Particle system
  * The particle system renders collections of small sprites with physics-based
- * motion. Particles are spawned in zones defined in the tilemap editor.
+ * motion. There are two spawn sources: zones authored in the tilemap editor,
+ * and the global weather stream (ParticleSystem::UpdateWeatherSpawning), which
+ * emits across the visible view rather than inside a zone rect.
  *
- * @par Particle Types
- * | Type       | Behavior                                    |
- * |------------|---------------------------------------------|
- * | Firefly    | Pulsing glow, gentle drift                  |
- * | Rain       | Fast falling droplets, slight angle         |
- * | Snow       | Slow falling flakes with side drift         |
- * | Fog        | Large translucent patches, very slow        |
- * | Sparkles   | Brief bright flashes, stationary            |
- * | Wisp       | Magical spiraling orbs, color variety       |
- * | Lantern    | Warm stationary glow, night-only            |
- * | Sunshine   | Angled rays, day/night color shift          |
+ * @par Particle types
+ * ParticleType is a large and still-growing enum, so this page deliberately
+ * does not tabulate it - `EnumTraits&lt;ParticleType&gt;::Names` in
+ * ParticleSystem.hpp is the only list that cannot go stale. The values fall
+ * into loose families:
+ * - **Ambient**: fireflies, drifting leaves, dust motes, pollen, sparkles.
+ * - **Weather**: rain, snow, fog, cherry blossom, ash, ember, sand, wind.
+ * - **Magic**: wisps, arcane/enchant/rune glyphs, hex, curse, void, vortex,
+ *   souls, pixie dust, sparks, zaps.
+ * - **Creatures and props**: fairies, butterflies, bats, bubbles, coins, gems,
+ *   confetti, ink, smoke, steam, lanterns.
+ * - **Emote**: hearts and Zzz, spawned above a character.
+ * - **Celestial**: aurora motes, constellations, planets, moons, sunshine rays.
+ * - **One-shot splashes**: RainSplash / SnowSplash, short strip bursts emitted
+ *   at an impact point rather than from a zone.
  *
- * @par Particle Lifecycle
+ * Ordinal values are serialized into map JSON, so the enum is append-only:
+ * never reorder or remove an existing value.
+ *
+ * @par Particle lifecycle
  * @f[
  * \alpha(t) = \begin{cases}
  *   \frac{t}{t_{fade}} & t < t_{fade} \\
@@ -466,7 +514,7 @@
  * \end{cases}
  * @f]
  *
- * @par Sky Effects
+ * @par Sky effects
  * The SkyRenderer provides time-of-day atmospheric effects:
  * - **Stars**: Twinkling night sky with color variation
  * - **Shooting Stars**: Random meteor streaks
@@ -475,8 +523,14 @@
  * - **Dew Sparkles**: Morning ground-level glints
  *
  * @par Performance
- * Particles use texture atlasing and instanced rendering for efficiency.
- * Each particle zone has configurable density and spawn rate limits.
+ * Every particle sprite is packed into one 512px-wide atlas at load
+ * (ParticleSystem::BuildAtlas), so the whole pass needs a single texture bind.
+ * There is no instanced draw path: each particle is an ordinary batched quad.
+ * The per-frame batches are instead partitioned by blend mode - non-additive
+ * first, then additive - so the renderer flips blend state once rather than
+ * per particle, and the noProjection batch is drawn separately with
+ * perspective suspended. Each particle zone has configurable density and
+ * spawn rate limits.
  *
  * @see ParticleSystem, SkyRenderer, ParticleZone
  */
@@ -495,9 +549,10 @@
  *   overlays and the tile picker.
  * - **EditorContext**: per-frame bundle of references to Game state the editor
  *   may mutate (tilemap, player, NPCs, time, project manifest).
- * - **EditorCommand**: abstract base for undo/redo. Concrete commands live in
- *   EditorCommands.{h,cpp}; CompositeCmd batches multiple commands as one
- *   undo step (used by stroke accumulators).
+ * - **EditorCommand**: abstract base for undo/redo, declared in
+ *   EditorCommand.hpp. Concrete commands live in EditorCommands.hpp /
+ *   EditorCommands.cpp; CompositeCmd batches multiple commands as one undo
+ *   step (used by stroke accumulators).
  * - **UndoRedoStack**: bounded stack of EditorCommand instances.
  * - **Stroke accumulators**: TilePlaceStrokeAccum, CollisionStrokeAccum,
  *   NavigationStrokeAccum, ElevationStrokeAccum - coalesce drag-paint input
