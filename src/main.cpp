@@ -1,30 +1,30 @@
-/*  ============================================================================================== *
- *
- *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠳⣶⡤
- *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⣾⣦⡀
- *                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣈⣻⡧⢀
- *           :::::::::  ::::::::::: :::::::::: :::::::::::    ⢷⣦⣤⡀⠀⢀⣠⣤⡆⢰⣶⣶⣾⣿⣿⣷⣕⣡⡀
- *           :+:    :+:     :+:     :+:            :+:        ⠘⣿⣿⠇⠀⣦⡀⠉⠉⠈⠉⠁⢸⣿⣿⣿⣿⡿⠃
- *           +:+    +:+     +:+     +:+            +:+        ⠀⠀⠀⣀⣴⣿⣿⣄⣀⣀⣀⢀⣼⣿⣿⣿⠁
- *           +#++:++#:      +#+     :#::+::#       +#+        ⠀⠀⠀⠀⠉⢩⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀
- *           +#+    +#+     +#+     +#+            +#+        ⠀⠀⠀⠀⠀⣸⣿⣿⡿⢻⣿⣿⣿⣿⡿⢿⠇
- *           #+#    #+#     #+#     #+#            #+#        ⠀⠀⠀⠀⢰⣿⣿⣿⠰⠙⠁⠈⣿⣿⠱⠘
- *           ###    ### ########### ###            ###        ⠀⠀⠀⠀⢸⡏⣾⡿⠁⠀⠀⠀⢿⣼⣷⠁
- *                                                            ⠀⠀⠀⠀⠘⠷⢿⣧⡀⠀⠀⠀⠈⠛⢿⣆
- *                                                            ⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠈
- *                                  << G A M E   E N G I N E >>
- *
- *  ============================================================================================== *
- *
- *      A 2.5D game engine featuring dual graphics backends (OpenGL 4.6 &
- *      Vulkan 1.0), dynamic day/night cycles, tile-based worlds, NPC
- *      pathfinding, and a built-in level editor.
- *
- *    ----------------------------------------------------------------------
- *
- *      Repository:   https://github.com/lextpf/rift
- *      License:      MIT
- */
+//  ==============================================================================================
+//
+//                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠳⣶⡤
+//                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⣾⣦⡀
+//                                                            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣈⣻⡧⢀
+//           :::::::::  ::::::::::: :::::::::: :::::::::::    ⢷⣦⣤⡀⠀⢀⣠⣤⡆⢰⣶⣶⣾⣿⣿⣷⣕⣡⡀
+//           :+:    :+:     :+:     :+:            :+:        ⠘⣿⣿⠇⠀⣦⡀⠉⠉⠈⠉⠁⢸⣿⣿⣿⣿⡿⠃
+//           +:+    +:+     +:+     +:+            +:+        ⠀⠀⠀⣀⣴⣿⣿⣄⣀⣀⣀⢀⣼⣿⣿⣿⠁
+//           +#++:++#:      +#+     :#::+::#       +#+        ⠀⠀⠀⠀⠉⢩⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀
+//           +#+    +#+     +#+     +#+            +#+        ⠀⠀⠀⠀⠀⣸⣿⣿⡿⢻⣿⣿⣿⣿⡿⢿⠇
+//           #+#    #+#     #+#     #+#            #+#        ⠀⠀⠀⠀⢰⣿⣿⣿⠰⠙⠁⠈⣿⣿⠱⠘
+//           ###    ### ########### ###            ###        ⠀⠀⠀⠀⢸⡏⣾⡿⠁⠀⠀⠀⢿⣼⣷⠁
+//                                                            ⠀⠀⠀⠀⠘⠷⢿⣧⡀⠀⠀⠀⠈⠛⢿⣆
+//                                                            ⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠈
+//                                  << G A M E   E N G I N E >>
+//
+//  ==============================================================================================
+//
+//      A 2.5D game engine featuring dual graphics backends (OpenGL 4.6 &
+//      Vulkan 1.0), dynamic day/night cycles, tile-based worlds, NPC
+//      pathfinding, and a built-in level editor.
+//
+//    ----------------------------------------------------------------------
+//
+//      Repository:   https://github.com/lextpf/rift
+//      License:      MIT
+
 #include "Game.hpp"
 #include "Logger.hpp"
 
@@ -38,7 +38,7 @@
 #include <signal.h>
 #include <windows.h>
 
-// @author Claude (https://github.com/claude)
+// @author Fable 5 (https://github.com/claude)
 // Everything in this block runs from a context where
 // the C++ runtime may be unsound - SIGABRT can fire mid-destructor, and an
 // SEH access violation can fire with a corrupted heap. Only async-signal-safe
@@ -48,12 +48,11 @@
 //   * manual integer-to-string conversion (no printf, no std::format)
 //   * direct termination via _exit(1) (skips C++ destructors and atexit)
 // Adding anything else - even seemingly harmless logging - can deadlock or
-// silently corrupt the crash log we are trying to write.
+// silently corrupt the crash log being written.
 
-// Signal-based crash handler for fatal errors.
-// Logs the signal number to rift.project.log before terminating.
-// Handles SIGABRT, SIGTERM, and SIGINT signals.
-// @param sig  The signal number that triggered the crash.
+// Signal-based crash handler for fatal errors. Appends `sig`, the signal number
+// that triggered the crash, to rift.project.log and then terminates via _exit(1).
+// Registered for SIGABRT, SIGTERM, and SIGINT in main().
 void CrashHandler(int sig)
 {
     static const char prefix[] = "CRASH HANDLER: Signal ";
