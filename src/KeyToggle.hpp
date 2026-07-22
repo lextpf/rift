@@ -12,13 +12,17 @@
  * repeat detection until all keys are released. Uses variadic NTTP
  * and fold expressions for multi-key support.
  *
- * @par Single Key
+ * JustPressed is a per-frame poll: the latch only clears on a frame that sees
+ * every key released. The function-local `static` idiom below shares one latch
+ * between all callers of that function, across every window.
+ *
+ * @par Single key
  * @code{.cpp}
  * static KeyToggle<GLFW_KEY_E> eKey;
  * if (eKey.JustPressed(window)) { ... }
  * @endcode
  *
- * @par Multi-Key (OR press, AND release)
+ * @par Multi-key (OR press, AND release)
  * @code{.cpp}
  * static KeyToggle<GLFW_KEY_UP, GLFW_KEY_W> upKey;
  * if (upKey.JustPressed(window)) { ... }
@@ -27,7 +31,7 @@
 template <int... Keys>
 struct KeyToggle
 {
-    bool pressed = false;
+    bool pressed = false;  ///< Latched while any key stays down; cleared when all read RELEASE.
 
     /**
      * @brief Returns true on the first frame any key is pressed.
@@ -41,14 +45,14 @@ struct KeyToggle
     bool JustPressed(GLFWwindow* window)
     {
         // Unary left fold (... || expr): expands to (expr(K1) || expr(K2) || ...).
-        // True when ANY key in the pack is pressed.
+        // True when any key in the pack is pressed.
         if ((... || (glfwGetKey(window, Keys) == GLFW_PRESS)) && !pressed)
         {
             pressed = true;
             return true;
         }
         // Unary left fold (... && expr): expands to (expr(K1) && expr(K2) && ...).
-        // True only when ALL keys in the pack are released.
+        // True only when all keys in the pack are released.
         if ((... && (glfwGetKey(window, Keys) == GLFW_RELEASE)))
             pressed = false;
         return false;
