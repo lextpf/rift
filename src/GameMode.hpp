@@ -22,7 +22,7 @@
  */
 enum class GameMode : uint8_t
 {
-    Title,
-    Playing,
-    Paused
+    Title,    ///< Boot state. Cosmetic title world only; the save is never touched.
+    Playing,  ///< Gameplay simulation runs; editor and dialogue live inside this mode.
+    Paused    ///< Everything frozen behind the pause overlay; the world is still drawn.
 };
