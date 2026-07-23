@@ -23,13 +23,16 @@ concept resettable_container = requires(F& f, size_t n) {
  * @class defaulted_vector
  * @brief Vector wrapper with a compile-time default value for parallel array patterns.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  *
  * Wraps `std::vector<T>` and associates a compile-time default value used by
  * resize_all / reset_all fold expressions. Provides transparent `operator[]`,
  * `size()`, and iteration so existing access patterns work unchanged.
  *
  * @tparam T       Element type.
- * @tparam Default Compile-time default value (C++20 NTTP: supports int, float, bool).
+ * @tparam Default Compile-time default value. Any structural NTTP type is accepted;
+ *                 in practice int, float, bool and scoped enums (see
+ *                 TileLayer::stance and TileLayer::elevationRole).
  *
  * @par Usage
  * @code{.cpp}
@@ -39,7 +42,7 @@ concept resettable_container = requires(F& f, size_t n) {
  * tiles.resetToDefault();  // all 100 elements back to -1
  * @endcode
  *
- * @par Proxy Handling
+ * @par Proxy handling
  * Uses `decltype(auto)` for `operator[]` to correctly forward
  * `std::vector<bool>`'s proxy reference type.
  */
@@ -50,8 +53,15 @@ public:
     using value_type = T;
     static constexpr auto default_value = static_cast<T>(Default);
 
-    /// @brief Index access. Returns `T&` for most types, proxy for `bool`.
-    /// Uses C++23 deducing this to unify const/non-const overloads.
+    /**
+     * @brief Index access. Returns `T&` for most types, proxy for `bool`.
+     *
+     * Uses C++23 deducing this to unify const/non-const overloads. The subscript is
+     * unchecked - it forwards to `std::vector::operator[]`, so `i` must be less than
+     * `size()`. Unlike BoolGrid and ColumnProxy, there is no clamp and no default
+     * return. Callers bounds-check the coordinate instead: `resize_all` keeps the
+     * parallel arrays of one TileLayer at a single common size.
+     */
     [[nodiscard]] decltype(auto) operator[](this auto&& self, size_t i) { return self.m_Data[i]; }
 
     [[nodiscard]] size_t size() const noexcept { return m_Data.size(); }
@@ -76,7 +86,6 @@ private:
 
 /**
  * @brief Resize all resettable_container members to the same size.
- * @author Alex (https://github.com/lextpf)
  * @ingroup Core
  *
  * Uses a fold expression to call `resize(n)` on each container in a single
@@ -100,7 +109,6 @@ void resize_all(size_t n, Containers&... containers)
 
 /**
  * @brief Reset all resettable_container members to their compile-time defaults.
- * @author Alex (https://github.com/lextpf)
  * @ingroup Core
  *
  * Uses a fold expression to call `resetToDefault()` on each container.
