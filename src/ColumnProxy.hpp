@@ -5,18 +5,17 @@
 #include <type_traits>
 
 /**
- * @concept RandomAccessContainerOf
- * @brief Concept for containers with random access supporting element type T.
+ * @brief Concept for random-access containers holding element type T.
  * @author Alex (https://github.com/lextpf)
  * @ingroup World
  *
- * Handles both regular containers and `std::vector<T>` whose `operator[]`
- * returns a proxy reference type rather than a true `T&`. The concept asserts
- * the container is both readable and writable through `operator[]`, and that
- * `size()` returns something convertible to `std::size_t`.
+ * Accepts both ordinary containers and `std::vector<bool>`-style containers whose `operator[]`
+ * returns a proxy reference rather than a true `T&`. The concept requires the container to be
+ * readable and writable through `operator[]`, and `size()` to return something convertible to
+ * `std::size_t`.
  *
- * @tparam C Container type to check
- * @tparam T Element type
+ * @tparam C  Container type to check.
+ * @tparam T  Element type.
  */
 template <typename C, typename T>
 concept RandomAccessContainerOf = requires(C& c, const C& cc, std::size_t i, T val) {
@@ -44,6 +43,18 @@ template <typename C, typename T, T DefaultValue>
 class RefProxy
 {
 public:
+    /**
+     * @brief Bind the proxy to one element slot.
+     *
+     * Non-owning: @p data must outlive the proxy, which is intended to be a short-lived
+     * temporary in a `grid[x][y]` expression. When @p valid is false the proxy is inert -
+     * assignment is discarded and reads yield DefaultValue - so @p index is ignored and
+     * callers pass 0 rather than an out-of-range value.
+     *
+     * @param data  Container the element lives in; never dereferenced when @p valid is false.
+     * @param index Flat row-major index into @p data.
+     * @param valid Whether the coordinates were in bounds.
+     */
     constexpr RefProxy(C* data, std::size_t index, bool valid) noexcept
         : m_Data(data),
           m_Index(index),
@@ -51,6 +62,7 @@ public:
     {
     }
 
+    /// @brief Write through to the element; a no-op when out-of-bounds.
     constexpr RefProxy& operator=(const T& value) noexcept
     {
         if (m_Valid)
@@ -58,15 +70,16 @@ public:
         return *this;
     }
 
+    /// @brief Read the element, or DefaultValue when out-of-bounds.
     [[nodiscard]] constexpr operator T() const noexcept
     {
         return m_Valid ? static_cast<T>((*m_Data)[m_Index]) : DefaultValue;
     }
 
 private:
-    C* m_Data;
-    std::size_t m_Index;
-    bool m_Valid;
+    C* m_Data;            ///< Non-owning; the caller guarantees it outlives the proxy.
+    std::size_t m_Index;  ///< Flat row-major index; meaningless unless m_Valid.
+    bool m_Valid;         ///< False makes the proxy inert instead of out-of-bounds.
 };
 
 /**
@@ -101,13 +114,13 @@ private:
  * bool v = readOnly[20];                      // Read-only (Mutable=false)
  * @endcode
  *
- * @par Memory Layout
+ * @par Memory layout
  * Data is stored in row-major order:
  * @f[
  * i = y \times w + x
  * @f]
  *
- * @par Bounds Handling
+ * @par Bounds handling
  * - **Read**: Out-of-bounds returns DefaultValue
  * - **Write**: Out-of-bounds silently ignored
  *
@@ -168,10 +181,12 @@ public:
     }
 
 private:
-    data_ptr m_Data;
+    data_ptr m_Data;  ///< Non-owning pointer to the flat container.
+    /// Pointers, not values, so the proxy sees a live resize of the owning grid. All three
+    /// pointers must outlive the proxy; it is meant to be a temporary within one expression.
     const int* m_Width;
     const int* m_Height;
-    int m_X;
+    int m_X;  ///< Column this proxy was built for; bounds-checked on each row access.
 };
 
 /// @brief Backwards-compatible alias for read-only ColumnProxy.

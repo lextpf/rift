@@ -33,13 +33,13 @@
  * if (grid.Get(10, 20)) { ... } // Named getter
  * @endcode
  *
- * @par Storage Options
+ * @par Storage options
  * | Container        | Memory      | Access Speed | Notes                    |
  * |------------------|-------------|--------------|--------------------------|
  * | `std::vector`    | Bit-packed  | Good         | Default, mem efficient   |
  * | `std::deque`     | Chunked     | Good         | Better for huge maps     |
  *
- * @par Memory Layout
+ * @par Memory layout
  * Data is stored in row-major order:
  * @code
  *     Column:  0   1   2   3
@@ -50,16 +50,16 @@
  *            +---+---+---+---+
  * @endcode
  *
- * @par Coordinate System
+ * @par Coordinate system
  * - **x**: Column (horizontal), range [0, width), increasing rightward
  * - **y**: Row (vertical), range [0, height), increasing downward
  * - Index formula: `i = y * w + x`
  *
- * @par Bounds Handling
+ * @par Bounds handling
  * - **Read**: Out-of-bounds returns `false`
  * - **Write**: Out-of-bounds silently ignored
  *
- * @par Thread Safety
+ * @par Thread safety
  * Not thread-safe. Concurrent reads are safe; writes require synchronization.
  *
  * @see ColumnProxy For 2D array syntax implementation
@@ -83,8 +83,10 @@ public:
     /// @brief Element type (always `bool`).
     using value_type = bool;
 
-    /// @brief Proxy type for `grid[x][y]` syntax.
+    /// @brief Mutable proxy for `grid[x][y]` reads and writes.
     using Column = ColumnProxy<container_type, value_type, false>;
+
+    /// @brief Read-only proxy returned by the const `operator[]`.
     using ConstColumn = ColumnProxy<container_type, value_type, false, false>;
 
     /**
@@ -164,9 +166,7 @@ public:
         return indices;
     }
 
-    /**
-     * @brief Clear all flags to `false`.
-     */
+    /// @brief Clear all flags to `false`.
     void Clear() { std::ranges::fill(m_Data, false); }
 
     /// @brief Get width in tiles.
@@ -234,7 +234,13 @@ public:
     }
 
 protected:
+    /**
+     * @brief Flat row-major storage, `m_Width * m_Height` elements (index `y * m_Width + x`).
+     *
+     * Protected so CollisionMap / NavigationMap can add domain helpers without exposing
+     * raw indexing publicly; every public entry point bounds-checks before touching it.
+     */
     container_type m_Data{};
-    int m_Width{0};
-    int m_Height{0};
+    int m_Width{0};   ///< Grid width in tiles; also the row stride into m_Data.
+    int m_Height{0};  ///< Grid height in tiles.
 };
