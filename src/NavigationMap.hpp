@@ -25,13 +25,13 @@
  * if (nav[10, 20]) { ... }  // C++23 multidimensional subscript
  * @endcode
  *
- * @par Design Philosophy
+ * @par Design philosophy
  * Separating navigation from collision provides several benefits:
  * 1. **NPC Containment**: Keep NPCs in designated areas
  * 2. **Patrol Routes**: Create predictable patrol paths
  * 3. **Level Design**: Restrict NPCs without collision
  *
- * @par Bounds Handling
+ * @par Bounds handling
  * - **Read**: Out-of-bounds returns `false` (not walkable)
  * - **Write**: Out-of-bounds silently ignored
  *
@@ -52,8 +52,10 @@ public:
     using BoolGrid<Container>::BoolGrid;
     using BoolGrid<Container>::operator[];
 
-    /// @brief Proxy type aliases for backwards compatibility.
+    /// @brief Mutable column proxy; named alias kept for backwards compatibility.
     using NavigationColumn = typename BoolGrid<Container>::Column;
+
+    /// @brief Read-only column proxy returned by the const `operator[]`.
     using ConstNavigationColumn = typename BoolGrid<Container>::ConstColumn;
 
     /**

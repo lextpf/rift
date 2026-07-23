@@ -15,7 +15,7 @@
  * @tparam Container Template for the storage container (e.g., `std::vector`).
  *                   The container is instantiated as `Container<bool>`.
  *
- * @par Class Hierarchy
+ * @par Class hierarchy
  * CollisionMap and NavigationMap are thin semantic wrappers over the same
  * generic boolean storage so the two grids can be edited independently
  * without sharing state:
@@ -54,11 +54,11 @@
  * if (col[10, 20]) { ... }  // C++23 multidimensional subscript
  * @endcode
  *
- * @par Bounds Handling
+ * @par Bounds handling
  * - **Read**: Out-of-bounds returns `false` (passable)
  * - **Write**: Out-of-bounds silently ignored
  *
- * @par Design Note
+ * @par Design note
  * Collision and navigation are deliberately separate grids: a fence tile may
  * be non-walkable for NPC pathfinding without blocking player movement, and
  * an interactive prop may block the player without affecting NPC routes.
@@ -81,8 +81,10 @@ public:
     using BoolGrid<Container>::BoolGrid;
     using BoolGrid<Container>::operator[];
 
-    /// @brief Proxy type aliases for backwards compatibility.
+    /// @brief Mutable column proxy; named alias kept for backwards compatibility.
     using CollisionColumn = typename BoolGrid<Container>::Column;
+
+    /// @brief Read-only column proxy returned by the const `operator[]`.
     using ConstCollisionColumn = typename BoolGrid<Container>::ConstColumn;
 
     /**
