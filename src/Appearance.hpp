@@ -10,17 +10,16 @@
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * Groups the player's appearance state carved out of PlayerCharacter's loose
- * members. @ref characterType selects the sprite-sheet set; @ref
- * usingCopiedAppearance is set while wearing a copied NPC look (restored via
- * RestoreOriginalAppearance). @ref accentColor is the dialogue accent sampled
- * eagerly from the walking sheet whenever it changes (no lazy/mutable cache).
- *
- * Plain data struct: flat aggregate, usable directly as an ECS component.
+ * @ref characterType selects the sprite sheet set. @ref usingCopiedAppearance stays true while the
+ * player wears a copied NPC look, until RestoreOriginalAppearance puts the original back. A
+ * failed restore leaves the flag set: RestoreOriginalAppearance clears it only when the
+ * character switch succeeds, so the disguise sheet can still be committed with the flag true.
+ * @ref accentColor is sampled from the walking sheet every time the appearance changes, so there
+ * is no lazy or mutable cache to invalidate.
  */
 struct Appearance
 {
     CharacterType characterType{CharacterType::BW1_MALE};  ///< Active character variant.
     bool usingCopiedAppearance{false};  ///< True while wearing a copied NPC appearance.
-    glm::vec3 accentColor{0.0f};        ///< Dialogue accent sampled from the walk sheet.
+    glm::vec3 accentColor{0.0f};        ///< Dialogue accent sampled from the walking sheet.
 };
