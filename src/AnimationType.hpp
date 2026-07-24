@@ -6,14 +6,23 @@
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * Determines which sprite sheet to use and animation timing:
- * - IDLE: Standing still, uses walking sheet frame 0
- * - WALK: Walking animation at base speed
- * - RUN: Running animation at 50% of normal frame duration (2x faster)
+ * Decides whether the walk cycle advances, and - together with the PlayerModes flags - which
+ * sprite sheet the player draws from. PlayerRender::ResolveRenderSheet performs the sheet
+ * lookup and tests PlayerModes::isBicycling first, so this enum does not pick the sheet alone.
+ *
+ * The enum carries no timing of its own. Frame cadence comes from actual velocity in
+ * PlayerMovementSystem::UpdateAnimation.
  */
 enum class AnimationType
 {
-    IDLE = 0,  ///< Standing still (single frame)
-    WALK = 1,  ///< Walking animation (4-step sequence [1,0,2,0])
-    RUN = 2    ///< Running/sprinting animation (same sequence, faster timing)
+    IDLE = 0,  ///< Standing still; the walk cycle resets to frame 0 instead of advancing.
+    WALK = 1,  ///< Walk cycle advancing over the sequence [1,0,2,0], drawn from the walking sheet.
+    /**
+     * @brief Same sequence and timing as WALK; covers running and bicycling alike.
+     *
+     * There is no separate bicycle state. PlayerRender::ResolveRenderSheet tests
+     * PlayerModes::isBicycling before this enum, so RUN draws the bicycle sheet while
+     * bicycling and the running sheet otherwise.
+     */
+    RUN = 2
 };
