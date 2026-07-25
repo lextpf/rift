@@ -10,20 +10,23 @@
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * The data half of the player's momentum movement, carved out of the former
- * PlayerMotor class. That logic (acceleration, deceleration, and the grid-aligned
- * stop resolution) is now the stateless free functions in MotionSystem.hpp that
- * operate on a @c Motor.
- *
- * Plain data struct. Flat aggregate (a nested @ref MotorParams aggregate is
- * fine) so it is usable directly as an ECS component (packed storage).
+ * The data half of the player's momentum movement. Acceleration, deceleration and grid-aligned
+ * stop resolution are the stateless free functions in MotionSystem.hpp, which take a @c Motor by
+ * reference.
  *
  * @see MotionSystem, MotorParams
  */
 struct Motor
 {
-    glm::vec2 velocity{0.0f, 0.0f};    ///< Current velocity (px/s).
-    MotorParams params{};              ///< Tunable accel/decel parameters.
+    glm::vec2 velocity{0.0f, 0.0f};    ///< Current velocity in pixels/second.
+    MotorParams params{};              ///< Tunable acceleration and deceleration parameters.
     glm::vec2 stopTarget{0.0f, 0.0f};  ///< Latched per-axis tile-aligned stop point.
-    bool hasStopTarget{false};         ///< True once a grid-aligned stop is latched.
+    /**
+     * @brief True once a grid-aligned stop is latched.
+     *
+     * Any axis that collision blocks must clear this, which MotionSystem::ZeroAxisX and
+     * MotionSystem::ZeroAxisY both do. A stale target left latched against a wall makes the
+     * player climb the corner in visible steps.
+     */
+    bool hasStopTarget{false};
 };
