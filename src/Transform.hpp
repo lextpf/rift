@@ -4,20 +4,16 @@
 
 /**
  * @struct Transform
- * @brief World position (bottom-center / feet) of a character.
+ * @brief World position of a character, anchored at the feet.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * The shared position component carved out of the GameCharacter base. The
- * convention is bottom-center anchoring (where the feet touch the ground),
- * matching the Y-sort and collision invariants used across the engine.
- *
- * Plain data struct: unprefixed @c camelCase fields, no invariants. Flat
- * aggregate so it is usable directly as an ECS component (packed storage).
+ * The anchor is bottom-center, where the feet meet the ground. Y-sort depth order and the
+ * feet-anchored collision box are both defined against that point, so every consumer assumes it.
  *
  * @see Elevation, Facing, AnimationState
  */
 struct Transform
 {
-    glm::vec2 position{0.0f, 0.0f};  ///< World position (bottom-center of sprite)
+    glm::vec2 position{0.0f, 0.0f};  ///< World position of the sprite's bottom-center anchor.
 };
