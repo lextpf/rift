@@ -4,35 +4,50 @@
 
 /**
  * @struct PlayerMovementState
- * @brief Plain per-player slide/axis/idle-snap hysteresis state.
+ * @brief Per-player slide, axis and idle-snap hysteresis state.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * Groups the frame-to-frame collision state that CollisionResolver reads and
- * writes while resolving player movement (wall-slide direction commit, axis
- * preference, idle-snap interpolation, last input sign, stuck-recovery anchor).
+ * Groups the frame-to-frame collision state that @ref CollisionSystem reads and writes while
+ * resolving player movement: wall-slide direction commit, axis preference, last input sign, and
+ * the stuck-recovery anchor.
  *
- * @par Why this exists
- * The fields were previously private members of PlayerCharacter accessed by
- * CollisionResolver through `friend`. Extracting them into a plain struct lets
- * the resolver operate on a data object exposed via a public accessor instead
- * of reaching into the player's internals, and is the shape the future
- * `PlayerMovement` ECS component takes verbatim.
+ * Every field is hysteresis. Each exists so that a decision made on one frame is not immediately
+ * reversed on the next, which is what stops the player flickering between two equally valid
+ * resolutions at a corner.
  *
- * Plain data struct: unprefixed @c camelCase fields, no invariants.
+ * EntityStore::SpawnPlayer attaches this component.
  *
- * @see PlayerMovementSystem, CollisionResolver
+ * @see PlayerMovementSystem, CollisionSystem
  */
 struct PlayerMovementState
 {
-    glm::vec2 slideDir{0.0f};    ///< Last chosen wall-slide direction (jitter hysteresis)
-    float slideTimer{0.0f};      ///< Time remaining before the slide direction may change
-    int axisPref{0};             ///< Axis preference: -1 = prefer Y, +1 = prefer X, 0 = none
-    float axisTimer{0.0f};       ///< Time remaining before the axis preference may change
-    glm::vec2 snapStart{0.0f};   ///< Position when idle snap began
-    glm::vec2 snapTarget{0.0f};  ///< Target position for idle snap
-    float snapProgress{1.0f};    ///< Smoothstep idle-snap progress (0 -> 1)
-    glm::vec2 lastSafeTileCenter{0.0f};  ///< Last valid tile center (stuck recovery)
-    int lastInputX{0};                   ///< Last non-zero A/D sign: -1 left, +1 right
-    int lastInputY{0};                   ///< Last non-zero W/S sign: -1 up, +1 down
+    glm::vec2 slideDir{0.0f};  ///< Last chosen wall-slide direction, held to damp jitter.
+    /**
+     * @brief Seconds left on the slide-direction commit, about 120 ms when a direction is chosen.
+     *
+     * While it runs, CollisionSystem refuses to clear @ref slideDir, so a player wedged in a
+     * tie-breaker keeps sliding one way instead of alternating every frame.
+     */
+    float slideTimer{0.0f};
+    int axisPref{0};        ///< Axis preference: -1 prefers Y, +1 prefers X, 0 is no preference.
+    float axisTimer{0.0f};  ///< Seconds remaining before the axis preference may change.
+    glm::vec2 snapStart{0.0f};   ///< Unused: nothing in the tree reads or writes it.
+    glm::vec2 snapTarget{0.0f};  ///< Unused: nothing in the tree reads or writes it.
+    float snapProgress{1.0f};    ///< Unused: nothing in the tree reads or writes it.
+    /**
+     * @brief Feet position at the center of the last tile the player occupied while not embedded
+     *        in a solid tile.
+     *
+     * Write-only as things stand. EntityStore::SpawnPlayer seeds it, and both
+     * PlayerMovementSystem::Step and CollisionSystem::HandleStuckRecovery keep it current, but
+     * nothing reads it. Recovery recomputes a target from scratch through
+     * CollisionSystem::FindClosestSafeTileCenter instead.
+     *
+     * The seed is the raw spawn position, not a tile center, so the tile-center invariant only
+     * holds from the first PlayerMovementSystem::Step onward.
+     */
+    glm::vec2 lastSafeTileCenter{0.0f};
+    int lastInputX{0};  ///< Sign of the last non-zero horizontal input: -1 left, +1 right.
+    int lastInputY{0};  ///< Sign of the last non-zero vertical input: -1 up, +1 down.
 };
