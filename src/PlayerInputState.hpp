@@ -4,22 +4,28 @@
 
 /**
  * @struct PlayerInputState
- * @brief Per-frame player input / edge-tracking state (facing + motion gating).
+ * @brief Per-frame player input and edge-tracking state for facing and motion gating.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * The input edge-tracking state carved out of PlayerCharacter's loose members:
- * the last movement direction (for facing), whether the player is in motion,
- * and the previous-frame axis-active flags that drive the rising-edge facing
- * rule. Distinct from PlayerMovementState (which holds collision/slide
- * hysteresis); the two last-input notions may be reconciled later.
+ * Holds the last accepted movement direction, whether the player is in motion, and the
+ * previous-frame axis-active flags that drive the rising-edge facing rule. This is distinct from
+ * PlayerMovementState, which holds collision and slide hysteresis.
  *
- * Plain data struct: flat aggregate, usable directly as an ECS component.
+ * @see PlayerMovementSystem, PlayerMovementState
  */
 struct PlayerInputState
 {
-    glm::vec2 lastMovementDirection{0.0f, 0.0f};  ///< Previous frame's movement direction.
-    bool isMoving{false};                         ///< True if currently in motion.
-    bool prevAxisXActive{false};                  ///< Was X axis (A/D) input non-zero last frame?
-    bool prevAxisYActive{false};                  ///< Was Y axis (W/S) input non-zero last frame?
+    /**
+     * @brief Unit direction of the last movement that was committed.
+     *
+     * This is not raw input, and a frame that ended up blocked does not update it. It is read only
+     * to detect a dominant-axis flip, which resets the wall-slide hysteresis.
+     */
+    glm::vec2 lastMovementDirection{0.0f, 0.0f};
+    /// True while the motor reports motion. It tracks actual velocity rather than key state, so it
+    /// stays true through a glide to rest, and it drives animation start and stop transitions.
+    bool isMoving{false};
+    bool prevAxisXActive{false};  ///< Whether X axis input was non-zero last frame.
+    bool prevAxisYActive{false};  ///< Whether Y axis input was non-zero last frame.
 };
