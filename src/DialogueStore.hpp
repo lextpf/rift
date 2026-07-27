@@ -12,21 +12,42 @@
  * @author Alex (https://github.com/lextpf)
  * @ingroup Dialogue
  *
- * Centralizes ownership of the branching dialogue trees that were previously
- * owned by-value on each NonPlayerCharacter. Each NPC entity's @c Dialogue
- * component holds a @ref DialogueHandle instead of an owned tree; the store
- * keeps the one copy. This mirrors @ref TextureStore: the heavy,
+ * Centralizes ownership of the branching dialogue trees: an NPC entity's
+ * @c Dialogue component holds a @ref DialogueHandle rather than an owned tree, and
+ * the store keeps the one copy. This mirrors @ref TextureStore - the heavy,
  * non-field-serializable resource lives behind a handle so the component stays a
  * flat, reflectable aggregate.
+ *
+ * @par Ownership chain
+ * Nothing but this store owns a tree. @ref DialogueManager takes a private COPY at
+ * @c StartDialogue so its node/option pointers survive the NPC being despawned
+ * mid-conversation:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart LR
+ *     NPC["NPC entity"] --> Comp["Dialogue component"]
+ *     Comp --> H["DialogueHandle .id"]
+ *     H -- "map key" --> Map["DialogueStore::m_Trees"]
+ *     Map --> Tree["DialogueTree (the one owner)"]
+ *     Tree -- "copied at StartDialogue" --> Active["DialogueManager::m_ActiveTree"]
+ * </pre>
+ * @endhtmlonly
  *
  * @par Pointer stability
  * Trees live in a node-based @c std::unordered_map, so a @c const @c DialogueTree&
  * obtained from @ref Get stays valid across later @ref Add calls (only erasure
  * would invalidate it, and the store never erases).
  *
- * @note @ref Add never dedups and the store never erases, so re-assigning an
- * NPC's tree orphans its previous entry. Usage is set-once (map load / editor
- * placement), so growth is bounded by the number of NPCs.
+ * @note The store is append-only for the whole process lifetime: there is no erase
+ * or clear API, @ref Add never dedups, and nothing clears the store when NPC
+ * entities are destroyed. A map load and each editor redo of an NPC placement
+ * therefore mint fresh trees on top of the orphaned previous ones, so the store
+ * grows across reloads and editor sessions.
+ *
+ * @note A handle is never invalidated. A handle held past its NPC's despawn keeps
+ * resolving to the orphaned tree instead of reporting invalid, and a handle is only
+ * meaningful for the store instance that minted it.
  */
 class DialogueStore
 {
