@@ -80,11 +80,10 @@ std::vector<glm::ivec2> FindPath(const Tilemap& tilemap, glm::ivec2 start, glm::
         return {};
     }
 
-    // @author Claude (https://github.com/claude)
     // The BFS only writes `prev[child] = parent`, so the
-    // chain runs goal -> ... -> start. We walk it from `goal` backward, pushing
+    // chain runs goal -> ... -> start. Walking it backward from `goal` pushes
     // each cell, and `reverse` at the end to get start-first order. `prev[start]`
-    // is the sentinel (size_t)-1, but we break on `start` first so a successful
+    // is the sentinel (size_t)-1, but the loop breaks on `start` first, so a successful
     // path always terminates here; the sentinel check on the loop condition
     // exists to defend against malformed `prev` arrays (e.g. truncated grids).
     std::vector<glm::ivec2> path;
