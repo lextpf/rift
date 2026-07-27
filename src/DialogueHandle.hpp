@@ -12,9 +12,9 @@ using DialogueId = std::uint32_t;
  * @ingroup Dialogue
  *
  * Replaces an owned @ref DialogueTree member on an NPC: the store owns the
- * (non-reflectable) node graph, the entity (and, later, an ECS @c Dialogue
- * component) holds only this handle. Flat aggregate (one field, no ctors) so it
- * is usable directly inside a reflectable ECS component. @c id 0 means "no tree".
+ * (non-reflectable) node graph and the ECS @c Dialogue component holds only this
+ * handle. Flat aggregate (one field, no ctors) so it is usable directly inside a
+ * reflectable ECS component. @c id 0 means "no tree".
  */
 struct DialogueHandle
 {
