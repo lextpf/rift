@@ -16,6 +16,11 @@ float ApproachScalar(float value, float target, float maxDelta)
     return value + (diff > 0.0f ? maxDelta : -maxDelta);
 }
 
+// The two rest families are deliberately different because the anchor is bottom-center:
+// X lands on tile centers (8, 24, 40, ...), Y on tile bottom edges (0, 16, 32, ...).
+// Making them match would put the feet off-center horizontally or half a tile above the
+// floor vertically.
+
 // Nearest horizontal tile center for an X coordinate.
 float AlignedRestX(float x, float tileSize)
 {
@@ -49,7 +54,7 @@ float ResolveAxisStop(float pos, float target, float& vel, const MotorParams& p,
     float dir = (vel > 0.0f) ? 1.0f : -1.0f;
     float remaining = toTarget * dir;  // signed distance still to travel along heading
 
-    // Target reached or behind us: land exactly and stop.
+    // Target reached or already passed: land exactly on it and stop.
     if (remaining <= p.stopEpsilon)
     {
         vel = 0.0f;
@@ -101,12 +106,16 @@ glm::vec2 ComputeDisplacement(Motor& motor,
         return motor.velocity * dt;
     }
 
-    // No input: decelerate, resolving the stop onto the tile grid per axis.
+    // No input: decelerate, resolving the stop onto the tile grid per axis. targetSpeed is
+    // deliberately unused here - how fast the player wanted to go says nothing about how
+    // they should stop; deceleration is solved from the remaining distance and MotorParams.
     (void)targetSpeed;
 
     if (!motor.hasStopTarget)
     {
-        // Latch a per-axis tile-aligned stop point from the predicted free stop.
+        // Latch a per-axis tile-aligned stop point from the predicted free stop. Latched
+        // once and held: re-deriving it each frame would chase a shrinking prediction and
+        // never converge.
         if (std::abs(motor.velocity.x) > motor.params.speedEpsilon)
         {
             float dir = (motor.velocity.x > 0.0f) ? 1.0f : -1.0f;
