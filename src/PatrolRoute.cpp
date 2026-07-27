@@ -48,8 +48,8 @@ bool PatrolRoute::Initialize(int startTileX,
 
     // Use breadth-first search to collect all walkable tiles reachable from the start.
     // BFS explores in expanding rings outward, so tiles closer to start are found first.
-    // This means if we hit maxRouteLength, we get a compact cluster around the start
-    // rather than a long tendril in one random direction.
+    // So reaching maxRouteLength yields a compact cluster around the start rather than a
+    // long tendril in one random direction.
     std::vector<glm::ivec2> connectedTiles;
     std::vector<bool> visited(mapSize, false);
     std::deque<glm::ivec2> bfsQueue;
@@ -61,7 +61,7 @@ bool PatrolRoute::Initialize(int startTileX,
     while (!bfsQueue.empty() && connectedTiles.size() < static_cast<size_t>(maxRouteLength))
     {
         // Pop from front (FIFO) - this is what makes it BFS instead of DFS.
-        // If we popped from back, closer tiles would be processed last.
+        // Popping from the back would process closer tiles last.
         glm::ivec2 current = bfsQueue.front();
         bfsQueue.pop_front();
         connectedTiles.push_back(current);
@@ -84,7 +84,7 @@ bool PatrolRoute::Initialize(int startTileX,
     // that are also in the set. Think of it like a necklace - each bead touches
     // exactly 2 other beads.
     //
-    // Example of a simple cycle:     Example of NOT a cycle:
+    // Example of a simple cycle:     Example of not a cycle:
     //     A - B                           A - B
     //     |   |                               |
     //     D - C                               C
@@ -101,8 +101,14 @@ bool PatrolRoute::Initialize(int startTileX,
             for (int ni = 0; ni < neighbors.count; ++ni)
             {
                 const auto& neighbor = neighbors.tiles[ni];
-                // Check if this neighbor is part of our collected set
-                // using the visited array for O(1) lookup instead of linear search.
+                // Check whether the BFS reached this neighbor, using the visited array for
+                // O(1) lookup instead of a linear search of connectedTiles. Note that
+                // `visited` marks a tile when it is enqueued, so once the maxRouteLength
+                // bound stops the loop above it is a strict superset of connectedTiles: the
+                // whole unprocessed frontier is marked. Consequence: a ring longer than
+                // maxRouteLength still passes this test, so the truncated route is flagged
+                // closed and its wrap step from the last waypoint to the first is not
+                // adjacent.
                 if (visited[neighbor.y * mapWidth + neighbor.x])
                 {
                     neighborCount++;
@@ -121,9 +127,9 @@ bool PatrolRoute::Initialize(int startTileX,
 
     if (isSimpleCycle)
     {
-        // For a cycle, we walk around the ring by always picking the unvisited neighbor.
-        // Since each tile has exactly 2 neighbors in the set, and we mark tiles visited
-        // as we go, there's always exactly one valid choice (until we complete the loop).
+        // A cycle is walked by always picking the unvisited neighbor. Each tile has exactly
+        // 2 neighbors in the set, and tiles are marked visited on the way, so exactly one
+        // valid choice exists until the loop closes.
         std::vector<bool> cycleVisited(
             static_cast<size_t>(mapWidth) * static_cast<size_t>(mapHeight), false);
         glm::ivec2 current = start;
@@ -134,8 +140,10 @@ bool PatrolRoute::Initialize(int startTileX,
             m_Waypoints.push_back(current);
             cycleVisited[current.y * mapWidth + current.x] = true;
 
-            // Find the next tile: must be in our set and not yet visited.
-            // Use the visited array for O(1) set membership instead of linear search.
+            // Find the next tile: the BFS must have reached it and the walk must not have
+            // taken it yet. `visited` gives O(1) membership instead of a linear search, but
+            // it also covers the unprocessed BFS frontier, so on a truncated region the walk
+            // can step onto tiles that are not in connectedTiles.
             auto neighbors = GetValidNeighbors(current.x, current.y, tilemap);
             glm::ivec2 next(-1, -1);
             for (int ni = 0; ni < neighbors.count; ++ni)
@@ -210,18 +218,22 @@ void PatrolRoute::DFSTraversal(glm::ivec2 current,
     // walkable tiles.
     //
     // Each stack frame stores the current tile and the index of the next
-    // neighbor to explore. When all neighbors are exhausted, we pop the
-    // frame and add a backtrack step (re-adding the parent tile to the
-    // path so the NPC walks back through it without teleporting).
+    // neighbor to explore. When all neighbors are exhausted the frame pops and a
+    // backtrack step is appended, re-adding the parent tile so the NPC walks back
+    // through it without teleporting.
     //
     // Example on a T-shaped map:
     //       A
     //       |
     //   C - B - D
     //
-    // DFS visits: A, then B, then C (dead end, backtrack to B),
-    // then D (dead end, backtrack to B), then back to A.
-    // Path produced: [A, B, C, B, D, B, A]
+    // DFS visits: A, then B, then D (dead end, backtrack to B),
+    // then C (dead end, backtrack to B), then back to A.
+    // D comes before C because neighbors are probed Right, Left, Down, Up.
+    // Path produced: [A, B, D, B, C, B, A]
+    //
+    // A traversal that runs to completion always ends on its start tile, which is why
+    // Initialize flags such a route closed rather than ping-pong.
     struct Frame
     {
         glm::ivec2 tile;
@@ -332,7 +344,7 @@ bool PatrolRoute::GetNextWaypoint(int& tileX, int& tileY)
             {
                 // Reached the start, turn around. Go to 1 (not 0) to avoid
                 // repeating the startpoint twice - unless there's only 1 waypoint,
-                // in which case we stay at index 0 to prevent out-of-bounds access.
+                // in which case the index stays at 0 to prevent out-of-bounds access.
                 m_CurrentWaypointIndex = (static_cast<int>(m_Waypoints.size()) > 1) ? 1 : 0;
                 m_PingPongForward = true;
             }
@@ -354,8 +366,8 @@ PatrolRoute::NeighborResult PatrolRoute::GetValidNeighbors(int tileX,
     }
 
     // Check the 4 cardinal directions. The order matters for determinism:
-    // if we always check Right, Left, Down, Up in that order, then the same
-    // map will always produce the same patrol route.
+    // checking Right, Left, Down, Up in that fixed order makes the same map always
+    // produce the same patrol route.
     const int dx[] = {1, -1, 0, 0};
     const int dy[] = {0, 0, 1, -1};
 
