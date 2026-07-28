@@ -22,19 +22,17 @@
  */
 struct DialogueCondition
 {
-    /**
-     * @brief Types of condition checks.
-     */
+    /// @brief Types of condition checks.
     enum class Type
     {
-        FLAG_SET,      ///< Check if flag key exists (presence-based, any value)
-        FLAG_NOT_SET,  ///< Check if flag key does not exist
-        FLAG_EQUALS    ///< Check if flag equals a specific string value
+        FLAG_SET,      ///< Check if flag key exists (presence-based, any value).
+        FLAG_NOT_SET,  ///< Check if flag key does not exist.
+        FLAG_EQUALS    ///< Check if flag equals a specific string value.
     };
 
-    Type type = Type::FLAG_SET;  ///< The type of condition check
-    std::string key;             ///< Flag name to check in GameStateManager
-    std::string value;           ///< Expected value (only used for FLAG_EQUALS)
+    Type type = Type::FLAG_SET;  ///< The type of condition check.
+    std::string key;             ///< Flag name to check in GameStateManager.
+    std::string value;           ///< Expected value (only used for FLAG_EQUALS).
 
     DialogueCondition() = default;
 
@@ -71,27 +69,25 @@ struct DialogueCondition
  */
 struct DialogueConsequence
 {
-    /**
-     * @brief Types of consequences.
-     */
+    /// @brief Types of consequences.
     enum class Type
     {
-        SET_FLAG,        ///< Set a boolean flag to true
-        CLEAR_FLAG,      ///< Remove/unset a flag key
-        SET_FLAG_VALUE,  ///< Set a flag to a specific string value
+        SET_FLAG,        ///< Set a boolean flag to true.
+        CLEAR_FLAG,      ///< Remove/unset a flag key.
+        SET_FLAG_VALUE,  ///< Set a flag to a specific string value.
     };
 
-    Type type = Type::SET_FLAG;  ///< The type of consequence
-    std::string key;             ///< Flag name
-    std::string value;           ///< New value (for SET_FLAG_VALUE)
+    Type type = Type::SET_FLAG;  ///< The type of consequence.
+    std::string key;             ///< Flag name.
+    std::string value;           ///< New value (for SET_FLAG_VALUE).
 
     DialogueConsequence() = default;
 
     /**
      * @brief Construct a consequence.
      * @param t Consequence type
-     * @param k Flag key or NPC type
-     * @param v New value
+     * @param k Flag key in GameStateManager
+     * @param v New value; read only when @p t is SET_FLAG_VALUE
      */
     DialogueConsequence(Type t, const std::string& k, const std::string& v = "")
         : type(t),
@@ -120,10 +116,10 @@ struct DialogueConsequence
  */
 struct DialogueOption
 {
-    std::string text;                               ///< Display text shown to player
-    std::string nextNodeId;                         ///< ID of next node (empty ends dialogue)
-    std::vector<DialogueCondition> conditions;      ///< All must pass to show option
-    std::vector<DialogueConsequence> consequences;  ///< Executed when option selected
+    std::string text;                               ///< Display text shown to player.
+    std::string nextNodeId;                         ///< ID of next node (empty ends dialogue).
+    std::vector<DialogueCondition> conditions;      ///< All must pass to show option.
+    std::vector<DialogueConsequence> consequences;  ///< Executed when option selected.
 
     DialogueOption() = default;
 
@@ -158,10 +154,10 @@ struct DialogueOption
  */
 struct DialogueNode
 {
-    std::string id;                       ///< Unique identifier within the tree
-    std::string speaker;                  ///< Name displayed above dialogue text
-    std::string text;                     ///< The dialogue text to display
-    std::vector<DialogueOption> options;  ///< Available player responses
+    std::string id;                       ///< Unique identifier within the tree.
+    std::string speaker;                  ///< Name displayed above dialogue text.
+    std::string text;                     ///< The dialogue text to display.
+    std::vector<DialogueOption> options;  ///< Available player responses.
 
     DialogueNode() = default;
 
@@ -205,9 +201,11 @@ struct DialogueNode
  * @author Alex (https://github.com/lextpf)
  * @ingroup Dialogue
  *
- * A dialogue tree contains all nodes for a conversation and specifies
- * which node to start from. Trees are stored directly on NPCs rather
- * than in a central repository.
+ * A dialogue tree contains all nodes for a conversation and specifies which node to
+ * start from. Trees are owned centrally by a @ref DialogueStore; an NPC entity's
+ * @c Dialogue component holds only a @ref DialogueHandle into it, and
+ * @ref DialogueManager copies the tree into @c m_ActiveTree for the duration of a
+ * conversation. Nothing stores a tree on the NPC itself.
  *
  * @par Example
  * @code{.cpp}
@@ -243,18 +241,23 @@ struct DialogueNode
  * }
  * @endcode
  *
- * @par JSON Format Reference
- * | Field      | Description                                       |
- * |------------|---------------------------------------------------|
- * | speaker    | Default speaker for all nodes (inherits to nodes) |
- * | start      | Starting node ID (defaults to "start")            |
- * | text       | Dialogue text displayed to player                 |
- * | choices    | Array of player response options                  |
- * | goto       | Next node ID (empty or omitted ends dialogue)     |
- * | when       | Condition string (see below)                      |
- * | do         | Consequence array (see below)                     |
+ * @par JSON format reference
+ * Every key is optional. The Level column says which object carries the key.
+ * | Level  | Field   | Description                                                |
+ * |--------|---------|------------------------------------------------------------|
+ * | tree   | id      | Tree identifier; defaults to the NPC's `type`              |
+ * | tree   | start   | Starting node ID; defaults to "start"                      |
+ * | tree   | speaker | Speaker inherited by nodes; defaults to the NPC's `name`   |
+ * | tree   | nodes   | Object keyed by node ID; the key becomes DialogueNode::id  |
+ * | node   | speaker | Speaker for this node; overrides the tree-level speaker    |
+ * | node   | text    | Dialogue text displayed to player                          |
+ * | node   | choices | Array of player response options                           |
+ * | choice | text    | Display text of the option                                 |
+ * | choice | goto    | Next node ID (empty or omitted ends dialogue)              |
+ * | choice | when    | Condition string (see below)                               |
+ * | choice | do      | Consequence array (see below)                              |
  *
- * @par Condition Syntax ("when" field)
+ * @par Condition syntax ("when" field)
  * Conditions control when choices are visible:
  * | Syntax         | Description                     |
  * |----------------|---------------------------------|
@@ -263,23 +266,34 @@ struct DialogueNode
  * | `flag=value`   | Show if flag equals value       |
  * | `a & b`        | Multiple conditions (AND)       |
  *
- * @par Consequence Syntax ("do" field)
+ * The AND separator is the exact string " & ", spaces included: `a&b` is not split
+ * and becomes one flag key named "a&b", which can never pass. `!` is meaningful only
+ * on a bare key. `!flag=value` parses as `flag=value` and the negation is dropped,
+ * because @ref DialogueCondition::Type has no not-equals member.
+ *
+ * @par Consequence syntax ("do" field)
  * Consequences modify game state when a choice is selected:
- * | Syntax              | Description                         |
- * |---------------------|-------------------------------------|
- * | `"flag"`            | Set flag to true                    |
- * | `"-flag"`           | Clear/remove flag                   |
- * | `"flag=value"`      | Set flag to specific value          |
- * | `"accepted_x:desc"` | Set flag to value after colon       |
+ * | Syntax          | Description                                              |
+ * |-----------------|----------------------------------------------------------|
+ * | `"flag"`        | Set flag to "true"                                       |
+ * | `"-flag"`       | Clear/remove flag                                        |
+ * | `"flag=value"`  | Set flag to a specific value                             |
+ * | `"flag:text"`   | Set flag to "true"; text after the colon is DISCARDED    |
+ *
+ * The colon form applies to any key, not only `accepted_` keys, and `:` is tested
+ * before `=`, so `"a=b:c"` splits at the colon into key "a=b". The parser keeps the
+ * text after the colon, but @ref DialogueManager ignores it and stores "true", and
+ * @c GameStateManager::GetQuestDescription reports "true" as "no description". Write
+ * a journal line with `"flag=text"`.
  *
  * @see DialogueManager for runtime dialogue control
  * @see GameStateManager for flag storage and evaluation
  */
 struct DialogueTree
 {
-    std::string id;                                       ///< Unique tree identifier
-    std::string startNodeId;                              ///< ID of the entry point node
-    std::unordered_map<std::string, DialogueNode> nodes;  ///< All nodes keyed by ID
+    std::string id;                                       ///< Unique tree identifier.
+    std::string startNodeId;                              ///< ID of the entry point node.
+    std::unordered_map<std::string, DialogueNode> nodes;  ///< All nodes keyed by ID.
 
     DialogueTree() = default;
 
@@ -317,7 +331,12 @@ struct DialogueTree
     [[nodiscard]] const DialogueNode* GetStartNode() const { return GetNode(startNodeId); }
 
     /**
-     * @brief Add a node to the tree.
+     * @brief Insert or replace a node, keyed by its own @c id.
+     *
+     * The key comes from @c node.id, not from an argument. An existing node with the
+     * same id is overwritten silently, and a node with an empty id is stored under
+     * the empty key.
+     *
      * @param node The node to add (copied into the tree)
      */
     void AddNode(const DialogueNode& node) { nodes[node.id] = node; }
