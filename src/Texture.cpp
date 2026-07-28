@@ -8,7 +8,7 @@
 #include <limits>
 #include <utility>
 
-// Define STB_IMAGE_IMPLEMENTATION in EXACTLY ONE .cpp file (this one) to pull
+// Define STB_IMAGE_IMPLEMENTATION in exactly one .cpp file (this one) to pull
 // in stb_image's implementation without duplicate symbols.
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -260,8 +260,8 @@ bool Texture::LoadFromFile(const std::string& path)
         return false;
     }
 
-    // CPU copy lets us recreate GL after a context switch, create a Vulkan
-    // texture later (deferred), and feed multiple backends from one source.
+    // The CPU copy allows a GL rebuild after a context switch, deferred Vulkan texture
+    // creation, and feeding both backends from one source.
     std::vector<unsigned char> normalizedData;
     const unsigned char* sourceData = data;
     int sourceChannels = m_Channels;
@@ -308,7 +308,7 @@ bool Texture::LoadFromFile(const std::string& path)
     }
 
     // Vulkan creation is deferred - needs device/physical-device/cmd-pool/queue
-    // handles we don't have here. Caller invokes CreateVulkanTexture() later.
+    // handles that are not available here. The caller invokes CreateVulkanTexture() later.
 
     stbi_image_free(data);
     return true;
@@ -440,8 +440,8 @@ void Texture::CreateOpenGLTexture(const unsigned char* data, bool flipY) const
 
 namespace
 {
-/// Convert sRGB byte channels (0-255) to HSV (each in [0, 1]).
-/// Hue is normalized to [0, 1] (multiply by 360 for degrees).
+// Convert sRGB byte channels (0-255) to HSV (each in [0, 1]).
+// Hue is normalized to [0, 1] (multiply by 360 for degrees).
 struct Hsv
 {
     float h, s, v;
@@ -541,7 +541,7 @@ void Texture::Unbind() const
 void Texture::RecreateOpenGLTexture() const
 {
     // Called after a GL context switch (e.g., renderer hot-swap). Old IDs are
-    // invalid in the new context, so we recreate from the CPU copy.
+    // invalid in the new context, so the texture is rebuilt from the CPU copy.
     if (m_ImageData.empty())
     {
         Logger::Error(LOG_SUBSYSTEM, "Cannot recreate OpenGL texture: no image data");
@@ -657,7 +657,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
     uint32_t memoryTypeIndex = UINT32_MAX;
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
-        // Compatible with our image AND device-local.
+        // Compatible with this image, and device-local.
         if ((memRequirements.memoryTypeBits & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
         {
@@ -687,7 +687,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
 
     vkBindImageMemory(device, m_VulkanImage, m_VulkanImageMemory, 0);
 
-    // Image view - what shaders actually reference.
+    // Image view, which is what shaders reference.
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_VulkanImage;
@@ -737,10 +737,10 @@ void Texture::CreateVulkanTexture(VkDevice device,
     }
 
     // Step 5: Upload pixel data using a staging buffer
-    // We can't write directly to device-local memory, so we:
-    // 1. Create a host-visible staging buffer
-    // 2. Copy pixel data to staging buffer
-    // 3. Issue a GPU command to copy from staging buffer to image
+    // Device-local memory is not host-writable, so the upload goes:
+    // 1. Create a host-visible staging buffer.
+    // 2. Copy pixel data into the staging buffer.
+    // 3. Issue a GPU command copying the staging buffer into the image.
 
     VkDeviceSize imageSize = static_cast<VkDeviceSize>(imageSizeBytes);
 
@@ -813,10 +813,10 @@ void Texture::CreateVulkanTexture(VkDevice device,
     memcpy(data, m_ImageData.data(), imageSize);
     vkUnmapMemory(device, stagingBufferMemory);
 
-    // Now we need to issue GPU commands to:
-    // 1. Transition image layout from UNDEFINED to TRANSFER_DST
-    // 2. Copy data from staging buffer to image
-    // 3. Transition image layout from TRANSFER_DST to SHADER_READ_ONLY
+    // The remaining GPU commands:
+    // 1. Transition the image layout from UNDEFINED to TRANSFER_DST.
+    // 2. Copy data from the staging buffer into the image.
+    // 3. Transition the image layout from TRANSFER_DST to SHADER_READ_ONLY.
 
     // Allocate a one-time command buffer for these operations
     VkCommandBufferAllocateInfo cmdAllocInfo{};
@@ -849,7 +849,7 @@ void Texture::CreateVulkanTexture(VkDevice device,
     }
 
     // Image memory barrier to transition layout from UNDEFINED to TRANSFER_DST
-    // This tells the GPU that we're about to write to this image
+    // Tells the GPU that this image is about to be written.
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
