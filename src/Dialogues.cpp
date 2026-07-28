@@ -265,7 +265,7 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
 
     tree.AddNode(startNode);
 
-    // --- First visit ---
+    // First visit.
     DialogueNode first(
         "first",
         outNpcName,
@@ -290,7 +290,7 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
     firstEnd.options.push_back(DialogueOption("Bye.", ""));
     tree.AddNode(firstEnd);
 
-    // --- Second visit ---
+    // Second visit.
     DialogueNode second(
         "second",
         outNpcName,
@@ -318,7 +318,7 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
     secondFollowup.options.push_back(DialogueOption("Okay, okay. I'll go.", ""));
     tree.AddNode(secondFollowup);
 
-    // --- Third visit ---
+    // Third visit.
     DialogueNode third(
         "third",
         outNpcName,
@@ -354,7 +354,7 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
     thirdGrumpy.options.push_back(DialogueOption("Noted.", ""));
     tree.AddNode(thirdGrumpy);
 
-    // --- Fourth visit ---
+    // Fourth visit.
     DialogueNode fourth(
         "fourth",
         outNpcName,
@@ -376,7 +376,7 @@ void BuildAnnoyedNPCDialogueTree(DialogueTree& tree, std::string& outNpcName)
     fourthResponse.options.push_back(DialogueOption("...sorry.", ""));
     tree.AddNode(fourthResponse);
 
-    // --- Fifth visit (and beyond) ---
+    // Fifth visit, and every visit after it.
     DialogueNode fifth("fifth", outNpcName, "...");
 
     DialogueOption fi1("...", "fifth_response");
