@@ -65,7 +65,7 @@ void DialogueManager::Initialize(GameStateManager* stateManager)
 
 bool DialogueManager::StartDialogue(ecs::entity npc, const ecs::registry& world)
 {
-    // Respect contract do not start if a conversation is already active
+    // Respect the contract: do not start if a conversation is already active.
     if (m_Active)
     {
         Logger::Error(LOG_SUBSYSTEM, "Dialogue already active; refusing to start a new one");
@@ -209,7 +209,7 @@ void DialogueManager::ConfirmSelection()
 {
     if (m_VisibleOptions.empty())
     {
-        // No options available treat as end of dialogue
+        // No options available: treat as end of dialogue. No consequences run here.
         // TODO: support non-choice nodes (e.g., auto-advance) instead of always ending here.
         EndDialogue();
     }
@@ -232,7 +232,8 @@ void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>
         switch (cons.type)
         {
             case DialogueConsequence::Type::SET_FLAG:
-                // Mark a boolean flag as true (e.g., "quest_accepted")
+                // Mark a boolean flag as true (e.g., "quest_accepted"). cons.value is
+                // ignored here, so the JSON "flag:text" form loses its text.
                 m_StateManager->SetFlag(cons.key, true);
                 Logger::InfoF(LOG_SUBSYSTEM, "Set flag '{}' = true", cons.key);
                 break;
@@ -254,8 +255,7 @@ void DialogueManager::ExecuteConsequences(const std::vector<DialogueConsequence>
                     LOG_SUBSYSTEM, "Unhandled consequence type {}", static_cast<int>(cons.type));
                 break;
         }
-        // TODO: extend consequences to support scripted actions or item grants; log unhandled types
-        // when the enum grows.
+        // TODO: extend consequences to support scripted actions or item grants.
     }
 }
 
