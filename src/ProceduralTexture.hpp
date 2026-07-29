@@ -6,7 +6,11 @@
 
 /**
  * @brief RGBA pixel value returned by procedural texture generators.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Rendering
+ *
+ * Channel order is R, G, B, A - the same packing Texture::LoadFromData expects
+ * with `channels == 4`.
  *
  * @see GeneratePixels
  */
@@ -18,6 +22,10 @@ using Pixel = std::array<uint8_t, 4>;
  *
  * Allocates `w * h * 4` bytes in @p pixels and fills each texel by calling
  * @p fn(x, y, w, h), which must return a `Pixel` (std::array<uint8_t, 4>).
+ *
+ * Rows are written top-down, y = 0 first, which is already the orientation
+ * Texture::LoadFromData stores. Pass `flipY = false` when uploading the result; that
+ * parameter's `true` default is for decoded image files, not for generated buffers.
  *
  * @tparam PixelFn Callable with signature `Pixel(int x, int y, int w, int h)`.
  * @param[out] pixels Output buffer (resized automatically).
