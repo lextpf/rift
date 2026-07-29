@@ -6,13 +6,14 @@
 
 /**
  * @brief Per-frame draw-call tracing for renderer debugging.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Rendering
  *
  * Captures a chronological log of "events" within a single frame:
- *  - **Section markers** added by render orchestrators (Game::Render,
- *    GameMenus::RenderTitleFrame, SkyRenderer, etc.) labelling what is
- *    about to be drawn ("Sky", "Background tiles", "Particles", ...).
+ *  - **Section markers** emitted by the Game render partials (Game.cpp and
+ *    GameMenus.cpp) labelling what is about to be drawn ("Sky", "Particles",
+ *    "UI overlays", ...). No subsystem marks its own span; the orchestrator
+ *    labels it on the subsystem's behalf.
  *  - **Flush events** added by renderer backends when they actually
  *    submit a batch to the GPU (texture change, batch full, end of pass,
  *    projection swap, ...). The label encodes the reason and any extra
@@ -31,13 +32,22 @@
  * code must not call from worker threads.
  *
  * @par Backend coverage
- * The OpenGL backend records flush events in its three batch flushers.
- * The Vulkan backend currently records section markers only (Game.cpp
- * threads them through both backends). Adding flush instrumentation to
- * VulkanRenderer is a future enhancement.
+ * The OpenGL backend records flush events in all five of its batch flushers
+ * (FlushBatch, FlushBatch3D, FlushRectBatch, FlushParticleBatch, FlushTextBatch)
+ * plus the individual Draw* entry points. The Vulkan backend currently records section
+ * markers only (Game.cpp threads them through both backends). Adding flush
+ * instrumentation to VulkanRenderer is a future enhancement.
  */
 namespace DrawTracer
 {
+/**
+ * @struct Event
+ * @brief One captured point in the frame log: a section marker or a flush.
+ * @ingroup Rendering
+ *
+ * Ordering is capture order, so the @ref drawCount delta between two adjacent
+ * events is the number of GPU submissions attributable to the span between them.
+ */
 struct Event
 {
     int drawCount;      ///< Renderer's cumulative draw-call count at capture time.
@@ -47,9 +57,14 @@ struct Event
 /**
  * @brief Toggle frame capture. When disabled, all Mark/BeginFrame calls
  * are no-ops and storage is freed.
+ *
+ * Disabling also discards the last completed frame's events, so read them
+ * before turning capture off.
  */
 void SetEnabled(bool enabled);
 
+/// @brief Whether capture is on. Call sites guard label formatting with this so
+/// the snprintf cost disappears when tracing is off.
 bool IsEnabled();
 
 /**
@@ -64,10 +79,14 @@ void BeginFrame();
  *
  * Caller passes the renderer's current draw-call count so events are
  * time-stamped with the GPU-work counter (rather than wall-clock time).
- * The label is copied; callers can construct it freely.
  *
- * Bounded: drops events past kMaxEvents to protect against pathological
- * frames (e.g. infinite loop) eating unbounded memory.
+ * Bounded: past 50,000 events in one frame further events are dropped silently,
+ * with no diagnostic, so a pathological frame (e.g. an infinite loop) cannot eat
+ * unbounded memory.
+ *
+ * @param label            Section name or flush reason. Copied into the event, so
+ *                         a stack buffer or temporary is safe.
+ * @param currentDrawCount Renderer's cumulative draw-call count at this point.
  */
 void Mark(std::string_view label, int currentDrawCount);
 

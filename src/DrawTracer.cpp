@@ -36,7 +36,9 @@ void BeginFrame()
         return;
     s_LastEvents = std::move(s_LiveEvents);
     s_LiveEvents.clear();
-    // Reuse the previous frame's capacity to avoid per-frame reallocations.
+    // Pre-size to last frame's event count so this frame's pushes do not grow the
+    // vector repeatedly. The buffer itself went to s_LastEvents in the move above,
+    // so one fresh allocation per frame remains.
     s_LiveEvents.reserve(s_LastEvents.size());
 }
 
