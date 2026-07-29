@@ -9,7 +9,7 @@
 /**
  * @brief Per-frame parameters threaded into the post-processing pass, plus
  *        pure-math helpers shared between the shader and CPU-side tests.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Rendering
  *
  * Constructed by Game::Render() each frame from TimeManager and friends, then
@@ -17,14 +17,15 @@
  * scene through the bloom + grading + vignette + grain + tonemap chain.
  *
  * The grading model uses the industry-standard ASC CDL split (lift / gamma /
- * gain) instead of a single scalar tint so we can independently push shadows,
- * midtones, and highlights - required for the per-time-of-day character that a
- * single multiplier can't express.
+ * gain) instead of a single scalar tint, so shadows, midtones and highlights move
+ * independently - required for the per-time-of-day character that a single
+ * multiplier can't express.
  */
 
 /**
  * @struct GradingParams
  * @brief Lift / gamma / gain triplet - the ASC CDL model for color grading.
+ * @ingroup Rendering
  *
  * Standard formula: `out = pow(in * gain + lift, 1.0 / gamma)`.
  * - `lift`  shifts shadows (additive, fades toward black)
@@ -32,11 +33,40 @@
  * - `gain`  scales highlights (multiplicative)
  *
  * Identity (no grading) is `lift = vec3(0)`, `gamma = vec3(1)`, `gain = vec3(1)`.
+ *
+ * @par Color space
+ * Operates on the scene color as rendered - unencoded linear-ish RGB in an
+ * RGB16F target, so channel values are not clamped to [0, 1] and highlights may
+ * legitimately arrive above 1.0. Grading runs after the bloom add and before
+ * saturation / vignette / grain / tonemap, so it sees HDR input and hands HDR
+ * output on; the soft-shoulder tonemap is what finally brings values into range.
  */
 struct GradingParams
 {
+    /**
+     * @brief Additive shadow offset per channel.
+     *
+     * 0 = identity; negative crushes toward black. Not clamped by the type, but
+     * ApplyLGG floors `c * gain + lift` at 0 before the power step.
+     * ComputeGradingParams keeps every channel inside
+     * +/-0.7 * ambience::GRADING_TINT_AMPLITUDE (about +/-0.042 at the default).
+     */
     glm::vec3 lift{0.0f};
+    /**
+     * @brief Per-channel midtone power, applied as `pow(x, 1/gamma)`.
+     *
+     * 1 = identity; >1 lifts midtones, <1 crushes them. Must stay strictly
+     * positive - a zero channel divides by zero in the exponent.
+     * ComputeGradingParams stays inside roughly [0.96, 1.03] at the default tint
+     * amplitude.
+     */
     glm::vec3 gamma{1.0f};
+    /**
+     * @brief Multiplicative highlight scale per channel.
+     *
+     * 1 = identity, 0 kills the channel. ComputeGradingParams stays inside
+     * roughly [0.95, 1.08] at the default tint amplitude.
+     */
     glm::vec3 gain{1.0f};
 };
 
@@ -61,7 +91,7 @@ inline glm::vec3 ApplyLGG(const glm::vec3& c,
 /**
  * @brief Karis-style soft threshold weight for bloom bright-pass.
  *
- * Replaces the hard smoothstep cutoff so bloom doesn't pop on/off as scene
+ * A soft knee rather than a hard cutoff, so bloom doesn't pop on/off as scene
  * luminance crosses the threshold. Returns 0 below the threshold, ramping
  * smoothly above. Retained as public API even though no shader path currently
  * feeds it - the chroma-bleed pipeline uses KarisBloomChromaWeight instead.
@@ -132,7 +162,16 @@ inline glm::vec3 ApplySaturation(const glm::vec3& c, float s)
  * +/-0.6, +/-0.8, +/-1.0, +1.2}. They encode time-of-day color identity
  * (red strongest at warmth, blue strongest at night) and the channel
  * hierarchy; tuning the per-time-of-day swing magnitude is a single edit
- * to `GRADING_TINT_AMPLITUDE` in AmbienceConfig.h.
+ * to `GRADING_TINT_AMPLITUDE` in AmbienceConfig.hpp.
+ *
+ * @param timeOfDay    Hour of the day in [0, 24). Only the golden-hour windows
+ *                     5-7h and 18-20h produce a warmth ramp; every other hour
+ *                     contributes no warmth term.
+ * @param nightFactor  Night blend in [0, 1] (0 = full day, 1 = deep night),
+ *                     added independently of @p timeOfDay - the caller is
+ *                     responsible for keeping the two consistent.
+ * @return Lift/gamma/gain for this frame; identity at midday with
+ *         @p nightFactor 0.
  */
 inline GradingParams ComputeGradingParams(float timeOfDay, float nightFactor)
 {
@@ -194,6 +233,16 @@ inline GradingParams ComputeGradingParams(float timeOfDay, float nightFactor)
 /**
  * @struct PostFXParams
  * @brief Per-frame post-processing parameters.
+ * @ingroup Rendering
+ *
+ * @warning **The entire struct is inert on the Vulkan backend.**
+ * `VulkanRenderer::EndSceneApplyPostFX` ignores its parameter outright - Vulkan
+ * has no offscreen scene target, so the world has already been drawn straight to
+ * the swapchain by the time it is called. Bloom, LGG grading, saturation,
+ * vignette, grain, tonemap and the @ref postFXEnabled master gate all silently do
+ * nothing there, and there is no log line to say so. Anything that must be
+ * visible on both backends has to be applied before the composite (e.g. the
+ * per-draw ambient tint), not through these params.
  */
 struct PostFXParams
 {
@@ -221,9 +270,13 @@ struct PostFXParams
     /// Time accumulator (seconds) - drives the grain noise seed.
     float time{0.0f};
 
-    /// Master gate. When false the post fragment shader early-returns the raw
-    /// scene texel, bypassing every post step (CA, blur, bloom, grading,
-    /// saturation, vignette, grain, tonemap). Toggled from the dev console via
-    /// `postfx [on|off|toggle]` (aliases: `fx`, `pfx`).
+    /**
+     * @brief Master gate.
+     *
+     * When false the post fragment shader early-returns the raw scene texel,
+     * bypassing every post step (CA, blur, bloom, grading, saturation, vignette,
+     * grain, tonemap). Toggled from the dev console via `postfx [on|off|toggle]`
+     * (aliases: `fx`, `pfx`).
+     */
     bool postFXEnabled{true};
 };
