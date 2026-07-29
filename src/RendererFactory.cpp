@@ -10,7 +10,9 @@ namespace
 constexpr const char* LOG_SUBSYSTEM = "Render";
 }  // namespace
 
-// Checks if a renderer API was compiled into this build.
+// Reports whether a renderer API was compiled into this build. Both backends are
+// unconditionally compiled and linked (Vulkan is a hard build dependency), so every
+// named enumerator returns true; the `default` arm only catches an out-of-range cast.
 bool IsRendererAvailable(RendererAPI api)
 {
     switch (api)
@@ -26,10 +28,11 @@ bool IsRendererAvailable(RendererAPI api)
     }
 }
 
-// Creates a renderer instance for the requested API.
-// Falls back to OpenGL if the requested API is unavailable; rewrites @p api
-// to the actual backend that was constructed so callers can branch on it.
-// Returns nullptr if no renderer can be created.
+// Creates a renderer instance for the requested API and rewrites `api` to the
+// backend actually constructed, so callers can branch on it for context setup.
+// The only fallback that can fire today is the Vulkan-constructor-throws one:
+// IsRendererAvailable always returns true for both named backends. Every path
+// returns a live renderer, so no caller-visible nullptr case exists.
 std::unique_ptr<IRenderer> CreateRenderer(RendererAPI& api, GLFWwindow* window)
 {
     Logger::InfoF(LOG_SUBSYSTEM,
