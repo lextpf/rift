@@ -4,8 +4,23 @@
 // Sprite Fragment Shader
 // Renders a pixel ("fragment") for a sprite / quad.
 // Supports two build paths:
-//   1 Vulkan: uses push constants for per-draw data (USE_VULKAN defined)
-//   2 OpenGL: uses traditional uniforms
+//   1) Vulkan: uses push constants for per-draw data (USE_VULKAN defined)
+//   2) OpenGL: uses traditional uniforms
+//
+// useColorOnly picks the output mode. OpenGL pushes it as an int and uses all
+// four modes; Vulkan pushes a 0.0/1.0 float and implements only the first two.
+//
+//   mode | output                       | OpenGL call site            | Vulkan
+//   -----+------------------------------+-----------------------------+----------------
+//     0  | tex * spriteColor * ambient  | sprite batch (FlushBatch)   | default path
+//     1  | uniform colorOnly            | never selected              | DrawColoredRect
+//     2  | VertexColor                  | rect batch (FlushRectBatch) | not implemented
+//     3  | tex * VertexColor            | particle batch, text batch  | not implemented
+//
+// Modes 2 and 3 are missing under Vulkan because the Vulkan sprite pipeline binds
+// no vertex attribute at location 2, so VertexColor is undefined there. Adding
+// either mode needs a third VkVertexInputAttributeDescription in
+// CreateGraphicsPipeline as well as a shader branch.
 // -----------------------------------------------------------------------------
 
 // Alpha cutoff threshold for hard sprite cutouts.
@@ -58,10 +73,10 @@ layout(push_constant) uniform PushConstants {
 
 // Non-Vulkan path (e.g. OpenGL):
 // spriteColor: tint multiplied with sampled texture.
-// useColorOnly controls which output mode is used:
-//   0 = use texture
-//   1 = use uniform colorOnly
-//   2 = use per-vertex color VertexColor
+// useColorOnly selects the output mode; see the mode table in the file header.
+// This backend selects 0, 2 and 3 only - it never sets mode 1 and never even
+// looks up the colorOnly uniform location, so selecting 1 here would emit the
+// default vec4(0).
 uniform vec3 spriteColor;
 uniform int  useColorOnly;
 uniform vec4 colorOnly;
@@ -84,11 +99,13 @@ void main() {
     // packing / alignment). Treat it like a boolean:
     //   "true" if > 0.5, otherwise "false".
     //
-    // NOTE: This Vulkan branch supports only TWO modes:
+    // NOTE: This Vulkan branch implements modes 0 and 1 only:
     //   - Color-only (solid uniform color)
     //   - Textured + tinted
-    // It does NOT implement the "vertex color mode" (useColorOnly == 2) like the
-    // non-Vulkan branch does.
+    // Mode 2 (per-vertex color) and mode 3 (texture * per-vertex color, which the
+    // OpenGL backend uses for particles and text) are both absent, because the
+    // Vulkan sprite pipeline binds no attribute at location 2 and the CPU pushes
+    // useColorOnly as a 0.0/1.0 float that cannot express a third value.
     // -------------------------------------------------------------------------
     if (pc.useColorOnly > 0.5) {
         // Solid color mode:
