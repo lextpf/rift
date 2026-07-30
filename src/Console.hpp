@@ -34,22 +34,21 @@ public:
     /**
      * @brief Maximum number of scrollback lines retained. Older lines are dropped.
      *
-     * Sized large enough to hold a full per-frame draw-call trace dump
-     * (`renderer.trace dump`) without the head being evicted as later
-     * events scroll in. ~50 KB at one Line per ~50 chars + small overhead;
-     * fine for desktop. For multi-frame traces, prefer `renderer.trace file`
-     * which bypasses the scrollback entirely.
+     * Sized to hold a normal per-frame draw-call trace dump
+     * (`renderer.trace dump`) without the head being evicted as later events
+     * scroll in. A dump covers only the most recent frame
+     * (DrawTracer::LastFrameEvents) and prints one line per traced event.
+     * DrawTracer caps a frame at 50000 events, so a pathological frame can
+     * still overflow this and evict the head; 8192 covers a normal frame with
+     * margin. Under ~1 MB when full at ~50 characters per line (Line struct
+     * plus heap text); fine for desktop.
      */
     static constexpr std::size_t MAX_LINES = 8192;
 
-    /**
-     * @brief Maximum number of submitted commands retained for Up/Down recall.
-     */
+    /// @brief Maximum number of submitted commands retained for Up/Down recall.
     static constexpr std::size_t MAX_HISTORY = 64;
 
-    /**
-     * @brief One scrollback line: text + display color.
-     */
+    /// @brief One scrollback line: text + display color.
     struct Line
     {
         std::string text;
@@ -57,62 +56,64 @@ public:
     };
 
     /**
-     * @brief Append an info-colored line.
+     * @brief Append a line and snap the view to the newest line.
+     *
+     * The scroll offset is reset to 0 on every call, so printed output always
+     * pulls a scrolled-back view down to the bottom. A caller that wants a
+     * different view position must re-scroll after printing (see
+     * @ref Console::ScrollToOutputTop, which `help` uses).
+     *
+     * @param text   Line content.
+     * @param color  RGB display color; the default is white.
      */
     void Print(std::string text, glm::vec3 color = glm::vec3(1.0f));
 
-    /**
-     * @brief Append a red error line.
-     */
+    /// @brief Append a red error line.
     void PrintError(std::string text);
 
-    /**
-     * @brief Drop all scrollback (does not clear input or history).
-     */
+    /// @brief Drop all scrollback (does not clear input or history).
     void Clear();
 
     /**
-     * @brief Insert a printable character at the cursor.
+     * @brief Insert one printable ASCII character at the cursor.
+     *
+     * Codepoints outside U+0020..U+007E (non-ASCII glyphs, IME composition,
+     * control codes, tab) are dropped without a diagnostic. Also forgets the
+     * history navigation index.
+     *
+     * @param codepoint Unicode codepoint from the GLFW char callback.
      */
     void OnChar(std::uint32_t codepoint);
 
-    /**
-     * @brief Erase the character before the cursor (no-op if at start).
-     */
+    /// @brief Erase the character before the cursor (no-op if at start).
     void OnBackspace();
 
     /**
      * @brief Delete the word before the cursor.
      *
-     * First eat any contiguous spaces immediately preceding the cursor, then
-     * eat one contiguous run of non-space characters. Repeated calls walk back
-     * word-by-word until the line is empty. Bound to Ctrl+Backspace.
+     * Space and dot are both boundary characters. First eat any contiguous
+     * boundary characters immediately preceding the cursor, then eat one
+     * contiguous run of non-boundary characters. Repeated calls walk back
+     * segment-by-segment until the line is empty, so a dotted verb collapses
+     * one segment at a time:
+     * `time.weather clear` -> `time.weather ` -> `time.` -> ``.
+     * Bound to Ctrl+Backspace.
      */
     void OnBackspaceWord();
 
-    /**
-     * @brief Erase the character at the cursor (no-op if at end).
-     */
+    /// @brief Erase the character at the cursor (no-op if at end).
     void OnDelete();
 
-    /**
-     * @brief Move cursor one position left (clamped at 0).
-     */
+    /// @brief Move cursor one position left (clamped at 0).
     void OnLeft();
 
-    /**
-     * @brief Move cursor one position right (clamped at length).
-     */
+    /// @brief Move cursor one position right (clamped at length).
     void OnRight();
 
-    /**
-     * @brief Move cursor to start of input.
-     */
+    /// @brief Move cursor to start of input.
     void OnHome();
 
-    /**
-     * @brief Move cursor to end of input.
-     */
+    /// @brief Move cursor to end of input.
     void OnEnd();
 
     /**
@@ -163,13 +164,13 @@ public:
      * @brief Adjust scroll offset by @p deltaLines.
      *
      * Positive scrolls toward older lines, negative toward newer. Clamped to
-     * [0, max].
+     * [0, Lines().size()]. The upper bound is the full line count, not
+     * count-minus-visible-rows, so the view can be scrolled until only the
+     * oldest line remains on the bottom row.
      */
     void Scroll(int deltaLines);
 
-    /**
-     * @brief Pin scroll to the bottom of the buffer.
-     */
+    /// @brief Pin scroll to the bottom of the buffer.
     void ResetScroll();
 
     /**
@@ -181,12 +182,21 @@ public:
      */
     void ScrollTo(int offsetFromBottom);
 
+    /// @name Observers
+    /// @{
+    /// @brief Scrollback lines, oldest first.
     [[nodiscard]] const std::deque<Line>& Lines() const { return m_Lines; }
+    /// @brief Current (unsubmitted) input line.
     [[nodiscard]] const std::string& Input() const { return m_Input; }
+    /// @brief Cursor position as a byte index into @ref Input, in [0, size()].
     [[nodiscard]] std::size_t CursorPos() const { return m_CursorPos; }
+    /// @brief Lines scrolled up from the newest line; 0 means pinned to the bottom.
     [[nodiscard]] int ScrollOffset() const { return m_ScrollOffset; }
+    /// @brief Recorded command history, oldest first.
     [[nodiscard]] const std::vector<std::string>& History() const { return m_History; }
+    /// @brief Index into @ref History being walked, or nullopt when not navigating history.
     [[nodiscard]] std::optional<std::size_t> HistoryIndex() const { return m_HistoryIdx; }
+    /// @}
 
 private:
     std::deque<Line> m_Lines;
@@ -200,10 +210,12 @@ private:
 /**
  * @class ConsoleCommandRegistry
  * @brief Maps command names to handler functions for the developer console.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Core
  *
  * Names are stored in a std::map for stable alphabetical ordering, which
- * gives `help` a predictable listing and tab completion stable cycle order.
+ * gives `help` a predictable listing and the autocomplete dropdown a stable
+ * row order.
  */
 class ConsoleCommandRegistry
 {
@@ -218,14 +230,27 @@ public:
      * empty vector when no completion is available for that slot. The callback
      * is invoked with arbitrary indices as the user types, so it must handle
      * out-of-range indices gracefully.
+     *
+     * @warning Called from @ref Console::Render once per frame for as long as
+     * the dropdown is open (plus once per Tab / Up / Down), and it returns a
+     * freshly built vector each time, so keep it cheap. The registry stores the
+     * callable for the Console's lifetime; anything it captures must outlive
+     * the Console.
      */
     using ArgCompletionProvider = std::function<std::vector<std::string>(std::size_t argIndex)>;
 
+    /// @brief One registered command: canonical name, help text, handler, and optional extras.
     struct Command
     {
-        std::string name;
+        std::string name;  ///< Canonical verb; also the map key.
+        /**
+         * @brief User-visible help text, by convention `<grammar> - summary`.
+         *
+         * `help` prints it verbatim after `name (aliases) - `, so it carries
+         * the argument grammar for the command.
+         */
         std::string description;
-        Handler handler;
+        Handler handler;  ///< Invoked with the argument tokens after the verb.
         /**
          * @brief Optional shorter / alternate spellings that resolve to this
          * same handler.
@@ -270,7 +295,8 @@ public:
      * @brief Look up a command by canonical name or by alias.
      *
      * Returns nullptr if no match. Canonical names are O(log n); aliases are a
-     * linear fallback.
+     * linear fallback. Matching is exact-case, unlike @ref MatchPrefix, so a
+     * mixed-case verb that the dropdown suggested still fails to dispatch.
      */
     [[nodiscard]] const Command* Lookup(std::string_view name) const;
 
@@ -280,14 +306,16 @@ public:
      *
      * Empty prefix returns every name. @p maxCount caps the result length (the
      * alphabetically-earliest matches are kept). Used by the autocomplete
-     * dropdown to fetch up to N hints.
+     * dropdown to fetch up to N hints. Prefix matching is ASCII
+     * case-insensitive (`PA` matches `particles`) while the ordering is
+     * byte-wise on the matched name; @ref Lookup, by contrast, is exact-case.
      */
     [[nodiscard]] std::vector<std::string> MatchPrefix(
         std::string_view prefix,
         std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
     /**
-     * @brief One entry returned by @ref MatchPrefixDetailed: the matched name
+     * @brief One entry returned by @ref MatchPrefixDetailed - the matched name
      * paired with the canonical command it resolves to.
      *
      * The matched @c name may be either a canonical command name or one of its
@@ -312,9 +340,7 @@ public:
         std::string_view prefix,
         std::size_t maxCount = (std::numeric_limits<std::size_t>::max)()) const;
 
-    /**
-     * @brief Read access to the underlying ordered map.
-     */
+    /// @brief Read access to the underlying ordered map.
     [[nodiscard]] const std::map<std::string, Command>& All() const { return m_Commands; }
 
 private:
@@ -324,6 +350,7 @@ private:
 /**
  * @class Console
  * @brief In-game developer REPL toggled with F12.
+ * @author Alex (https://github.com/lextpf)
  * @ingroup Core
  *
  * The Console binds a ConsoleBuffer + ConsoleCommandRegistry to a Game and
@@ -333,13 +360,20 @@ private:
  *
  * Console is an authorised mutator of Game state and is declared a friend
  * of Game so handlers (defined in ConsoleCommands.cpp) can directly reach
- * private members like m_Player, m_GameState, m_TimeManager, m_Tilemap and
- * m_World (the NPC registry) without forcing those onto Game's public API.
+ * private members like m_PlayerEntity, m_GameState, m_TimeManager, m_Tilemap
+ * and m_World (the ECS world registry holding the player and every NPC)
+ * without forcing those onto Game's public API. RegisterDefaultCommands is the
+ * only function that reaches into Game this way; it packs the per-command set
+ * into a fresh @ref CommandContext on every invocation.
  *
- * @par Visibility State Machine
- * F12 advances `Closed -> Half -> Full -> Closed`. `Half` overlays the top
- * 50% of the screen so the world is still visible; `Full` covers the entire
- * framebuffer for long ops sessions:
+ * @par Visibility state machine
+ * Two independent hotkeys drive the state, and neither one cycles all three
+ * values. F12 (@ref Toggle) is open-or-close only: from `Closed` it always
+ * lands in `Half`, and from `Half` or `Full` it goes straight to `Closed`, so
+ * F12 can never reach `Full`. Tab (@ref ToggleFullscreen, only when the input
+ * line is empty) swaps `Half` and `Full` and is a no-op while closed. `Half`
+ * overlays the top 50% of the screen so the world is still visible; `Full`
+ * covers the entire framebuffer for long ops sessions:
  *
  * @htmlonly
  * <pre class="mermaid">
@@ -353,18 +387,40 @@ private:
  *     state "Full (entire frame)" as F:::full
  *
  *     [*] --> C
- *     C --> H: F12 (or Open)
- *     H --> F: F12
- *     F --> C: F12 (or Close, Esc)
- *     H --> C: Close, Esc
+ *     C --> H: F12 (Toggle) / Open
+ *     H --> C: F12 (Toggle) / Close / Esc
+ *     F --> C: F12 (Toggle) / Close / Esc
+ *     H --> F: Tab (ToggleFullscreen)
+ *     F --> H: Tab (ToggleFullscreen) / Open
  * </pre>
  * @endhtmlonly
  *
- * @par Submission Flow
+ * @par Submission flow
  * Each input event hook (OnChar, OnBackspace, ...) mutates the ConsoleBuffer,
  * then OnEnter splits the line into tokens, looks up the verb in the
  * registry, and dispatches to its handler. Handlers print success/error
  * messages back through Buffer().Print() / Buffer().PrintError().
+ *
+ * @par Key routing
+ * Three keys are overloaded, and two of the gates sit outside this class. Tab
+ * is dispatched by Game::PumpConsoleKeys on whether the input line is empty;
+ * Up/Down prefer the suggestion dropdown over history recall, so history is
+ * reachable only when the input produces no suggestions; Enter never applies
+ * the highlighted suggestion; Esc closes without touching dropdown state:
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart TD
+ *     TAB["Tab"] --> TG{"input line empty?<br/>(Game::PumpConsoleKeys)"}
+ *     TG -->|yes| TFS["ToggleFullscreen (Half &lt;-&gt; Full)"]
+ *     TG -->|no| TAB2["OnTab: splice highlighted item"]
+ *     UD["Up / Down"] --> UG{"suggestions non-empty?"}
+ *     UG -->|yes| SEL["move dropdown selection"]
+ *     UG -->|no| HIST["HistoryPrev / HistoryNext"]
+ *     ENT["Enter"] --> SUB["RecordHistory then Submit<br/>(suggestion ignored)"]
+ *     ESC["Esc"] --> CL["Close (dropdown state kept)"]
+ * </pre>
+ * @endhtmlonly
  *
  * @see ConsoleBuffer, ConsoleCommandRegistry, ConsoleCommands.hpp
  */
@@ -374,9 +430,10 @@ public:
     /**
      * @brief Visibility / size state.
      *
-     * The toggle hotkey advances `Closed -> Half -> Full -> Closed`. `Half` is
-     * the legacy top-50% overlay (world visible underneath); `Full` covers the
-     * entire framebuffer for longer ops sessions.
+     * `Half` is the legacy top-50% overlay (world visible underneath); `Full`
+     * covers the entire framebuffer for longer ops sessions. The enum order is
+     * not a hotkey cycle: F12 (@ref Toggle) only moves between `Closed` and
+     * `Half`, and Tab (@ref ToggleFullscreen) only swaps `Half` and `Full`.
      */
     enum class State : std::uint8_t
     {
@@ -385,22 +442,14 @@ public:
         Full
     };
 
-    /**
-     * @brief Construct, take a Game reference, and register the default command set.
-     */
+    /// @brief Construct, take a Game reference, and register the default command set.
     explicit Console(Game& game);
 
-    /**
-     * @brief True when the overlay is in Half or Full state.
-     */
+    /// @brief True when the overlay is in Half or Full state.
     [[nodiscard]] bool IsOpen() const { return m_State != State::Closed; }
-    /**
-     * @brief True when the overlay covers the full framebuffer.
-     */
+    /// @brief True when the overlay covers the full framebuffer.
     [[nodiscard]] bool IsFullscreen() const { return m_State == State::Full; }
-    /**
-     * @brief Current visibility/size state.
-     */
+    /// @brief Current visibility/size state.
     [[nodiscard]] State GetState() const { return m_State; }
     /**
      * @brief F12 hotkey: open the console (to Half) if closed, otherwise close it.
@@ -416,12 +465,14 @@ public:
      */
     void ToggleFullscreen();
     /**
-     * @brief Open the console to the default visible state.
+     * @brief Force the console to `Half` from any state and pin the scrollback
+     * to the newest line.
+     *
+     * Called while `Full` this demotes the overlay to `Half`. No production or
+     * test code calls it today; F12 opens the console through @ref Toggle.
      */
     void Open();
-    /**
-     * @brief Close the overlay and stop consuming console input.
-     */
+    /// @brief Close the overlay and stop consuming console input.
     void Close();
 
     /**
@@ -433,62 +484,63 @@ public:
     void OnChar(std::uint32_t codepoint);
 
     /**
-     * @brief Execute the current line or accept the active autocomplete suggestion.
+     * @brief Submit the current input line; the highlighted suggestion is not
+     * applied.
+     *
+     * Records the line in history and hands it to @ref Submit, then resets the
+     * dropdown selection to the top. Only Tab (@ref OnTab) and a dropdown click
+     * (@ref OnMouseClick) splice a suggestion into the input.
      */
     void OnEnter();
-    /**
-     * @brief Delete one code unit before the cursor.
-     */
+    /// @brief Delete one code unit before the cursor.
     void OnBackspace();
-    /**
-     * @brief Delete the word before the cursor.
-     */
+    /// @brief Delete the word before the cursor.
     void OnBackspaceWord();
-    /**
-     * @brief Delete one code unit at the cursor.
-     */
+    /// @brief Delete one code unit at the cursor.
     void OnDelete();
     /**
-     * @brief Complete or cycle command suggestions.
+     * @brief Splice the highlighted suggestion into the input line.
+     *
+     * Does not cycle: the selection resets to the top afterwards, so repeated
+     * Tab presses re-pick the first item of the recomputed list. Move the
+     * selection with Up/Down or the mouse.
      */
     void OnTab();
     /**
-     * @brief Navigate command history or suggestions upward.
+     * @brief Move the dropdown selection up, or recall the previous history
+     * entry.
+     *
+     * Suggestions take precedence: history recall applies only when the
+     * dropdown has no items (empty input, or no prefix match).
      */
     void OnUp();
     /**
-     * @brief Navigate command history or suggestions downward.
+     * @brief Move the dropdown selection down, or recall the next history
+     * entry.
+     *
+     * Same precedence as @ref OnUp - the dropdown wins whenever it has items.
      */
     void OnDown();
-    /**
-     * @brief Move the cursor left.
-     */
+    /// @brief Move the cursor left.
     void OnLeft();
-    /**
-     * @brief Move the cursor right.
-     */
+    /// @brief Move the cursor right.
     void OnRight();
-    /**
-     * @brief Move the cursor to the start of the line.
-     */
+    /// @brief Move the cursor to the start of the line.
     void OnHome();
-    /**
-     * @brief Move the cursor to the end of the line.
-     */
+    /// @brief Move the cursor to the end of the line.
     void OnEnd();
-    /**
-     * @brief Close the console or clear suggestion state.
-     */
+    /// @brief Close the console. Does not dismiss the dropdown or reset its selection.
     void OnEscape();
-    /**
-     * @brief Scroll console history by the wheel delta.
-     */
+    /// @brief Scroll console history by the wheel delta.
     void OnScroll(double yoffset);
 
     /**
      * @brief Parse and execute a complete command line. Public for testability.
      *
-     * Empty/whitespace-only input is a no-op. Unknown verbs print an error.
+     * Every call first echoes the line into the scrollback, which also pins the
+     * view to the bottom, so a blank or whitespace-only line still adds a line.
+     * Dispatch is skipped when the line tokenizes to nothing. Unknown verbs
+     * print an error.
      */
     void Submit(std::string_view line);
 
@@ -496,33 +548,33 @@ public:
      * @brief Render the translucent overlay.
      *
      * Caller passes the framebuffer size; this method installs an orthographic
-     * projection internally and suspends perspective via PerspectiveSuspendGuard.
+     * projection internally (origin top-left, y increasing downward).
+     *
+     * Not a pure draw: it is the sole writer of the cached scrollback row count
+     * and dropdown rectangle. @ref ScrollToOutputTop and the three mouse
+     * handlers read that cache, so they are inert before the first Render and
+     * always hit-test the previous frame's layout.
      */
     void Render(IRenderer& renderer, int screenWidth, int screenHeight);
 
     /**
-     * @brief Split @p line on ASCII whitespace runs into views into @p line.
+     * @brief Split @p line on runs of spaces and tabs into views into @p line.
+     *
+     * Other whitespace (newline, carriage return, vertical tab, form feed) is
+     * ordinary token content, so a multi-line string yields a single token.
      *
      * The caller must keep @p line alive for the views' lifetime. Public and
      * static so unit tests can exercise tokenization directly.
      */
     [[nodiscard]] static std::vector<std::string_view> Tokenize(std::string_view line);
 
-    /**
-     * @brief Mutable output/input buffer used by command handlers.
-     */
+    /// @brief Mutable output/input buffer used by command handlers.
     [[nodiscard]] ConsoleBuffer& Buffer() { return m_Buffer; }
-    /**
-     * @brief Read-only output/input buffer for render and inspection paths.
-     */
+    /// @brief Read-only output/input buffer for render and inspection paths.
     [[nodiscard]] const ConsoleBuffer& Buffer() const { return m_Buffer; }
-    /**
-     * @brief Game instance that owns this console.
-     */
+    /// @brief Game instance that owns this console.
     [[nodiscard]] Game& GetGame() { return m_Game; }
-    /**
-     * @brief Registered command table.
-     */
+    /// @brief Registered command table.
     [[nodiscard]] const ConsoleCommandRegistry& Registry() const { return m_Registry; }
 
     /**
@@ -572,6 +624,9 @@ public:
      *
      * If the cursor is inside the box, snap @c m_SuggestionIndex to the row
      * under the cursor so hover-to-highlight matches what a click would commit.
+     *
+     * @param mouseX Cursor x in the pixel space passed to @ref Render.
+     * @param mouseY Cursor y in the same space: origin top-left, y downward.
      */
     void OnMouseHover(double mouseX, double mouseY);
 
@@ -581,22 +636,31 @@ public:
      * If the click landed inside the dropdown box, splice the clicked
      * suggestion into the input (same path as Tab) and return true so the
      * caller can swallow the click.
+     *
+     * @param mouseX Cursor x in the pixel space passed to @ref Render.
+     * @param mouseY Cursor y in the same space: origin top-left, y downward.
+     * @return       True when the click was consumed by the dropdown.
      */
     bool OnMouseClick(double mouseX, double mouseY);
 
     /**
      * @brief Mouse wheel hit-routing.
      *
-     * If the cursor sits over the dropdown and the suggestion list overflows
-     * the visible window, scroll the dropdown and return true. Caller falls
-     * through to scrollback navigation otherwise.
+     * Returns true whenever the cursor is inside the last-drawn dropdown,
+     * consuming the wheel event; the rows only move when the list overflows the
+     * visible window, at 2 rows per notch (the scrollback moves 3, see
+     * @ref OnScroll). Returns false otherwise, so the caller scrolls the
+     * scrollback instead.
+     *
+     * @param mouseX  Cursor x in the pixel space passed to @ref Render.
+     * @param mouseY  Cursor y in the same space: origin top-left, y downward.
+     * @param yoffset Wheel delta in notches; positive reveals earlier rows.
+     * @return        True when the wheel event was consumed by the dropdown.
      */
     bool TryScrollDropdown(double mouseX, double mouseY, double yoffset);
 
 private:
-    /**
-     * @brief Wire the built-in command set. Defined in ConsoleCommands.cpp.
-     */
+    /// @brief Wire the built-in command set. Defined in ConsoleCommands.cpp.
     void RegisterDefaultCommands();
 
     /**
@@ -673,9 +737,9 @@ private:
         float h = 0.0f;
         float rowH = 0.0f;
         float padTop = 0.0f;
-        std::size_t topRow = 0;       ///< first visible item index
-        std::size_t visibleRows = 0;  ///< rows currently drawn
-        std::size_t totalItems = 0;   ///< full suggestion count
+        std::size_t topRow = 0;       ///< First visible item index.
+        std::size_t visibleRows = 0;  ///< Rows currently drawn.
+        std::size_t totalItems = 0;   ///< Full suggestion count.
         bool visible = false;
     };
     DropdownRect m_LastDropdown;
@@ -691,11 +755,20 @@ private:
 };
 
 /**
- * @brief Pure transition function for the console toggle cycle.
+ * @brief Pure `Closed -> Half -> Full -> Closed` rotation over Console::State.
  *
- * Exposed as a free function (and made `constexpr`) so unit tests can validate
- * the cycle without constructing a Console + Game pair, which would require a
- * GL context per the test-suite constraints.
+ * Exposed as a free function (and made `constexpr`) so it can be validated
+ * without constructing a Console + Game pair, which would require a GL context
+ * per the test-suite constraints.
+ *
+ * @warning This is not the hotkey behavior. No production code calls it - the
+ * only callers are tests/ConsoleStateTests.cpp. The real transitions live in
+ * @ref Console::Toggle (F12, which only moves between `Closed` and `Half`) and
+ * @ref Console::ToggleFullscreen (Tab, which only swaps `Half` and `Full`), so
+ * this three-step rotation is reachable from no input path.
+ *
+ * @param s Current state.
+ * @return The next state in the rotation.
  */
 [[nodiscard]] constexpr Console::State NextConsoleState(Console::State s) noexcept
 {
