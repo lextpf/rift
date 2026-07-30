@@ -5,6 +5,13 @@
 // Generates a full-screen triangle from gl_VertexID - no VBO required.
 // Three vertices cover the entire screen with UVs in [0,1] over the visible
 // portion. Caller binds any VAO and issues glDrawArrays(GL_TRIANGLES, 0, 3).
+//
+// OpenGL-only, like the whole post-FX set it feeds (PostFXComposite,
+// BloomPrefilter, BloomDownsample, BloomUpsample). None of them is listed in
+// CMake's SHADER_SOURCES, so none is ever compiled to SPIR-V, and as written
+// they would not compile for Vulkan: gl_VertexID must become gl_VertexIndex
+// here, and the fragment shaders' default-block uniforms must move into a
+// push-constant block or a UBO.
 // -----------------------------------------------------------------------------
 
 layout(location = 0) out vec2 vUV;

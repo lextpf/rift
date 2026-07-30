@@ -6,16 +6,29 @@
 // Reads scene + bloom textures and applies the arcade-neon post chain.
 // Composition order is significant - see comments in main().
 //
+//   0. Master gate (uPostFXEnabled) - when 0, return the raw scene texel
 //   1. Sample scene with chromatic aberration per-channel offset (3 fetches)
 //   2. Add chroma-only bloom (zero net luminance contribution)
 //   3. LGG grading split (shadows / midtones / highlights)
-//   4. Vignette + edge desaturation
-//   5. Grain (luminance-modulated, slight chroma)
-//   6. Tonemap (soft-shoulder)
+//   4. Saturation pump (after grading, before vignette)
+//   5. Vignette + edge desaturation
+//   6. Grain (luminance-modulated, slight chroma)
+//   7. Tonemap (soft-shoulder)
 //
 // Each effect is implemented as a helper function with a single intensity
 // parameter; passing 0.0 to any of them makes the shader self-cancel that
-// effect cleanly. Uniform layout matches PostFXParams.h on the C++ side.
+// effect cleanly.
+//
+// The uniforms come from two places, which matters when tuning:
+//   - per frame, from PostFXParams (src/PostFXParams.hpp): uBloomIntensity,
+//     uLift, uGamma, uGain, uSaturation, uVignetteIntensity, uGrainIntensity,
+//     uTime, uPostFXEnabled
+//   - compile-time ambience:: constants (src/AmbienceConfig.hpp), which cannot
+//     vary per frame: uCAStrength, uVignetteInnerR, uVignetteOuterR,
+//     uVignetteAspectY, uEdgeDesat, uGrainChromaMix, uTonemapKnee
+//
+// OpenGL-only: this shader is not in CMake's SHADER_SOURCES, is never compiled
+// to SPIR-V, and its default-block uniforms are illegal in Vulkan GLSL.
 // -----------------------------------------------------------------------------
 
 layout(location = 0) in vec2 vUV;
@@ -93,9 +106,9 @@ vec3 applyLGG(vec3 c, vec3 lift, vec3 gamma, vec3 gain)
 }
 
 // -----------------------------------------------------------------------------
-// 3.5. Saturation pump (chroma boost). 1.0 = identity, >1 pumps, 0 = grayscale.
-//      Placed AFTER grading (so grading's warm/cool tint is the input) and
-//      BEFORE vignette (so corner edge-desat operates on saturated colors).
+// 4. Saturation pump (chroma boost). 1.0 = identity, >1 pumps, 0 = grayscale.
+//    Placed AFTER grading (so grading's warm/cool tint is the input) and
+//    BEFORE vignette (so corner edge-desat operates on saturated colors).
 // -----------------------------------------------------------------------------
 vec3 applySaturation(vec3 c, float s)
 {
@@ -104,7 +117,7 @@ vec3 applySaturation(vec3 c, float s)
 }
 
 // -----------------------------------------------------------------------------
-// 4a. Elliptical vignette factor (0 at center, 1 at corners).
+// 5a. Elliptical vignette factor (0 at center, 1 at corners).
 // -----------------------------------------------------------------------------
 float computeVignetteFactor(vec2 uv, float aspectY, float innerR, float outerR)
 {
@@ -115,7 +128,7 @@ float computeVignetteFactor(vec2 uv, float aspectY, float innerR, float outerR)
 }
 
 // -----------------------------------------------------------------------------
-// 4b. Apply vignette darkening + edge desaturation.
+// 5b. Apply vignette darkening + edge desaturation.
 // -----------------------------------------------------------------------------
 vec3 applyVignette(vec3 c, float vig, float intensity, float edgeDesat)
 {
@@ -125,12 +138,16 @@ vec3 applyVignette(vec3 c, float vig, float intensity, float edgeDesat)
 }
 
 // -----------------------------------------------------------------------------
-// 5. Film grain - luminance-modulated, slight chroma, 2px tiles.
+// 6. Film grain - luminance-modulated, slight chroma, 2px tiles.
 // -----------------------------------------------------------------------------
 vec3 applyGrain(vec3 c, float time, float intensity, float chromaMix)
 {
     float lum = dot(c, LUMA);
-    // Parabola peaks at L=0.5, =0 at L=0 and L=1 -> grain visible only in midtones.
+    // Parabola peaks at L=0.5 and reaches 0 at L=0 and L=1, so grain fades out of
+    // shadows and near-white midtones. The modulator is NOT clamped: grain runs
+    // before the tonemap on unclamped RGB16F values, so L can exceed 1.0 in blown
+    // highlights. There lumMod turns negative and grows without bound - the grain
+    // does not vanish, it inverts sign and re-strengthens.
     float lumMod = 4.0 * lum * (1.0 - lum);
 
     // 2x2 pixel tiles (gl_FragCoord is in pixels).
@@ -146,7 +163,7 @@ vec3 applyGrain(vec3 c, float time, float intensity, float chromaMix)
 }
 
 // -----------------------------------------------------------------------------
-// 6. Soft-shoulder tonemap.
+// 7. Soft-shoulder tonemap.
 // Below the knee point, output = input (LDR content passes through unchanged
 // - this preserves contrast). Above, a per-channel soft shoulder rolls off
 // asymptotically toward 1.0 so HDR highlights don't clip.
@@ -200,17 +217,17 @@ void main()
     // 3. LGG grading (shadows / midtones / highlights).
     col = applyLGG(col, uLift, uGamma, uGain);
 
-    // 3.5. Saturation pump.
+    // 4. Saturation pump.
     col = applySaturation(col, uSaturation);
 
-    // 4. Vignette + edge desaturation.
+    // 5. Vignette + edge desaturation.
     float vig = computeVignetteFactor(vUV, uVignetteAspectY, uVignetteInnerR, uVignetteOuterR);
     col = applyVignette(col, vig, uVignetteIntensity, uEdgeDesat);
 
-    // 5. Grain - added BEFORE tonemap so it feels camera-captured, not overlaid.
+    // 6. Grain - added BEFORE tonemap so it feels camera-captured, not overlaid.
     col = applyGrain(col, uTime, uGrainIntensity, uGrainChromaMix);
 
-    // 6. Tonemap last so the curve sees the fully-composited HDR image.
+    // 7. Tonemap last so the curve sees the fully-composited HDR image.
     col = softShoulderTonemap(col, uTonemapKnee);
 
     FragColor = vec4(col, 1.0);
