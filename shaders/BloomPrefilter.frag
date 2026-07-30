@@ -9,18 +9,41 @@
 // bloom mip chain, so the downstream chroma-only composite in PostFXComposite.frag bleeds
 // hue outward from saturated sources without lifting any luminance.
 //
-// V-relative saturation (max-min)/max reads dim colored pixels as fully
-// saturated - a dim red lantern glows the same as a bright one, because the
-// arcade-neon eye reads "this pixel is colored," not "this pixel is intense."
+// V-relative saturation (max-min)/max is brightness-independent, so a dim red
+// lantern passes the gate exactly as a bright one does: the arcade-neon eye reads
+// "this pixel is colored," not "this pixel is intense." The gate only decides
+// whether a pixel bleeds - the emitted value is still `col * weight`, so a dim
+// lantern feeds a proportionally dim bloom.
 // White / off-white / grey pixels return saturation 0 and are excluded.
 //
-// Output feeds into the bloom mip chain (BloomDownsample.frag -> BloomUpsample.frag).
+// Output feeds the bloom mip chain, which ping-pongs over one mip pyramid:
+//
+//   scene (RGB16F) --BloomPrefilter--> mip0        mip0 = half scene resolution
+//
+//   downsample (BloomDownsample.frag), destination CLEARED each pass:
+//     mip0 --> mip1 --> mip2 --> ... --> mipN-1    each level halves again
+//
+//   upsample (BloomUpsample.frag), GL_ONE/GL_ONE additive, destination NOT
+//   cleared - it already holds what the downsample wrote there:
+//     mipN-1 --+--> mipN-2 --+--> ... --+--> mip0
+//
+//   mip0 --> uBloom in PostFXComposite.frag
+//
+// uSrcTexelSize is always 1/size of the mip being SAMPLED, so it shrinks going
+// down the chain and grows coming back up. Adding a clear to the upsample loop
+// silently destroys the multi-scale accumulation.
+//
+// OpenGL-only: not in CMake's SHADER_SOURCES, never compiled to SPIR-V, and the
+// default-block uniform below is illegal in Vulkan GLSL.
 // -----------------------------------------------------------------------------
 
 layout(location = 0) in vec2 vUV;
 layout(location = 0) out vec4 FragColor;
 
 layout(binding = 0) uniform sampler2D uScene;
+
+// Fed from the compile-time constant `ambience::BLOOM_SATURATION_THRESHOLD`
+// (src/AmbienceConfig.hpp), not from PostFXParams: the gate cannot vary per frame.
 uniform float uSatThreshold;
 
 void main()
@@ -35,7 +58,7 @@ void main()
 
     // Karis soft filter on saturation: continuous (no kink at threshold), zero
     // at/below threshold, ramps smoothly above. Matches the C++
-    // KarisBloomChromaWeight helper in PostFXParams.h.
+    // KarisBloomChromaWeight helper in src/PostFXParams.hpp.
     float over = max(sat - uSatThreshold, 0.0);
     float weight = over / (1.0 + over);
 

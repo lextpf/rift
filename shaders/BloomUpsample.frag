@@ -10,9 +10,15 @@
 //     2  4  2     all divided by 16
 //     1  2  1
 //
-// The output is added (additively combined) into the next-finer mip's bloom
-// target by the renderer - that combine is done outside this shader, via
-// a glBlendFunc(GL_ONE, GL_ONE) draw or an explicit add pass.
+// The combine happens outside this shader: the renderer draws mip[i] into
+// mip[i-1] with glBlendFunc(GL_ONE, GL_ONE). Unlike the downsample loop, the
+// upsample loop deliberately does NOT clear its destination - that mip already
+// holds what the downsample pass wrote there, and the additive blend is what
+// accumulates every coarser level onto it. Adding a defensive glClear here would
+// silently flatten the multi-scale bloom. The final result lands in mip[0].
+//
+// OpenGL-only: not in CMake's SHADER_SOURCES, never compiled to SPIR-V, and the
+// default-block uniform below is illegal in Vulkan GLSL.
 // -----------------------------------------------------------------------------
 
 layout(location = 0) in vec2 vUV;
@@ -20,7 +26,7 @@ layout(location = 0) out vec4 FragColor;
 
 layout(binding = 0) uniform sampler2D uInput;
 
-/// Texel size of the SOURCE (the smaller mip being upsampled FROM).
+// Texel size of the SOURCE (the smaller mip being upsampled FROM).
 uniform vec2 uSrcTexelSize;
 
 void main()

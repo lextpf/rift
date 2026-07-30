@@ -10,6 +10,9 @@
 //
 // The split-weighted pattern preserves more high-frequency detail than a naive
 // 4-tap box filter while still fitting in 13 texture fetches per fragment.
+//
+// OpenGL-only: not in CMake's SHADER_SOURCES, never compiled to SPIR-V, and the
+// default-block uniform below is illegal in Vulkan GLSL.
 // -----------------------------------------------------------------------------
 
 layout(location = 0) in vec2 vUV;
@@ -17,7 +20,7 @@ layout(location = 0) out vec4 FragColor;
 
 layout(binding = 0) uniform sampler2D uInput;
 
-/// Texel size of the SOURCE (input) texture - we sample at offsets in source units.
+// Texel size of the SOURCE (input) texture - we sample at offsets in source units.
 uniform vec2 uSrcTexelSize;
 
 void main()
