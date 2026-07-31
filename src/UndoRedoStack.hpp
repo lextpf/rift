@@ -30,6 +30,11 @@ class Tilemap;
  * Commands are owned by the stack (via unique_ptr) and evicted oldest-first
  * once the undo deque exceeds the capacity. Every mutating call is null-safe:
  * a null command is a no-op.
+ *
+ * Eviction and redo-clearing destroy the command, not the mutation: the
+ * tilemap keeps the applied change and it can no longer be reverted. Any state
+ * a reverted command holds outside the world - PlaceNPCCmd's detached
+ * NpcRecord, RemoveStructureCmd's tile snapshot - is discarded with it.
  */
 class UndoRedoStack
 {
@@ -42,6 +47,11 @@ public:
 
     /**
      * @brief Construct a stack with an explicit undo-history depth.
+     *
+     * @pre capacity >= 1. A capacity of 0 is accepted without a clamp or a
+     * diagnostic, and makes Push discard the command in the same call, so
+     * nothing is ever undoable.
+     *
      * @param capacity Maximum number of undo entries retained before the
      *                 oldest is evicted.
      */
