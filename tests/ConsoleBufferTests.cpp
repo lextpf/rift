@@ -10,7 +10,7 @@
 
 namespace
 {
-/// Drive the buffer with a literal string, one codepoint at a time.
+// Drive the buffer with a literal string, one codepoint at a time.
 void TypeString(ConsoleBuffer& buf, std::string_view text)
 {
     for (char c : text)

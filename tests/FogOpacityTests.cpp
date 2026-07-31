@@ -7,35 +7,34 @@
 
 #include <glm/glm.hpp>
 
-/// @file FogOpacityTests.cpp
-/// @brief Regression guard: fog stays a readable haze - visible, never an
-/// opaque wall.
-///
-/// This guard brackets fog between two failure modes it has hit historically:
-///   - Too STRONG (the original bug): fog rendered "way too strong in any
-///     weather and any particle zone." Two compounding causes in
-///     ParticleBehavior<ParticleType::Fog>::Update: (1) editor-zone fog borrowed
-///     the active weather's fogAlphaMultiplier, which defaults to 1.0 outside the
-///     fog-bearing weathers, so a fog zone under Clear/Rain rendered un-softened;
-///     (2) a high base alpha and 1.4x day boost stacked across many large puffs
-///     into a near-opaque sheet. Per-puff peaks then were ~0.56 (zone) / ~0.36
-///     (weather).
-///   - Too WEAK (the over-correction): a later anti-wall pass thinned fog on
-///     every axis at once (base alpha, day boost, softening multiplier, spawn
-///     rate, lifetime, cap) and overshot into "barely visible." Per-puff peaks
-///     bottomed out at ~0.14 (zone) / ~0.19 (weather).
-///
-/// Current tuning restores per-puff alpha partway (shared base 0.25 -> 0.40) for
-/// a readable haze that still stays clear of the old wall. These tests pin the
-/// per-puff alpha CEILING (not a floor); they drive the real ParticleSystem at
-/// full-day settings (worst case for opacity) and assert no live Fog particle
-/// exceeds the ceiling. Expected peaks now: ~0.23 (zone) / ~0.30 (weather),
-/// both comfortably under the ~0.56 / ~0.36 wall. Weather fog is cap-bound at
-/// 2500 puffs, so its on-screen density is governed by per-puff alpha here, not
-/// spawn rate.
+// Regression guard: fog stays a readable haze - visible, never an
+// opaque wall.
+//
+// This guard brackets fog between two failure modes it has hit historically:
+//   - Too STRONG (the original bug): fog rendered "way too strong in any
+//     weather and any particle zone." Two compounding causes in
+//     ParticleBehavior<ParticleType::Fog>::Update: (1) editor-zone fog borrowed
+//     the active weather's fogAlphaMultiplier, which defaults to 1.0 outside the
+//     fog-bearing weathers, so a fog zone under Clear/Rain rendered un-softened;
+//     (2) a high base alpha and 1.4x day boost stacked across many large puffs
+//     into a near-opaque sheet. Per-puff peaks then were ~0.56 (zone) / ~0.36
+//     (weather).
+//   - Too WEAK (the over-correction): a later anti-wall pass thinned fog on
+//     every axis at once (base alpha, day boost, softening multiplier, spawn
+//     rate, lifetime, cap) and overshot into "barely visible." Per-puff peaks
+//     bottomed out at ~0.14 (zone) / ~0.19 (weather).
+//
+// Current tuning restores per-puff alpha partway (shared base 0.25 -> 0.40) for
+// a readable haze that still stays clear of the old wall. These tests pin the
+// per-puff alpha CEILING (not a floor); they drive the real ParticleSystem at
+// full-day settings (worst case for opacity) and assert no live Fog particle
+// exceeds the ceiling. Expected peaks now: ~0.23 (zone) / ~0.30 (weather),
+// both comfortably under the ~0.56 / ~0.36 wall. Weather fog is cap-bound at
+// 2500 puffs, so its on-screen density is governed by per-puff alpha here, not
+// spawn rate.
 namespace
 {
-/// Highest alpha across all currently-live Fog particles (0 if none).
+// Highest alpha across all currently-live Fog particles (0 if none).
 float MaxFogAlpha(const ParticleSystem& ps)
 {
     float maxA = 0.0f;

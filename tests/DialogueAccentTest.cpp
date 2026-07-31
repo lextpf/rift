@@ -22,8 +22,8 @@ constexpr int kChannels = 4;  // RGBA
 
 using Pixel = std::array<unsigned char, 4>;
 
-/// Build a Texture from a flat 4x4 RGBA buffer. Loads via LoadFromData with no
-/// flipY (we want byte-for-byte fidelity in the test pixel layout).
+// Build a Texture from a flat 4x4 RGBA buffer. Loads via LoadFromData with no
+// flipY (we want byte-for-byte fidelity in the test pixel layout).
 Texture MakeTexture(const std::vector<unsigned char>& pixels)
 {
     Texture tex;
@@ -32,7 +32,7 @@ Texture MakeTexture(const std::vector<unsigned char>& pixels)
     return tex;
 }
 
-/// Fill a 4x4 RGBA buffer uniformly with the given pixel value.
+// Fill a 4x4 RGBA buffer uniformly with the given pixel value.
 std::vector<unsigned char> Uniform(Pixel p)
 {
     std::vector<unsigned char> out(kSize * kSize * kChannels);
@@ -46,7 +46,7 @@ std::vector<unsigned char> Uniform(Pixel p)
     return out;
 }
 
-/// Fill a 4x4 buffer with the given background and overwrite a single pixel.
+// Fill a 4x4 buffer with the given background and overwrite a single pixel.
 std::vector<unsigned char> WithOnePixel(Pixel bg, int x, int y, Pixel one)
 {
     auto out = Uniform(bg);

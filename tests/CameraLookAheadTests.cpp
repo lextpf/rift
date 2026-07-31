@@ -1,5 +1,4 @@
-// Unit tests for camera look-ahead. CameraController::Update is renderer-free
-// (ConfigurePerspective, which touches the renderer, is not called here).
+// Unit tests for camera look-ahead. CameraController is renderer-free.
 #include <gtest/gtest.h>
 
 #include <glm/glm.hpp>
