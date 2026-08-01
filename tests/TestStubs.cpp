@@ -5,10 +5,16 @@
 // - Game::SwitchRenderer: referenced by Cmd_RendererSet, but the renderer.set
 //   command path is integration-only and never exercised in unit tests.
 // - Editor::CalculateRotatedSourceTile / GetCompensatedTileRotation /
-//   CalculateParticleZoneRect: referenced by EditorRendering.cpp's overlay
-//   methods, which the tests never call. Defining these in a separate TU is
-//   legal because C++ access checks apply at the call site, not the
-//   definition site.
+//   CalculateParticleZoneRect: these have real definitions in src/EditorInput.cpp,
+//   which CMakeLists.txt keeps out of TEST_LIB_SOURCES on purpose (ProcessMouseInput
+//   pulls in the dialogue-tree builders). EditorRendering.cpp IS linked and calls
+//   them from its overlay methods, which the tests never invoke - hence these
+//   stubs. Defining them in a separate TU is legal because C++ access checks apply
+//   at the call site, not the definition site.
+//
+//   WARNING: if EditorInput.cpp is ever added to TEST_LIB_SOURCES, delete these
+//   three definitions in the same change, or the test binary fails to link on
+//   duplicate symbols.
 
 #include "../src/Editor.hpp"
 #include "../src/Game.hpp"
