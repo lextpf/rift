@@ -1,7 +1,7 @@
 #pragma once
 
-#include "PerspectiveTransform.hpp"
 #include "PostFXParams.hpp"
+#include "RenderModes.hpp"
 #include "Texture.hpp"
 
 #include <glm/glm.hpp>
@@ -9,6 +9,25 @@
 
 #include <string>
 #include <vector>
+
+/**
+ * @struct RendererInfo
+ * @brief Backend identity snapshot returned by `IRenderer::GetBackendInfo`.
+ * @ingroup Rendering
+ *
+ * Populated at the end of `Init()` by each backend; consumed by the
+ * developer-console `renderer.info` command. Kept POD-shaped (strings + int)
+ * so it can be returned by value cheaply.
+ */
+struct RendererInfo
+{
+    std::string backendName;    ///< "OpenGL" or "Vulkan".
+    std::string apiVersion;     ///< Driver-reported API version string.
+    std::string vendor;         ///< GPU vendor (e.g. "NVIDIA Corporation").
+    std::string device;         ///< GPU device / renderer string.
+    std::string driverVersion;  ///< Driver version string (Vulkan); empty for GL.
+    int maxTextureSize = 0;     ///< Largest 2D texture dimension supported.
+};
 
 /**
  * @class IRenderer
@@ -20,8 +39,14 @@
  * This abstraction allows the game to run on both OpenGL and Vulkan without
  * modification to the game logic.
  *
- * @section renderer_pattern Design Pattern
+ * @par Design pattern
  * Implements the **Strategy Pattern** for runtime graphics API selection.
+ *
+ * @warning Game owns the renderer by `std::unique_ptr`, and the `renderer.set`
+ * console command destroys the renderer **and** the GLFW window and constructs
+ * replacements. An `IRenderer*` or `IRenderer&` cached across frames therefore
+ * dangles; take the renderer by reference per call instead. Every GPU resource is
+ * re-uploaded after a switch, so texture handles captured before it are stale.
  *
  * @htmlonly
  * <pre class="mermaid">
@@ -51,54 +76,94 @@
  * </pre>
  * @endhtmlonly
  *
- * @section coord_systems Coordinate Systems
- * The renderer operates in multiple coordinate spaces:
+ * @par Coordinate systems
+ * Every 2D primitive on this interface consumes whichever ortho matrix
+ * @ref SetProjection installed last, and the caller subtracts the camera itself.
+ * A frame installs two of them: the scene ortho (view space) and, after post-FX,
+ * the screen-pixel UI ortho. @ref DrawQuad3D is the single exception - it uses
+ * @ref SetViewProjection and takes untranslated scene coordinates.
  *
  * @htmlonly
  * <pre class="mermaid">
  * flowchart LR
  * W["World Space"]:::space
- * S["Screen Space"]:::space
+ * V["View Space
+ * (world pixels)"]:::space
+ * U["UI Space
+ * (screen pixels)"]:::space
  * N["Normalized Device
  * Coordinates"]:::space
+ * F["Framebuffer
+ * pixels"]:::space
  * classDef space fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
- * W -->|Camera
- * Transform| S
- * S -->|Projection Matrix| N
+ * W -->|subtract camera| V
+ * V -->|scene ortho| N
+ * U -->|UI ortho| N
+ * N -->|viewport, x PIXEL_SCALE| F
  * </pre>
  * @endhtmlonly
  *
- * |  Space |        Origin        | Range                                       |
- * |--------|----------------------|---------------------------------------------|
- * |  World |   Top-left of map    | @f$ (0,0) @f$ to @f$ (16*mapW, 16*mapH) @f$ |
- * | Screen | Top-left of viewport | @f$ (0,0) @f$ to @f$ (screenW, screenH) @f$ |
- * |    NDC |        Center        | @f$ (-1,-1) @f$ to @f$ (+1,+1) @f$          |
+ * |  Space | Origin               | Range                                             |
+ * |--------|----------------------|---------------------------------------------------|
+ * |  World | Top-left of map      | @f$ (0,0) @f$ to @f$ (tileW*mapW, tileH*mapH) @f$ |
+ * |   View | Top-left of viewport | @f$ (0,0) @f$ to @ref GetViewSize                 |
+ * |     UI | Top-left of viewport | @f$ (0,0) @f$ to @f$ (screenW, screenH) @f$       |
+ * |    NDC | Center               | @f$ (-1,-1) @f$ to @f$ (+1,+1) @f$                |
  *
- * @section renderer_pipeline Rendering Pipeline
- * @code
- * renderer->BeginFrame();
- * renderer->Clear(0.2f, 0.3f, 0.4f, 1.0f);
- * renderer->SetProjection(orthoMatrix);
- * renderer->DrawSprite(texture, position);
- * renderer->DrawText("Score: 100", pos);
- * renderer->EndFrame();
- * @endcode
+ * Tile dimensions are per-map data (`Tilemap::GetTileWidth` / `GetTileHeight`),
+ * not a constant, and width and height are independent.
  *
- * @section renderer_math Orthographic Projection
- * The renderer uses orthographic projection to map screen pixels to NDC.
- * Unlike perspective projection, parallel lines stay parallel (no depth foreshortening).
+ * @par Rendering pipeline
+ * @ref BeginScene redirects the scene into an offscreen target that
+ * @ref EndSceneApplyPostFX grades and composites. Draws issued after that call go
+ * straight to the swapchain ungraded, which is where the UI belongs. @ref Clear
+ * runs after the offscreen target is bound, not before it.
  *
- * @par Matrix Parameters
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart LR
+ * BF["BeginFrame()"]:::stage
+ * subgraph SCENE["offscreen scene FBO on OpenGL, swapchain on Vulkan"]
+ * BS["BeginScene()"]:::stage
+ * CL["Clear()"]:::stage
+ * SP["SetProjection
+ * (scene ortho)"]:::stage
+ * D2["2D scene draws"]:::stage
+ * D3["SetViewProjection
+ * + DrawQuad3D"]:::stage
+ * BS --> CL --> SP --> D2 --> D3
+ * end
+ * PX["EndSceneApplyPostFX()"]:::stage
+ * UI["SetProjection (UI ortho)
+ * + UI draws
+ * swapchain, ungraded"]:::stage
+ * EF["EndFrame()"]:::stage
+ * classDef stage fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+ * BF --> BS
+ * D3 --> PX --> UI --> EF
+ * </pre>
+ * @endhtmlonly
+ *
+ * @par Orthographic projection
+ * Parallel lines stay parallel (no depth foreshortening). The scene ortho is not
+ * built from screen pixels: its extent is the zoomed world view,
+ * `screenPixels / PIXEL_SCALE / zoom`, which is also what @ref SetViewSize records.
+ * The UI ortho installed after post-FX is the one measured in screen pixels.
+ *
+ * @par Matrix parameters
  * | Symbol |   Meaning   | 2D Value |
  * |--------|-------------|----------|
  * |      l |  Left edge  | 0        |
- * |      r | Right edge  | screenW  |
+ * |      r | Right edge  | viewW    |
  * |      t |  Top edge   | 0        |
- * |      b | Bottom edge | screenH  |
+ * |      b | Bottom edge | viewH    |
  * |      n |  Near plane | -1       |
  * |      f |  Far plane  | +1       |
  *
- * @par The Orthographic Matrix
+ * `viewW` / `viewH` are the zoomed world-view extent for the scene ortho, and
+ * `screenW` / `screenH` for the UI ortho.
+ *
+ * @par The orthographic matrix
  * @f[
  * M_{ortho} = \begin{bmatrix}
  *   \frac{2}{r-l} & 0 & 0 & -\frac{r+l}{r-l} \\
@@ -108,20 +173,22 @@
  * \end{bmatrix}
  * @f]
  *
- * @par What Each Row Does
+ * @par What each row does
  * - **Row 1 (X)**: Scales X from [l, r] to [-1, +1] and centers it
  * - **Row 2 (Y)**: Scales Y from [t, b] to [-1, +1] and centers it
  * - **Row 3 (Z)**: Maps depth [n, f] to [-1, +1] (unused in 2D)
  * - **Row 4**: Homogeneous coordinate (always 1 for orthographic)
  *
- * @par Example Transformation
- * For a 1280x720 screen with top-left origin:
- * - @f$ l=0, \; r=1280, \; t=0, \; b=720 @f$
- * - @f$ (640, 360) \rightarrow (0, 0) @f$ (center)
+ * @par Example transformation
+ * A 1280x720 window at `PIXEL_SCALE` 5 and zoom 1.0 gives a 256x144 view extent:
+ * - @f$ l=0, \; r=256, \; t=0, \; b=144 @f$
+ * - @f$ (128, 72) \rightarrow (0, 0) @f$ (center)
  * - @f$ (0, 0) \rightarrow (-1, +1) @f$ (top-left)
- * - @f$ (1280, 720) \rightarrow (+1, -1) @f$ (bottom-right)
+ * - @f$ (256, 144) \rightarrow (+1, -1) @f$ (bottom-right)
  *
- * @section renderer_uv Texture Coordinates
+ * The UI ortho for the same window uses @f$ r=1280, \; b=720 @f$ instead.
+ *
+ * @par Texture coordinates
  * UV coordinates map pixel positions to the 0-1 range the GPU expects:
  * @f[
  * u = \frac{pixelX}{textureWidth}, \quad v = \frac{pixelY}{textureHeight}
@@ -130,46 +197,26 @@
  * @par Example
  * For a 256x256 texture, pixel (128, 64) becomes UV (0.5, 0.25).
  *
- * @see OpenGLRenderer, VulkanRenderer, Texture
- */
-
-/**
- * @struct RendererInfo
- * @brief Backend identity snapshot returned by `IRenderer::GetBackendInfo`.
- * @ingroup Rendering
+ * @par Backend override sets
+ * Adding, removing or re-signing a pure virtual here requires the matching edit in
+ * @c RIFT_DECLARE_COMMON_RENDERER_METHODS. That macro is what keeps both backends'
+ * override sets byte-identical, so the two files are always edited together.
  *
- * Populated at the end of `Init()` by each backend; consumed by the
- * developer-console `renderer.info` command. Kept POD-shaped (strings + int)
- * so it can be returned by value cheaply.
+ * @see OpenGLRenderer, VulkanRenderer, Texture, RendererMacros.hpp
  */
-struct RendererInfo
-{
-    std::string backendName;    ///< "OpenGL" or "Vulkan".
-    std::string apiVersion;     ///< Driver-reported API version string.
-    std::string vendor;         ///< GPU vendor (e.g. "NVIDIA Corporation").
-    std::string device;         ///< GPU device / renderer string.
-    std::string driverVersion;  ///< Driver version string (Vulkan); empty for GL.
-    int maxTextureSize = 0;     ///< Largest 2D texture dimension supported.
-};
-
 class IRenderer
 {
 public:
-    /**
-     * @brief Virtual destructor for proper polymorphic cleanup.
-     */
+    /// @brief Virtual destructor for proper polymorphic cleanup.
     virtual ~IRenderer() = default;
 
     /**
      * @brief Configure preferred font paths before Init().
      *
-     * Renderers try
-     * these project-specific candidates before their built-in
-     * fallback fonts. Passing an
-     * empty vector restores backend defaults.
+     * Renderers try these project-specific candidates before their built-in
+     * fallback fonts. Passing an empty vector restores backend defaults.
      *
-     * @param fontCandidates Ordered list of
-     * TTF font paths.
+     * @param fontCandidates Ordered list of TTF font paths.
      */
     virtual void SetFontCandidates(const std::vector<std::string>& fontCandidates) = 0;
 
@@ -179,12 +226,12 @@ public:
      * Creates GPU resources, compiles shaders, and sets up rendering state.
      * Must be called after window creation but before any rendering.
      *
-     * @par OpenGL Initialization
+     * @par OpenGL initialization
      * - Compile sprite shader program
      * - Create VAO/VBO for quad rendering
      * - Enable blending for transparency
      *
-     * @par Vulkan Initialization
+     * @par Vulkan initialization
      * - Create instance, device, swapchain
      * - Create render pass, pipeline
      * - Allocate command buffers
@@ -259,61 +306,54 @@ public:
      *        the swapchain.
      *
      * Backend-specific operation:
-     * - OpenGL reads the scene texture, applies a
-     * saturation/brightness prefilter,
-     *   builds and upsamples a bloom mip chain, then
-     * composites via a full-screen quad.
-     * - Vulkan is currently a no-op post-FX path; the
-     * scene has already rendered to
-     *   the swapchain, so this returns without bloom or color
-     * grading.
+     * - OpenGL runs an HSV-saturation bright-pass over the scene texture, builds
+     *   and additively upsamples a bloom mip chain, then composites via a
+     *   full-screen triangle.
+     * - Vulkan is currently a no-op post-FX path; the scene has already rendered
+     *   to the swapchain, so this returns without bloom or color grading. Every
+     *   field of @p params is therefore ignored on the Vulkan backend.
      *
-     * The OpenGL composite combines:
-     * - Scene + bloom add (intensity
-     * from params)
-     * - Color grading (per-time-of-day RGB tint)
-     * - Vignette (smoothstep
-     * falloff from screen center)
-     * - Light film grain (low-frequency tiled noise)
+     * The OpenGL composite applies, in this order (see PostFXComposite.frag):
+     * 1. Scene sample with radial chromatic aberration (3 fetches).
+     * 2. Chroma-only bloom add (luma-orthogonal, so it tints without brightening).
+     * 3. Lift/gamma/gain grading (per-time-of-day RGB split).
+     * 4. Saturation pump.
+     * 5. Vignette + edge desaturation (elliptical smoothstep from screen center).
+     * 6. Film grain (luminance-modulated, 2x2 pixel tiles).
+     * 7. Soft-shoulder tonemap.
      *
      * After this returns, subsequent draws go to the swapchain unmodified
      * (so dialogue, editor, debug overlays stay sharp and ungrained).
      *
      * @param params Frame-specific intensities + time-of-day blend factors.
+     *               Ignored entirely by the Vulkan backend.
      */
     virtual void EndSceneApplyPostFX(const PostFXParams& params) = 0;
 
     /**
      * @brief Draw a sprite using the backend's default texture region.
      *
+     * Position is the **top-left corner** of the sprite. DrawSprite samples the
+     * full texture extent. Use DrawSpriteRegion for pixel-coordinate subregions
+     * or DrawSpriteAtlas for normalized UV control.
      *
-     * Position is the **top-left corner** of the sprite.
-     * DrawSprite samples the full texture
-     * extent. Use DrawSpriteRegion for
-     * pixel-coordinate subregions or DrawSpriteAtlas for
-     * normalized UV control.
-     *
-     * @par Region Coordinate Conventions
-     *
+     * @par Region coordinate conventions
      * DrawSpriteRegion uses pixel units:
      * @f[
-     * \vec{uv}_{min} =
-     * \frac{\vec{texCoord}}{\vec{textureSize}}
+     * \vec{uv}_{min} = \frac{\vec{texCoord}}{\vec{textureSize}}
      * @f]
      * @f[
-     * \vec{uv}_{max} =
-     * \frac{\vec{texCoord} + \vec{texSize}}{\vec{textureSize}}
+     * \vec{uv}_{max} = \frac{\vec{texCoord} + \vec{texSize}}{\vec{textureSize}}
      * @f]
-     * DrawSpriteAtlas
-     * uses normalized UVs directly in @f$[0,1]@f$.
+     * DrawSpriteAtlas uses normalized UVs directly in @f$[0,1]@f$.
      *
-     * @par Transformation Order
+     * @par Transformation order
      * 1. Scale to size
      * 2. Rotate around center
      * 3. Translate to position
      *
      * @param texture  Texture to draw.
-     * @param position World position (top-left corner).
+     * @param position Top-left corner in the current SetProjection space (camera pre-subtracted).
      * @param size     Sprite dimensions in pixels (default: 32x32).
      * @param rotation Rotation in degrees, clockwise (default: 0).
      * @param color    Color tint/modulation (default: white = no tint).
@@ -331,7 +371,7 @@ public:
      * for effects like particles and glows.
      *
      * @param texture  Texture to render.
-     * @param position World position (top-left corner).
+     * @param position Top-left corner in the current SetProjection space (camera pre-subtracted).
      * @param size     Output size in pixels.
      * @param rotation Rotation in degrees, clockwise (default: 0).
      * @param color    RGBA color tint/modulation.
@@ -352,7 +392,8 @@ public:
      * sheets and tile atlases. The region is specified in **pixel coordinates**.
      *
      * @param texture   Texture containing the sprite sheet.
-     * @param position  World position (top-left corner).
+     * @param position  Top-left corner in the current SetProjection space (camera
+     *                  pre-subtracted).
      * @param size      Output size in pixels.
      * @param texCoord  Top-left corner of region in **pixels**.
      * @param texSize   Size of region in **pixels**.
@@ -381,7 +422,7 @@ public:
      * Supports per-vertex color/alpha and additive blending for particles.
      *
      * @param texture  Atlas texture.
-     * @param position World position (top-left corner).
+     * @param position Top-left corner in the current SetProjection space (camera pre-subtracted).
      * @param size     Output size in pixels.
      * @param uvMin    Top-left UV coordinates (normalized 0-1).
      * @param uvMax    Bottom-right UV coordinates (normalized 0-1).
@@ -405,7 +446,7 @@ public:
      * Renders a filled rectangle with the specified RGBA color.
      * Useful for UI elements, debug overlays, and backgrounds.
      *
-     * @par Alpha Blending Variables
+     * @par Alpha blending variables
      * |          Symbol | Meaning                               |
      * |-----------------|---------------------------------------|
      * | @f$ C_{out} @f$ | Final pixel color written to screen   |
@@ -413,7 +454,7 @@ public:
      * | @f$ C_{dst} @f$ | Existing pixel color                  |
      * |  @f$ \alpha @f$ | Opacity (0 = transparent, 1 = opaque) |
      *
-     * @par Standard Blend (additive=false)
+     * @par Standard blend (additive=false)
      * @f[
      * C_{out} = C_{src} \times \alpha + C_{dst} \times (1 - \alpha)
      * @f]
@@ -422,14 +463,14 @@ public:
      * - @f$ \alpha = 1.0 @f$: Fully opaque, destination hidden
      * - @f$ \alpha = 0.0 @f$: Fully transparent, destination unchanged
      *
-     * @par Additive Blend (additive=true)
+     * @par Additive blend (additive=true)
      * @f[
      * C_{out} = C_{src} \times \alpha + C_{dst}
      * @f]
      * Adds source color to destination, making pixels brighter.
      * - @see ParticleSystem uses this for glowing/emissive particles
      *
-     * @param position Top-left corner in screen coordinates.
+     * @param position Top-left corner in the current SetProjection space (camera pre-subtracted).
      * @param size     Rectangle dimensions.
      * @param color    RGBA color (0-1 range).
      * @param additive Use additive blending for glow effects (default: false).
@@ -441,217 +482,77 @@ public:
                                  bool additive = false) = 0;
 
     /**
-     * @brief Draw a texture region onto an arbitrary quad defined by 4 corner positions.
+     * @brief Draw a texture region onto a quad given by 4 world-space corners.
      *
-     * This method renders a sprite with full control over each corner's screen position,
-     * enabling warped/deformed quads for spherical projection of buildings. The corners
-     * are in screen space (already transformed) and NO additional perspective is applied.
+     * The single entry point for every piece of scene geometry: ground tiles,
+     * upright billboards, characters, particles and light pools all arrive here.
+     * Corners are in scene space (see @c sceneMath) and are transformed by the
+     * matrix last given to @ref SetViewProjection, so unlike every other draw
+     * method on this interface the caller does not pre-subtract the camera.
      *
-     * @par Corner Order
+     * @par Corner order
      * @code
      * corners[0] (TL)----corners[1] (TR)
      *      |                   |
      * corners[3] (BL)----corners[2] (BR)
      * @endcode
      *
-     * @param texture  Texture containing the sprite.
-     * @param corners  Array of 4 screen-space positions [TL, TR, BR, BL].
-     * @param texCoord Top-left corner of texture region in pixels.
-     * @param texSize  Size of texture region in pixels.
-     * @param color      Color tint (default: white = no tint).
-     * @param flipY      Flip vertical UV coordinates (default: true for OpenGL).
-     * @param tileFlipX  Mirror the source UV region horizontally (default: false).
-     * @param tileFlipY  Mirror the source UV region vertically (default: false).
+     * @par World geometry vs UI
+     * Which method you call decides the space, so it is checked at compile time:
+     * scene geometry goes through @ref DrawQuad3D, screen-space UI through the
+     * 2D primitives above.
+     *
+     * @param texture   Texture containing the sprite.
+     * @param corners   4 scene-space positions [TL, TR, BR, BL].
+     * @param texCoord  Top-left of the texture region, in pixels.
+     * @param texSize   Size of the texture region, in pixels.
+     * @param color     RGBA tint multiplied into the sampled texel.
+     * @param blend     Color combine mode for this quad's pass.
+     * @param depth     Depth test/write mode for this quad's pass.
+     * @param flipY     Flip vertical UVs (default true, matching the 2D path).
+     * @param tileFlipX Mirror the source UV region horizontally.
+     * @param tileFlipY Mirror the source UV region vertically.
      */
-    virtual void DrawWarpedQuad(const Texture& texture,
-                                const glm::vec2 corners[4],
-                                glm::vec2 texCoord,
-                                glm::vec2 texSize,
-                                glm::vec3 color = glm::vec3(1.0f),
-                                bool flipY = true,
-                                bool tileFlipX = false,
-                                bool tileFlipY = false) = 0;
+    virtual void DrawQuad3D(const Texture& texture,
+                            const glm::vec3 corners[4],
+                            glm::vec2 texCoord,
+                            glm::vec2 texSize,
+                            glm::vec4 color = glm::vec4(1.0f),
+                            renderModes::BlendMode blend = renderModes::BlendMode::Alpha,
+                            renderModes::DepthMode depth = renderModes::DepthMode::TestAndWrite,
+                            bool flipY = true,
+                            bool tileFlipX = false,
+                            bool tileFlipY = false) = 0;
 
     /**
-     * @brief Set the projection matrix.
+     * @brief Set the combined view-projection matrix used by @ref DrawQuad3D.
      *
-     * Updates the GPU uniform for coordinate transformation.
-     * Typically called once per frame with an orthographic matrix.
+     * Supplied pre-multiplied rather than as separate view and projection
+     * matrices because the CPU already builds both to extract frustum planes for
+     * culling, so combining there is free and keeps the GPU-side uniform (and the
+     * Vulkan push-constant block) to a single mat4.
+     *
+     * Changing it flushes any pending 3D batch, so call it once per pass.
+     *
+     * @param viewProjection `projection * view`, from @c cameraRig.
+     */
+    virtual void SetViewProjection(const glm::mat4& viewProjection) = 0;
+
+    /**
+     * @brief Set the projection matrix every 2D primitive draws through.
+     *
+     * Called several times per frame, not once: the frame switches between the
+     * scene ortho and the screen-pixel UI ortho (console, menus, editor panels,
+     * tile picker) and back again.
+     *
+     * Changing it first drains every pending 2D and 3D batch, so it is both a real
+     * cost and a hard painter-order barrier: geometry queued before the call is
+     * guaranteed to land before anything queued after it. Call it only when the
+     * space actually changes.
      *
      * @param projection 4x4 projection matrix.
      */
     virtual void SetProjection(const glm::mat4& projection) = 0;
-
-    /**
-     * @enum ProjectionMode
-     * @brief Available pseudo-3D projection modes for world rendering.
-     * @author Alex (https://github.com/lextpf)
-     * @ingroup Rendering
-     */
-    enum class ProjectionMode
-    {
-        VanishingPoint,  ///< Perspective scaling toward horizon only
-        Globe,           ///< Spherical curvature only
-        Fisheye          ///< Globe curvature and vanishing point combined
-    };
-
-    /**
-     * @struct PerspectiveState
-     * @brief Runtime state for the active pseudo-3D projection.
-     * @author Alex (https://github.com/lextpf)
-     *
-     * Stores all parameters needed to apply perspective transforms.
-     * Updated by SetVanishingPointPerspective(), SetGlobePerspective(),
-     * and SetFisheyePerspective().
-     */
-    struct PerspectiveState
-    {
-        bool enabled = false;  ///< Whether perspective is configured
-        ProjectionMode mode = ProjectionMode::VanishingPoint;  ///< Which projection to use
-        float horizonY = 0.0f;                                 ///< Screen-space Y of horizon line
-        float horizonScale = 1.0f;     ///< Scale at horizon (0..1 typically)
-        float viewWidth = 0.0f;        ///< Current world-view width in pixels
-        float viewHeight = 0.0f;       ///< Current world-view height in pixels
-        float sphereRadius = 2000.0f;  ///< Radius for globe projection in pixels
-    };
-
-    /**
-     * @brief Get the current perspective configuration.
-     * @return Read-only reference to the active perspective state.
-     */
-    const PerspectiveState& GetPerspectiveState() const { return m_Persp; }
-
-    /**
-     * @brief Project a 2D point using the currently configured perspective.
-     *
-     * Transforms a screen-space point through the active projection mode(s).
-     * Works even when perspective is suspended for drawing, making it useful
-     * for calculating anchor positions for no-projection structures.
-     *
-     * @par Coordinate Space
-     * **Screen space -> Screen space** (camera-relative coordinates)
-     * @code{.cpp}
-     * // Input: world position minus camera
-     * glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
-     * glm::vec2 projected = renderer.ProjectPoint(screenPos);
-     * @endcode
-     *
-     * @par Projection Modes
-     * |               Mode |  Globe Curvature  | Vanishing Point |
-     * |--------------------|-------------------|-----------------|
-     * |     VanishingPoint |        No         | Yes             |
-     * |              Globe |        Yes        | No              |
-     * |            Fisheye |        Yes        | Yes             |
-     *
-     * @par Globe Curvature (Step 1)
-     * Applies the oval radial projection used by
-     * PerspectiveTransform:
-     * @f[
-     * dx = x - center_x,\quad dy = y - center_y
-     * @f]
-
-     * * @f[
-     * d_n = \sqrt{\left(\frac{dx}{R_x}\right)^2 + \left(\frac{dy}{R_y}\right)^2}
-
-     * * @f]
-     * @f[
-     * q =
-     * \begin{cases}
-     * 1, & d_n \le \varepsilon \\
-     *
-     * \frac{\sin(d_n)}{d_n}, & d_n > \varepsilon
-     * \end{cases}
-     * @f]
-     * @f[
-     * x'
-     * = center_x + dx \cdot q,\quad y' = center_y + dy \cdot q
-     * @f]
-     *
-     * @par
-     * Vanishing Point (Step 2) Scales point toward the vanishing point @f$ V = (center_x,
-     * horizon_y) @f$ based on vertical position. Points near the horizon shrink toward center,
-     * points at screen bottom remain at full scale.
-     *
-     * @f[
-     * scale = horizonScale + (1 - horizonScale) \cdot \frac{y - horizon_y}{viewHeight - horizon_y}
-     * @f]
-     *
-     * Where:
-     * - @f$ horizon_y @f$ vertical position of the horizon line in screen coordinates
-     * - @f$ viewHeight @f$ total height of the viewport
-     * - @f$ y @f$ vertical position of the input point
-     *
-     * @f[
-     * x' = center_x + (x - center_x) \cdot scale
-     * @f]
-     *
-     * @param p Screen-space point (world position - camera position).
-     * @return Projected screen-space position.
-     *
-     * @see Tilemap::RenderSingleTile Uses this for no-projection structure anchors
-     */
-    glm::vec2 ProjectPoint(const glm::vec2& p) const;
-
-    /**
-     * @brief Compute screen position for a sphere-conforming building vertex.
-     *
-     * Given a building defined by base anchors A (left) and B (right) in screen space,
-     * this computes the projected screen position for a vertex at parametric coordinates
-     * (u, v) where @f$ u \in [0,1] @f$ spans the base width and @f$ v \in [0,1] @f$
-     * spans the building height.
-     *
-     * The base is projected onto the sphere surface (following world tile projection).
-     * Heights rise straight up from the projected base with perspective-correct scaling.
-     * A blend factor controls how much the building conforms to sphere vs rises rigidly.
-     *
-     * @param baseLeft    Screen-space position of building's bottom-left anchor (A).
-     * @param baseRight   Screen-space position of building's bottom-right anchor (B).
-     * @param u           Parametric position along base width [0=left, 1=right].
-     * @param v           Parametric position along height [0=base, 1=top].
-     * @param heightWorld Building height in world/screen units (pixels at base).
-     * @return Projected screen-space position for this vertex.
-     */
-    glm::vec2 ComputeBuildingVertex(const glm::vec2& baseLeft,
-                                    const glm::vec2& baseRight,
-                                    float u,
-                                    float v,
-                                    float heightWorld) const;
-
-    /**
-     * @brief Check if a screen-space point is behind the visible sphere edge.
-     *
-     * When globe/fisheye projection is enabled, points beyond the sphere's
-     * visible edge (90 degrees from center) are on the "back" of the sphere
-     * and should not be rendered.
-     *
-     * @param p Screen-space position (world position minus camera).
-     * @return true if the point is behind the sphere and should be culled.
-     */
-    bool IsPointBehindSphere(const glm::vec2& p) const;
-
-    /**
-     * @brief Check if a screen-space point is inside the expanded 3D viewport.
-     *
-     * When perspective is enabled, the visible viewport is expanded by the
-     * inverse of the horizon scale to prevent globe wrap-around artifacts.
-     * Use this to guard ProjectPoint calls for points that may be off-screen.
-     *
-     * @param p Screen-space position (world position minus camera).
-     * @return true if perspective is enabled and the point is within bounds.
-     */
-    bool IsPointInExpandedViewport(const glm::vec2& p) const;
-
-    /**
-     * @brief Project a point only if it is inside the expanded 3D viewport.
-     *
-     * Combines the viewport bounds check with projection. Returns the
-     * original point unchanged if perspective is disabled or the point
-     * is outside the expanded viewport.
-     *
-     * @param p Screen-space position (world position minus camera).
-     * @return Projected position, or the original point if not projectable.
-     */
-    glm::vec2 ProjectPointSafe(const glm::vec2& p) const;
 
     /**
      * @brief Set the rendering viewport.
@@ -667,112 +568,22 @@ public:
     virtual void SetViewport(int x, int y, int width, int height) = 0;
 
     /**
-     * @brief Configure vanishing point perspective.
+     * @brief Record the zoomed world-view extent, in world pixels.
      *
-     * Enables pseudo-3D depth scaling where objects closer to the horizon
-     * appear smaller and converge toward a central vanishing point.
-     * Sets projection mode to ProjectionMode::VanishingPoint.
+     * @warning This is not @ref SetViewport, which takes screen pixels. This is the
+     * world-space extent the current orthographic projection covers, i.e. exactly the
+     * width/height @ref CameraController::GetOrthoProjection was built from. Callers
+     * set both from the same pair of numbers.
      *
-     * @param enabled Whether perspective effect is active.
-     * @param horizonY Y position of the vanishing point in screen coordinates.
-     * @param horizonScale Scale factor at the horizon (.0f - 1.f). Lower values
-     *                     create stronger perspective (0.3 = 30% size at horizon).
-     * @param viewWidth Current viewport width in pixels.
-     * @param viewHeight Current viewport height in pixels.
+     * Purely a value the renderer carries for consumers that need the view extent at
+     * draw time; nothing in the renderer reacts to it.
      *
-     * @see SetGlobePerspective() For curvature only.
-     * @see SetFisheyePerspective() For combined curvature + depth scaling.
-     * @see ProjectPoint() For the projection math details.
+     * @param size Zoomed world-view width and height in world pixels.
      */
-    virtual void SetVanishingPointPerspective(
-        bool enabled, float horizonY, float horizonScale, float viewWidth, float viewHeight);
+    void SetViewSize(glm::vec2 size) { m_ViewSize = size; }
 
-    /**
-     * @brief Configure globe curvature only.
-     *
-     * Wraps the world around a virtual sphere without depth scaling.
-     * Sets projection mode to ProjectionMode::Globe.
-     *
-     * @param enabled Whether globe curvature is active.
-     * @param sphereRadius Radius of the virtual sphere in pixels. Larger values
-     *                     create subtler curvature (500 = tight curve).
-     * @param viewWidth Current viewport width in pixels.
-     * @param viewHeight Current viewport height in pixels.
-     *
-     * @see SetVanishingPointPerspective() For depth scaling only.
-     * @see SetFisheyePerspective() For combined curvature + depth scaling.
-     * @see ProjectPoint() For the projection math details.
-     */
-    virtual void SetGlobePerspective(bool enabled,
-                                     float sphereRadius,
-                                     float viewWidth,
-                                     float viewHeight);
-
-    /**
-     * @brief Configure globe curvature with vanishing point.
-     *
-     * Combines spherical curvature with vanishing point depth scaling.
-     * Sets projection mode to ProjectionMode::Fisheye.
-     *
-     * @param enabled      Whether the combined effect is active.
-     * @param sphereRadius Radius of the virtual sphere in pixels.
-     * @param horizonY     Y position of the vanishing point in screen coordinates.
-     * @param horizonScale Scale factor at the horizon (0.0-1.0). Lower values
-     *                     create stronger perspective.
-     * @param viewWidth    Current viewport width in pixels.
-     * @param viewHeight   Current viewport height in pixels.
-     *
-     * @see SetVanishingPointPerspective() For depth scaling only (no curvature).
-     * @see SetGlobePerspective() For curvature only (no depth scaling).
-     * @see ProjectPoint() For the projection math details.
-     */
-    virtual void SetFisheyePerspective(bool enabled,
-                                       float sphereRadius,
-                                       float horizonY,
-                                       float horizonScale,
-                                       float viewWidth,
-                                       float viewHeight);
-
-    /**
-     * @brief Temporarily suspend perspective effect for next draw calls.
-     *
-     * Call this before drawing elements that should not be affected by
-     * perspective (e.g., player, NPCs). Call with false to resume perspective.
-     *
-     * Reference-counted: every `suspend=true` must be balanced by exactly one
-     * `suspend=false`. Perspective is considered suspended whenever the depth
-     * is greater than zero, so nested guards are no-ops at the rendering level.
-     *
-     * @param suspend True to push a suspension, false to pop one.
-     */
-    virtual void SuspendPerspective(bool suspend);
-
-    /**
-     * @brief Whether perspective is currently suspended (depth > 0).
-     * @return true if any active suspension scope is in effect.
-     */
-    [[nodiscard]] bool IsPerspectiveSuspended() const { return m_SuspensionDepth > 0; }
-
-    /**
-     * @brief RAII guard that suspends perspective for its lifetime.
-     *
-     * Ensures perspective is always restored, even if an exception is thrown.
-     */
-    class PerspectiveSuspendGuard
-    {
-        IRenderer& m_Renderer;
-
-    public:
-        explicit PerspectiveSuspendGuard(IRenderer& r)
-            : m_Renderer(r)
-        {
-            r.SuspendPerspective(true);
-        }
-        ~PerspectiveSuspendGuard() { m_Renderer.SuspendPerspective(false); }
-
-        PerspectiveSuspendGuard(const PerspectiveSuspendGuard&) = delete;
-        PerspectiveSuspendGuard& operator=(const PerspectiveSuspendGuard&) = delete;
-    };
+    /// @brief Zoomed world-view extent in world pixels, as last given to SetViewSize().
+    [[nodiscard]] glm::vec2 GetViewSize() const { return m_ViewSize; }
 
     /**
      * @brief Clear the screen to a solid color.
@@ -794,19 +605,14 @@ public:
      * @brief Ensure a texture is uploaded to GPU memory.
      *
      * If the texture hasn't been uploaded yet, this creates the GPU resource.
-     * Safe to call
-     * multiple times.
+     * Safe to call multiple times.
      *
-     * @par Backend Notes
-     * CPU-side texture data is loaded
-     * separately by Texture. OpenGL can lazily
-     * create texture objects during draw setup,
-     * while Vulkan callers should
-     * upload required textures before the frame that samples
-     * them. A Vulkan
+     * @par Backend notes
+     * CPU-side texture data is loaded separately by Texture. OpenGL can lazily
+     * create texture objects during draw setup, while Vulkan callers should
+     * upload required textures before the frame that samples them. A Vulkan
      * draw that sees no image view may use a white fallback instead of
-     * uploading
-     * mid-render-pass.
+     * uploading mid-render-pass.
      *
      * @param texture Texture to upload.
      */
@@ -817,7 +623,7 @@ public:
      *
      * Renders a text string using the backend's loaded glyph resources.
      *
-     * @par Font Rendering
+     * @par Font rendering
      * Backends may implement text differently (atlas-based or per-glyph
      * textures), but both render each character as textured quads.
      *
@@ -863,15 +669,19 @@ public:
     /**
      * @brief Draw text using a large (headline) glyph atlas.
      *
-     * The default body atlas is rasterized at ~24 px and visibly blurs when
-     * scaled up beyond ~2x. Backends may load a second, higher-resolution
-     * atlas (~96 px) to keep title/headline text crisp without scaling.
+     * A backend's body and headline atlases differ in their logical size - the
+     * size a `scale` of 1.0 means - not necessarily in bake resolution. The
+     * OpenGL backend bakes both at 96 px and normalizes the body atlas's glyph
+     * metrics down to a logical 24 px, so body text is supersampled 4x rather
+     * than blurry; what a headline atlas buys is a logical size of 96 px, i.e.
+     * large text without multiplying `scale`.
      *
      * Default fallback: scales the body atlas by an internal multiplier so
-     * existing call sites still work, just without the headline crispness.
+     * existing call sites still work. Backends whose body atlas is baked at its
+     * logical size get visibly soft headlines from that path.
      *
      * Parameters mirror @ref DrawText. @p scale is interpreted relative to
-     * the headline atlas's native size (typically 96 px).
+     * the headline atlas's logical size (96 px in the OpenGL backend).
      */
     virtual void DrawTextLarge(const std::string& text,
                                glm::vec2 position,
@@ -931,17 +741,8 @@ public:
     [[nodiscard]] virtual RendererInfo GetBackendInfo() const = 0;
 
 protected:
-    /// @name Perspective State (shared by all renderers)
-    /// @{
-    /**
-     * Reference count for nested `SuspendPerspective` calls. Perspective is
-     * suspended whenever this is greater than zero. Toggling between 0 and 1
-     * is the only transition the OpenGL backend treats as a real state
-     * change (and thus the only one that flushes batch buffers).
-     */
-    int m_SuspensionDepth = 0;
-    PerspectiveState m_Persp;
-    /// @}
+    /// Zoomed world-view extent in world pixels; see SetViewSize().
+    glm::vec2 m_ViewSize{0.0f};
 
     /**
      * @brief Rotate four quad corners around the sprite center.
