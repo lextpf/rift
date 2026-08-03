@@ -77,6 +77,9 @@ struct CombinedPushConstants
     glm::vec3 ambientColor;  // 160-171
     float spriteAlpha;       // 172-175
 };
+// This pins the block against the shader layout only. 176 bytes is above Vulkan's
+// guaranteed maxPushConstantsSize of 128, and the limit is never queried, so the backend
+// silently requires a device that advertises at least 176.
 static_assert(sizeof(CombinedPushConstants) == 176,
               "CombinedPushConstants must be 176 bytes to match SPIR-V shader layout");
 
@@ -154,15 +157,18 @@ bool VulkanRenderer::Init()
         CreateLogicalDevice();
         CreateSwapchain();
         CreateImageViews();
+        // Depth resources first: CreateRenderPass needs m_DepthFormat, and
+        // CreateFramebuffers needs m_DepthImageView.
+        CreateDepthResources();
         CreateRenderPass();
         CreateGraphicsPipeline();
+        CreatePipeline3D();
         CreateFramebuffers();
         CreateCommandPool();
         // Shared fence must exist before the first upload.
         CreateSyncObjects();
         CreateBuffers();
         CreateDescriptorPool();
-        CreatePerspectiveUBO();
         CreateTextureSampler();
         CreateWhiteTexture();
         LoadFont();
@@ -255,11 +261,6 @@ void VulkanRenderer::Shutdown()
                 vkUnmapMemory(m_Device, m_VertexBufferMemories[i]);
                 m_VertexBuffersMapped[i] = nullptr;
             }
-            if (m_PerspUBOMapped[i])
-            {
-                vkUnmapMemory(m_Device, m_PerspUBOMemories[i]);
-                m_PerspUBOMapped[i] = nullptr;
-            }
         }
 
         // Release Vulkan resources owned by uploaded Texture objects. Must run
@@ -300,16 +301,6 @@ void VulkanRenderer::Shutdown()
             if (m_VertexBufferMemories[i] != VK_NULL_HANDLE)
             {
                 vkFreeMemory(m_Device, m_VertexBufferMemories[i], nullptr);
-            }
-            if (m_PerspUBOBuffers[i] != VK_NULL_HANDLE)
-            {
-                vkDestroyBuffer(m_Device, m_PerspUBOBuffers[i], nullptr);
-                m_PerspUBOBuffers[i] = VK_NULL_HANDLE;
-            }
-            if (m_PerspUBOMemories[i] != VK_NULL_HANDLE)
-            {
-                vkFreeMemory(m_Device, m_PerspUBOMemories[i], nullptr);
-                m_PerspUBOMemories[i] = VK_NULL_HANDLE;
             }
         }
 
@@ -364,11 +355,6 @@ void VulkanRenderer::Shutdown()
         {
             vkDestroyDescriptorSetLayout(m_Device, m_DescriptorSetLayout, nullptr);
         }
-        if (m_PerspDescriptorSetLayout != VK_NULL_HANDLE)
-        {
-            vkDestroyDescriptorSetLayout(m_Device, m_PerspDescriptorSetLayout, nullptr);
-            m_PerspDescriptorSetLayout = VK_NULL_HANDLE;
-        }
 
         if (m_TransferFence != VK_NULL_HANDLE)
         {
@@ -407,6 +393,40 @@ void VulkanRenderer::Shutdown()
         {
             vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
         }
+
+        for (auto& depthRow : m_Pipeline3D)
+        {
+            for (VkPipeline& pipeline : depthRow)
+            {
+                if (pipeline != VK_NULL_HANDLE)
+                {
+                    vkDestroyPipeline(m_Device, pipeline, nullptr);
+                    pipeline = VK_NULL_HANDLE;
+                }
+            }
+        }
+        if (m_Pipeline3DLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyPipelineLayout(m_Device, m_Pipeline3DLayout, nullptr);
+            m_Pipeline3DLayout = VK_NULL_HANDLE;
+        }
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            if (m_Vertex3DBuffers[i] != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(m_Device, m_Vertex3DBuffers[i], nullptr);
+                m_Vertex3DBuffers[i] = VK_NULL_HANDLE;
+            }
+            if (m_Vertex3DMemories[i] != VK_NULL_HANDLE)
+            {
+                // Persistently mapped; freeing the memory implicitly unmaps it.
+                vkFreeMemory(m_Device, m_Vertex3DMemories[i], nullptr);
+                m_Vertex3DMemories[i] = VK_NULL_HANDLE;
+                m_Vertex3DMapped[i] = nullptr;
+            }
+        }
+        DestroyDepthResources();
+
         if (m_RenderPass != VK_NULL_HANDLE)
         {
             vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
@@ -449,6 +469,8 @@ void VulkanRenderer::Shutdown()
 // swapchain itself) ahead of a resize-driven recreate. Leaves the device intact.
 void VulkanRenderer::CleanupSwapchain()
 {
+    DestroyDepthResources();
+
     for (auto framebuffer : m_SwapchainFramebuffers)
     {
         vkDestroyFramebuffer(m_Device, framebuffer, nullptr);
@@ -492,13 +514,19 @@ void VulkanRenderer::RecreateSwapchain()
 
     CreateSwapchain();
     CreateImageViews();
+    // The depth image is sized to the swapchain extent, so it is recreated with
+    // it. The render pass and pipelines survive: the depth FORMAT is unchanged,
+    // and only the attachment's dimensions moved.
+    CreateDepthResources();
     CreateFramebuffers();
 
     m_FramebufferResized = false;
 }
 
-// Create the VkInstance with the GLFW-required extensions, wiring up the debug
-// messenger and validation layers in debug builds.
+// Create the VkInstance with the GLFW-required extensions and, in debug builds, the
+// validation layers plus a pNext-chained debug-messenger create-info. No persistent
+// messenger is created, so that callback covers instance creation and destruction only -
+// runtime validation messages go to the layer's default output, not to Logger.
 void VulkanRenderer::CreateInstance()
 {
     VkApplicationInfo appInfo{};
@@ -562,14 +590,14 @@ void VulkanRenderer::CreateInstance()
     VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 }
 
-// Create the window surface we render into (platform-specific, delegated to GLFW).
+// Create the window surface rendered into. Platform-specific, so it is delegated to GLFW.
 void VulkanRenderer::CreateSurface()
 {
     VK_CHECK(glfwCreateWindowSurface(m_Instance, m_Window, nullptr, &m_Surface));
 }
 
 // Select the first GPU that exposes both a graphics queue family and a queue that
-// can present to our surface, recording those family indices. Throws if none fits.
+// can present to the surface, recording those family indices. Throws if none fits.
 void VulkanRenderer::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
@@ -831,11 +859,109 @@ void VulkanRenderer::CreateImageViews()
     }
 }
 
-// Create the single-subpass render pass: one color attachment cleared on load and
-// stored for present, with an external dependency ordering the color-output stage.
+// Choose the best supported depth format. D32_SFLOAT first: 32 bits of float depth
+// costs the same bandwidth as D24S8 on modern hardware and avoids the precision
+// cliff a 24-bit integer format hits when the camera dollies out.
+VkFormat VulkanRenderer::FindDepthFormat() const
+{
+    const VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+
+    for (VkFormat format : candidates)
+    {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(m_PhysicalDevice, format, &props);
+        if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
+        {
+            return format;
+        }
+    }
+
+    // Guaranteed by the spec to be supported as a depth attachment, so this is a
+    // real fallback rather than a failure path.
+    return VK_FORMAT_D16_UNORM;
+}
+
+void VulkanRenderer::CreateDepthResources()
+{
+    m_DepthFormat = FindDepthFormat();
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = m_SwapchainExtent.width;
+    imageInfo.extent.height = m_SwapchainExtent.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = m_DepthFormat;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK(vkCreateImage(m_Device, &imageInfo, nullptr, &m_DepthImage));
+
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(m_Device, m_DepthImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    VK_CHECK(vkAllocateMemory(m_Device, &allocInfo, nullptr, &m_DepthImageMemory));
+    VK_CHECK(vkBindImageMemory(m_Device, m_DepthImage, m_DepthImageMemory, 0));
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = m_DepthImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = m_DepthFormat;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VK_CHECK(vkCreateImageView(m_Device, &viewInfo, nullptr, &m_DepthImageView));
+
+    // No explicit layout transition: the render pass declares initialLayout
+    // UNDEFINED and its CLEAR load op writes every texel, so the first use
+    // inside the pass performs the transition.
+}
+
+void VulkanRenderer::DestroyDepthResources()
+{
+    if (m_DepthImageView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(m_Device, m_DepthImageView, nullptr);
+        m_DepthImageView = VK_NULL_HANDLE;
+    }
+    if (m_DepthImage != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(m_Device, m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+    }
+    if (m_DepthImageMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(m_Device, m_DepthImageMemory, nullptr);
+        m_DepthImageMemory = VK_NULL_HANDLE;
+    }
+}
+
+// Create the single-subpass render pass shared by the 2D and world-space paths: two
+// attachments (0 = color, cleared on load and stored as PRESENT_SRC; 1 = depth, cleared
+// on load and DONT_CARE on store so a tiler can discard it) and one VK_SUBPASS_EXTERNAL
+// dependency covering both the color-output and early-fragment-test stages.
+// Requires m_DepthFormat, so CreateDepthResources() must run first.
 void VulkanRenderer::CreateRenderPass()
 {
-    VkAttachmentDescription colorAttachment{};
+    VkAttachmentDescription attachments[2]{};
+
+    VkAttachmentDescription& colorAttachment = attachments[0];
     colorAttachment.format = m_SwapchainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -845,27 +971,49 @@ void VulkanRenderer::CreateRenderPass()
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    // Depth is cleared every frame and never read afterwards, so it does not
+    // need to be stored - DONT_CARE lets a tiler discard it entirely.
+    VkAttachmentDescription& depthAttachment = attachments[1];
+    depthAttachment.format = m_DepthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
+    // The dependency now has to cover the depth attachment as well as color,
+    // hence the early/late fragment-test stages and the depth write access bit.
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = 2;
+    renderPassInfo.pAttachments = attachments;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -874,10 +1022,11 @@ void VulkanRenderer::CreateRenderPass()
     VK_CHECK(vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass));
 }
 
-// Build the one graphics pipeline shared by every draw: the SpriteVertex input
-// layout (pos + uv + perspectiveFlag), alpha blending, dynamic viewport/scissor (for
-// the Y-flip), the combined 176-byte push-constant range, and two descriptor sets
-// (set 0 = per-draw sampler, set 1 = per-frame perspective UBO). Loads the SPIR-V
+// Build the one graphics pipeline shared by every 2D draw: the SpriteVertex input
+// layout (pos + uv), alpha blending, dynamic viewport/scissor (for the Y-flip), the
+// combined 176-byte push-constant range, and a single descriptor set layout
+// (set 0, binding 0 = combined image sampler, fragment stage). All per-draw data
+// travels in push constants; this backend has no uniform buffer. Loads the SPIR-V
 // shaders and throws if they are missing or the pipeline fails to create.
 void VulkanRenderer::CreateGraphicsPipeline()
 {
@@ -886,10 +1035,10 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(float) * 5;  // pos + tex + perspectiveFlag
+    bindingDescription.stride = sizeof(SpriteVertex);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributeDescriptions[3]{};
+    VkVertexInputAttributeDescription attributeDescriptions[2]{};
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -900,16 +1049,11 @@ void VulkanRenderer::CreateGraphicsPipeline()
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[1].offset = sizeof(float) * 2;
 
-    attributeDescriptions[2].binding = 0;
-    attributeDescriptions[2].location = 3;
-    attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
-    attributeDescriptions[2].offset = sizeof(float) * 4;
-
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = 3;
+    vertexInputInfo.vertexAttributeDescriptionCount = 2;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -994,29 +1138,10 @@ void VulkanRenderer::CreateGraphicsPipeline()
 
     VK_CHECK(vkCreateDescriptorSetLayout(m_Device, &layoutInfo, nullptr, &m_DescriptorSetLayout));
 
-    // Set 1: frame-stable perspective UBO (vertex stage). Layout matches the
-    // GLSL `PerspectiveBlock` in shaders/Geometry.vert.
-    VkDescriptorSetLayoutBinding perspBinding{};
-    perspBinding.binding = 0;
-    perspBinding.descriptorCount = 1;
-    perspBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    perspBinding.pImmutableSamplers = nullptr;
-    perspBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo perspLayoutInfo{};
-    perspLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    perspLayoutInfo.bindingCount = 1;
-    perspLayoutInfo.pBindings = &perspBinding;
-
-    VK_CHECK(vkCreateDescriptorSetLayout(
-        m_Device, &perspLayoutInfo, nullptr, &m_PerspDescriptorSetLayout));
-
-    VkDescriptorSetLayout setLayouts[2] = {m_DescriptorSetLayout, m_PerspDescriptorSetLayout};
-
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 2;
-    pipelineLayoutInfo.pSetLayouts = setLayouts;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -1079,6 +1204,18 @@ void VulkanRenderer::CreateGraphicsPipeline()
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
+    // Required now that the subpass has a depth attachment: a pipeline used with
+    // such a subpass may not leave pDepthStencilState null. The 2D sprite path is
+    // screen-space UI and must keep ignoring depth entirely, so everything here
+    // is disabled - this is a compliance requirement, not a behavior change.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.stageCount = 2;
@@ -1088,6 +1225,7 @@ void VulkanRenderer::CreateGraphicsPipeline()
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_PipelineLayout;
@@ -1149,6 +1287,206 @@ void VulkanRenderer::CreateGraphicsPipeline()
     Logger::Debug(LOG_SUBSYSTEM, "CreateGraphicsPipeline() complete!");
 }
 
+// Build the world-space Geometry3D pipelines - one per (DepthMode, BlendMode)
+// combination, because Vulkan bakes both into the pipeline object rather than
+// exposing them as dynamic state on a baseline device.
+//
+// Failure here is non-fatal and deliberately so: the 2D path is untouched and
+// fully functional, so a missing Geometry3D.spv degrades to "world does not draw
+// on Vulkan" with a clear log line, rather than refusing to start the game.
+void VulkanRenderer::CreatePipeline3D()
+{
+    const std::vector<uint32_t> vertCode = VulkanShader::LoadSPIRV("shaders/Geometry3D.vert.spv");
+    const std::vector<uint32_t> fragCode = VulkanShader::LoadSPIRV("shaders/Geometry3D.frag.spv");
+    if (vertCode.empty() || fragCode.empty())
+    {
+        Logger::Warn(LOG_SUBSYSTEM,
+                     "Geometry3D SPIR-V not found - the world 3D path is disabled on Vulkan. "
+                     "Run build.bat to compile shaders.");
+        return;
+    }
+
+    // Reuses the 2D m_DescriptorSetLayout (set 0, binding 0 = combined image
+    // sampler), so both paths share one descriptor cache. Only the push-constant
+    // range differs: Push3D is 80 bytes against CombinedPushConstants' 176.
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(Push3D);
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &m_DescriptorSetLayout;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushRange;
+
+    VK_CHECK(vkCreatePipelineLayout(m_Device, &layoutInfo, nullptr, &m_Pipeline3DLayout));
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(Vertex3D);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributes[3]{};
+    attributes[0].binding = 0;
+    attributes[0].location = 0;
+    attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;  // vec3 scene position
+    attributes[0].offset = 0;
+    attributes[1].binding = 0;
+    attributes[1].location = 1;
+    attributes[1].format = VK_FORMAT_R32G32_SFLOAT;  // vec2 uv
+    attributes[1].offset = sizeof(float) * 3;
+    attributes[2].binding = 0;
+    attributes[2].location = 2;
+    attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;  // vec4 rgba
+    attributes[2].offset = sizeof(float) * 5;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 3;
+    vertexInput.pVertexAttributeDescriptions = attributes;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(m_SwapchainExtent.width);
+    viewport.height = static_cast<float>(m_SwapchainExtent.height);
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_SwapchainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    // No back-face culling: billboards are viewed from both sides as the camera
+    // orbits past them, and ground quads flip winding under the Y-flipped
+    // viewport. Pokemon DS Map Studio disables culling in its map view for the
+    // same reason.
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    const std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
+                                                       VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkShaderModule vertModule = VulkanShader::CreateShaderModule(m_Device, vertCode);
+    VkShaderModule fragModule = VulkanShader::CreateShaderModule(m_Device, fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertModule;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragModule;
+    stages[1].pName = "main";
+
+    bool allCreated = true;
+    for (std::size_t depthIndex = 0; depthIndex < renderModes::DEPTH_MODE_COUNT; ++depthIndex)
+    {
+        const auto depthMode = static_cast<renderModes::DepthMode>(depthIndex);
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable =
+            (depthMode == renderModes::DepthMode::None) ? VK_FALSE : VK_TRUE;
+        depthStencil.depthWriteEnable =
+            (depthMode == renderModes::DepthMode::TestAndWrite) ? VK_TRUE : VK_FALSE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
+        depthStencil.stencilTestEnable = VK_FALSE;
+
+        for (std::size_t blendIndex = 0; blendIndex < renderModes::BLEND_MODE_COUNT; ++blendIndex)
+        {
+            const auto blendMode = static_cast<renderModes::BlendMode>(blendIndex);
+
+            VkPipelineColorBlendAttachmentState blendAttachment{};
+            blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = (blendMode == renderModes::BlendMode::Additive)
+                                                      ? VK_BLEND_FACTOR_ONE
+                                                      : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+            VkPipelineColorBlendStateCreateInfo colorBlending{};
+            colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+            colorBlending.logicOpEnable = VK_FALSE;
+            colorBlending.attachmentCount = 1;
+            colorBlending.pAttachments = &blendAttachment;
+
+            VkGraphicsPipelineCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+            info.stageCount = 2;
+            info.pStages = stages;
+            info.pVertexInputState = &vertexInput;
+            info.pInputAssemblyState = &inputAssembly;
+            info.pViewportState = &viewportState;
+            info.pRasterizationState = &rasterizer;
+            info.pMultisampleState = &multisampling;
+            info.pDepthStencilState = &depthStencil;
+            info.pColorBlendState = &colorBlending;
+            info.pDynamicState = &dynamicState;
+            info.layout = m_Pipeline3DLayout;
+            info.renderPass = m_RenderPass;
+            info.subpass = 0;
+            info.basePipelineHandle = VK_NULL_HANDLE;
+
+            const VkResult result = vkCreateGraphicsPipelines(
+                m_Device, VK_NULL_HANDLE, 1, &info, nullptr, &m_Pipeline3D[depthIndex][blendIndex]);
+            if (result != VK_SUCCESS)
+            {
+                allCreated = false;
+                Logger::ErrorF(LOG_SUBSYSTEM,
+                               "Geometry3D pipeline creation failed (depth={}, blend={}): {}",
+                               EnumTraits<renderModes::DepthMode>::ToString(depthMode),
+                               EnumTraits<renderModes::BlendMode>::ToString(blendMode),
+                               static_cast<int>(result));
+                m_Pipeline3D[depthIndex][blendIndex] = VK_NULL_HANDLE;
+            }
+        }
+    }
+
+    vkDestroyShaderModule(m_Device, fragModule, nullptr);
+    vkDestroyShaderModule(m_Device, vertModule, nullptr);
+
+    if (allCreated)
+    {
+        Logger::Debug(LOG_SUBSYSTEM, "Geometry3D pipelines created");
+    }
+}
+
 // Create one framebuffer per swapchain image view, bound to the render pass.
 void VulkanRenderer::CreateFramebuffers()
 {
@@ -1156,12 +1494,15 @@ void VulkanRenderer::CreateFramebuffers()
 
     for (size_t i = 0; i < m_SwapchainImageViews.size(); i++)
     {
-        VkImageView attachments[] = {m_SwapchainImageViews[i]};
+        // One depth buffer shared by every swapchain framebuffer. Safe because
+        // rendering is serialized on a single queue and the depth contents never
+        // outlive the frame that cleared them.
+        VkImageView attachments[] = {m_SwapchainImageViews[i], m_DepthImageView};
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = m_RenderPass;
-        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.attachmentCount = 2;
         framebufferInfo.pAttachments = attachments;
         framebufferInfo.width = m_SwapchainExtent.width;
         framebufferInfo.height = m_SwapchainExtent.height;
@@ -1183,7 +1524,10 @@ void VulkanRenderer::CreateCommandPool()
     VK_CHECK(vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_CommandPool));
 }
 
-// Allocate one primary command buffer per swapchain framebuffer.
+// Allocate one primary command buffer per swapchain framebuffer. Note the index domains
+// differ: every recording site uses m_CurrentFrame (0..MAX_FRAMES_IN_FLIGHT-1), so any
+// surplus buffers are never recorded. RecreateSwapchain does not run this, so the vector
+// keeps its Init-time size even when the new swapchain reports a different image count.
 void VulkanRenderer::CreateCommandBuffers()
 {
     m_CommandBuffers.resize(m_SwapchainFramebuffers.size());
@@ -1222,8 +1566,8 @@ void VulkanRenderer::CreateSyncObjects()
         VK_CHECK(vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[i]));
     }
 
-    // Transfer fence for synchronous buffer/image uploads. Not SIGNALED -
-    // we reset before each use.
+    // Transfer fence for synchronous buffer and image uploads. Not created SIGNALED,
+    // because it is reset before each use.
     VkFenceCreateInfo transferFenceInfo{};
     transferFenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     VK_CHECK(vkCreateFence(m_Device, &transferFenceInfo, nullptr, &m_TransferFence));
@@ -1358,29 +1702,24 @@ std::vector<const char*> VulkanRenderer::GetRequiredExtensions()
     return extensions;
 }
 
-// Start a frame: reset per-frame batch state, refresh this frame's perspective UBO,
-// wait on the in-flight fence, and acquire the next swapchain image (recreating the
-// swapchain on OUT_OF_DATE). Then begin the command buffer + render pass and bind the
-// pipeline with a Y-flipped dynamic viewport (to match OpenGL's coordinate space).
+// Start a frame: reset per-frame batch and 3D-bind state, wait on the in-flight fence,
+// and acquire the next swapchain image (recreating the swapchain on OUT_OF_DATE). Then
+// begin the command buffer + render pass and bind the pipeline with a Y-flipped dynamic
+// viewport (to match OpenGL's coordinate space).
 void VulkanRenderer::BeginFrame()
 {
-    // Suspension depth must net to zero across frames: any unbalanced
-    // SuspendPerspective call inside the frame would leak depth and
-    // gradually disable perspective entirely.
-    assert(m_SuspensionDepth == 0 && "SuspendPerspective leaked depth across BeginFrame");
-
     m_FrameActive = false;
 
     m_CurrentVertexCount = 0;
+    m_Current3DVertexCount = 0;
+    // Pipeline bindings do not survive a command buffer, so the cached "already
+    // bound" handle must be cleared or the first 3D draw of the frame would skip
+    // its bind and inherit the 2D pipeline.
+    m_Bound3DPipeline = VK_NULL_HANDLE;
     m_BatchImageView = VK_NULL_HANDLE;
     m_BatchDescriptorSet = VK_NULL_HANDLE;
     m_BatchStartVertex = 0;
     m_DrawCallCount = 0;
-
-    // Refresh the perspective UBO for the current frame's index before any
-    // draws read from it. The previous frame's UBO is still being consumed by
-    // the GPU at this point - we only touch the slot we're about to record.
-    UpdatePerspectiveUBO();
 
     if (m_Device == VK_NULL_HANDLE || m_Swapchain == VK_NULL_HANDLE)
     {
@@ -1484,9 +1823,13 @@ void VulkanRenderer::BeginFrame()
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_SwapchainExtent;
 
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    // One clear value per attachment, in attachment order. Depth clears to 1.0
+    // (the far plane) so LESS_OR_EQUAL accepts the first fragment at any depth.
+    VkClearValue clearValues[2]{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = 2;
+    renderPassInfo.pClearValues = clearValues;
 
     vkCmdBeginRenderPass(
         m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -1499,6 +1842,11 @@ void VulkanRenderer::BeginFrame()
 
         // Dynamic viewport with Y-flip to match OpenGL. Uses VK_KHR_maintenance1
         // behavior (core in Vulkan 1.1+): negative height flips Y.
+        //
+        // Neither precondition is declared: CreateInstance requests apiVersion 1.0 and
+        // CreateLogicalDevice enables only VK_KHR_SWAPCHAIN. The flip therefore relies on
+        // de-facto driver behavior and trips VUID-VkViewport-height-01773 under the
+        // validation layers on a strict 1.0 device.
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = static_cast<float>(m_SwapchainExtent.height);
@@ -1524,8 +1872,8 @@ void VulkanRenderer::BeginFrame()
 void VulkanRenderer::BeginScene()
 {
     // Vulkan Post-FX is a later phase - the path currently renders directly
-    // to swapchain without bloom/grading/vignette/grain. F1 still toggles;
-    // Vulkan users see the unprocessed scene.
+    // to swapchain without bloom/grading/vignette/grain. The `postfx` console
+    // command still toggles the flag; Vulkan users see the unprocessed scene.
 }
 
 // PostFX composite hook. No-op on Vulkan for now (see BeginScene).
@@ -1555,9 +1903,8 @@ void VulkanRenderer::EndFrame()
     if (m_CurrentFrame >= m_CommandBuffers.size())
     {
         Logger::Error(LOG_SUBSYSTEM, "CurrentFrame out of bounds in EndFrame!");
-        // BeginFrame signaled image-available - if we bail without submitting,
-        // that signal never gets consumed and the next acquire on the same
-        // slot is illegal.
+        // BeginFrame signaled image-available. Bailing out without submitting leaves that
+        // signal unconsumed, which makes the next acquire on the same slot illegal.
         RecreateImageAvailableSemaphore(m_CurrentFrame);
         m_FrameActive = false;
         return;
@@ -1690,12 +2037,198 @@ void VulkanRenderer::SetViewport(int x, int y, int width, int height)
     }
 }
 
-// Set the projection matrix for subsequent draws. Flushes the current batch first
-// since the matrix is a push constant and cannot change mid-batch.
+// Set the projection matrix for subsequent draws. The FlushSpriteBatch call is the
+// structural mirror of the OpenGL path (projection is a push constant, so a real
+// batch could not span a change); here it is inert, because SubmitQuad copies
+// m_Projection into each quad's push constants and draws it on the spot.
 void VulkanRenderer::SetProjection(const glm::mat4& projection)
 {
     FlushSpriteBatch();
     m_Projection = projection;
+}
+
+// World-space 3D draw. Records one draw per quad, matching how every other
+// Vulkan draw path here works (SubmitQuad does the same for 2D).
+void VulkanRenderer::DrawQuad3D(const Texture& texture,
+                                const glm::vec3 corners[4],
+                                glm::vec2 texCoord,
+                                glm::vec2 texSize,
+                                glm::vec4 color,
+                                renderModes::BlendMode blend,
+                                renderModes::DepthMode depth,
+                                bool flipY,
+                                bool tileFlipX,
+                                bool tileFlipY)
+{
+    if (!m_FrameActive || m_Pipeline3DLayout == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    const auto depthIndex = static_cast<std::size_t>(depth);
+    const auto blendIndex = static_cast<std::size_t>(blend);
+    VkPipeline pipeline = m_Pipeline3D[depthIndex][blendIndex];
+    if (pipeline == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    const uint32_t maxVertices = static_cast<uint32_t>(m_Vertex3DBufferSize / sizeof(Vertex3D));
+    if (m_Current3DVertexCount + 6 > maxVertices)
+    {
+        return;
+    }
+
+    // Resolve the texture the same way the 2D paths do, falling back to the
+    // white texture when it has not been uploaded yet.
+    VkImageView imageView = texture.GetVulkanImageView();
+    if (imageView == VK_NULL_HANDLE)
+    {
+        imageView = m_WhiteTextureImageView;
+    }
+    VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(imageView);
+    if (descriptorSet == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    const float texW = static_cast<float>(texture.GetWidth());
+    const float texH = static_cast<float>(texture.GetHeight());
+    if (texW <= 0.0f || texH <= 0.0f)
+    {
+        return;
+    }
+
+    // UV derivation matches OpenGLRenderer::DrawQuad3D exactly; the two must
+    // agree or the backends would sample different texels for the same call.
+    float u0 = texCoord.x / texW;
+    float u1 = (texCoord.x + texSize.x) / texW;
+
+    float v0 = 0.0f;
+    float v1 = 0.0f;
+    if (flipY)
+    {
+        v0 = (texH - (texCoord.y + texSize.y)) / texH;
+        v1 = (texH - texCoord.y) / texH;
+    }
+    else
+    {
+        v0 = texCoord.y / texH;
+        v1 = (texCoord.y + texSize.y) / texH;
+    }
+
+    if (tileFlipX)
+    {
+        std::swap(u0, u1);
+    }
+    if (tileFlipY)
+    {
+        std::swap(v0, v1);
+    }
+
+    const glm::vec2 uvs[4] = {{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}};
+
+    auto makeVertex = [&](int corner)
+    {
+        return Vertex3D{corners[corner].x,
+                        corners[corner].y,
+                        corners[corner].z,
+                        uvs[corner].x,
+                        uvs[corner].y,
+                        color.r,
+                        color.g,
+                        color.b,
+                        color.a};
+    };
+
+    // Two triangles: (TL, BR, BL) and (TL, TR, BR) - same winding as OpenGL.
+    const Vertex3D vertices[6] = {
+        makeVertex(0),
+        makeVertex(2),
+        makeVertex(3),
+        makeVertex(0),
+        makeVertex(1),
+        makeVertex(2),
+    };
+
+    auto* mapped = static_cast<Vertex3D*>(m_Vertex3DMapped[m_CurrentFrame]);
+    memcpy(&mapped[m_Current3DVertexCount], vertices, sizeof(vertices));
+
+    VkCommandBuffer commandBuffer = m_CommandBuffers[m_CurrentFrame];
+
+    if (m_Bound3DPipeline != pipeline)
+    {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        m_Bound3DPipeline = pipeline;
+
+        // Viewport/scissor are dynamic state and belong to the command buffer,
+        // not the pipeline, so they survive the rebind - but the Y-flip must be
+        // re-applied because BeginFrame set it before any 3D pipeline existed.
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = static_cast<float>(m_SwapchainExtent.height);
+        viewport.width = static_cast<float>(m_SwapchainExtent.width);
+        viewport.height = -static_cast<float>(m_SwapchainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = m_SwapchainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    }
+
+    Push3D push{};
+    push.viewProjection = m_ViewProjection;
+    push.ambientColor = m_AmbientColor;
+    // Only the depth-writing pass cuts out. A discarded fragment writes no depth,
+    // which is what removes the need to sort opaque geometry; the translucent
+    // pass must keep partially transparent texels and so drops only empty ones.
+    push.alphaCutoff = (depth == renderModes::DepthMode::TestAndWrite)
+                           ? renderModes::OPAQUE_ALPHA_CUTOFF
+                           : (1.0f / 255.0f);
+
+    vkCmdPushConstants(commandBuffer,
+                       m_Pipeline3DLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0,
+                       sizeof(Push3D),
+                       &push);
+
+    vkCmdBindDescriptorSets(commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_Pipeline3DLayout,
+                            0,
+                            1,
+                            &descriptorSet,
+                            0,
+                            nullptr);
+
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_Vertex3DBuffers[m_CurrentFrame], offsets);
+
+    vkCmdDraw(commandBuffer, 6, 1, m_Current3DVertexCount, 0);
+    ++m_DrawCallCount;
+    m_Current3DVertexCount += 6;
+}
+
+// Store the world matrix, corrected for Vulkan's clip space.
+void VulkanRenderer::SetViewProjection(const glm::mat4& viewProjection)
+{
+    // cameraRig builds GL-convention matrices, whose clip-space Z spans [-w, w].
+    // Vulkan expects [0, w], so without this remap everything nearer than the
+    // midpoint of the depth range would be clipped away. Y is deliberately not
+    // flipped here - the negative-height dynamic viewport already handles that,
+    // and doing it twice would invert the world.
+    //
+    //     Z_vk = (Z_gl + W) / 2
+    //
+    glm::mat4 clipCorrection(1.0f);
+    clipCorrection[2][2] = 0.5f;
+    clipCorrection[3][2] = 0.5f;
+
+    m_ViewProjection = clipCorrection * viewProjection;
 }
 
 // No-op: the color clear happens in BeginFrame via the render pass load op.
@@ -1704,31 +2237,22 @@ void VulkanRenderer::Clear(float r, float g, float b, float a)
     // No-op: clear is handled in BeginFrame via the render pass.
 }
 
-// Expand four quad corners and their UVs into the six vertices of two triangles,
-// tagging each with perspectiveFlag (1 = apply the globe/vanishing-point warp in the
-// shader, 0 = screen-space / no warp).
+// Expand four quad corners and their UVs into the six vertices of two triangles.
 void VulkanRenderer::BuildQuadVertices(SpriteVertex outVertices[6],
                                        const glm::vec2 corners[4],
-                                       const glm::vec2 texCoords[4],
-                                       float perspectiveFlag)
+                                       const glm::vec2 texCoords[4])
 {
-    outVertices[0] = {
-        {corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}, perspectiveFlag};
-    outVertices[1] = {
-        {corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}, perspectiveFlag};
-    outVertices[2] = {
-        {corners[3].x, corners[3].y}, {texCoords[3].x, texCoords[3].y}, perspectiveFlag};
-    outVertices[3] = {
-        {corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}, perspectiveFlag};
-    outVertices[4] = {
-        {corners[1].x, corners[1].y}, {texCoords[1].x, texCoords[1].y}, perspectiveFlag};
-    outVertices[5] = {
-        {corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}, perspectiveFlag};
+    outVertices[0] = {{corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}};
+    outVertices[1] = {{corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}};
+    outVertices[2] = {{corners[3].x, corners[3].y}, {texCoords[3].x, texCoords[3].y}};
+    outVertices[3] = {{corners[0].x, corners[0].y}, {texCoords[0].x, texCoords[0].y}};
+    outVertices[4] = {{corners[1].x, corners[1].y}, {texCoords[1].x, texCoords[1].y}};
+    outVertices[5] = {{corners[2].x, corners[2].y}, {texCoords[2].x, texCoords[2].y}};
 }
 
 // Append one quad's six vertices to this frame's vertex buffer and record an
-// immediate 6-vertex draw with the given color/alpha/color-only push constants (plus
-// the per-frame perspective UBO). Returns false if there is no active frame or the
+// immediate 6-vertex draw with the given color/alpha/color-only push constants.
+// Returns false if there is no active frame or the
 // vertex buffer is full.
 bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                                 const SpriteVertex vertices[6],
@@ -1747,6 +2271,17 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
 
     SpriteVertex* mapped = static_cast<SpriteVertex*>(m_VertexBuffersMapped[m_CurrentFrame]);
     memcpy(&mapped[m_CurrentVertexCount], vertices, sizeof(SpriteVertex) * 6);
+
+    // A 3D draw earlier in this frame left one of the Geometry3D pipelines bound.
+    // Pipeline binding is command-buffer state, so the 2D path must claim it back
+    // before recording - otherwise UI would be rasterized with the world's vertex
+    // layout and depth state.
+    if (m_Bound3DPipeline != VK_NULL_HANDLE && m_GraphicsPipeline != VK_NULL_HANDLE)
+    {
+        vkCmdBindPipeline(
+            m_CommandBuffers[m_CurrentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipeline);
+        m_Bound3DPipeline = VK_NULL_HANDLE;
+    }
 
     CombinedPushConstants pc;
 
@@ -1777,16 +2312,6 @@ bool VulkanRenderer::SubmitQuad(VkDescriptorSet descriptorSet,
                             0,
                             1,
                             &descriptorSet,
-                            0,
-                            nullptr);
-
-    // Set 1: perspective UBO (per-frame).
-    vkCmdBindDescriptorSets(commandBuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_PipelineLayout,
-                            1,
-                            1,
-                            &m_PerspDescriptorSets[m_CurrentFrame],
                             0,
                             nullptr);
 
@@ -1924,10 +2449,8 @@ void VulkanRenderer::DrawSpriteRegion(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
-
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
+    BuildQuadVertices(vertices, corners, texCoords);
     SubmitQuad(descriptorSet, vertices, color, 1.0f);
 }
 
@@ -1954,7 +2477,7 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     if (m_CommandBuffers.empty() || m_CurrentFrame >= m_CommandBuffers.size())
         return;
 
-    // See DrawSprite above for the upload-at-load contract.
+    // See DrawSpriteRegion for the upload-at-load contract.
     VkImageView imageView = m_WhiteTextureImageView;
     VkImageView texImageView = texture.GetVulkanImageView();
     if (texImageView != VK_NULL_HANDLE)
@@ -1976,10 +2499,8 @@ void VulkanRenderer::DrawSpriteAlpha(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
-
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
+    BuildQuadVertices(vertices, corners, texCoords);
     SubmitQuad(descriptorSet, vertices, glm::vec3(color.r, color.g, color.b), color.a);
 }
 
@@ -2031,10 +2552,8 @@ void VulkanRenderer::DrawSpriteAtlas(const Texture& texture,
     RotateCorners(corners, size, rotation);
     for (int i = 0; i < 4; i++)
         corners[i] += position;
-    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
-
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
+    BuildQuadVertices(vertices, corners, texCoords);
     // Atlas draws are particles (ParticleSystem) and sky elements (SkyRenderer),
     // both self-lit: skip the ambient tint so they don't darken with daytime.
     SubmitQuad(descriptorSet,
@@ -2075,93 +2594,11 @@ void VulkanRenderer::DrawColoredRect(glm::vec2 position,
                             {position.x + size.x, position.y + size.y},
                             {position.x, position.y + size.y}};
 
-    const float perspFlag = IsPerspectiveSuspended() ? 0.0f : 1.0f;
-
     glm::vec2 texCoords[4] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
 
     SpriteVertex vertices[6];
-    BuildQuadVertices(vertices, corners, texCoords, perspFlag);
-    SubmitQuad(descriptorSet, vertices, glm::vec3(1.0f), 1.0f, true, color);
-}
-
-// Draw a textured quad whose four corners are already projected (used for the
-// sphere-warped no-projection structures), so the shader applies no further
-// perspective (perspectiveFlag defaults to 0). Requires the texture to be uploaded;
-// bails otherwise.
-void VulkanRenderer::DrawWarpedQuad(const Texture& texture,
-                                    const glm::vec2 corners[4],
-                                    glm::vec2 texCoord,
-                                    glm::vec2 texSize,
-                                    glm::vec3 color,
-                                    bool flipY,
-                                    bool tileFlipX,
-                                    bool tileFlipY)
-{
-    if (!m_FrameActive)
-        return;
-
-    // Warped quads' corners already include projection - no further perspective.
-    if (m_GraphicsPipeline == VK_NULL_HANDLE || m_DescriptorSetLayout == VK_NULL_HANDLE)
-    {
-        return;
-    }
-
-    // Bail if the texture hasn't been uploaded yet - callers upload at load
-    // time (see DrawSprite above).
-    TextureResources& texRes = GetOrCreateTexture(texture);
-    if (texRes.imageView == VK_NULL_HANDLE)
-    {
-        return;
-    }
-
-    VkDescriptorSet descriptorSet = GetOrCreateDescriptorSet(texRes.imageView);
-    if (descriptorSet == VK_NULL_HANDLE)
-    {
-        return;
-    }
-
-    float texW = std::max(1.0f, static_cast<float>(texture.GetWidth()));
-    float texH = std::max(1.0f, static_cast<float>(texture.GetHeight()));
-
-    float u0 = texCoord.x / texW;
-    float u1 = (texCoord.x + texSize.x) / texW;
-
-    float v0, v1;
-    if (flipY)
-    {
-        // Y-flip for textures loaded with stb_image.
-        float finalTexYTop = texH - texCoord.y;
-        float finalTexYBottom = texH - (texCoord.y + texSize.y);
-        v0 = finalTexYBottom / texH;
-        v1 = finalTexYTop / texH;
-    }
-    else
-    {
-        v0 = texCoord.y / texH;
-        v1 = (texCoord.y + texSize.y) / texH;
-    }
-
-    // Per-tile content mirror via UV swap (the warped corners[] geometry stays put).
-    if (tileFlipX)
-    {
-        std::swap(u0, u1);
-    }
-    if (tileFlipY)
-    {
-        std::swap(v0, v1);
-    }
-
-    // UV mapping: TL/TR get visual top (v1), BL/BR get visual bottom (v0)
-    glm::vec2 texCoords[4] = {
-        {u0, v1},  // TL
-        {u1, v1},  // TR
-        {u1, v0},  // BR
-        {u0, v0}   // BL
-    };
-
-    SpriteVertex vertices[6];
     BuildQuadVertices(vertices, corners, texCoords);
-    SubmitQuad(descriptorSet, vertices, color, 1.0f);
+    SubmitQuad(descriptorSet, vertices, glm::vec3(1.0f), 1.0f, true, color);
 }
 
 // Return the combined-image-sampler descriptor set for an image view, creating and
@@ -2266,10 +2703,16 @@ VkDescriptorSet VulkanRenderer::GetOrCreateDescriptorSet(VkImageView imageView)
     return descriptorSet;
 }
 
-// Emit a single draw for the sprite vertices accumulated in the current batch range
-// (m_BatchStartVertex..m_CurrentVertexCount) with the batch's bound texture, then
-// advance the batch cursor. Returns early when the range is empty or no batch
-// texture/descriptor is bound.
+// Would emit a single draw for the sprite vertices accumulated in the current batch
+// range (m_BatchStartVertex..m_CurrentVertexCount) with the batch's bound texture,
+// then advance the batch cursor.
+//
+// Currently unreachable past the second guard: nothing ever assigns a non-null
+// m_BatchImageView / m_BatchDescriptorSet (they are only ever set to
+// VK_NULL_HANDLE, here and in the ctor and BeginFrame), because every draw path
+// goes through SubmitQuad, which records its own vkCmdDraw per quad. Kept as the
+// seam for reinstating real batching; the body below is the intended behavior,
+// not a description of what runs today.
 void VulkanRenderer::FlushSpriteBatch()
 {
     if (m_CurrentVertexCount == m_BatchStartVertex)
@@ -2330,8 +2773,8 @@ void VulkanRenderer::FlushSpriteBatch()
 glm::mat4 VulkanRenderer::CalculateModelMatrix(glm::vec2 position, glm::vec2 size, float rotation)
 {
     // Matches OpenGL: vertices are 0..1 (top-left to bottom-right). Vulkan
-    // clip-space Y points down, but we've already flipped vertex Y so the math
-    // can be the same as OpenGL.
+    // clip-space Y points down, but vertex Y is already flipped, so the math matches
+    // OpenGL.
     glm::mat4 model = glm::mat4(1.0f);
 
     // Translate to position (top-left corner).
@@ -2413,7 +2856,8 @@ float VulkanRenderer::GetTextWidth(const std::string& text, float scale) const
 
 // Draw a string as textured glyph quads at `position`, laying out left-to-right with
 // '\n' line breaks. Renders a black outline in four cardinal offsets first, then the
-// main colored text on top. Text bypasses perspective (it is a UI overlay).
+// main colored text on top. Glyph quads use the same screen-space m_Projection as
+// sprites, but force ambient to white so UI text does not dim with the day/night cycle.
 void VulkanRenderer::DrawText(const std::string& text,
                               glm::vec2 position,
                               float scale,
@@ -2475,17 +2919,15 @@ void VulkanRenderer::DrawText(const std::string& text,
             {
                 float pos[2];
                 float tex[2];
-                float perspectiveFlag;
             };
 
-            // perspectiveFlag = 0: text bypasses the perspective warp (UI overlay).
             Vertex vertices[6] = {
-                {{0.0f, 0.0f}, {0.0f, 0.0f}, 0.0f},  // Top-left
-                {{1.0f, 1.0f}, {1.0f, 1.0f}, 0.0f},  // Bottom-right
-                {{0.0f, 1.0f}, {0.0f, 1.0f}, 0.0f},  // Bottom-left
-                {{0.0f, 0.0f}, {0.0f, 0.0f}, 0.0f},  // Top-left
-                {{1.0f, 0.0f}, {1.0f, 0.0f}, 0.0f},  // Top-right
-                {{1.0f, 1.0f}, {1.0f, 1.0f}, 0.0f}   // Bottom-right
+                {{0.0f, 0.0f}, {0.0f, 0.0f}},  // Top-left
+                {{1.0f, 1.0f}, {1.0f, 1.0f}},  // Bottom-right
+                {{0.0f, 1.0f}, {0.0f, 1.0f}},  // Bottom-left
+                {{0.0f, 0.0f}, {0.0f, 0.0f}},  // Top-left
+                {{1.0f, 0.0f}, {1.0f, 0.0f}},  // Top-right
+                {{1.0f, 1.0f}, {1.0f, 1.0f}}   // Bottom-right
             };
 
             // Capacity check per glyph.
@@ -2529,17 +2971,6 @@ void VulkanRenderer::DrawText(const std::string& text,
                                     0,
                                     1,
                                     &descriptorSet,
-                                    0,
-                                    nullptr);
-
-            // Set 1: perspective UBO (text never wants perspective, but the
-            // shader's pipeline layout requires the set to be bound).
-            vkCmdBindDescriptorSets(commandBuffer,
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_PipelineLayout,
-                                    1,
-                                    1,
-                                    &m_PerspDescriptorSets[m_CurrentFrame],
                                     0,
                                     nullptr);
 

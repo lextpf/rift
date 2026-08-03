@@ -25,13 +25,11 @@ struct GLFWwindow;
  * @ingroup Rendering
  *
  * Provides hardware-accelerated 2D rendering using the Vulkan graphics API.
- * Sprite draws
- * currently submit one quad at a time with cached descriptor sets
- * and persistent per-frame
- * vertex buffers; this differs from OpenGL's
+ * Sprite draws currently submit one quad at a time with cached descriptor sets
+ * and persistent per-frame vertex buffers; this differs from OpenGL's
  * texture-run sprite batching.
  *
- * @section vk_features Vulkan Features Used
+ * @par Vulkan features used
  * | Feature              | Version | Usage                          |
  * |----------------------|---------|--------------------------------|
  * | Core API             | 1.0     | Explicit GPU control           |
@@ -39,12 +37,20 @@ struct GLFWwindow;
  * | Descriptor Sets      | 1.0     | Texture binding                |
  * | Push Constants       | 1.0     | Per-draw uniforms              |
  * | Memory Mapping       | 1.0     | Persistent vertex buffers      |
+ * | Negative viewport    | 1.1     | Y-flip to match OpenGL         |
  *
- * @section vk_architecture Architecture Overview
- * Unlike OpenGL's implicit state machine, Vulkan requires explicit management
- * of all GPU resources. The renderer maintains:
+ * @warning The negative-height viewport is legal only with VK_KHR_maintenance1 or an
+ * effective device version of 1.1+, and the backend declares neither: the instance
+ * requests apiVersion 1.0 and the device enables only VK_KHR_SWAPCHAIN. The Y-flip
+ * therefore relies on de-facto driver behavior and trips VUID-VkViewport-height-01773
+ * under the validation layers on a strict 1.0 device.
  *
- * @par Frame Lifecycle
+ * @warning The 2D push-constant block is 176 bytes, above Vulkan's guaranteed
+ * `maxPushConstantsSize` of 128. The backend requires a device advertising at least 176
+ * and never reads the limit, so on a minimum-limit device `vkCreatePipelineLayout` fails
+ * during Init with a bare VK_CHECK throw.
+ *
+ * @par Frame lifecycle
  * @htmlonly
  * <pre class="mermaid">
  * flowchart LR
@@ -57,8 +63,8 @@ struct GLFWwindow;
  *     A[BeginFrame]:::acquire --> B[Wait fence + acquire image]:::acquire
  *     B --> C[Begin command buffer]:::record
  *     C --> D[Begin render pass]:::record
- *     D --> E[DrawSprite / DrawText writes vertices]:::draw
- *     E --> F[FlushSpriteBatch on texture change]:::draw
+ *     D --> E[DrawSprite / DrawText appends 6 verts]:::draw
+ *     E --> F[SubmitQuad records vkCmdDraw immediately]:::draw
  *     F --> E
  *     E --> G[EndFrame]:::submit
  *     G --> H[End render pass + command buffer]:::submit
@@ -66,7 +72,7 @@ struct GLFWwindow;
  * </pre>
  * @endhtmlonly
  *
- * @par Core Objects
+ * @par Core objects
  * | Object               | Purpose                              |
  * |----------------------|--------------------------------------|
  * | VkInstance           | Vulkan API entry point               |
@@ -77,41 +83,68 @@ struct GLFWwindow;
  * | VkCommandBuffer      | Recorded GPU commands                |
  *
  * @par Synchronization
- * Uses 2 frames-in-flight with semaphores and fences:
- * @code
- *   Frame N:   [Record Cmds] --> [Submit] ---> [Present]
- *                                   |              |
- *   Semaphore:               ImageAvailable  RenderFinished
- *                                   |              |
- *   Frame N+1: [Wait Fence] --> [Record] ----> [Submit] --> ...
- * @endcode
+ * Two frames in flight, each with its own image-available semaphore, render-finished
+ * semaphore and in-flight fence; `m_ImagesInFlight` adds a second wait that keeps two
+ * frames off the same swapchain image. Every early return after a successful acquire
+ * must recreate the image-available semaphore, and a return after `vkResetFences` must
+ * also recreate the fence as SIGNALED. Skipping either repair deadlocks the next
+ * `vkWaitForFences` or trips VUID-vkAcquireNextImageKHR-semaphore-01779. Repair paths do
+ * not advance `m_CurrentFrame`: the same slot is retried next frame.
+ * @htmlonly
+ * <pre class="mermaid">
+ * flowchart TD
+ *     classDef ok  fill:#134e3a,stroke:#10b981,color:#e2e8f0
+ *     classDef fix fill:#7f1d1d,stroke:#ef4444,color:#e2e8f0
  *
- * @section vk_batching Sprite Batching
- * Sprites are written into a persistent mapped vertex
- * buffer and submitted as
- * individual quad draws. Per-frame buffers avoid write hazards:
+ *     A[Wait m_InFlightFences frame]:::ok --> B[Acquire swapchain image]:::ok
+ *     B --> C[Wait m_ImagesInFlight image]:::ok
+ *     C --> D[Record: command buffer, render pass, draws]:::ok
+ *     D --> E[EndFrame: end render pass + command buffer]:::ok
+ *     E --> F[vkResetFences]:::ok
+ *     F --> G[Submit: wait ImageAvailable, signal RenderFinished + fence]:::ok
+ *     G --> H[Present: wait RenderFinished]:::ok
+ *     H --> I[frame = frame + 1 mod 2]:::ok
+ *     B -- OUT_OF_DATE --> W[RecreateImageAvailableSemaphore + RecreateSwapchain]:::fix
+ *     B -- acquire error --> R[RecreateImageAvailableSemaphore]:::fix
+ *     E -- bounds or vkEndCommandBuffer failure --> R
+ *     F -- reset failed --> R
+ *     G -- submit failed --> S[Destroy + recreate fence SIGNALED]:::fix
+ *     S --> R
+ * </pre>
+ * @endhtmlonly
  *
- * @par Buffer Strategy
+ * @par Sprite batching
+ * Despite the name, there is currently no batching: every draw path funnels into
+ * @c SubmitQuad, which appends 6 vertices to the persistent mapped vertex buffer
+ * and records its own @c vkCmdDraw plus a fresh push-constant block right there.
+ * One quad = one draw call, and the day/night ambient tint is baked per quad, so
+ * the ordering hazard OpenGL guards against with lazy flushes cannot arise here.
+ * Per-frame buffers avoid write hazards:
+ *
+ * @par Buffer strategy
  * @code
  *   Frame 0: Write to m_VertexBuffers[0], GPU reads m_VertexBuffers[1]
  *   Frame 1: Write to m_VertexBuffers[1], GPU reads m_VertexBuffers[0]
  * @endcode
  *
- * @section vk_textures Texture Management
- * UploadTexture() creates a host-visible staging buffer,
- * copies pixel data,
+ * @par Texture management
+ * UploadTexture() creates a host-visible staging buffer, copies pixel data,
  * records the transfer to a device-local VkImage, transitions it to
+ * SHADER_READ_ONLY, then creates the VkImageView.
  *
- * SHADER_READ_ONLY, then creates the VkImageView and descriptor set.
+ * Descriptor sets are not created there. They are allocated lazily per VkImageView on
+ * first draw and cached in @c m_DescriptorSetCache, so a re-upload that yields a new
+ * view strands the old cache entry. UploadTexture is also not noexcept: it lets
+ * `std::runtime_error` from the transfer escape to the caller.
  *
- * Draw calls do not upload
- * texture data mid-frame. A texture without a live
- * Vulkan image view renders with the white
- * fallback texture or is skipped,
+ * Draw calls do not upload texture data mid-frame. A texture without a live
+ * Vulkan image view renders with the white fallback texture or is skipped,
  * depending on the draw path.
  *
- * @section vk_limitations Current Limitations
- * - Single graphics pipeline (no compute shaders)
+ * @par Current limitations
+ * - One 2D sprite pipeline plus six Geometry3D pipelines ([DepthMode][BlendMode]); no
+ * pipeline cache
+ * - No compute shaders
  * - No dynamic descriptor indexing
  * - Descriptor pool starts at a fixed size; overflow pools are allocated on demand
  * - Synchronous texture uploads
@@ -120,8 +153,7 @@ struct GLFWwindow;
  * - Additive blending flags are currently ignored in sprite/atlas/rect draw paths
  *
  * @see IRenderer Base interface with method documentation
- * @see OpenGLRenderer Alternative OpenGL
- * implementation
+ * @see OpenGLRenderer Alternative OpenGL implementation
  * @see Texture CPU-side texture data management
  */
 class VulkanRenderer : public IRenderer
@@ -140,12 +172,16 @@ public:
     /**
      * @brief Set the global ambient (day/night) tint.
      *
-     * Ambient is a deferred uniform - FlushSpriteBatch() bakes the current
-     * m_AmbientColor into the push constants at flush time, and the sprite
-     * batch flushes lazily. Drain queued sprites with the current ambient
-     * before changing it, or a later flush retroactively recolors them (e.g.
-     * the sky pass sets ambient to white while night foreground tiles are
-     * still queued, flashing them to "day"). Mirrors OpenGLRenderer.
+     * On this backend the tint is not deferred: @c SubmitQuad copies
+     * @c m_AmbientColor into that quad's push constants and issues its
+     * @c vkCmdDraw immediately, so every already-submitted quad keeps the ambient
+     * it was drawn with and a later change cannot retroactively recolor it.
+     *
+     * The @c FlushSpriteBatch() call below is the structural mirror of
+     * OpenGLRenderer::SetAmbientColor, where the batch really is lazy and the
+     * drain is load-bearing (otherwise, e.g., the sky pass setting ambient to
+     * white would flash still-queued night tiles to "day"). Keeping the call
+     * costs nothing and preserves the shape if real batching is added back.
      */
     void SetAmbientColor(const glm::vec3& color) override
     {
@@ -161,23 +197,18 @@ private:
     RendererInfo m_Info;  ///< Cached at end of Init(); returned by GetBackendInfo().
 
     /**
-     * @name Sprite Helpers
+     * @name Sprite helpers
      * @{
      */
 
     /**
      * @struct SpriteVertex
      * @brief Per-vertex data for batched sprite rendering.
-     *
-     * `perspectiveFlag` selects between "apply GPU perspective" (1.0) and
-     * "pass through" (0.0). Captured at queue time so suspended and
-     * un-suspended geometry share a single batch.
      */
     struct SpriteVertex
     {
-        float pos[2];           ///< World-space position (x, y) before perspective.
-        float tex[2];           ///< Texture coordinates (u, v).
-        float perspectiveFlag;  ///< 0 = skip perspective, 1 = apply in shader.
+        float pos[2];  ///< Screen-space position (x, y).
+        float tex[2];  ///< Texture coordinates (u, v).
     };
 
     /**
@@ -185,12 +216,10 @@ private:
      * @param outVertices Output array of 6 vertices.
      * @param corners Screen-space quad corners [TL, TR, BR, BL].
      * @param texCoords UV coordinates matching each corner.
-     * @param perspectiveFlag 0 = skip perspective in shader, 1 = apply.
      */
     static void BuildQuadVertices(SpriteVertex outVertices[6],
                                   const glm::vec2 corners[4],
-                                  const glm::vec2 texCoords[4],
-                                  float perspectiveFlag = 0.0f);
+                                  const glm::vec2 texCoords[4]);
 
     /**
      * @brief Write a quad into the vertex buffer and flush if texture changes.
@@ -215,7 +244,7 @@ private:
     /// @}
 
     /**
-     * @name Performance Metrics
+     * @name Performance metrics
      * @{
      */
     int m_DrawCallCount = 0;         ///< Draw calls this frame.
@@ -223,7 +252,7 @@ private:
     /// @}
 
     /**
-     * @name Text Rendering (FreeType)
+     * @name Text rendering (FreeType)
      * @{
      */
 
@@ -235,10 +264,20 @@ private:
     {
         VkImage image{VK_NULL_HANDLE};          ///< Vulkan image for this glyph.
         VkDeviceMemory memory{VK_NULL_HANDLE};  ///< Device memory backing the image.
-        VkImageView imageView{VK_NULL_HANDLE};  ///< Image view for shader sampling.
-        glm::ivec2 size{0, 0};                  ///< Glyph dimensions in pixels.
-        glm::ivec2 bearing{0, 0};               ///< Offset from baseline to top-left.
-        unsigned int advance{0};                ///< Horizontal advance to next character.
+
+        /**
+         * @brief Image view sampled for this glyph.
+         *
+         * Non-owning when it aliases @c m_WhiteTextureImageView: @ref CreateGlyphTexture
+         * substitutes the shared white view for zero-sized bitmaps (space and control
+         * characters). Compare against @c m_WhiteTextureImageView before destroying, or
+         * teardown double-frees the renderer's white texture.
+         */
+        VkImageView imageView{VK_NULL_HANDLE};
+
+        glm::ivec2 size{0, 0};     ///< Glyph dimensions in pixels.
+        glm::ivec2 bearing{0, 0};  ///< Offset from baseline to top-left.
+        unsigned int advance{0};   ///< Horizontal advance to next character.
     };
 
     /// @brief Load TTF font and create per-glyph Vulkan textures.
@@ -267,7 +306,7 @@ private:
     /// @}
 
     /**
-     * @name Vulkan Instance and Device
+     * @name Vulkan instance and device
      * @{
      */
     VkInstance m_Instance{VK_NULL_HANDLE};              ///< Vulkan API entry point.
@@ -278,7 +317,7 @@ private:
     /// @}
 
     /**
-     * @name Surface and Swapchain
+     * @name Surface and swapchain
      * @{
      */
     VkSurfaceKHR m_Surface{VK_NULL_HANDLE};          ///< Window surface.
@@ -291,7 +330,7 @@ private:
     /// @}
 
     /**
-     * @name Render Pass and Pipeline
+     * @name Render pass and pipeline
      * @{
      */
     VkRenderPass m_RenderPass{VK_NULL_HANDLE};          ///< Defines attachment usage.
@@ -300,11 +339,19 @@ private:
     /// @}
 
     /**
-     * @name Command Recording
+     * @name Command recording
      * @{
      */
-    VkCommandPool m_CommandPool{VK_NULL_HANDLE};    ///< Command buffer allocator.
-    std::vector<VkCommandBuffer> m_CommandBuffers;  ///< Per-frame command buffers.
+    VkCommandPool m_CommandPool{VK_NULL_HANDLE};  ///< Command buffer allocator.
+
+    /**
+     * @brief Primary command buffers, allocated one per swapchain image at Init.
+     *
+     * Recording indexes this by @c m_CurrentFrame (0..MAX_FRAMES_IN_FLIGHT-1), not by
+     * image index, so any surplus entries are never recorded. @ref RecreateSwapchain
+     * does not reallocate the vector, so its size stays at the Init-time image count.
+     */
+    std::vector<VkCommandBuffer> m_CommandBuffers;
     /// @}
 
     /**
@@ -319,7 +366,7 @@ private:
     /// @}
 
     /**
-     * @name Frame State
+     * @name Frame state
      * @{
      */
     size_t m_CurrentFrame{0};       ///< Current frame index (0 or 1).
@@ -330,7 +377,89 @@ private:
     /// @}
 
     /**
-     * @name Vertex Buffers (Double-Buffered)
+     * @name World-space 3D path
+     * @brief Depth attachment, the Geometry3D pipelines, and their vertex buffers.
+     *
+     * Mirrors the OpenGL `Geometry3D` path. The two coexist in one render pass and one
+     * command buffer, world geometry drawing with depth and screen-space UI without,
+     * and they hand a single pipeline binding back and forth through
+     * @ref m_Bound3DPipeline. Pipeline binding is command-buffer state and dies with the
+     * command buffer, so every draw path must claim its own pipeline before recording:
+     * a new 2D path that forgets to reclaim rasterizes UI with the world's vertex layout
+     * and depth state, and a missing BeginFrame reset makes the first 3D draw of a frame
+     * inherit the 2D pipeline.
+     * @htmlonly
+     * <pre class="mermaid">
+     * stateDiagram-v2
+     *     [*] --> Bound2D: BeginFrame binds m_GraphicsPipeline, clears m_Bound3DPipeline
+     *     Bound2D --> Bound3D: DrawQuad3D - bind depth/blend pipeline, re-apply Y-flip
+     *     Bound3D --> Bound3D: same depth/blend pair - no rebind; other pair - rebind
+     *     Bound3D --> Bound2D: SubmitQuad rebinds 2D, clears m_Bound3DPipeline
+     * </pre>
+     * @endhtmlonly
+     * @{
+     */
+
+    /**
+     * @struct Vertex3D
+     * @brief Vertex format for world-space quads. Must match
+     *        `OpenGLRenderer::BatchVertex3D` and `shaders/Geometry3D.vert`.
+     */
+    struct Vertex3D
+    {
+        float x, y, z;     ///< Scene-space position (see sceneMath).
+        float u, v;        ///< Texture coordinates.
+        float r, g, b, a;  ///< Per-vertex RGBA tint.
+    };
+
+    /**
+     * @struct Push3D
+     * @brief Push-constant block for the Geometry3D program (80 bytes).
+     *
+     * One combined matrix rather than separate view/projection: the CPU builds
+     * both anyway to extract frustum planes, so combining costs nothing here.
+     */
+    struct Push3D
+    {
+        glm::mat4 viewProjection;  ///< Offset 0, 64 bytes.
+        glm::vec3 ambientColor;    ///< Offset 64, 12 bytes.
+        float alphaCutoff;         ///< Offset 76, 4 bytes.
+    };
+
+    /// Combined view-projection for the 3D path, already corrected for Vulkan's
+    /// clip space by @ref SetViewProjection.
+    glm::mat4 m_ViewProjection{1.0f};
+
+    VkImage m_DepthImage{VK_NULL_HANDLE};
+    VkDeviceMemory m_DepthImageMemory{VK_NULL_HANDLE};
+    VkImageView m_DepthImageView{VK_NULL_HANDLE};
+    VkFormat m_DepthFormat{VK_FORMAT_UNDEFINED};
+
+    /**
+     * @brief Geometry3D pipelines indexed [DepthMode][BlendMode].
+     *
+     * Vulkan bakes depth and blend state into the pipeline object, so each
+     * combination the draw interface can request needs its own - six small
+     * objects, created once.
+     */
+    VkPipeline m_Pipeline3D[renderModes::DEPTH_MODE_COUNT][renderModes::BLEND_MODE_COUNT]{};
+    VkPipelineLayout m_Pipeline3DLayout{VK_NULL_HANDLE};
+    /// Last pipeline bound this frame, to skip redundant vkCmdBindPipeline calls.
+    VkPipeline m_Bound3DPipeline{VK_NULL_HANDLE};
+
+    /// @brief Pick a supported depth format, preferring 32-bit float.
+    VkFormat FindDepthFormat() const;
+    /// @brief Create the depth image/memory/view for the current swapchain extent.
+    void CreateDepthResources();
+    /// @brief Destroy the depth image/memory/view (swapchain recreate + shutdown).
+    void DestroyDepthResources();
+    /// @brief Create the six Geometry3D pipelines and their shared layout.
+    void CreatePipeline3D();
+
+    /// @}
+
+    /**
+     * @name Vertex buffers (double-buffered)
      * @{
      */
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -338,24 +467,57 @@ private:
     VkBuffer m_VertexBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkDeviceMemory m_VertexBufferMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
     void* m_VertexBuffersMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};  ///< Persistent mapping.
+    /// Uploaded at init but unused: no path calls vkCmdBindIndexBuffer, so every draw
+    /// is a non-indexed vkCmdDraw. Kept as the seam for an indexed quad batch.
     VkBuffer m_IndexBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_IndexBufferMemory{VK_NULL_HANDLE};
     VkDeviceSize m_VertexBufferSize{0};
     uint32_t m_CurrentVertexCount{0};
+
+    /**
+     * @brief Per-frame vertex storage for the world-space 3D path.
+     *
+     * A separate buffer from the 2D one above because Vertex3D has a different
+     * stride; declared here so the MAX_FRAMES_IN_FLIGHT bound is already in scope.
+     */
+    VkBuffer m_Vertex3DBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory m_Vertex3DMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    void* m_Vertex3DMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};
+    VkDeviceSize m_Vertex3DBufferSize{0};
+    uint32_t m_Current3DVertexCount{0};
     /// @}
 
     /**
-     * @name Sprite Batching
+     * @name Sprite batching (currently inert)
+     *
+     * Vestigial batch bookkeeping. No draw path ever assigns a real texture or
+     * descriptor here - every path calls @ref SubmitQuad, which draws each quad on
+     * its own - so these two handles hold VK_NULL_HANDLE at all times and
+     * @ref FlushSpriteBatch always returns at its null-handle guard without
+     * recording anything. Do not read them as "the texture currently batched".
      * @{
      */
-    VkImageView m_BatchImageView{VK_NULL_HANDLE};          ///< Current batched texture.
-    VkDescriptorSet m_BatchDescriptorSet{VK_NULL_HANDLE};  ///< Descriptor for batch.
-    uint32_t m_BatchStartVertex{0};                        ///< Batch start in buffer.
-    void FlushSpriteBatch();                               ///< Submit batch to GPU.
+    VkImageView m_BatchImageView{VK_NULL_HANDLE};          ///< Always VK_NULL_HANDLE today.
+    VkDescriptorSet m_BatchDescriptorSet{VK_NULL_HANDLE};  ///< Always VK_NULL_HANDLE today.
+    /// First vertex of the pending batch range. Only ever advanced by the
+    /// unreachable tail of FlushSpriteBatch, so in practice it stays 0.
+    uint32_t m_BatchStartVertex{0};
+    /**
+     * @brief Would submit m_BatchStartVertex..m_CurrentVertexCount as one draw.
+     *
+     * Called from SetAmbientColor, SetProjection and EndFrame, but bails at the
+     * null-handle guard before recording anything.
+     */
+    void FlushSpriteBatch();
     /// @}
 
     /**
-     * @name Staging Buffer
+     * @name Staging buffer (unused)
+     *
+     * No persistent staging buffer exists today. None of these three handles is ever
+     * assigned, mapped, used or destroyed: every upload creates and frees a function-
+     * local staging buffer on the spot (see @ref UploadStagingBufferToImage). Kept as
+     * the seam for a reusable upload buffer.
      * @{
      */
     VkBuffer m_StagingBuffer{VK_NULL_HANDLE};
@@ -376,58 +538,38 @@ private:
     /// @}
 
     /**
-     * @name Perspective UBO (set 1, binding 0 in shader)
-     * @{
-     */
-    /// Layout mirrors GLSL `PerspectiveBlock` in shaders/Geometry.vert (3x vec4 = 48 B).
-    struct PerspectiveBlock
-    {
-        int32_t flags[4];  ///< (enabled, hasGlobe, hasVanishing, pad)
-        float horizon[4];  ///< (horizonY, horizonScale, viewWidth, viewHeight)
-        float sphere[4];   ///< (sphereRadiusX, sphereRadiusY, pad, pad)
-    };
-    static_assert(sizeof(PerspectiveBlock) == 48, "PerspectiveBlock must match GLSL layout");
-
-    VkDescriptorSetLayout m_PerspDescriptorSetLayout{VK_NULL_HANDLE};
-    VkBuffer m_PerspUBOBuffers[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkDeviceMemory m_PerspUBOMemories[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-    void* m_PerspUBOMapped[MAX_FRAMES_IN_FLIGHT]{nullptr, nullptr};
-    VkDescriptorSet m_PerspDescriptorSets[MAX_FRAMES_IN_FLIGHT]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-    /**
-     * True until UpdatePerspectiveUBO has propagated the latest m_Persp into
-     * both frame-in-flight UBOs; clears after each frame consumes its copy.
-     */
-    bool m_PerspUBODirty[MAX_FRAMES_IN_FLIGHT]{true, true};
-
-    void CreatePerspectiveUBO();
-    void UpdatePerspectiveUBO();
-    /// @}
-
-    /**
-     * @name White Texture (for colored rects)
+     * @name White texture (for colored rects)
      * @{
      */
     VkImage m_WhiteTextureImage{VK_NULL_HANDLE};
     VkDeviceMemory m_WhiteTextureImageMemory{VK_NULL_HANDLE};
     VkImageView m_WhiteTextureImageView{VK_NULL_HANDLE};
+    /// Created and destroyed but never bound - every descriptor write, the white texture
+    /// included, uses the shared m_TextureSampler.
     VkSampler m_WhiteTextureSampler{VK_NULL_HANDLE};
     /// @}
 
     /**
-     * @name Texture Cache
+     * @name Texture cache
      * @{
      */
 
     /**
      * @struct TextureResources
-     * @brief Vulkan GPU resources for a single cached texture.
+     * @brief Non-owning aliases of the Vulkan resources for one cached texture.
+     *
+     * Every handle here is borrowed. On the uploaded path only @c imageView is set and
+     * the owning @ref Texture keeps image and memory; on the fallback path all three
+     * alias the renderer's 1x1 white texture. Never destroy them - Shutdown clears
+     * @c m_TextureCache without releasing anything, and a destroy loop over the cache
+     * would double-free the white texture.
      */
     struct TextureResources
     {
-        VkImage image;          ///< Vulkan image handle.
-        VkDeviceMemory memory;  ///< Device memory backing the image.
+        VkImage image;          ///< VK_NULL_HANDLE unless this is a white-texture entry.
+        VkDeviceMemory memory;  ///< VK_NULL_HANDLE unless this is a white-texture entry.
         VkImageView imageView;  ///< Image view for shader sampling.
-        bool initialized;       ///< True after successful upload.
+        bool initialized;       ///< True once the entry resolved to a usable view.
     };
     std::unordered_map<const Texture*, TextureResources> m_TextureCache;
     std::vector<const Texture*> m_UploadedTextures;
@@ -435,7 +577,7 @@ private:
     /// @}
 
     /**
-     * @name Initialization Helpers
+     * @name Initialization helpers
      * @{
      */
     /// @brief Create VkInstance with validation layers.
@@ -450,7 +592,8 @@ private:
     void CreateSwapchain();
     /// @brief Create image views for swapchain images.
     void CreateImageViews();
-    /// @brief Create the render pass with color attachment.
+    /// @brief Create the single-subpass render pass: color attachment 0, depth 1.
+    /// @pre `CreateDepthResources()` has run - the format is read from `m_DepthFormat`.
     void CreateRenderPass();
     /// @brief Compile shaders and create the graphics pipeline.
     void CreateGraphicsPipeline();
@@ -458,7 +601,8 @@ private:
     void CreateFramebuffers();
     /// @brief Create the command pool for the graphics queue family.
     void CreateCommandPool();
-    /// @brief Allocate per-frame command buffers.
+    /// @brief Allocate the primary command buffers, one per swapchain image.
+    /// @note Only run from Init(); @ref RecreateSwapchain does not reallocate them.
     void CreateCommandBuffers();
     /// @brief Create semaphores and fences for frame synchronization.
     void CreateSyncObjects();
@@ -486,17 +630,32 @@ private:
     /// @}
 
     /**
-     * @name Texture Helpers
+     * @name Texture helpers
      * @{
      */
     /**
      * @brief Get cached Vulkan resources for a texture or a white fallback entry.
+     *
+     * Currently unreachable: no draw path calls this. Every path resolves
+     * `Texture::GetVulkanImageView()` directly with a white fallback, so
+     * @c m_TextureCache stays empty. Kept as the seam for renderer-owned resources.
+     *
      * @param texture CPU-side texture to look up.
+     * @return Reference to the cache entry, valid until the cache is cleared.
      */
     TextureResources& GetOrCreateTexture(const Texture& texture);
     /**
-     * @brief Get or allocate a descriptor set for an image view.
+     * @brief Get or allocate a combined-image-sampler descriptor set for an image view.
+     *
+     * The set is written with the shared @c m_TextureSampler and cached forever - no set
+     * is freed before Shutdown.
+     *
+     * @note On pool exhaustion this allocates and permanently retains an overflow
+     *       VkDescriptorPool of DESCRIPTOR_POOL_MAX_SETS sets.
+     *
      * @param imageView Image view to bind.
+     * @return Cached or newly allocated set, or VK_NULL_HANDLE when @p imageView is
+     *         null, the pool is gone, or allocation fails. Callers must check.
      */
     VkDescriptorSet GetOrCreateDescriptorSet(VkImageView imageView);
     /**
@@ -509,13 +668,22 @@ private:
     /// @}
 
     /**
-     * @name Buffer Helpers
+     * @name Buffer helpers
      * @{
      */
     /**
      * @brief Find a suitable memory type index for the given requirements.
+     *
+     * @warning Throws `std::runtime_error` when no type matches - there is no sentinel
+     *          return. The other helpers in this group likewise throw through VK_CHECK,
+     *          so none of them is usable from a `noexcept` or destructor context. Only
+     *          `Init()` catches, so a throw reached from `RecreateSwapchain()` or
+     *          `LoadFont()` escapes the frame loop.
+     *
      * @param typeFilter Bit mask of acceptable memory type indices.
      * @param properties Required memory property flags.
+     * @return Index of the first memory type in @p typeFilter carrying all of
+     *         @p properties.
      */
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     /**
@@ -540,8 +708,16 @@ private:
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     /**
      * @brief Transition a Vulkan image between layouts.
+     *
+     * @pre Called between BeginFrame() and EndFrame(): the barrier is recorded into the
+     *      current frame's command buffer.
+     * @warning Only UNDEFINED -> TRANSFER_DST_OPTIMAL and TRANSFER_DST_OPTIMAL ->
+     *          SHADER_READ_ONLY_OPTIMAL are supported; any other pair throws
+     *          `std::runtime_error`.
+     *
      * @param image Image to transition.
-     * @param format Image format.
+     * @param format Ignored - every image this renderer transitions is a color image,
+     *        so the aspect mask is always COLOR.
      * @param oldLayout Current layout.
      * @param newLayout Target layout.
      */
@@ -551,6 +727,11 @@ private:
                                VkImageLayout newLayout);
     /**
      * @brief Copy buffer contents to a Vulkan image.
+     *
+     * @pre Called between BeginFrame() and EndFrame(): the copy is recorded into the
+     *      current frame's command buffer.
+     * @pre @p image is already in TRANSFER_DST_OPTIMAL.
+     *
      * @param buffer Source staging buffer.
      * @param image Destination image.
      * @param width Image width in pixels.
@@ -571,7 +752,7 @@ private:
     /// @}
 
     /**
-     * @name Queue Families
+     * @name Queue families
      * @{
      */
     uint32_t m_GraphicsFamily{0};
@@ -579,7 +760,7 @@ private:
     /// @}
 
     /**
-     * @name Validation and Extensions
+     * @name Validation and extensions
      * @{
      */
     const std::vector<const char*> m_ValidationLayers = {"VK_LAYER_KHRONOS_validation"};
