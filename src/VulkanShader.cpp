@@ -20,6 +20,8 @@ namespace
 constexpr const char* LOG_SUBSYSTEM = "Render";
 }  // namespace
 
+// Wrap an already-validated SPIR-V blob in a VkShaderModule. Throwing (rather than
+// returning VK_NULL_HANDLE) keeps CreateGraphicsPipeline linear; Init() catches.
 VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vector<uint32_t>& code)
 {
     if (code.empty())
@@ -43,6 +45,9 @@ VkShaderModule VulkanShader::CreateShaderModule(VkDevice device, const std::vect
 
 namespace
 {
+// Directory containing the running executable, or an empty path when it cannot be
+// determined (including every non-Windows build, which has no implementation here -
+// those fall back to the working-directory candidate alone).
 std::filesystem::path GetExecutableDirectory()
 {
 #ifdef _WIN32
@@ -58,6 +63,10 @@ std::filesystem::path GetExecutableDirectory()
 #endif
 }
 
+// Ordered, de-duplicated list of places to look for `filename`, most specific
+// first: the working directory, then <exe-dir> and two levels above it. Order is
+// the policy - the first candidate that parses wins, so a shader sitting next to
+// the working directory shadows the one shipped beside the executable.
 std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string& filename)
 {
     std::vector<std::filesystem::path> paths;
@@ -85,6 +94,10 @@ std::vector<std::filesystem::path> BuildShaderSearchPaths(const std::string& fil
     return paths;
 }
 
+// Read one candidate path, rejecting anything that is not plausibly SPIR-V. An
+// empty return means "try the next candidate" - a missing file is silent, while a
+// file that exists but fails validation logs, so a stale or mis-copied .spv is
+// visible in the log instead of surfacing later as a driver crash.
 std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
 {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
@@ -140,7 +153,9 @@ std::vector<uint32_t> ReadSPIRVFromPath(const std::filesystem::path& path)
     return buffer;
 }
 
-// Load SPIR-V file from common runtime locations.
+// Load a SPIR-V file from the common runtime locations, returning the first
+// candidate that validates. On total failure the every-path-tried list is logged,
+// because "shader not found" is almost always a working-directory mistake.
 static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
 {
     std::vector<std::filesystem::path> attemptedPaths;
@@ -164,6 +179,15 @@ static std::vector<uint32_t> ReadSPIRVFile(const std::string& filename)
 }
 }  // namespace
 
+// General loader. The named accessors below are thin wrappers that add a
+// shader-specific warning; anything else (the Geometry3D pair) goes through here.
+std::vector<uint32_t> VulkanShader::LoadSPIRV(const std::string& relativePath)
+{
+    return ReadSPIRVFile(relativePath);
+}
+
+// Vertex shader blob. Returns empty (never throws) so Init() can report a clean
+// failure; the warnings spell out the glslangValidator command that regenerates it.
 std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
 {
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.vert.spv");
@@ -177,6 +201,7 @@ std::vector<uint32_t> VulkanShader::GetVertexShaderSPIRV()
     return code;
 }
 
+// Fragment shader blob; same contract as GetVertexShaderSPIRV.
 std::vector<uint32_t> VulkanShader::GetFragmentShaderSPIRV()
 {
     std::vector<uint32_t> code = ReadSPIRVFile("shaders/Geometry.frag.spv");
