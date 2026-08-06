@@ -6,7 +6,6 @@
 #include <cmath>
 
 /**
- * @namespace viewScaling
  * @brief Renderer-free helpers mapping window pixels to the visible world extent
  *        and to proportional UI scale.
  * @author Alex (https://github.com/lextpf)
@@ -14,7 +13,7 @@
  *
  * Pure and deliberately free of GL/Vulkan so they are unit-testable without a
  * graphics context (rift_tests constraint). Namespace style mirrors the sibling
- * math helper `perspectiveTransform`.
+ * math helper `sceneMath`.
  */
 namespace viewScaling
 {
