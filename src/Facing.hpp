@@ -8,16 +8,16 @@
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * The shared facing component carved out of the GameCharacter base. Kept
- * separate from AnimationState so render UV selection and AI can read facing
- * without pulling animation timing onto the same cache line.
+ * World-absolute: dialogue, AI and interaction checks all reason in world directions. The sprite
+ * row a rotated camera should show is derived from this at render time through
+ * @ref cameraFacing::ScreenFacing, not stored here.
  *
- * Plain data struct. Flat aggregate so it is usable directly as an ECS
- * component (packed storage).
+ * Kept separate from AnimationState so render UV selection and AI can read facing without pulling
+ * animation timing onto the same cache line.
  *
  * @see CharacterDirection, AnimationState
  */
 struct Facing
 {
-    CharacterDirection dir{CharacterDirection::DOWN};  ///< Current facing direction
+    CharacterDirection dir{CharacterDirection::DOWN};  ///< Current facing direction.
 };
