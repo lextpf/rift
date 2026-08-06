@@ -1,7 +1,6 @@
 #include "CameraController.hpp"
 
 #include "Logger.hpp"
-#include "MathConstants.hpp"
 
 namespace
 {
@@ -10,6 +9,9 @@ constexpr const char* LOG_SUBSYSTEM = "Camera";
 
 void CameraController::Initialize(glm::vec2 playerVisualCenter, float viewWidth, float viewHeight)
 {
+    // position is the viewport's top-left corner, so centring on a point means
+    // subtracting half the view size. No map clamp here: the first Update() applies
+    // it, which keeps this callable before the tilemap size is known.
     m_State.position = playerVisualCenter - glm::vec2(viewWidth / 2.0f, viewHeight / 2.0f);
     m_State.followTarget = m_State.position;
     m_State.hasFollowTarget = false;
@@ -54,13 +56,16 @@ void CameraController::Update(const CameraUpdateParams& params)
         }
         else
         {
-            // Smoothly snap to tile grid when not moving
+            // Smoothly snap to tile grid when not moving, so a hand-panned editor
+            // camera comes to rest on whole tiles instead of a fractional offset.
             float tileW = static_cast<float>(params.tileWidth);
             float tileH = static_cast<float>(params.tileHeight);
             glm::vec2 snappedPos;
             snappedPos.x = std::round(m_State.position.x / tileW) * tileW;
             snappedPos.y = std::round(m_State.position.y / tileH) * tileH;
 
+            // Settles in 0.5s rather than CAMERA_SETTLE_TIME's 0.6s: this is a
+            // sub-tile correction the user should not have to wait out.
             float alpha = rift::ExpApproachAlpha(params.deltaTime, 0.5f);
             glm::vec2 newPos = m_State.position + (snappedPos - m_State.position) * alpha;
 
@@ -112,9 +117,11 @@ void CameraController::Update(const CameraUpdateParams& params)
     else
     {
         // No manual camera input.
-        // If player is moving with WASD, establish a follow target (with look-ahead).
+        // If player is moving with WASD, establish a follow target.
         if (params.playerMoving || m_State.hasFollowTarget)
         {
+            // Lead the player by up to m_LookAheadDistance in the direction of travel,
+            // scaled by speed so a walk leads less than a run.
             glm::vec2 lead(0.0f);
             float vlen = glm::length(params.playerVelocity);
             if (vlen > 1e-3f && m_LookAheadDistance > 0.0f)
@@ -126,7 +133,7 @@ void CameraController::Update(const CameraUpdateParams& params)
             m_State.hasFollowTarget = true;
         }
 
-        // Smoothly move camera towards follow target if we have one
+        // Smoothly move the camera toward the follow target when one is set.
         if (m_State.hasFollowTarget)
         {
             float alpha = rift::ExpApproachAlpha(params.deltaTime, CAMERA_SETTLE_TIME);
@@ -152,44 +159,9 @@ void CameraController::Update(const CameraUpdateParams& params)
     }
 }
 
-void CameraController::ConfigurePerspective(IRenderer& renderer, float width, float height) const
-{
-    if (m_State.enable3DEffect)
-    {
-        float horizonY = -height * m_State.tilt * 0.20f;
-        float horizonScale = 0.75f + (1.0f - m_State.tilt) * 0.10f;
-
-        float viewportDiagonal = std::sqrt(width * width + height * height);
-        float baseRadius = m_State.globeSphereRadius / m_State.zoom;
-        float minRadius = viewportDiagonal / static_cast<float>(rift::Pi * 2.0);
-        float effectiveSphereRadius = std::max(baseRadius, minRadius);
-
-        renderer.SetFisheyePerspective(
-            true, effectiveSphereRadius, horizonY, horizonScale, width, height);
-    }
-    else
-    {
-        renderer.SetVanishingPointPerspective(false, 0.0f, 1.0f, width, height);
-    }
-}
-
 glm::mat4 CameraController::GetOrthoProjection(float width, float height)
 {
     return glm::ortho(0.0f, width, height, 0.0f, -1.0f, 1.0f);
-}
-
-void CameraController::Toggle3DEffect()
-{
-    SetEnable3DEffect(!m_State.enable3DEffect);
-}
-
-void CameraController::SetEnable3DEffect(bool enabled)
-{
-    m_State.enable3DEffect = enabled;
-    Logger::InfoF(LOG_SUBSYSTEM,
-                  "3D Effect: {} (Radius: {})",
-                  m_State.enable3DEffect ? "ON" : "OFF",
-                  m_State.globeSphereRadius);
 }
 
 void CameraController::HandleZoomScroll(double yoffset,
@@ -206,10 +178,13 @@ void CameraController::HandleZoomScroll(double yoffset,
     float zoomDelta = yoffset > 0 ? 1.1f : 0.9f;
     m_State.zoom *= zoomDelta;
 
-    // Editor mode allows zooming out further (0.1x) to see entire map
+    // Two floors, one shared 4.0x ceiling: gameplay stops at 0.4x, while editor
+    // free-camera mode goes down to 0.1x so an entire map fits on screen.
     float minZoom = editorFreeMode ? 0.1f : 0.4f;
     m_State.zoom = std::max(minZoom, std::min(4.0f, m_State.zoom));
-    // Snap to 0.1 increments
+    // Snap to 0.1 increments. The steps are multiplicative, so without rounding an
+    // in/out pair would not return to where it started (1.1 * 0.9 = 0.99) and the
+    // zoom level would drift with every wheel notch.
     m_State.zoom = std::round(m_State.zoom * 10.0f) / 10.0f;
 
     float newWorldWidth = baseWorldWidth / m_State.zoom;
@@ -251,6 +226,9 @@ void CameraController::ResetZoom(glm::vec2 playerVisualCenter,
 
 void CameraController::ClampToMapBounds(float worldWidth, float worldHeight, float mapW, float mapH)
 {
+    // position is the viewport's top-left corner, so the legal band is
+    // [0, mapSize - viewSize]. When the viewport is larger than the map that upper
+    // bound goes negative and the max(0, ...) wins.
     m_State.position.x = std::max(0.0f, std::min(m_State.position.x, mapW - worldWidth));
     m_State.position.y = std::max(0.0f, std::min(m_State.position.y, mapH - worldHeight));
 }
