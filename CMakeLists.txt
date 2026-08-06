@@ -313,6 +313,10 @@ find_program(GLSLANG_VALIDATOR glslangValidator)
 set(SHADER_SOURCES
     "${SHADERS_DIR}/Geometry.vert"
     "${SHADERS_DIR}/Geometry.frag"
+    # Geometry3D: the world-space MVP path (real camera + depth buffer). The 2D
+    # Geometry pair above is retained for screen-space UI, which is never projected.
+    "${SHADERS_DIR}/Geometry3D.vert"
+    "${SHADERS_DIR}/Geometry3D.frag"
 )
 
 if(GLSLANG_VALIDATOR)
@@ -458,6 +462,8 @@ if(BUILD_TESTS)
         # CharacterKinematics: stateless elevation + walk-animation logic over the
         # Elevation/AnimationState components, extracted from GameCharacter.
         "${CMAKE_SOURCE_DIR}/src/CharacterKinematics.cpp"
+        # SurfaceSystem: support-graph resolution shared by movement/collision.
+        "${CMAKE_SOURCE_DIR}/src/SurfaceSystem.cpp"
         "${CMAKE_SOURCE_DIR}/src/Tilemap.cpp"
         "${CMAKE_SOURCE_DIR}/src/Texture.cpp"
         # TextureStore: renderer-side owner of sprite textures keyed by handle;
@@ -492,7 +498,7 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/DialogueManager.cpp"
         "${CMAKE_SOURCE_DIR}/src/GameStateManager.cpp"
         # Editor + CameraController: needed by ConsoleCommandsTests for the
-        # editor / debug.* / globe.* commands. Editor::Render() in Editor.cpp
+        # editor / debug.* / camera.* commands. Editor::Render() in Editor.cpp
         # references the overlay rendering methods defined in
         # EditorRendering.cpp; both are linked but never invoked at runtime.
         # IRenderer methods they call are virtual and dispatched at runtime,
@@ -501,8 +507,14 @@ if(BUILD_TESTS)
         "${CMAKE_SOURCE_DIR}/src/Editor.cpp"
         "${CMAKE_SOURCE_DIR}/src/EditorRendering.cpp"
         "${CMAKE_SOURCE_DIR}/src/CameraController.cpp"
+        # CameraRig: orbit-camera view/projection, unprojection and ground-plane
+        # queries. Deliberately renderer-free (no IRenderer, no GL/VK types) so
+        # the projection math is unit-testable without a graphics context; the
+        # sibling headers SceneMath/Billboard/Frustum are header-only and need
+        # no entry here.
+        "${CMAKE_SOURCE_DIR}/src/CameraRig.cpp"
         # AuroraTextures: pure procedural RGBA pixel-buffer builders for the
-        # AuroraNight effect; renderer-free, exercised directly by tests.
+        # Aurora effect; renderer-free, exercised directly by tests.
         "${CMAKE_SOURCE_DIR}/src/AuroraTextures.cpp"
     )
 
