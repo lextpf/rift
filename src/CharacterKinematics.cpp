@@ -1,6 +1,7 @@
 #include "CharacterKinematics.hpp"
 
 #include "CharacterConstants.hpp"
+#include "SurfaceSystem.hpp"
 #include "Tilemap.hpp"
 
 #include <cstdlib>
@@ -17,6 +18,10 @@ void SetElevationTarget(Elevation& elev, float offset)
     }
 }
 
+// Every production movement path uses SurfaceSystem::ResolveMove plus CommitSupport instead,
+// and nothing outside ElevationZTests calls this. Its axis test is deliberately looser than the
+// live one, because it accepts a diagonal step onto a ramp, so tightening it here would silently
+// change what those tests pin.
 void UpdatePlane(Elevation& elev, int destTileElev, ElevationAxis tileAxis, int moveDx, int moveDy)
 {
     if (tileAxis == ElevationAxis::None)
@@ -25,6 +30,7 @@ void UpdatePlane(Elevation& elev, int destTileElev, ElevationAxis tileAxis, int 
         // off an elevated region snaps back to ground regardless of drop
         // height. The step gate only protects elevated entries.
         elev.plane = destTileElev;
+        elev.surface = destTileElev == 0 ? SupportSurface::Ground : SupportSurface::Elevation;
         SetElevationTarget(elev, static_cast<float>(destTileElev));
         return;
     }
@@ -46,21 +52,37 @@ void UpdatePlane(Elevation& elev, int destTileElev, ElevationAxis tileAxis, int 
     }
 
     elev.plane = destTileElev;
+    elev.surface = SupportSurface::Elevation;
     SetElevationTarget(elev, static_cast<float>(destTileElev));
+}
+
+SupportState GetSupport(const Elevation& elev)
+{
+    return {elev.surface, elev.plane};
+}
+
+SurfaceTransition ResolveSupport(const Elevation& elev,
+                                 glm::vec2 before,
+                                 glm::vec2 after,
+                                 const Tilemap& tilemap)
+{
+    return SurfaceSystem::ResolveMove(GetSupport(elev), before, after, tilemap);
+}
+
+void CommitSupport(Elevation& elev, SupportState support)
+{
+    elev.surface = support.surface;
+    elev.plane = support.height;
+    SetElevationTarget(elev, static_cast<float>(support.height));
 }
 
 void DerivePlane(Elevation& elev, glm::vec2 before, glm::vec2 after, const Tilemap& tilemap)
 {
-    glm::vec2 movement = after - before;
-    int dx = movement.x > 0.01f ? 1 : (movement.x < -0.01f ? -1 : 0);
-    int dy = movement.y > 0.01f ? 1 : (movement.y < -0.01f ? -1 : 0);
-
-    int tileX = 0;
-    int tileY = 0;
-    tilemap.WorldToTileCoord(after.x, after.y, tileX, tileY);
-    int destElev = tilemap.GetElevation(tileX, tileY);
-    ElevationAxis destAxis = tilemap.GetElevationAxisAt(tileX, tileY);
-    UpdatePlane(elev, destElev, destAxis, dx, dy);
+    const SurfaceTransition transition = ResolveSupport(elev, before, after, tilemap);
+    if (transition.connected)
+    {
+        CommitSupport(elev, transition.support);
+    }
 }
 
 void UpdateElevation(Elevation& elev, float deltaTime)
