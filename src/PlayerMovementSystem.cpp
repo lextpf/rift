@@ -138,9 +138,10 @@ void Step(Transform& xf,
           glm::vec2 direction,
           float dt,
           const Tilemap* tilemap,
-          const std::vector<glm::vec2>* npcPositions)
+          const std::vector<CharacterCollisionBody>* npcBodies)
 {
-    constexpr float TILE_SIZE = 16.0f;  // Fallback tile size when no tilemap (matches SetPosition).
+    // Fallback tile size when there is no tilemap; matches PlayerSystem::SetTilePosition.
+    constexpr float TILE_SIZE = 16.0f;
 
     auto signWithDeadzone = [](float v, float dz = 0.2f) -> int
     {
@@ -222,9 +223,11 @@ void Step(Transform& xf,
         return;
     }
 
-    // Track last safe position whenever we're not embedded in a solid tile.
+    const SupportState support = CharacterKinematics::GetSupport(elev);
+
+    // Track the last safe position whenever the box is not embedded in a solid tile.
     if (!CollisionSystem::CollidesWithTilesStrict(
-            hitbox, xf.position, tilemap, 0, 0, false, elev.plane))
+            hitbox, xf.position, tilemap, 0, 0, false, support))
     {
         movement.lastSafeTileCenter = CurrentTileCenter(xf.position, tileSize);
     }
@@ -236,13 +239,18 @@ void Step(Transform& xf,
                 CollisionSystem::HandleStuckRecovery(hitbox,
                                                      xf.position,
                                                      movement,
-                                                     elev.plane,
+                                                     support,
                                                      CurrentTileCenter(xf.position, tileSize),
                                                      tilemap,
-                                                     npcPositions))
+                                                     npcBodies))
         {
-            // SetPosition: snap feet to the bottom-center of the target tile, then reset the motor.
-            // Use the resolved tileSize (not the 16px fallback) so non-16px maps snap correctly.
+            // Re-snap the feet to a tile's bottom-center and reset the motor, the way
+            // PlayerSystem::SetTilePosition does. Use the resolved tileSize (not the 16px
+            // fallback) so non-16px maps snap correctly.
+            // TODO: teleport already sits at a tile's bottom edge, so the bare
+            // TileMath::TileIndex row floors to the next row down and the snap lands one tile
+            // south of the tile FindClosestSafeTileCenter validated. Use TileMath::AnchorTileRow
+            // for the row, or assign *teleport directly.
             const int tileX = TileMath::TileIndex(teleport->x, tileSize);
             const int tileY = TileMath::TileIndex(teleport->y, tileSize);
             xf.position = TileMath::TileFeetCenter(tileX, tileY, tileSize);
@@ -278,10 +286,16 @@ void Step(Transform& xf,
 
     glm::vec2 desiredMovement = disp;
 
-    bool npcBlocked =
-        CollisionSystem::CollidesWithNPC(hitbox, xf.position + desiredMovement, npcPositions);
-    bool tileBlocked = CollisionSystem::CollidesWithTilesStrict(
-        hitbox, xf.position + desiredMovement, tilemap, moveDx, moveDy, diagonalInput, elev.plane);
+    auto probeMovement = [&](glm::vec2 target, int dx, int dy, bool diagonal)
+    {
+        return CollisionSystem::ProbeMovement(
+            hitbox, xf.position, target, support, tilemap, npcBodies, dx, dy, diagonal);
+    };
+
+    CollisionSystem::MovementProbeResult directProbe =
+        probeMovement(xf.position + desiredMovement, moveDx, moveDy, diagonalInput);
+    bool npcBlocked = directProbe.npcBlocked;
+    bool tileBlocked = directProbe.tileBlocked || !directProbe.transition.connected;
     bool initiallyTileBlocked = tileBlocked;
     bool didCornerSlide = false;
 
@@ -294,13 +308,13 @@ void Step(Transform& xf,
         glm::vec2 slideMovement = CollisionSystem::TrySlideMovement(hitbox,
                                                                     xf.position,
                                                                     movement,
-                                                                    elev.plane,
+                                                                    support,
                                                                     desiredMovement,
                                                                     normalizedDir,
                                                                     dt,
                                                                     targetSpeed,
                                                                     tilemap,
-                                                                    npcPositions,
+                                                                    npcBodies,
                                                                     moveDx,
                                                                     moveDy,
                                                                     diagonalInput);
@@ -316,10 +330,8 @@ void Step(Transform& xf,
             glm::vec2 moveX(desiredMovement.x, 0.0f);
             glm::vec2 moveY(0.0f, desiredMovement.y);
 
-            bool okX = !CollisionSystem::CollidesAt(
-                hitbox, xf.position + moveX, tilemap, npcPositions, moveDx, 0, false, elev.plane);
-            bool okY = !CollisionSystem::CollidesAt(
-                hitbox, xf.position + moveY, tilemap, npcPositions, 0, moveDy, false, elev.plane);
+            bool okX = !probeMovement(xf.position + moveX, moveDx, 0, false).IsBlocked();
+            bool okY = !probeMovement(xf.position + moveY, 0, moveDy, false).IsBlocked();
 
             if (okX && !okY)
             {
@@ -348,33 +360,30 @@ void Step(Transform& xf,
             CollisionSystem::ApplyLaneSnapping(hitbox,
                                                xf.position,
                                                CurrentTileCenter(xf.position, tileSize),
-                                               elev.plane,
+                                               support,
                                                desiredMovement,
                                                normalizedDir,
                                                dt,
                                                tilemap,
-                                               npcPositions,
+                                               npcBodies,
                                                effDx,
                                                effDy);
     }
 
-    // Final collision check with axis-separated fallback.
-    if (CollisionSystem::CollidesAt(hitbox,
-                                    xf.position + desiredMovement,
-                                    tilemap,
-                                    npcPositions,
-                                    effDx,
-                                    effDy,
-                                    effDiagonal,
-                                    elev.plane))
+    // Final collision check with axis-separated fallback. Keep the exact probe
+    // that accepted the resolved movement: its direction flags describe player
+    // intent, while a tiny lane-snap correction is not diagonal input.
+    CollisionSystem::MovementProbeResult acceptedProbe =
+        probeMovement(xf.position + desiredMovement, effDx, effDy, effDiagonal);
+    if (acceptedProbe.IsBlocked())
     {
         glm::vec2 tryX = xf.position + glm::vec2(desiredMovement.x, 0.0f);
         glm::vec2 tryY = xf.position + glm::vec2(0.0f, desiredMovement.y);
 
-        bool okX = !CollisionSystem::CollidesAt(
-            hitbox, tryX, tilemap, npcPositions, moveDx, 0, false, elev.plane);
-        bool okY = !CollisionSystem::CollidesAt(
-            hitbox, tryY, tilemap, npcPositions, 0, moveDy, false, elev.plane);
+        const CollisionSystem::MovementProbeResult xProbe = probeMovement(tryX, moveDx, 0, false);
+        const CollisionSystem::MovementProbeResult yProbe = probeMovement(tryY, 0, moveDy, false);
+        bool okX = !xProbe.IsBlocked();
+        bool okY = !yProbe.IsBlocked();
 
         if (okX && okY)
         {
@@ -403,19 +412,23 @@ void Step(Transform& xf,
             if (preferX)
             {
                 desiredMovement.y = 0.0f;
+                acceptedProbe = xProbe;
             }
             else
             {
                 desiredMovement.x = 0.0f;
+                acceptedProbe = yProbe;
             }
         }
         else if (okX)
         {
             desiredMovement.y = 0.0f;
+            acceptedProbe = xProbe;
         }
         else if (okY)
         {
             desiredMovement.x = 0.0f;
+            acceptedProbe = yProbe;
         }
         else
         {
@@ -423,11 +436,11 @@ void Step(Transform& xf,
         }
     }
 
-    // Blocked-axis velocity kill: if we wanted to move on an axis but produced (near)
-    // nothing, drop that velocity component so we don't build invisible speed against a wall.
+    // Blocked-axis velocity kill: when an axis was wanted but produced almost no motion,
+    // drop that velocity component so speed cannot build invisibly against a wall.
     //
     // Exception: a corner slide redirects the blocked axis into a productive perpendicular
-    // move, so the forward momentum is NOT wasted against a wall - keep it. Zeroing it here
+    // move, so the forward momentum is not wasted against a wall - keep it. Zeroing it here
     // makes the next frame ramp the forward speed from zero, the player drifts slowly back
     // into the corner, slides again, and re-zeros: the climb stutters to ~1/3 speed ("jelly").
     // Preserving the velocity lets a held input round the corner at full speed, matching the
@@ -444,11 +457,11 @@ void Step(Transform& xf,
         }
     }
 
-    if (glm::length(desiredMovement) > 0.001f)
+    if (glm::length(desiredMovement) > 0.001f && !acceptedProbe.IsBlocked())
     {
         input.lastMovementDirection = glm::normalize(desiredMovement);
+        xf.position += desiredMovement;
+        CharacterKinematics::CommitSupport(elev, acceptedProbe.transition.support);
     }
-
-    xf.position += desiredMovement;
 }
 }  // namespace PlayerMovementSystem
