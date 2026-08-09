@@ -37,14 +37,12 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "NPC";
 
-// Default greeting seeded into a spawned NPC's simple dialogue (matches the
-// former NonPlayerCharacter constructor).
+// Default greeting seeded into a spawned NPC's simple dialogue when the record carries no text.
 constexpr const char* DEFAULT_NPC_TEXT = "Hello! How are you today?";
 
-// Monotonic source of per-session NPC instance ids (was a file-local static in
-// NonPlayerCharacter.cpp). Gives each NPC a stable identity distinct from its
-// entity handle so dialogue/editor/console references survive despawn/undo.
-// Single-threaded (NPCs are only created on the game thread). Not serialized.
+// Monotonic source of per-session NPC instance ids. Gives each NPC a stable identity distinct
+// from its entity handle, so dialogue, editor and console references survive despawn and undo.
+// Single-threaded, because NPCs are only created on the game thread. Never serialized.
 std::uint64_t NextNpcInstanceId()
 {
     static std::uint64_t s_Next = 1;
@@ -80,8 +78,8 @@ void SetNpcTile(Transform& xf,
 
 ecs::entity SpawnNpc(ecs::registry& world, const NpcRecord& record, IRenderer* uploadVia)
 {
-    // Services come from globals (null-tolerant, mirroring the old per-entity
-    // pointer fallbacks; tests may run without WorldServices published).
+    // Services come from globals and each lookup tolerates a null, because tests may run
+    // without WorldServices published.
     const WorldServices* svc = world.globals().find<WorldServices>();
     TextureStore* textures = (svc != nullptr) ? svc->textures : nullptr;
     DialogueStore* dialogue = (svc != nullptr) ? svc->dialogue : nullptr;
@@ -169,7 +167,10 @@ NpcRecord SnapshotNpc(const ecs::registry& world, ecs::entity e)
     rec.text = dialogue.text;
     rec.tileX = patrol.tileX;
     rec.tileY = patrol.tileY;
-    rec.tileSize = 16;  // project tile size; tile -> feet round-trips identically.
+    // Hardcoded 16, not read from the project manifest. The snapshot stores only a tile index,
+    // so the round trip is exact on a 16px project. On any other tile size SpawnNpc re-places the
+    // NPC using this stale size and the respawned feet land in the wrong world position.
+    rec.tileSize = 16;
     rec.instanceId = identity.instanceId;  // preserve identity across respawn (undo/redo).
     rec.facing = facing.dir;
 
@@ -193,9 +194,9 @@ ecs::entity SpawnPlayer(ecs::registry& world, glm::vec2 spawnPos)
     PlayerMovementState movement{};
     movement.lastSafeTileCenter = spawnPos;
 
-    // No Identity component: the player is referenced solely by its m_PlayerEntity
-    // handle (never by a despawn-surviving instanceId the way NPCs are), so the
-    // stable-id indirection that Identity provides would be dead weight here.
+    // No Identity component. The player is referenced only by its m_PlayerEntity handle, never
+    // by a despawn-surviving instanceId the way NPCs are, so the stable-id indirection would be
+    // dead weight here.
     const ecs::entity e = world.create(std::move(xf),
                                        Elevation{},
                                        Facing{},
@@ -290,4 +291,16 @@ void BuildNpcFeet(ecs::registry& world, std::vector<glm::vec2>& out)
     out.reserve(world.view<NpcTag>().count());
     world.each<const Transform, const NpcTag>([&out](const Transform& xf)
                                               { out.push_back(xf.position); });
+}
+
+void BuildNpcCollisionBodies(ecs::registry& world, std::vector<CharacterCollisionBody>& out)
+{
+    out.clear();
+    out.reserve(world.view<NpcTag>().count());
+    world.each<const Transform, const Elevation, const NpcTag>(
+        [&out](const Transform& xf, const Elevation& elevation)
+        {
+            out.push_back(
+                CharacterCollisionBody{xf.position, {elevation.surface, elevation.plane}});
+        });
 }
