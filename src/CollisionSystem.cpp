@@ -1,39 +1,9 @@
-// CollisionSystem - Player vs. Tilemap / NPC collision pipeline (free functions).
-//
-// @author Claude (https://github.com/claude)
-// The tile-overlap test is gated by a short cascade of permissive checks
-// before any "hard" collision is reported. Reading the helpers top-down without
-// this map can be misleading - each phase reasons about a different geometric
-// situation and has its own tolerance budget.
-//
-//                   +--------------------------------------+
-//   moveDx,moveDy   | CollidesWithTilesStrict              |
-//   diagonalInput   |   for each overlapping tile:         |
-//   bottomCenterPos |     1) ShouldSkipDiagonalTile        |--+--> "no
-//                   |        cardinal grazing past corner  |  |     collision"
-//                   |     2) ShouldTolerateWallPenetration |  |
-//                   |        sliding along a wall face     |  |
-//                   |     3) ShouldAllowCornerCut          |  |
-//                   |        through an exposed convex     |  |
-//                   |        corner with escape route      |  |
-//                   |     4) else: report collision        |--+--> "blocked"
-//                   +--------------------------------------+
-//
-// When a strict collision is reported, TrySlideMovement consults
-// GetCornerSlideDirection to project the desired motion onto the nearest
-// open corridor and binary-searches for the largest safe step. The
-// PlayerMovementState slide hysteresis fields persist between frames to stop
-// direction flips when the player is jittering near a corner's tie-breaker.
-//
-// The threshold constants below are calibrated for the project's 16 px
-// tile and ~16 px hitbox; changing the tile/hitbox geometry requires
-// re-tuning them rather than scaling proportionally.
-
 #include "CollisionSystem.hpp"
 
 #include "CharacterConstants.hpp"
 #include "CollisionGeometry.hpp"
 #include "PlayerMovementState.hpp"
+#include "SurfaceSystem.hpp"
 #include "Tilemap.hpp"
 #include "TileMath.hpp"
 
@@ -69,6 +39,7 @@ struct TileOverlapContext
     int moveDx, moveDy;         // Movement direction signs (-1, 0, or +1)
     bool diagonalInput;         // True if two directional keys are held simultaneously
     float tileW, tileH;         // Tile dimensions in pixels (typically 16x16)
+    SupportState support;       // Candidate support surface and exact height
 };
 
 // Check if a diagonal corner tile should be ignored during cardinal movement.
@@ -83,7 +54,7 @@ bool ShouldSkipDiagonalTile(const TileOverlapContext& ctx)
         // Only diagonally-adjacent tiles
         if (std::abs(dxT) == 1 && std::abs(dyT) == 1)
         {
-            // How deep we penetrated into the diagonal tile along the forward axis
+            // Penetration depth into the diagonal tile along the forward axis.
             float forwardPenetration = (ctx.moveDy != 0) ? ctx.overlapH : ctx.overlapW;
 
             // Ignore diagonal tiles until the player is at least this many pixels
@@ -124,7 +95,7 @@ bool ShouldTolerateWallPenetration(const TileOverlapContext& ctx)
         bool movingInto = false;
         if (penetrationIsY)
         {
-            // Y+ is down in our world
+            // Y+ points down in world space.
             if (tileAbove)
                 movingInto = (ctx.moveDy < 0);  // moving up into top wall
             else if (tileBelow)
@@ -141,13 +112,13 @@ bool ShouldTolerateWallPenetration(const TileOverlapContext& ctx)
         }
 
         // Require at least 4px of contact along the wall face before
-        // suppressing collision. Near corners, faceOverlap shrinks - we
-        // must NOT suppress there or the player could clip through.
+        // suppressing collision. Near corners faceOverlap shrinks, and suppressing there
+        // would let the player clip through.
         constexpr float FACE_CONTACT_MIN_PX = 4.0f;
         float faceOverlap = penetrationIsY ? ctx.overlapW : ctx.overlapH;
 
-        // Only allow passive tolerance when we're clearly alongside a wall face.
-        // Near corners, faceOverlap gets small -> do NOT suppress collision there.
+        // Allow passive tolerance only when the box is clearly alongside a wall face.
+        // Near corners, faceOverlap gets small -> do not suppress collision there.
         if (!movingInto && penetrationPx <= PASSIVE_PENETRATION_PX &&
             faceOverlap >= FACE_CONTACT_MIN_PX)
             return true;
@@ -165,7 +136,7 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
     const float HALF_W = hitbox.halfWidth;
     const float BOX_H = hitbox.height;
     constexpr float EPS = CharacterConstants::COLLISION_EPS;
-    // Maximum hitbox-area overlap with a corner tile before we stop allowing
+    // Largest hitbox-area overlap with a corner tile that still permits
     // corner cutting. 20% lets the player clip through exposed convex corners
     // smoothly but still blocks if they push too far into the tile.
     constexpr float CORNER_OVERLAP_THRESHOLD = 0.20f;
@@ -179,7 +150,10 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
     { return x >= 0 && y >= 0 && x < tilemap->GetMapWidth() && y < tilemap->GetMapHeight(); };
 
     auto tileBlocked = [&](int x, int y)
-    { return !inBounds(x, y) || tilemap->GetTileCollision(x, y); };
+    {
+        return !inBounds(x, y) || (tilemap->GetTileCollision(x, y) &&
+                                   SurfaceSystem::CollisionBelongsTo(*tilemap, x, y, ctx.support));
+    };
 
     // Corner cutting: when the player clips a true corner with <20% overlap, allow
     // the overlap if open space exists perpendicular to motion. Stops "stuck on
@@ -252,9 +226,8 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
         int sx = sideSign(dx, CORNER_QUAD_EPS);
         int sy = sideSign(dy, CORNER_QUAD_EPS);
 
-        // Tie-break when we're near the center using movement direction (approach
-        // direction). If we're moving right, we are approaching the blocking tile from the
-        // left, etc.
+        // Tie-break near the center using the movement direction, which is the approach
+        // direction. Moving right means approaching the blocking tile from its left side.
         if (sx == 0)
         {
             if (ctx.moveDx > 0)
@@ -264,7 +237,7 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
         }
         if (sy == 0)
         {
-            // Y+ is down in our world
+            // Y+ points down in world space.
             if (ctx.moveDy > 0)
                 sy = -1;  // moving down -> approaching from above
             else if (ctx.moveDy < 0)
@@ -277,8 +250,8 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
         bool playerBelowTile = (sy > 0);
 
         // If both movement axes are pushing directly into blocked faces (solid rectangle
-        // corner), do not allow corner cutting - force a collision so we slide instead of
-        // clipping through.
+        // corner), do not allow corner cutting. Force a collision so the character slides
+        // instead of clipping through.
         bool movingIntoClosedCorner =
             ctx.diagonalInput &&
             ((ctx.moveDx > 0 && !emptyRight) || (ctx.moveDx < 0 && !emptyLeft)) &&
@@ -292,7 +265,7 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
         bool canCutThisCorner = false;
 
         // Check if the escape route in the perpendicular direction is clear
-        // by looking at adjacent tiles to the PLAYER, not to the collision tile
+        // by looking at adjacent tiles to the player, not to the collision tile
 
         auto hasEscapeRoute = [&](int escapeX, int escapeY) -> bool
         {
@@ -390,7 +363,7 @@ bool ShouldAllowCornerCut(const Hitbox& hitbox,
             // For cardinal movement, use perpendicular penetration in pixels
             // rather than overlap-area ratio. Area-based thresholds are too strict
             // when the player is aligned along one axis (tall, thin overlap sliver).
-            // Pixel-based check lets us allow up to 4px of corner grazing.
+            // A pixel-based check permits up to 4px of corner grazing.
             bool cardinalMove = ((ctx.moveDx != 0) ^ (ctx.moveDy != 0)) && !ctx.diagonalInput;
             if (cardinalMove)
             {
@@ -429,17 +402,24 @@ float CalculateFollowAlpha(float deltaTime, float settleTime, float epsilon)
 
 bool CollidesWithNPC(const Hitbox& hitbox,
                      const glm::vec2& bottomCenterPos,
-                     const std::vector<glm::vec2>* npcPositions)
+                     SupportState support,
+                     const std::vector<CharacterCollisionBody>* npcBodies)
 {
-    if (!npcPositions || npcPositions->empty())
+    if (!npcBodies || npcBodies->empty())
         return false;
 
     // Player vs each NPC: same feet-anchored 16x16 box, epsilon-shrunk to avoid
     // edge-on-edge false positives. See CollisionGeometry::FeetBoxesOverlap.
-    for (const glm::vec2& npcPos : *npcPositions)
+    for (const CharacterCollisionBody& npc : *npcBodies)
     {
+        // Different surface or a different exact height: the two bodies share an X/Y
+        // footprint but not a walkable plane, so they can never touch. Skipped outright -
+        // there is no tolerance band here, unlike the tile cascade below.
+        if (npc.support != support)
+            continue;
+
         if (CollisionGeometry::FeetBoxesOverlap(bottomCenterPos,
-                                                npcPos,
+                                                npc.feet,
                                                 hitbox.halfWidth,
                                                 hitbox.height,
                                                 CharacterConstants::COLLISION_EPS))
@@ -456,7 +436,7 @@ bool CollidesWithTilesStrict(const Hitbox& hitbox,
                              int moveDx,
                              int moveDy,
                              bool diagonalInput,
-                             int plane)
+                             SupportState support)
 {
     if (!tilemap)
         return false;
@@ -497,11 +477,10 @@ bool CollidesWithTilesStrict(const Hitbox& hitbox,
             if (!inBounds(tx, ty) || !tilemap->GetTileCollision(tx, ty))
                 continue;
 
-            // Z-aware skip: a collision tile only blocks the character when
-            // its elevation is at-or-below the character's logical plane.
-            // Tiles above the plane (e.g. a bridge railing while the player
-            // is at ground level) are non-blocking - the player walks under.
-            if (tilemap->GetElevation(tx, ty) > plane)
+            // Collision belongs to one exact support. A 10px deck railing
+            // blocks a 10px deck character, but neither implicit ground nor a
+            // neighboring 6px ramp character.
+            if (!SurfaceSystem::CollisionBelongsTo(*tilemap, tx, ty, support))
                 continue;
 
             float tileMinX = tx * TILE_W, tileMaxX = (tx + 1) * TILE_W;
@@ -510,25 +489,11 @@ bool CollidesWithTilesStrict(const Hitbox& hitbox,
             float overlapH = std::max(0.0f, std::min(maxY, tileMaxY) - std::max(minY, tileMinY));
             float overlapRatio = (overlapW * overlapH) / hitboxArea;
 
-            TileOverlapContext ctx{bottomCenterPos,
-                                   hitboxCenter,
-                                   hitboxArea,
-                                   overlapW,
-                                   overlapH,
-                                   overlapRatio,
-                                   tx,
-                                   ty,
-                                   tileMinX,
-                                   tileMaxX,
-                                   tileMinY,
-                                   tileMaxY,
-                                   playerTileX,
-                                   playerTileY,
-                                   moveDx,
-                                   moveDy,
-                                   diagonalInput,
-                                   TILE_W,
-                                   TILE_H};
+            TileOverlapContext ctx{bottomCenterPos, hitboxCenter, hitboxArea, overlapW,
+                                   overlapH,        overlapRatio, tx,         ty,
+                                   tileMinX,        tileMaxX,     tileMinY,   tileMaxY,
+                                   playerTileX,     playerTileY,  moveDx,     moveDy,
+                                   diagonalInput,   TILE_W,       TILE_H,     support};
 
             if (ShouldSkipDiagonalTile(ctx))
                 continue;
@@ -551,22 +516,54 @@ bool CollidesWithTilesStrict(const Hitbox& hitbox,
 bool CollidesAt(const Hitbox& hitbox,
                 const glm::vec2& bottomCenterPos,
                 const Tilemap* tilemap,
-                const std::vector<glm::vec2>* npcPositions,
+                const std::vector<CharacterCollisionBody>* npcBodies,
                 int moveDx,
                 int moveDy,
                 bool diagonalInput,
-                int plane)
+                SupportState support)
 {
     return CollidesWithTilesStrict(
-               hitbox, bottomCenterPos, tilemap, moveDx, moveDy, diagonalInput, plane) ||
-           CollidesWithNPC(hitbox, bottomCenterPos, npcPositions);
+               hitbox, bottomCenterPos, tilemap, moveDx, moveDy, diagonalInput, support) ||
+           CollidesWithNPC(hitbox, bottomCenterPos, support, npcBodies);
 }
 
-// @author Codex (https://github.com/codex)
+MovementProbeResult ProbeMovement(const Hitbox& hitbox,
+                                  glm::vec2 origin,
+                                  glm::vec2 target,
+                                  SupportState currentSupport,
+                                  const Tilemap* tilemap,
+                                  const std::vector<CharacterCollisionBody>* npcBodies,
+                                  int moveDx,
+                                  int moveDy,
+                                  bool diagonalInput)
+{
+    MovementProbeResult result;
+    result.transition = {currentSupport, true};
+    if (tilemap)
+    {
+        result.transition = SurfaceSystem::ResolveMove(currentSupport, origin, target, *tilemap);
+        if (!result.transition.connected)
+        {
+            result.tileBlocked = true;
+            return result;
+        }
+
+        result.tileBlocked = CollidesWithTilesStrict(
+            hitbox, target, tilemap, moveDx, moveDy, diagonalInput, result.transition.support);
+    }
+    result.npcBlocked = CollidesWithNPC(hitbox, target, result.transition.support, npcBodies);
+    return result;
+}
+
 // Corner here means a blocked tile with a perpendicular opening
 // (open above/below for horizontal, or left/right for vertical).
 // Mid-wall tiles in a long flat wall are explicitly rejected so
 // the player doesn't get pulled sideways along a straight surface.
+//
+// moveDirX/moveDirY are named out: the forward direction comes from
+// `testPos - playerPos` instead, so passing a direction here has no effect. The
+// parameters stay only to keep the declared signature intact.
+//
 // When both perpendicular directions are open, the choice
 // is made in this order:
 //   1. geometric necessity (only one side has open space)  ->  forced
@@ -578,7 +575,7 @@ bool CollidesAt(const Hitbox& hitbox,
 glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
                                   glm::vec2 playerPos,
                                   PlayerMovementState& movement,
-                                  int plane,
+                                  SupportState support,
                                   const glm::vec2& testPos,
                                   const Tilemap* tilemap,
                                   int /*moveDirX*/,
@@ -594,10 +591,14 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
     glm::vec2 step = testPos - playerPos;
     bool horizontalPrimary = std::abs(step.x) >= std::abs(step.y);
+    const SurfaceTransition directTransition =
+        SurfaceSystem::ResolveMove(support, playerPos, testPos, *tilemap);
+    const SupportState obstacleSupport =
+        directTransition.connected ? directTransition.support : support;
 
     // Use a fixed 1-pixel forward probe distance for corner detection.
-    // This makes detection frame-rate independent - we're just checking IF a path exists,
-    // not how far we can move this frame. The actual movement distance is handled separately.
+    // This keeps detection frame-rate independent: the probe asks whether a path exists, not
+    // how far the character can move this frame. Movement distance is resolved separately.
     float forwardSign =
         horizontalPrimary ? (step.x >= 0 ? 1.0f : -1.0f) : (step.y >= 0 ? 1.0f : -1.0f);
     glm::vec2 forward =
@@ -607,12 +608,13 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
     {
         if (tx < 0 || ty < 0 || tx >= tilemap->GetMapWidth() || ty >= tilemap->GetMapHeight())
             return true;
-        return tilemap->GetTileCollision(tx, ty);
+        return tilemap->GetTileCollision(tx, ty) &&
+               SurfaceSystem::CollisionBelongsTo(*tilemap, tx, ty, obstacleSupport);
     };
 
-    // Detect corner type based on the CLOSEST ACTUAL CORNER to player's center
-    // for multi-tile walls, only the END tiles are corners - middle tiles have no perpendicular
-    // opening We need to find the nearest tile that actually has a corner (perpendicular opening)
+    // Detect the corner type from the corner closest to the player's center. On a multi-tile
+    // wall only the end tiles are corners, because middle tiles have no perpendicular opening.
+    // So find the nearest tile that does have one.
     bool cornerEmptyAbove = false;
     bool cornerEmptyBelow = false;
     bool cornerEmptyLeft = false;
@@ -629,7 +631,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
         if (horizontalPrimary)
         {
-            // Moving horizontally - find the closest CORNER tile in the forward column
+            // Moving horizontally - find the closest corner tile in the forward column
             forwardTileX = (step.x < 0) ? TileMath::TileIndex(testPos.x - hitbox.halfWidth, TILE_W)
                                         : TileMath::TileIndex(testPos.x + hitbox.halfWidth, TILE_W);
 
@@ -661,7 +663,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
         }
         else
         {
-            // Moving vertically - find the closest CORNER tile in the forward row
+            // Moving vertically - find the closest corner tile in the forward row
             forwardTileY = (step.y < 0) ? TileMath::TileIndex(testPos.y - hitbox.height, TILE_H)
                                         : TileMath::TileIndex(testPos.y, TILE_H);
 
@@ -695,7 +697,8 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
         if (!foundAnyBlocked)
         {
-            // No blocked tiles - shouldn't happen, but just in case
+            // No blocked tiles. Unreachable in practice, so refuse the slide rather than
+            // fall through with an undefined corner.
             return glm::vec2(0.0f);
         }
 
@@ -718,7 +721,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
             return glm::vec2(0.0f);
         }
 
-        // Use ONLY the closest corner tile's info
+        // Use only the closest corner tile's info
         bool emptyAbove = !tileBlocked(bestTileX, bestTileY - 1);
         bool emptyBelow = !tileBlocked(bestTileX, bestTileY + 1);
         bool emptyLeft = !tileBlocked(bestTileX - 1, bestTileY);
@@ -730,10 +733,16 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
         cornerEmptyRight = emptyRight;
     }
 
-    // IMPORTANT: do NOT call CollidesWithTilesStrict with (0,0) here,
+    // IMPORTANT: do not call CollidesWithTilesStrict with (0,0) here,
     // or your SIDE_WALL_TOLERANCE never runs.
     auto hardTileBlocked = [&](const glm::vec2& p, int dx, int dy) -> bool
-    { return CollidesWithTilesStrict(hitbox, p, tilemap, dx, dy, /*diagonalInput*/ false, plane); };
+    {
+        const SurfaceTransition transition =
+            SurfaceSystem::ResolveMove(support, playerPos, p, *tilemap);
+        return !transition.connected ||
+               CollidesWithTilesStrict(
+                   hitbox, p, tilemap, dx, dy, /*diagonalInput*/ false, transition.support);
+    };
 
     struct Eval
     {
@@ -791,7 +800,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
         dPos = {1.0f, 0.0f};
     }
 
-    // Check if only ONE direction is geometrically valid
+    // Check if only one direction is geometrically valid
     bool bothDirectionsOpen = horizontalPrimary ? (cornerEmptyAbove && cornerEmptyBelow)
                                                 : (cornerEmptyLeft && cornerEmptyRight);
 
@@ -820,8 +829,8 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
     }
 
     // Priority order:
-    // 1. If only ONE direction leads to open space, use it (no choice)
-    // 2. If BOTH directions are open, use player's offset from wall center
+    // 1. If only one direction leads to open space, use it (no choice)
+    // 2. If both directions are open, use player's offset from wall center
     // 3. Then hysteresis/last input as tiebreaker
     // 4. Counter-clockwise as final fallback
     auto preferredFirst = [&]() -> std::array<glm::vec2, 2>
@@ -896,7 +905,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
     Eval a = evalDir(dirs[0], MAX_PROBE);
 
-    // Only evaluate second direction if BOTH directions are geometrically open
+    // Only evaluate second direction if both directions are geometrically open
     Eval b;
     if (bothDirectionsOpen)
     {
@@ -937,11 +946,11 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
     glm::vec2 chosen = pick(a, b);
 
-    // Check if corner cutting is blocked for the corner we would be sliding around
-    // We need to find the blocking tile and determine which corner would be cut
+    // Check whether corner cutting is blocked for the corner being slid around. That needs
+    // the blocking tile and which of its corners would be cut.
     if (glm::length(chosen) > 0.001f)
     {
-        // Find the blocking tile we're sliding around
+        // Find the blocking tile being slid around.
         float hitboxCenterY = testPos.y - hitbox.height * 0.5f;
         int blockTileX, blockTileY;
 
@@ -950,7 +959,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
             // Moving horizontally - blocking tile is in the forward column
             blockTileX = (step.x < 0) ? TileMath::TileIndex(testPos.x - hitbox.halfWidth, TILE_W)
                                       : TileMath::TileIndex(testPos.x + hitbox.halfWidth, TILE_W);
-            // Find the tile we're actually sliding around (closest to hitbox center)
+            // Find the tile being slid around, the one closest to the hitbox center.
             int hitboxTopTileY = TileMath::TileIndex(testPos.y - hitbox.height, TILE_H);
             int hitboxBottomTileY = TileMath::TileIndex(testPos.y - 0.01f, TILE_H);
             blockTileY = hitboxTopTileY;
@@ -1036,7 +1045,7 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
     }
 
     // Update hysteresis and commit timer
-    // Only set commit timer when direction actually changes to a new non-zero direction
+    // Set the commit timer only when the direction changes to a new non-zero direction.
     if (glm::length(chosen) > 0.001f)
     {
         if (glm::length(movement.slideDir) < 0.001f ||
@@ -1052,9 +1061,9 @@ glm::vec2 GetCornerSlideDirection(const Hitbox& hitbox,
 
 glm::vec2 FindClosestSafeTileCenter(const Hitbox& hitbox,
                                     glm::vec2 playerPos,
-                                    int plane,
+                                    SupportState support,
                                     const Tilemap* tilemap,
-                                    const std::vector<glm::vec2>* npcPositions)
+                                    const std::vector<CharacterCollisionBody>* npcBodies)
 {
     if (!tilemap)
         return playerPos;
@@ -1078,10 +1087,16 @@ glm::vec2 FindClosestSafeTileCenter(const Hitbox& hitbox,
             if (tx < 0 || ty < 0 || tx >= tilemap->GetMapWidth() || ty >= tilemap->GetMapHeight())
                 continue;
 
+            if (support.surface == SupportSurface::Elevation &&
+                tilemap->GetElevation(tx, ty) != support.height)
+            {
+                continue;
+            }
+
             glm::vec2 bottomCenterPos(tx * TILE_W + TILE_W * 0.5f, ty * TILE_H + TILE_H);
 
-            if (!CollidesWithTilesStrict(hitbox, bottomCenterPos, tilemap, 0, 0, false, plane) &&
-                !CollidesWithNPC(hitbox, bottomCenterPos, npcPositions))
+            if (!CollidesWithTilesStrict(hitbox, bottomCenterPos, tilemap, 0, 0, false, support) &&
+                !CollidesWithNPC(hitbox, bottomCenterPos, support, npcBodies))
             {
                 float dist2 = glm::dot(bottomCenterPos - playerPos, bottomCenterPos - playerPos);
                 if (dist2 < bestDist2)
@@ -1095,16 +1110,33 @@ glm::vec2 FindClosestSafeTileCenter(const Hitbox& hitbox,
     return bestCenter;
 }
 
+// Resolve a blocked step into a slide along the obstacle.
+//
+// Two notions of "forward" are in play, and mixing them up is the usual mistake:
+// `forwardProbe` is a fixed 1 px ray used only to detect whether a path exists, which keeps
+// detection frame-rate independent, while `forwardMove` is this frame's real displacement
+// taken from `desiredMovement`.
+//
+// Passes, in order; 4-9 run for the preferred slide side, then for its opposite:
+//   1. direct probe clear            -> return desiredMovement unchanged
+//   2. NPC block                     -> stop and clear the hysteresis
+//   3. no corner slide direction     -> stop
+//   4. scan the perpendicular offset 1..16 px until slide + forwardProbe is clear
+//   5. clamp that offset to currentSpeed * deltaTime, then to 75% of the forward length
+//   6. binary-search (8 steps) the largest safe fraction of forwardMove
+//   7. mix 35% from desiredMovement toward that result; return the mix when it is clear
+//   8. otherwise return the unmixed result
+//   9. forward never clears but the perpendicular step does -> return that step alone
 glm::vec2 TrySlideMovement(const Hitbox& hitbox,
                            glm::vec2 playerPos,
                            PlayerMovementState& movement,
-                           int plane,
+                           SupportState support,
                            glm::vec2 desiredMovement,
                            glm::vec2 normalizedDir,
                            float deltaTime,
                            float currentSpeed,
                            const Tilemap* tilemap,
-                           const std::vector<glm::vec2>* npcPositions,
+                           const std::vector<CharacterCollisionBody>* npcBodies,
                            int moveDx,
                            int moveDy,
                            bool diagonalInput)
@@ -1113,9 +1145,10 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
 
     // Test if desired movement is already valid
     glm::vec2 testPos = playerPos + desiredMovement;
+    const MovementProbeResult directProbe = ProbeMovement(
+        hitbox, playerPos, testPos, support, tilemap, npcBodies, moveDx, moveDy, diagonalInput);
 
-    if (!CollidesAt(hitbox, testPos, tilemap, npcPositions, moveDx, moveDy, diagonalInput, plane) &&
-        !CollidesWithNPC(hitbox, testPos, npcPositions))
+    if (!directProbe.IsBlocked())
     {
         // Only reset hysteresis if commit timer expired (prevents jitter at corners)
         if (movement.slideTimer <= 0.0f)
@@ -1123,8 +1156,8 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
         return desiredMovement;  // No collision - use original movement
     }
 
-    // NPC collision: don't slide, just stop
-    if (CollidesWithNPC(hitbox, testPos, npcPositions))
+    // An NPC block stops the character outright instead of sliding.
+    if (directProbe.npcBlocked)
     {
         movement.slideDir = glm::vec2(0.0f);
         movement.slideTimer = 0.0f;
@@ -1133,7 +1166,7 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
 
     // Tile collision: find slide direction away from obstacle
     glm::vec2 slideDir = GetCornerSlideDirection(
-        hitbox, playerPos, movement, plane, testPos, tilemap, moveDx, moveDy);
+        hitbox, playerPos, movement, support, testPos, tilemap, moveDx, moveDy);
 
     if (glm::length(slideDir) < 0.001f)
     {
@@ -1142,6 +1175,13 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
             movement.slideDir = glm::vec2(0.0f);
         return glm::vec2(0.0f);  // No valid slide direction
     }
+
+    auto movementBlocked = [&](glm::vec2 target, int dx, int dy, bool diagonal)
+    {
+        return ProbeMovement(
+                   hitbox, playerPos, target, support, tilemap, npcBodies, dx, dy, diagonal)
+            .IsBlocked();
+    };
 
     auto attemptDir = [&](glm::vec2 dir) -> glm::vec2
     {
@@ -1165,28 +1205,17 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
             // Use fixed 1-pixel probe for DETECTION of valid corner path
             glm::vec2 testSlideForward = playerPos + slideOffset + forwardProbe;
 
-            if (!CollidesAt(hitbox,
-                            testSlideForward,
-                            tilemap,
-                            npcPositions,
-                            moveDx,
-                            moveDy,
-                            diagonalInput,
-                            plane))
+            if (!movementBlocked(testSlideForward, moveDx, moveDy, diagonalInput))
             {
                 float clampedSlide = std::min(slideAmount, maxSlide);
                 glm::vec2 clampedOffset = horizontalPrimary ? glm::vec2(0.0f, dir.y * clampedSlide)
                                                             : glm::vec2(dir.x * clampedSlide, 0.0f);
 
                 // must be safe to apply the perpendicular step
-                if (CollidesAt(hitbox,
-                               playerPos + clampedOffset,
-                               tilemap,
-                               npcPositions,
-                               (int)dir.x,
-                               (int)dir.y,
-                               diagonalInput,
-                               plane))
+                if (movementBlocked(playerPos + clampedOffset,
+                                    static_cast<int>(dir.x),
+                                    static_cast<int>(dir.y),
+                                    diagonalInput))
                     continue;
 
                 // Limit perpendicular shove so it doesn't exceed 75% of forward distance (prevents
@@ -1203,14 +1232,7 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
                 {
                     float mid = (lo + hi) * 0.5f;
                     glm::vec2 tryPos = playerPos + clampedOffset + forwardMove * mid;
-                    if (!CollidesAt(hitbox,
-                                    tryPos,
-                                    tilemap,
-                                    npcPositions,
-                                    moveDx,
-                                    moveDy,
-                                    diagonalInput,
-                                    plane))
+                    if (!movementBlocked(tryPos, moveDx, moveDy, diagonalInput))
                         lo = mid;
                     else
                         hi = mid;
@@ -1222,28 +1244,15 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
                 // but only keep it if still collision-free.
                 constexpr float SLIDE_BLEND = 0.35f;
                 glm::vec2 blended = glm::mix(desiredMovement, slideResult, SLIDE_BLEND);
-                if (!CollidesAt(hitbox,
-                                playerPos + blended,
-                                tilemap,
-                                npcPositions,
-                                moveDx,
-                                moveDy,
-                                diagonalInput,
-                                plane))
+                if (!movementBlocked(playerPos + blended, moveDx, moveDy, diagonalInput))
                     return blended;
 
                 return slideResult;
             }
 
             glm::vec2 testSlideOnly = playerPos + slideOffset;
-            if (!CollidesAt(hitbox,
-                            testSlideOnly,
-                            tilemap,
-                            npcPositions,
-                            (int)dir.x,
-                            (int)dir.y,
-                            diagonalInput,
-                            plane))
+            if (!movementBlocked(
+                    testSlideOnly, static_cast<int>(dir.x), static_cast<int>(dir.y), diagonalInput))
             {
                 float clampedSlide = std::min(slideAmount, maxSlide);
                 return horizontalPrimary ? glm::vec2(0.0f, dir.y * clampedSlide)
@@ -1265,12 +1274,12 @@ glm::vec2 TrySlideMovement(const Hitbox& hitbox,
 glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
                             glm::vec2 playerPos,
                             glm::vec2 tileCenter,
-                            int plane,
+                            SupportState support,
                             glm::vec2 desiredMovement,
                             glm::vec2 normalizedDir,
                             float deltaTime,
                             const Tilemap* tilemap,
-                            const std::vector<glm::vec2>* npcPositions,
+                            const std::vector<CharacterCollisionBody>* npcBodies,
                             int moveDx,
                             int moveDy)
 {
@@ -1287,6 +1296,11 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
 
     // Keep correction small per frame so it can ratchet into tight gaps.
     auto clampCorr = [](float c) { return std::clamp(c, -1.2f, 1.2f); };
+    auto movementBlocked = [&](glm::vec2 target, int dx, int dy)
+    {
+        return ProbeMovement(hitbox, playerPos, target, support, tilemap, npcBodies, dx, dy, false)
+            .IsBlocked();
+    };
 
     if (movingHorizontal)
     {
@@ -1300,7 +1314,7 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
         glm::vec2 testPos = playerPos + glm::vec2(desiredMovement.x, correction);
 
         // moving horizontally: moveDx matters, moveDy = 0
-        if (!CollidesAt(hitbox, testPos, tilemap, npcPositions, moveDx, 0, false, plane))
+        if (!movementBlocked(testPos, moveDx, 0))
         {
             desiredMovement.y += correction;
         }
@@ -1310,7 +1324,7 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
             int corrDy = (correction > 0.0f) ? 1 : -1;
             glm::vec2 testPerpOnly = playerPos + glm::vec2(0.0f, correction);
 
-            if (!CollidesAt(hitbox, testPerpOnly, tilemap, npcPositions, 0, corrDy, false, plane))
+            if (!movementBlocked(testPerpOnly, 0, corrDy))
                 desiredMovement.y += correction;
         }
     }
@@ -1326,7 +1340,7 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
         glm::vec2 testPos = playerPos + glm::vec2(correction, desiredMovement.y);
 
         // moving vertically: moveDy matters, moveDx = 0
-        if (!CollidesAt(hitbox, testPos, tilemap, npcPositions, 0, moveDy, false, plane))
+        if (!movementBlocked(testPos, 0, moveDy))
         {
             desiredMovement.x += correction;
         }
@@ -1335,7 +1349,7 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
             int corrDx = (correction > 0.0f) ? 1 : -1;
             glm::vec2 testPerpOnly = playerPos + glm::vec2(correction, 0.0f);
 
-            if (!CollidesAt(hitbox, testPerpOnly, tilemap, npcPositions, corrDx, 0, false, plane))
+            if (!movementBlocked(testPerpOnly, corrDx, 0))
                 desiredMovement.x += correction;
         }
     }
@@ -1346,22 +1360,27 @@ glm::vec2 ApplyLaneSnapping(const Hitbox& hitbox,
 std::optional<glm::vec2> HandleStuckRecovery(const Hitbox& hitbox,
                                              glm::vec2 playerPos,
                                              PlayerMovementState& movement,
-                                             int plane,
+                                             SupportState support,
                                              glm::vec2 currentTileCenter,
                                              const Tilemap* tilemap,
-                                             const std::vector<glm::vec2>* npcPositions)
+                                             const std::vector<CharacterCollisionBody>* npcBodies)
 {
     if (!tilemap)
     {
         return std::nullopt;
     }
 
-    if (CollidesWithTilesStrict(hitbox, playerPos, tilemap, 0, 0, false, plane))
+    if (CollidesWithTilesStrict(hitbox, playerPos, tilemap, 0, 0, false, support))
     {
-        // Embedded in a solid tile: report the teleport-out target. The caller
-        // applies it via PlayerSystem::SetPositionRaw so the position-snap +
-        // motor-reset stay in one place.
-        return FindClosestSafeTileCenter(hitbox, playerPos, plane, tilemap, npcPositions);
+        // Embedded in a solid tile: report the teleport-out target and nothing more.
+        // Applying it is the caller's job - PlayerMovementSystem::Step re-snaps the feet
+        // and resets the motor itself.
+        //
+        // The reported position is a tile bottom-center, so its Y lies exactly on the
+        // boundary between the safe row and the row below. A caller converting it back to
+        // a tile row must use TileMath::AnchorTileRow; a bare floor (TileMath::TileIndex)
+        // picks the row below and lands the feet one whole tile past the validated tile.
+        return FindClosestSafeTileCenter(hitbox, playerPos, support, tilemap, npcBodies);
     }
 
     movement.lastSafeTileCenter = currentTileCenter;
