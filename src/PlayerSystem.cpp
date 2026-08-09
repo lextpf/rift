@@ -247,7 +247,7 @@ void Move(ecs::registry& world,
           glm::vec2 direction,
           float deltaTime,
           const Tilemap* tilemap,
-          const std::vector<glm::vec2>* npcPositions)
+          const std::vector<CharacterCollisionBody>* npcBodies)
 {
     // Fan the player's components out to the stateless movement step. Collision
     // response and per-frame hysteresis (slide / lane-snap / stuck recovery) are
@@ -265,7 +265,7 @@ void Move(ecs::registry& world,
                                direction,
                                deltaTime,
                                tilemap,
-                               npcPositions);
+                               npcBodies);
 }
 
 void Stop(ecs::registry& world, ecs::entity player)

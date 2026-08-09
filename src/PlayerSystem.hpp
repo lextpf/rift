@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SupportSurface.hpp"
+
 #include "CharacterType.hpp"
 
 #include <ecs.hpp>
@@ -19,13 +21,18 @@ struct PlayerSprite;
  * @author Alex (https://github.com/lextpf)
  * @ingroup Entities
  *
- * The player analog of NpcAiSystem/NpcRender: the behavior carved out of the
- * former PlayerCharacter class (SwitchCharacter, CopyAppearanceFrom, sprite/atlas
- * binding, per-frame Update) as free functions over the player entity's granular
- * components. Services (TextureStore / AssetRegistry) are read from
- * @c world.globals().find<WorldServices>() instead of per-entity pointers (the
- * player's 1b). The per-frame movement step + Stop stay in @ref PlayerMovementSystem
- * (already component-based); this is the appearance/mode/animation glue.
+ * The player counterpart to NpcAiSystem and NpcRender: character switching, appearance copying,
+ * sprite and atlas binding, and the per-frame update, all as free functions over the player
+ * entity's components.
+ *
+ * Services come from @c world.globals().find&lt;WorldServices&gt;(). Either the TextureStore or the
+ * AssetRegistry may be absent, as in a bare test world with no renderer wired up, so every use is
+ * null-checked and the sheet accessors fall back to a shared empty texture.
+ *
+ * The per-frame movement step and Stop live in @ref PlayerMovementSystem. This header covers the
+ * appearance, mode and animation glue around them.
+ *
+ * @see WorldServices, PlayerMovementSystem, TextureStore
  */
 namespace PlayerSystem
 {
@@ -107,8 +114,8 @@ const Texture& GetRunningSpriteSheet(const ecs::registry& world, const PlayerSpr
 const Texture& GetBicycleSpriteSheet(const ecs::registry& world, const PlayerSprite& sprite);
 
 /**
- * @brief Per-frame player animation + elevation advance (the former
- * PlayerCharacter::Update): velocity-driven walk cadence + smooth elevation.
+ * @brief Per-frame player animation + elevation advance: velocity-driven walk
+ * cadence + smooth elevation.
  *
  * @param world     ECS registry holding the player's animation + elevation components.
  * @param player    Player entity to advance.
@@ -117,26 +124,29 @@ const Texture& GetBicycleSpriteSheet(const ecs::registry& world, const PlayerSpr
 void Update(ecs::registry& world, ecs::entity player, float deltaTime);
 
 /**
- * @brief Full per-frame movement step (the former PlayerCharacter::Move): wraps
- * @ref PlayerMovementSystem::Step over the player's components; collision runs
- * through the stateless @ref CollisionSystem free functions.
+ * @brief Full per-frame movement step: wraps @ref PlayerMovementSystem::Step over
+ * the player's components; collision runs through the stateless
+ * @ref CollisionSystem free functions.
  *
  * @param world        ECS registry; the player's movement components are stepped in place.
  * @param player       Player entity to move.
  * @param direction    Desired move direction (normalized input).
  * @param deltaTime    Frame time in seconds.
  * @param tilemap      World tilemap for collision/walkability, or null to skip world blocking.
- * @param npcPositions NPC feet positions for overlap blocking, or null when absent.
+ *                     A null tilemap also means no support is committed, so the caller must
+ *                     derive the plane afterwards (CharacterKinematics::DerivePlane) - Game
+ *                     does exactly that on the no-clip path.
+ * @param npcBodies NPC feet/support records for overlap blocking, or null when absent.
  */
 void Move(ecs::registry& world,
           ecs::entity player,
           glm::vec2 direction,
           float deltaTime,
           const Tilemap* tilemap,
-          const std::vector<glm::vec2>* npcPositions);
+          const std::vector<CharacterCollisionBody>* npcBodies);
 
 /**
- * @brief Stop movement and reset to idle (the former PlayerCharacter::Stop).
+ * @brief Stop movement and reset to idle.
  *
  * @param world  ECS registry holding the player's movement + animation components.
  * @param player Player entity to halt.
@@ -145,6 +155,13 @@ void Stop(ecs::registry& world, ecs::entity player);
 
 /**
  * @brief Snap the player feet to the bottom-center of a tile and reset the motor.
+ *
+ * The motor reset is required rather than cosmetic. Without it, a grid stop-target latched at the
+ * previous position drags the player back toward a grid line near where they were.
+ *
+ * @warning Tile size is hardcoded to 16px here. Everywhere else it comes from the project
+ * manifest via Tilemap (@c tileWidth / @c tileHeight), so a project authored with a
+ * different tile size will mis-snap through this path.
  *
  * @param world  Player-owning ECS registry.
  * @param player Player entity to reposition.
