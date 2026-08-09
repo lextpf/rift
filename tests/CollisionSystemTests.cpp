@@ -138,7 +138,26 @@ TEST_F(CollisionSystemTest, CollidesAt_ForwardsToStrict)
 TEST_F(CollisionSystemTest, CollidesAt_NpcOverlap_IsBlocked)
 {
     // An NPC at the player's tile should block, even if tiles are empty.
-    std::vector<glm::vec2> npcs = {FeetAtTile(5, 5)};
+    std::vector<CharacterCollisionBody> npcs = {
+        CharacterCollisionBody{FeetAtTile(5, 5), {SupportSurface::Ground, 0}}};
     glm::vec2 pos = FeetAtTile(5, 5);
     EXPECT_TRUE(CollisionSystem::CollidesAt(hitbox, pos, &tilemap, &npcs, 0, 0, false));
+}
+
+TEST_F(CollisionSystemTest, NpcOnOtherSurfaceDoesNotBlock)
+{
+    std::vector<CharacterCollisionBody> npcs = {
+        CharacterCollisionBody{FeetAtTile(5, 5), {SupportSurface::Elevation, 10}}};
+    EXPECT_FALSE(
+        CollisionSystem::CollidesAt(hitbox, FeetAtTile(5, 5), &tilemap, &npcs, 0, 0, false));
+}
+
+TEST_F(CollisionSystemTest, NpcOnDifferentElevationHeightDoesNotBlock)
+{
+    std::vector<CharacterCollisionBody> npcs = {
+        CharacterCollisionBody{FeetAtTile(5, 5), {SupportSurface::Elevation, 10}}};
+    EXPECT_FALSE(CollisionSystem::CollidesAt(
+        hitbox, FeetAtTile(5, 5), &tilemap, &npcs, 0, 0, false, {SupportSurface::Elevation, 6}));
+    EXPECT_TRUE(CollisionSystem::CollidesAt(
+        hitbox, FeetAtTile(5, 5), &tilemap, &npcs, 0, 0, false, {SupportSurface::Elevation, 10}));
 }
