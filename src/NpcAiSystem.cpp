@@ -12,6 +12,7 @@
 #include "Patrol.hpp"
 #include "PatrolRoute.hpp"
 #include "Speed.hpp"
+#include "SurfaceSystem.hpp"
 #include "Tilemap.hpp"
 #include "TileMath.hpp"
 #include "Transform.hpp"
@@ -67,15 +68,17 @@ void UpdateDirectionFromMovement(Facing& facing, int dx, int dy)
     }
 }
 
-bool CheckPlayerCollision(const glm::vec2& newPosition, const glm::vec2* playerPos)
+bool CheckPlayerCollision(glm::vec2 newPosition,
+                          SupportState support,
+                          const CharacterCollisionBody* playerBody)
 {
-    if (!playerPos)
+    if (!playerBody || support != playerBody->support)
     {
         return false;
     }
 
     return CollisionGeometry::FeetBoxesOverlap(newPosition,
-                                               *playerPos,
+                                               playerBody->feet,
                                                CharacterConstants::HALF_HITBOX_WIDTH,
                                                CharacterConstants::HITBOX_HEIGHT,
                                                CharacterConstants::COLLISION_EPS);
@@ -94,7 +97,7 @@ void Update(Transform& xf,
             const Speed& speed,
             float dt,
             const Tilemap* tilemap,
-            const glm::vec2* playerPosition,
+            const CharacterCollisionBody* playerBody,
             std::mt19937& rng)
 {
     if (!tilemap)
@@ -104,10 +107,10 @@ void Update(Transform& xf,
     CharacterKinematics::UpdateElevation(elev, dt);
 
     bool isCollidingWithPlayer = false;
-    if (playerPosition)
+    if (playerBody && CharacterKinematics::GetSupport(elev) == playerBody->support)
     {
         if (CollisionGeometry::FeetBoxesOverlap(xf.position,
-                                                *playerPosition,
+                                                playerBody->feet,
                                                 CharacterConstants::HALF_HITBOX_WIDTH,
                                                 CharacterConstants::HITBOX_HEIGHT,
                                                 CharacterConstants::COLLISION_EPS))
@@ -191,13 +194,17 @@ void Update(Transform& xf,
     glm::vec2 toTarget = targetPos - xf.position;
     float dist = glm::length(toTarget);
 
-    // Check if we've reached the current waypoint.
+    // Check whether the NPC has reached the current waypoint.
     if (dist < WAYPOINT_REACH_THRESHOLD)
     {
         // Verify the target tile is still walkable before snapping.
         int targetTileX = TileMath::TileIndex(targetPos.x, static_cast<float>(tileWidth));
         int targetTileY = TileMath::AnchorTileRow(targetPos.y, static_cast<float>(tileHeight));
-        if (tilemap->GetTileCollision(targetTileX, targetTileY))
+        const SurfaceTransition transition =
+            CharacterKinematics::ResolveSupport(elev, xf.position, targetPos, *tilemap);
+        if (!transition.connected || (tilemap->GetTileCollision(targetTileX, targetTileY) &&
+                                      SurfaceSystem::CollisionBelongsTo(
+                                          *tilemap, targetTileX, targetTileY, transition.support)))
         {
             // Target blocked - stop and invalidate route to trigger re-initialization.
             EnterStandingStill(idle, facing, anim, false, 0.0f, rng);
@@ -206,8 +213,12 @@ void Update(Transform& xf,
         }
 
         xf.position = targetPos;
+        CharacterKinematics::CommitSupport(elev, transition.support);
 
-        // Initialize patrol route if needed.
+        // Initialize patrol route if needed. The 100 is PatrolRoute's maxRouteLength (and
+        // its own default): it caps the BFS collection, so an NPC standing in a large open
+        // navigation region ends up with a compact cluster of waypoints around its start
+        // rather than a route spanning the whole map.
         if (!route.IsValid())
         {
             if (!route.Initialize(patrol.tileX, patrol.tileY, tilemap, 100))
@@ -263,11 +274,15 @@ void Update(Transform& xf,
         glm::vec2 dir = toTarget / dist;
         glm::vec2 newPosition = xf.position + dir * speed.value * dt;
 
-        bool wouldCollide = CheckPlayerCollision(newPosition, playerPosition);
+        const SurfaceTransition transition =
+            CharacterKinematics::ResolveSupport(elev, xf.position, newPosition, *tilemap);
+        bool wouldCollide = !transition.connected ||
+                            CheckPlayerCollision(newPosition, transition.support, playerBody);
 
         if (!wouldCollide)
         {
             xf.position = newPosition;
+            CharacterKinematics::CommitSupport(elev, transition.support);
             UpdateDirectionFromMovement(facing,
                                         static_cast<int>(dir.x > 0) - static_cast<int>(dir.x < 0),
                                         static_cast<int>(dir.y > 0) - static_cast<int>(dir.y < 0));
@@ -286,6 +301,7 @@ bool ReinitializePatrolRoute(
         return false;
 
     route.Reset();
+    // 100 = maxRouteLength, same cap as the in-Update rebuild above.
     bool success = route.Initialize(patrol.tileX, patrol.tileY, tilemap, 100);
 
     if (success)
@@ -307,7 +323,7 @@ bool ReinitializePatrolRoute(
 
 void UpdateAll(ecs::registry& world,
                const Tilemap& tilemap,
-               glm::vec2 playerPosition,
+               CharacterCollisionBody playerBody,
                std::mt19937& rng,
                std::uint64_t frozenNpcId,
                float dt)
@@ -337,33 +353,21 @@ void UpdateAll(ecs::registry& world,
             {
                 return;
             }
-            const glm::vec2 before = xf.position;
-            Update(xf,
-                   elev,
-                   facing,
-                   anim,
-                   idle,
-                   patrol,
-                   route,
-                   speed,
-                   dt,
-                   &tilemap,
-                   &playerPosition,
-                   rng);
-            // Derive the NPC's logical plane from this frame's move (same as the player).
-            CharacterKinematics::DerivePlane(elev, before, xf.position, tilemap);
+            Update(
+                xf, elev, facing, anim, idle, patrol, route, speed, dt, &tilemap, &playerBody, rng);
         });
 }
 
-void ApplyPlayerOverlapStop(ecs::registry& world, glm::vec2 playerFeet)
+void ApplyPlayerOverlapStop(ecs::registry& world, CharacterCollisionBody playerBody)
 {
     // Both use bottom-center anchored 16x16 hitboxes; an NPC is stopped while it
     // overlaps the player (exact, no-epsilon) to prevent visual overlap.
-    world.each<Transform, NpcIdle, NpcTag>(
-        [&](const Transform& xf, NpcIdle& idle)
+    world.each<Transform, Elevation, NpcIdle, NpcTag>(
+        [&](const Transform& xf, const Elevation& elevation, NpcIdle& idle)
         {
             idle.isStopped =
-                CollisionGeometry::FeetBoxesOverlap(playerFeet,
+                CharacterKinematics::GetSupport(elevation) == playerBody.support &&
+                CollisionGeometry::FeetBoxesOverlap(playerBody.feet,
                                                     xf.position,
                                                     CharacterConstants::HALF_HITBOX_WIDTH,
                                                     CharacterConstants::HITBOX_HEIGHT,
