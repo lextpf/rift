@@ -12,7 +12,10 @@
 #include "../src/Elevation.hpp"
 #include "../src/ElevationAxis.hpp"
 #include "../src/Hitbox.hpp"
+#include "../src/RenderDrawable.hpp"
 #include "../src/Tilemap.hpp"
+
+#include <algorithm>
 
 namespace
 {
@@ -229,7 +232,7 @@ TEST(CollisionZSkip, TileAbovePlayerPlaneDoesNotBlock)
                                                             /*moveDx=*/0,
                                                             /*moveDy=*/0,
                                                             /*diagonalInput=*/false,
-                                                            elev.plane);
+                                                            CharacterKinematics::GetSupport(elev));
     EXPECT_FALSE(blocked);
 }
 
@@ -254,22 +257,268 @@ TEST(CollisionZSkip, TileAtPlayerPlaneStillBlocks)
                                                             /*moveDx=*/0,
                                                             /*moveDy=*/0,
                                                             /*diagonalInput=*/false,
-                                                            elev.plane);
+                                                            CharacterKinematics::GetSupport(elev));
     EXPECT_TRUE(blocked);
 }
 
-TEST(CollisionZSkip, GroundWallBlocksAtAnyPlane)
+TEST(CollisionZSkip, GroundWallBlocksGroundButNotElevation)
 {
-    // A ground-level wall (elev 0) blocks the player regardless of plane.
-    // This guards against accidentally over-skipping non-elevated tiles.
+    // Ground and elevation are separate collision spaces even at one X/Y cell.
     Tilemap tm = MakeTilemap();
     tm.SetTileCollision(5, 5, true);
-    // elev defaults to 0
 
-    Elevation elev;
     Hitbox hitbox;
-    // Plane stays 0 by default - wall blocks at same plane.
-    bool blocked =
-        CollisionSystem::CollidesWithTilesStrict(hitbox, FeetAtTile(5, 5), &tm, 0, 0, false, elev.plane);
-    EXPECT_TRUE(blocked);
+    EXPECT_TRUE(CollisionSystem::CollidesWithTilesStrict(
+        hitbox, FeetAtTile(5, 5), &tm, 0, 0, false, {SupportSurface::Ground, 0}));
+    EXPECT_FALSE(CollisionSystem::CollidesWithTilesStrict(
+        hitbox, FeetAtTile(5, 5), &tm, 0, 0, false, {SupportSurface::Elevation, 10}));
+}
+
+TEST(CollisionZSkip, DifferentElevationHeightDoesNotCloseCornerEscape)
+{
+    Tilemap tm = MakeTilemap();
+    tm.SetElevation(6, 4, 10);
+    tm.SetTileCollision(6, 4, true);
+    tm.SetCornerCutBlocked(6, 4, Tilemap::CORNER_BL, true);
+
+    // A shallow diagonal overlap with the 10px railing is a real collision on
+    // the deck, but must be invisible while the player is still on the 6px
+    // ramp. Collapsing both heights to "Elevation" closes this escape route.
+    const glm::vec2 cornerOverlap(90.0f, 92.0f);
+    Hitbox hitbox;
+    EXPECT_FALSE(CollisionSystem::CollidesWithTilesStrict(
+        hitbox, cornerOverlap, &tm, 1, 1, true, {SupportSurface::Elevation, 6}));
+    EXPECT_TRUE(CollisionSystem::CollidesWithTilesStrict(
+        hitbox, cornerOverlap, &tm, 1, 1, true, {SupportSurface::Elevation, 10}));
+}
+
+// --- Support graph ---------------------------------------------------------
+
+TEST(SurfaceTransition, RampEntryCommitsElevation)
+{
+    Tilemap tm = MakeTilemap();
+    tm.SetElevation(5, 5, 6);
+    tm.SetElevation(6, 5, 10);
+
+    const SurfaceTransition transition =
+        CharacterKinematics::ResolveSupport(Elevation{}, FeetAtTile(4, 5), FeetAtTile(5, 5), tm);
+
+    ASSERT_TRUE(transition.connected);
+    EXPECT_EQ(transition.support.surface, SupportSurface::Elevation);
+    EXPECT_EQ(transition.support.height, 6);
+}
+
+TEST(SurfaceTransition, PerpendicularBridgeCrossingStaysOnImplicitGround)
+{
+    Tilemap tm = MakeTilemap();
+    for (int x = 4; x <= 8; ++x)
+    {
+        tm.SetElevation(x, 5, 10);
+    }
+
+    Elevation elevation;
+    const SurfaceTransition enter =
+        CharacterKinematics::ResolveSupport(elevation, FeetAtTile(6, 4), FeetAtTile(6, 5), tm);
+    ASSERT_TRUE(enter.connected);
+    ASSERT_EQ(enter.support.surface, SupportSurface::Ground);
+
+    CharacterKinematics::CommitSupport(elevation, enter.support);
+    const SurfaceTransition leave =
+        CharacterKinematics::ResolveSupport(elevation, FeetAtTile(6, 5), FeetAtTile(6, 6), tm);
+    ASSERT_TRUE(leave.connected);
+    EXPECT_EQ(leave.support.surface, SupportSurface::Ground);
+}
+
+TEST(SurfaceTransition, GroundBelowRampCannotJoinDeckFromInsideFootprint)
+{
+    Tilemap tm = MakeTilemap();
+    tm.SetElevation(5, 5, 6);
+    tm.SetElevation(6, 5, 10);
+
+    const SurfaceTransition transition =
+        CharacterKinematics::ResolveSupport(Elevation{}, FeetAtTile(5, 5), FeetAtTile(6, 5), tm);
+
+    ASSERT_TRUE(transition.connected);
+    EXPECT_EQ(transition.support.surface, SupportSurface::Ground);
+    EXPECT_EQ(transition.support.height, 0);
+}
+
+TEST(SurfaceTransition, DiagonalRampCornerDoesNotEngage)
+{
+    Tilemap tm = MakeTilemap();
+    tm.SetElevation(5, 5, 6);
+    tm.SetElevation(6, 5, 10);
+
+    const SurfaceTransition transition =
+        CharacterKinematics::ResolveSupport(Elevation{}, FeetAtTile(4, 4), FeetAtTile(5, 5), tm);
+
+    ASSERT_TRUE(transition.connected);
+    EXPECT_EQ(transition.support.surface, SupportSurface::Ground);
+}
+
+TEST(SurfaceTransition, DeckEdgeWithoutRampIsDisconnected)
+{
+    Tilemap tm = MakeTilemap();
+    for (int x = 4; x <= 8; ++x)
+    {
+        tm.SetElevation(x, 5, 10);
+    }
+
+    Elevation elevation;
+    CharacterKinematics::CommitSupport(elevation, {SupportSurface::Elevation, 10});
+    const SurfaceTransition transition =
+        CharacterKinematics::ResolveSupport(elevation, FeetAtTile(6, 5), FeetAtTile(6, 4), tm);
+
+    EXPECT_FALSE(transition.connected);
+    EXPECT_EQ(transition.support.surface, SupportSurface::Elevation);
+    EXPECT_EQ(transition.support.height, 10);
+}
+
+TEST(SurfaceCollision, ProbeUsesCandidateSurfaceBeforeAdmittingMove)
+{
+    Tilemap tm = MakeTilemap();
+    tm.SetElevation(5, 5, 6);
+    tm.SetElevation(6, 5, 10);
+    tm.SetTileCollision(6, 5, true);
+
+    const SupportState current{SupportSurface::Elevation, 6};
+    Hitbox hitbox;
+    const CollisionSystem::MovementProbeResult probe = CollisionSystem::ProbeMovement(
+        hitbox, FeetAtTile(5, 5), FeetAtTile(6, 5), current, &tm, nullptr, 1, 0, false);
+
+    EXPECT_TRUE(probe.transition.connected);
+    EXPECT_EQ(probe.transition.support.height, 10);
+    EXPECT_TRUE(probe.tileBlocked);
+    EXPECT_TRUE(probe.IsBlocked());
+    EXPECT_EQ(current.height, 6);
+}
+
+TEST(SurfaceCollision, ElevatedCollisionDoesNotBlockUnderpassProbe)
+{
+    Tilemap tm = MakeTilemap();
+    for (int x = 4; x <= 8; ++x)
+    {
+        tm.SetElevation(x, 5, 10);
+    }
+    tm.SetTileCollision(6, 5, true);
+
+    Hitbox hitbox;
+    const CollisionSystem::MovementProbeResult probe = CollisionSystem::ProbeMovement(
+        hitbox, FeetAtTile(6, 4), FeetAtTile(6, 5), {}, &tm, nullptr, 0, 1, false);
+
+    EXPECT_FALSE(probe.IsBlocked());
+    EXPECT_EQ(probe.transition.support.surface, SupportSurface::Ground);
+}
+
+// --- Elevated render ownership --------------------------------------------
+
+TEST(ElevationRegions, ConnectedFootprintIsLocalAndGroundBesideItHasNoRegion)
+{
+    Tilemap tm = MakeTilemap(5, 5);
+    tm.SetElevation(1, 1, 6);
+    tm.SetElevation(2, 1, 10);
+    tm.SetElevation(4, 4, 10);
+
+    const int bridgeRegion = tm.GetElevationRegionId(1, 1);
+    ASSERT_GE(bridgeRegion, 0);
+    EXPECT_EQ(tm.GetElevationRegionId(2, 1), bridgeRegion);
+    EXPECT_NE(tm.GetElevationRegionId(4, 4), bridgeRegion);
+    EXPECT_EQ(tm.GetElevationRegionId(1, 2), -1);
+    EXPECT_EQ(tm.GetElevationRegionIdAtWorldPos(FeetAtTile(1, 2).x, FeetAtTile(1, 2).y), -1);
+}
+
+TEST(DepthSortedTiles, ElevatedObjectTileLeavesGroundLayersBelow)
+{
+    Tilemap tm = MakeTilemap(4, 4);
+    tm.SetElevation(1, 1, 10);
+    tm.SetLayerTile(1, 1, 0, 7);
+    tm.SetLayerTile(1, 1, 1, 8);
+    tm.SetLayerTile(1, 1, 2, 9);
+
+    EXPECT_FALSE(tm.IsDepthSortedTile(1, 1, 0));
+    EXPECT_FALSE(tm.IsDepthSortedTile(1, 1, 1));
+    EXPECT_TRUE(tm.IsDepthSortedTile(1, 1, 2));
+
+    const auto& tiles = tm.GetVisibleDepthSortedTiles(glm::vec2(0.0f), glm::vec2(4.0f * TILE));
+    ASSERT_EQ(tiles.size(), static_cast<std::size_t>(1));
+    EXPECT_EQ(tiles.front().layer, 2);
+    EXPECT_FLOAT_EQ(tiles.front().anchorY, 2.0f * TILE);
+    EXPECT_FLOAT_EQ(tiles.front().supportHeight, 10.0f);
+    EXPECT_EQ(tiles.front().supportSurface, SupportSurface::Elevation);
+}
+
+TEST(DepthSortedTiles, StructureArtworkInheritsElevationOutsideWalkableFootprint)
+{
+    Tilemap tm = MakeTilemap(4, 4);
+    tm.SetElevation(1, 1, 10);
+
+    constexpr size_t layer = 2;
+    constexpr int oneBasedLayer = 3;
+    constexpr int structureId = 42;
+    tm.SetLayerTile(1, 1, layer, 9);
+    tm.SetLayerYSortPlus(1, 1, layer, true);
+    tm.SetTileStructureId(1, 1, oneBasedLayer, structureId);
+
+    // Diagonal artwork has no elevation of its own and is not in the same
+    // vertical Y-sort stack. Explicit structure membership is what associates
+    // it with the elevated surface.
+    tm.SetLayerTile(0, 0, layer, 10);
+    tm.SetLayerYSortPlus(0, 0, layer, true);
+    tm.SetTileStructureId(0, 0, oneBasedLayer, structureId);
+
+    const auto& tiles = tm.GetVisibleDepthSortedTiles(glm::vec2(0.0f), glm::vec2(4.0f * TILE));
+    const auto overhang = std::find_if(
+        tiles.begin(), tiles.end(), [](const auto& tile) { return tile.x == 0 && tile.y == 0; });
+
+    ASSERT_NE(overhang, tiles.end());
+    EXPECT_EQ(overhang->supportSurface, SupportSurface::Elevation);
+    EXPECT_FLOAT_EQ(overhang->supportHeight, 10.0f);
+    EXPECT_EQ(overhang->surfaceRegionId, tm.GetElevationRegionId(1, 1));
+}
+
+TEST(DepthSortedTiles, ConnectedYSortArtworkInheritsRegionWithoutStructureId)
+{
+    Tilemap tm = MakeTilemap(4, 4);
+    tm.SetElevation(1, 1, 10);
+
+    constexpr size_t layer = 2;
+    tm.SetLayerTile(1, 1, layer, 9);
+    tm.SetLayerYSortPlus(1, 1, layer, true);
+    tm.SetLayerTile(0, 1, layer, 10);
+    tm.SetLayerYSortPlus(0, 1, layer, true);
+
+    const auto& tiles = tm.GetVisibleDepthSortedTiles(glm::vec2(0.0f), glm::vec2(4.0f * TILE));
+    const auto overhang = std::find_if(
+        tiles.begin(), tiles.end(), [](const auto& tile) { return tile.x == 0 && tile.y == 1; });
+
+    ASSERT_NE(overhang, tiles.end());
+    EXPECT_EQ(overhang->surfaceRegionId, tm.GetElevationRegionId(1, 1));
+    EXPECT_TRUE(overhang->authoredYSort);
+}
+
+TEST(DepthSortedTiles, ForegroundRampStackRetainsExplicitYSortPhase)
+{
+    Tilemap tm = MakeTilemap(4, 4);
+    tm.SetElevation(1, 1, 10);
+    tm.SetElevation(1, 2, 10);
+
+    // Mirrors the real bridge ramp: a foreground Y-sort column extends one
+    // ground cell below its elevated footprint.
+    constexpr size_t foregroundLayer = 5;
+    for (int y = 1; y <= 3; ++y)
+    {
+        tm.SetLayerTile(1, y, foregroundLayer, 9 + y);
+        tm.SetLayerYSortPlus(1, y, foregroundLayer, true);
+    }
+
+    const auto& tiles = tm.GetVisibleDepthSortedTiles(glm::vec2(0.0f), glm::vec2(4.0f * TILE));
+    const auto bottom = std::find_if(
+        tiles.begin(), tiles.end(), [](const auto& tile) { return tile.x == 1 && tile.y == 3; });
+
+    ASSERT_NE(bottom, tiles.end());
+    EXPECT_FALSE(bottom->isBackground);
+    EXPECT_TRUE(bottom->authoredYSort);
+    EXPECT_EQ(bottom->surfaceRegionId, tm.GetElevationRegionId(1, 1));
+    EXPECT_FLOAT_EQ(bottom->anchorY, 4.0f * TILE);
+    EXPECT_EQ(TileDrawablePhase(*bottom), DrawablePhase::YSorted);
 }
