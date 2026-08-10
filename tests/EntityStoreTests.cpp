@@ -201,3 +201,30 @@ TEST(BuildNpcFeet, ClearsStaleOutputBeforeFilling)
 
     EXPECT_EQ(feet.size(), static_cast<std::size_t>(1));
 }
+
+TEST(BuildNpcCollisionBodies, IncludesCommittedSupportSurface)
+{
+    ecs::registry world;
+    const ecs::entity groundNpc = EntityStore::SpawnNpc(world, NpcRecord{});
+    const ecs::entity deckNpc = EntityStore::SpawnNpc(world, NpcRecord{});
+    world.get<Transform>(groundNpc).position = glm::vec2(10.0f, 20.0f);
+    world.get<Transform>(deckNpc).position = glm::vec2(30.0f, 40.0f);
+    world.get<Elevation>(deckNpc).surface = SupportSurface::Elevation;
+    world.get<Elevation>(deckNpc).plane = 10;
+
+    std::vector<CharacterCollisionBody> bodies;
+    BuildNpcCollisionBodies(world, bodies);
+
+    ASSERT_EQ(bodies.size(), static_cast<std::size_t>(2));
+    bool foundGround = false;
+    bool foundDeck = false;
+    for (const CharacterCollisionBody& body : bodies)
+    {
+        foundGround |= body.feet == glm::vec2(10.0f, 20.0f) &&
+                       body.support == SupportState{SupportSurface::Ground, 0};
+        foundDeck |= body.feet == glm::vec2(30.0f, 40.0f) &&
+                     body.support == SupportState{SupportSurface::Elevation, 10};
+    }
+    EXPECT_TRUE(foundGround);
+    EXPECT_TRUE(foundDeck);
+}
