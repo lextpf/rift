@@ -1,14 +1,18 @@
 #pragma once
 
+#include "CameraRig.hpp"
 #include "CollisionMap.hpp"
 #include "ColumnProxy.hpp"
 #include "DefaultedVector.hpp"
 #include "ElevationAxis.hpp"
+#include "ElevationRole.hpp"
 #include "IRenderer.hpp"
 #include "NavigationMap.hpp"
 #include "ParticleSystem.hpp"
+#include "SupportSurface.hpp"
 #include "Texture.hpp"
 #include "TileMath.hpp"
+#include "TileStance.hpp"
 #include "WeatherDefinitions.hpp"
 
 #include <ecs.hpp>
@@ -27,20 +31,23 @@
  * @struct Tile
  * @brief Represents a single tile's position in the tileset texture.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
- * Used for tileset indexing and UV coordinate calculation.
+ * Not wired into the engine. Layers store bare integer tile ids, and every
+ * tileset index and UV computation derives (tileX, tileY) from the id inline.
  */
 struct Tile
 {
-    int tileX;   ///< Column in tileset (0-based)
-    int tileY;   ///< Row in tileset (0-based)
-    int tileID;  ///< Unique identifier (tileY * tilesPerRow + tileX)
+    int tileX;   ///< Column in tileset (0-based).
+    int tileY;   ///< Row in tileset (0-based).
+    int tileID;  ///< Unique identifier (tileY * tilesPerRow + tileX).
 };
 
 /**
  * @struct NoProjectionStructure
  * @brief Defines a no-projection structure with manually placed anchors.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
  * Structures are groups of tiles that bypass 3D projection. Instead of
  * automatic flood-fill detection, structures are manually defined with
@@ -48,10 +55,10 @@ struct Tile
  */
 struct NoProjectionStructure
 {
-    int id;                 ///< Unique structure ID (0+)
-    std::string name;       ///< Optional name for editor display
-    glm::vec2 leftAnchor;   ///< Left anchor world position (click corner of tile)
-    glm::vec2 rightAnchor;  ///< Right anchor world position (click corner of tile)
+    int id;                 ///< Unique structure ID (0+).
+    std::string name;       ///< Optional name for editor display.
+    glm::vec2 leftAnchor;   ///< Left anchor world position (click corner of tile).
+    glm::vec2 rightAnchor;  ///< Right anchor world position (click corner of tile).
 
     NoProjectionStructure()
         : id(-1),
@@ -72,27 +79,31 @@ struct NoProjectionStructure
  * @struct TileLayer
  * @brief Represents a single tile layer with all associated data.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  *
  * Each layer contains tile IDs, rotation values, and per-tile flags.
  * Layers are rendered in order based on their renderOrder value.
  */
 struct TileLayer
 {
-    std::string name;                            ///< Human-readable layer name
-    defaulted_vector<int, -1> tiles;             ///< Tile IDs in row-major order (-1 = empty)
-    defaulted_vector<float, 0.0f> rotation;      ///< Rotation in degrees per tile
-    defaulted_vector<bool, false> noProjection;  ///< Tiles that bypass 3D projection
-    defaulted_vector<bool, false> flipX;         ///< Mirror tile sprite around vertical axis
-    defaulted_vector<bool, false> flipY;         ///< Mirror tile sprite around horizontal axis
+    std::string name;                        ///< Human-readable layer name.
+    defaulted_vector<int, -1> tiles;         ///< Tile IDs in row-major order (-1 = empty).
+    defaulted_vector<float, 0.0f> rotation;  ///< Rotation in degrees per tile.
+    defaulted_vector<TileStance, TileStance::Flat>
+        stance;  ///< Ground vs upright role (see TileStance).
+    defaulted_vector<ElevationRole, ElevationRole::Ground>
+        elevationRole;                    ///< Per-layer participation in the cell's elevation.
+    defaulted_vector<bool, false> flipX;  ///< Mirror tile sprite around vertical axis.
+    defaulted_vector<bool, false> flipY;  ///< Mirror tile sprite around horizontal axis.
     defaulted_vector<int, -1>
-        structureId;  ///< Per-tile structure ID (-1 = auto flood-fill, 0+ = belongs to structure)
-    defaulted_vector<bool, false> ySortPlus;  ///< Tiles that sort with entities by Y position
-                                              ///< (Y-sort+1: player in front at same Y)
+        structureId;  ///< Per-tile structure ID (-1 = auto flood-fill, 0+ = belongs to structure).
+    defaulted_vector<bool, false> ySortPlus;  ///< Tiles that sort with entities by Y position.
+                                              ///< (Y-sort+1: player in front at same Y).
     defaulted_vector<bool, false>
-        ySortMinus;  ///< When true, player renders behind tile at same Y (Y-sort-1: tile in front)
-    defaulted_vector<int, -1> animationMap;  ///< Per-tile animation ID (-1 = not animated)
-    int renderOrder;    ///< Lower = rendered first (background), higher = later (foreground)
-    bool isBackground;  ///< true = before player/NPCs, false = after
+        ySortMinus;  ///< When true, player renders behind tile at same Y (Y-sort-1: tile in front).
+    defaulted_vector<int, -1> animationMap;  ///< Per-tile animation ID (-1 = not animated).
+    int renderOrder;    ///< Lower = rendered first (background), higher = later (foreground).
+    bool isBackground;  ///< true = before player/NPCs, false = after.
 
     TileLayer()
         : renderOrder(0),
@@ -115,7 +126,8 @@ struct TileLayer
         resize_all(size,
                    tiles,
                    rotation,
-                   noProjection,
+                   stance,
+                   elevationRole,
                    flipX,
                    flipY,
                    structureId,
@@ -129,7 +141,8 @@ struct TileLayer
     {
         reset_all(tiles,
                   rotation,
-                  noProjection,
+                  stance,
+                  elevationRole,
                   flipX,
                   flipY,
                   structureId,
@@ -143,11 +156,12 @@ struct TileLayer
  * @struct AnimatedTile
  * @brief Definition of an animated tile sequence.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup World
  */
 struct AnimatedTile
 {
-    std::vector<int> frames;  ///< Tile IDs for each frame
-    float frameDuration;      ///< Seconds per frame
+    std::vector<int> frames;  ///< Tile IDs for each frame.
+    float frameDuration;      ///< Seconds per frame.
 
     AnimatedTile()
         : frameDuration(0.2f)
@@ -181,8 +195,10 @@ struct AnimatedTile
  * @author Alex (https://github.com/lextpf)
  * @ingroup World
  *
- * The Tilemap class is the primary world representation, managing:
- * - **10 tile layers** (5 background, 5 foreground) with configurable depth ordering
+ * The world container. One Tilemap holds everything the map authors and everything the render,
+ * collision and navigation paths read:
+ * - **A dynamic tile-layer stack** (10 by default: 5 background, 5 foreground) with
+ *   configurable depth ordering
  * - **Collision detection** for player movement
  * - **Navigation mesh** for NPC pathfinding
  * - **Per-tile rotation** for visual variety
@@ -192,8 +208,12 @@ struct AnimatedTile
  * - **Particle zones, world lights, and animated tiles** authored by the editor
  * - **JSON serialization** using a `dynamicLayers` format
  *
- * @par Layer Architecture
- * The tilemap uses 10 dynamic layers rendered around player/NPC entities:
+ * @par Layer architecture
+ * The layer count is data-driven, not an invariant. The constructor and
+ * @ref SetTilemapSize build the default 10-layer stack shown below, but
+ * @ref LoadMapFromJSON clears the stack and rebuilds it from the map's
+ * `dynamicLayers[]` array, so a loaded map may have any number of layers.
+ * @ref GetLayerCount is the only authority - do not hard-code 10.
  *
  * | Layer | Name            | Render Order | Purpose                    |
  * |-------|-----------------|--------------|----------------------------|
@@ -208,7 +228,7 @@ struct AnimatedTile
  * | 8     | Overlay2        | 130          | Additional overlay         |
  * | 9     | Overlay3        | 140          | Top-most overlay           |
  *
- * @par Depth Sorting Visualization
+ * @par Depth sorting visualization
  * @code
  *              Layer 9 Overlay3     <- Top (front)
  *              Layer 8 Overlay2
@@ -224,10 +244,11 @@ struct AnimatedTile
  *              Layer 0 Ground       <- Bottom (back)
  * @endcode
  *
- * This ordering allows characters to walk behind foreground layers (5-9)
- * while appearing in front of background layers (0-4).
+ * A layer's side of the actors comes from its `isBackground` flag, not from its index:
+ * in the default stack layers 0-4 are background (drawn before player/NPCs) and 5-9 are
+ * foreground (drawn after), so characters walk behind 5-9 and in front of 0-4.
  *
- * @par Tile ID System
+ * @par Tile ID system
  * Tile IDs map directly to tileset positions:
  * @f[
  * tileID = tileY \times tilesPerRow + tileX
@@ -236,7 +257,7 @@ struct AnimatedTile
  * Where (tileX, tileY) are the tile's coordinates in the tileset texture.
  * A tileID of -1 represents an empty/transparent tile.
  *
- * @par UV Coordinate Calculation
+ * @par UV coordinate calculation
  * For a tile at tileset position (tx, ty):
  * @f[
  * u_0 = \frac{tx \times tileWidth}{textureWidth}, \quad
@@ -247,35 +268,46 @@ struct AnimatedTile
  * v_1 = \frac{(ty + 1) \times tileHeight}{textureHeight}
  * @f]
  *
- * @par Coordinate System
+ * @par Coordinate system
  * The tilemap uses a top-left origin with Y increasing downward:
  * @code
  *   (0,0)-----> +X
  *     |
- *     |  Tile (x,y) at world position (x*16, y*16)
+ *     |  Tile (x,y) at world position (x*tileWidth, y*tileHeight)
  *     v
  *    +Y
  * @endcode
+ * Tile size is not fixed at 16px: it comes from the project manifest
+ * (`tileWidth` / `tileHeight`) and is readable via @ref GetTileWidth / @ref GetTileHeight.
  *
- * @par World-to-Tile Conversion
+ * @par World-to-tile conversion
+ * Bare grid mapping, for a point that is already a tile-space sample:
  * @f[
  * tile_x = \lfloor \frac{world_x}{tileWidth} \rfloor, \quad
  * tile_y = \lfloor \frac{world_y}{tileHeight} \rfloor
  * @f]
+ * Entity positions are bottom-center feet anchors, so every entity-facing query
+ * (@ref WorldToTileCoord, @ref GetElevationAtWorldPos) shifts Y up by half a tile
+ * first, which keeps a feet position on a tile's bottom edge inside that tile:
+ * @f[
+ * tile_y = \left\lfloor \frac{world_y - \frac{tileHeight}{2}}{tileHeight} \right\rfloor
+ * @f]
+ * Do not copy the bare form into entity code; it is off by one row. @ref TileMath
+ * holds all three row conventions and is the only place they are defined.
  *
- * @par Tile-to-World Conversion
+ * @par Tile-to-world conversion
  * @f[
  * world_x = tile_x \times tileWidth, \quad
  * world_y = tile_y \times tileHeight
  * @f]
  *
- * @par Memory Layout
+ * @par Memory layout
  * Each layer stores tiles in row-major order:
  * @f[
  * index = y \times mapWidth + x
  * @f]
  *
- * @par Tileset Combination
+ * @par Tileset combination
  * Multiple tileset images can be combined vertically into a single texture:
  * @code
  *    +------------------+
@@ -290,24 +322,48 @@ struct AnimatedTile
  *    +------------------+
  * @endcode
  *
- * @par Sparse Storage Format
- * When serialized to JSON, only non-empty tiles (tileID != -1) are stored
- * within each entry of the `dynamicLayers` array:
+ * @par Sparse storage format
+ * Each entry of the `dynamicLayers` array stores every per-tile field sparsely, keyed by
+ * the row-major flat index `i = y * mapWidth + x`. Value fields (`tiles`, `rotation`,
+ * `stance`, `elevationRole`, `structureId`) are objects keyed by index and hold only
+ * non-default cells; boolean fields (`flipX`, `flipY`, `ySortPlus`, `ySortMinus`) are arrays
+ * listing the indices that are set. `stance`, `elevationRole` and `structureId` are the
+ * per-layer keys omitted entirely when they would be empty; per-tile animation ids are not
+ * stored here but in the top-level `layerAnimationMaps` array (one object per layer).
+ *
+ * `stance` holds @ref TileStance as an integer (0 Flat, 1 Prop, 2 Wall, 3 Structure). Maps
+ * written before it existed carry a `noProjection` index array instead; @ref LoadMapFromJSON
+ * migrates those, and the key is never written again.
+ *
+ * `elevationRole` holds @ref ElevationRole as an integer (0 Ground, 1 Raised,
+ * 2 Ramp) and decides which layers rise to the cell's `elevation`. A map written without that
+ * key loads as all-Ground and renders unchanged, so unlike `stance` it needs no migration.
  * @code{.json}
  * {
  *   "dynamicLayers": [
  *     {
  *       "name": "Ground",
+ *       "renderOrder": 0,
+ *       "isBackground": true,
  *       "tiles": {
  *         "42": 15,    // Tile at index 42 = tile ID 15
  *         "100": 23    // Tile at index 100 = tile ID 23
- *       }
+ *       },
+ *       "rotation": { "42": 90.0 },
+ *       "stance": { "42": 3 },
+ *       "elevationRole": { "42": 1 },
+ *       "flipX": [42],
+ *       "flipY": [],
+ *       "ySortPlus": [],
+ *       "ySortMinus": [],
+ *       "structureId": { "42": 0 }
  *     }
  *   ]
  * }
  * @endcode
  *
- * This significantly reduces file size for large, sparse maps.
+ * This significantly reduces file size for large, sparse maps. @ref SaveMapToJSON
+ * documents the surrounding top-level document (grids, structures, effects, actors).
  *
  * @see CollisionMap, NavigationMap, ColumnProxy
  */
@@ -321,9 +377,7 @@ public:
      */
     Tilemap();
 
-    /**
-     * @brief Destructor releases tileset texture resources.
-     */
+    /// @brief Destructor releases tileset texture resources.
     ~Tilemap();
 
     /**
@@ -348,6 +402,13 @@ public:
                               int tileWidth = 16,
                               int tileHeight = 16);
 
+    /// One sheet to pack into the atlas.
+    struct AtlasPackEntry
+    {
+        std::string key;         ///< Identifier used to look the offset back up.
+        const Texture* texture;  ///< Borrowed for the call; null entries are skipped.
+    };
+
     /**
      * @brief Append character sprite sheets into the tile atlas after load.
      *
@@ -360,26 +421,28 @@ public:
      * draw: NPCs and the player draw their sprites out of the same
      * texture as the tiles, eliminating per-NPC texture switches.
      *
-     * @param sheets Pairs of (key, texture pointer). Null textures are
-     *               skipped silently. All sheets must have the same
-     *               channel count as the atlas.
+     * @warning Each call replaces the previously packed set. The atlas is first
+     *          truncated back to the tileset-only baseline and every prior key is
+     *          discarded, so a second call that omits an earlier sheet leaves that
+     *          sheet unresolvable. Pass the complete set in one call; an empty
+     *          vector shrinks the atlas back to tileset-only.
+     *
+     * @param sheets @ref AtlasPackEntry rows. Null textures are skipped
+     *               silently. Each remaining texture is copied during the
+     *               call and is not retained. All sheets must have the same
+     *               channel count as the atlas and fit within its width.
      * @return `true` on success; `false` if dimensions/channels are
      *         incompatible or the GPU re-upload fails.
      */
-    /// One sheet to pack into the atlas.
-    struct AtlasPackEntry
-    {
-        std::string key;
-        const Texture* texture;
-    };
-
     bool PackAdditionalSheets(const std::vector<AtlasPackEntry>& sheets);
 
     /**
-     * @brief Look up the pixel offset of a packed character sheet.
+     * @brief Look up the atlas offset of a packed character sheet.
      * @param key Identifier used when @ref PackAdditionalSheets was called.
-     * @return Pixel-space offset within the atlas, or @c nullopt if the
-     *         key was never packed.
+     * @return Offset of the sheet's first GL row, in pixels measured from the
+     *         atlas bottom (x is always 0). Characters add their sprite
+     *         coordinates to `y`; atlas-rect samplers use it as the rect
+     *         origin. @c nullopt when the key was never packed.
      */
     std::optional<glm::vec2> GetCharacterAtlasOffset(const std::string& key) const;
 
@@ -389,7 +452,7 @@ public:
      * Allocates storage for all layers, collision, and navigation.
      * Optionally generates a default map pattern.
      *
-     * @par World Size
+     * @par World size
      * World dimensions in pixels:
      * @f[
      * worldWidth = width \times tileWidth
@@ -405,7 +468,7 @@ public:
     void SetTilemapSize(int width, int height, bool generateMap = true);
 
     /**
-     * @name Corner Cutting Control
+     * @name Corner cutting control
      * @brief Per-tile flags to disable corner cutting on specific corners.
      *
      * Corner cutting allows diagonal movement past collision tile corners.
@@ -417,10 +480,10 @@ public:
     /// Corner identifiers for corner cutting control
     enum Corner : uint8_t
     {
-        CORNER_TL = 0,  ///< Top-left corner
-        CORNER_TR = 1,  ///< Top-right corner
-        CORNER_BL = 2,  ///< Bottom-left corner
-        CORNER_BR = 3   ///< Bottom-right corner
+        CORNER_TL = 0,  ///< Top-left corner.
+        CORNER_TR = 1,  ///< Top-right corner.
+        CORNER_BL = 2,  ///< Bottom-left corner.
+        CORNER_BR = 3   ///< Bottom-right corner.
     };
 
     /**
@@ -443,11 +506,24 @@ public:
     /** @} */
 
     /**
-     * @name Collision Functions
-     * @brief Per-tile collision flags for player movement.
+     * @name Collision functions
+     * @brief Per-cell collision flags for player movement.
      *
-     * Collision only applies to the Ground layer (index 0). Other layers
-     * are purely decorative and don't affect movement.
+     * Collision is one boolean grid per map cell, held beside the layer stack - it is not
+     * a property of any layer. @ref SetTileCollision writes that single grid, so a cell
+     * either blocks or does not regardless of which layers carry artwork there, and layer 0
+     * has no special role. Nor are the other layers decorative: they drive Y-sort
+     * (`ySortPlus` / `ySortMinus`), no-projection structures, and elevated surface artwork.
+     * @verbatim
+     *   per-cell grids (one bool per cell)      layer stack (GetLayerCount() layers)
+     *
+     *      Collision      Navigation              layer N-1 [tiles, rotation, flags, ...]
+     *      +--+--+--+     +--+--+--+                  ...
+     *      |  |##|  |     |##|##|  |              layer 1   [tiles, rotation, flags, ...]
+     *      +--+--+--+     +--+--+--+              layer 0   [tiles, rotation, flags, ...]
+     *      |##|##|  |     |  |##|##|
+     *      +--+--+--+     +--+--+--+       one (x, y) indexes every grid and every layer
+     * @endverbatim
      * @{
      */
     /**
@@ -487,7 +563,7 @@ public:
     /** @} */
 
     /**
-     * @name Navigation Functions
+     * @name Navigation functions
      * @brief NPC walkability flags for pathfinding.
      *
      * Navigation is independent of collision. NPCs only walk on
@@ -532,10 +608,10 @@ public:
      * @brief Query tilemap properties.
      * @{
      */
-    inline int GetTileWidth() const { return m_TileWidth; }    ///< Tile width in pixels
-    inline int GetTileHeight() const { return m_TileHeight; }  ///< Tile height in pixels
-    inline int GetMapWidth() const { return m_MapWidth; }      ///< Map width in tiles
-    inline int GetMapHeight() const { return m_MapHeight; }    ///< Map height in tiles
+    inline int GetTileWidth() const { return m_TileWidth; }    ///< Tile width in pixels.
+    inline int GetTileHeight() const { return m_TileHeight; }  ///< Tile height in pixels.
+    inline int GetMapWidth() const { return m_MapWidth; }      ///< Map width in tiles.
+    inline int GetMapHeight() const { return m_MapHeight; }    ///< Map height in tiles.
 
     /**
      * @brief Flatten (x,y) to a row-major size_t index. Promotes to size_t
@@ -558,17 +634,17 @@ public:
     inline const Texture& GetTilesetTexture() const
     {
         return m_TilesetTexture;
-    }  ///< Tileset texture
-    inline int GetTilesPerRow() const { return m_TilesPerRow; }  ///< Tiles per row in tileset
-    inline int GetTilesetDataWidth() const { return m_TilesetDataWidth; }  ///< Tileset image width
-    inline int GetTilesetDataHeight() const
-    {
-        return m_TilesetDataHeight;
-    }  ///< Tileset image height
+    }  ///< Tileset texture.
+    inline int GetTilesPerRow() const { return m_TilesPerRow; }  ///< Tiles per row in tileset.
+    /// Combined atlas width in pixels.
+    inline int GetTilesetDataWidth() const { return m_TilesetDataWidth; }
+    /// Combined atlas height in pixels, including any sheets added by
+    /// @ref PackAdditionalSheets.
+    inline int GetTilesetDataHeight() const { return m_TilesetDataHeight; }
     /** @} */
 
     /**
-     * @name Dynamic Layer System
+     * @name Dynamic layer system
      * @brief Manage the layer vector dynamically while preserving
      * the default 10-layer layout.
      * @{
@@ -589,9 +665,13 @@ public:
     float GetLayerRotation(int x, int y, size_t layer) const;
     void SetLayerRotation(int x, int y, size_t layer, float rotation);
 
-    /// Get/set no-projection flag for any layer
-    bool GetLayerNoProjection(int x, int y, size_t layer) const;
-    void SetLayerNoProjection(int x, int y, size_t layer, bool noProjection);
+    /// Get/set the authored ground-vs-upright stance for any layer
+    TileStance GetLayerStance(int x, int y, size_t layer) const;
+    void SetLayerStance(int x, int y, size_t layer, TileStance stance);
+
+    /// Get/set whether this layer's artwork rises to the cell's elevation
+    ElevationRole GetLayerElevationRole(int x, int y, size_t layer) const;
+    void SetLayerElevationRole(int x, int y, size_t layer, ElevationRole role);
 
     /// Get/set per-tile horizontal flip (mirror around vertical axis)
     bool GetLayerFlipX(int x, int y, size_t layer) const;
@@ -613,7 +693,9 @@ public:
      * @brief Render all background layers (isBackground == true) in render order.
      * @param renderer Active renderer.
      * @param renderCam Camera position used for rendering offset.
-     * @param renderSize Visible area size for rendering.
+     * @param renderSize Currently unused; reserved for call-site symmetry. Extent
+     *                   comes from @p cullCam / @p cullSize, the draw offset from
+     *                   @p renderCam. Changing it has no effect.
      * @param cullCam Camera position used for tile culling.
      * @param cullSize Visible area size for tile culling.
      */
@@ -627,7 +709,9 @@ public:
      * @brief Render all foreground layers (isBackground == false) in render order.
      * @param renderer Active renderer.
      * @param renderCam Camera position used for rendering offset.
-     * @param renderSize Visible area size for rendering.
+     * @param renderSize Currently unused; reserved for call-site symmetry. Extent
+     *                   comes from @p cullCam / @p cullSize, the draw offset from
+     *                   @p renderCam. Changing it has no effect.
      * @param cullCam Camera position used for tile culling.
      * @param cullSize Visible area size for tile culling.
      */
@@ -638,10 +722,108 @@ public:
                                 glm::vec2 cullSize);
 
     /**
+     * @brief Render every tile layer as world-space 3D geometry.
+     *
+     * The 3D counterpart to @ref RenderBackgroundLayers +
+     * @ref RenderForegroundLayers + the no-projection passes, which it replaces
+     * wholesale: one traversal emits both the flat ground quads and the upright
+     * billboards, because a depth buffer - not draw order - now resolves which
+     * is in front. That is why there is a single method here where the flat
+     * pipeline needed four.
+     *
+     * Tiles are classified by their authored @ref TileStance through
+     * @ref tileRole::IsUpright; legacy maps are migrated once at load.
+     *
+     * @param renderer Active renderer; geometry is submitted via DrawQuad3D.
+     * @param rig      Camera parameters, used for the visible ground footprint
+     *                 and for billboard orientation.
+     */
+    void RenderWorld3D(IRenderer& renderer, const cameraRig::RigParams& rig);
+
+    /**
+     * @brief Bottom-most row of the contiguous vertical run of TileStance::Structure
+     *        tiles that (@p tileX, @p tileY) belongs to.
+     *
+     * Multi-tile structures are authored as a vertical run of tiles - in the
+     * flat top-down view those rows paint one above the other and read as one
+     * tall image. In 3D the whole run has to stand on a single ground row, or
+     * its tiles end up at different depths instead of stacked. This finds that
+     * row by walking south while the tiles stay non-empty and Structure.
+     *
+     * Only Structure cells continue the run, so a fence post sitting directly
+     * south of a building cannot become that building's base. A lone tile
+     * returns its own row.
+     *
+     * @param layer Layer to scan; runs never cross layers, matching authoring.
+     * @param tileX Column.
+     * @param tileY Row to scan down from.
+     * @return Row index of the run's base; never less than @p tileY.
+     */
+    int FindStructureBaseRow(const TileLayer& layer, int tileX, int tileY) const;
+
+    /**
+     * @brief Column span of the contiguous horizontal run of TileStance::Structure
+     *        tiles that (@p tileX, @p tileY) belongs to.
+     *
+     * The horizontal counterpart of @ref FindStructureBaseRow, and needed for the
+     * same reason in the other axis. A narrow structure turns toward the camera
+     * about its own center, so two of its tiles standing side by side would pivot
+     * about different axes and their shared edge would split open as soon as the
+     * yaw left zero - a two-tile log visibly breaking in half as the camera
+     * moves. Knowing the run lets the whole body rotate as one rigid quad, with
+     * each tile placed as a slice along the shared right axis. The span also
+     * feeds @ref tileRole::DampingForWidth, which is what makes a wide facade
+     * hold its footprint while a one-wide tower still turns.
+     *
+     * A lone tile returns its own column for both bounds.
+     *
+     * Only called for Structure artwork, and only Structure cells continue the
+     * run, so a Wall or a Prop standing beside a building is never absorbed into
+     * it and frozen with its pivot.
+     *
+     * @param layer    Layer to scan; runs never cross layers.
+     * @param tileX    Column to scan out from.
+     * @param tileY    Row.
+     * @param outMinX  Receives the westmost column of the run.
+     * @param outMaxX  Receives the eastmost column of the run.
+     */
+    void FindStructureRunColumns(
+        const TileLayer& layer, int tileX, int tileY, int& outMinX, int& outMaxX) const;
+
+    /**
+     * @brief The scene heights of one cell's two edges along its slope axis.
+     *
+     * @c minus is the west or north edge, @c plus the east or south edge; they are
+     * equal for a level cell.
+     */
+    struct SurfaceSlope
+    {
+        float minus = 0.0f;   ///< Height at the low-coordinate edge.
+        float plus = 0.0f;    ///< Height at the high-coordinate edge.
+        bool alongZ = false;  ///< true when the slope runs north-south.
+    };
+
+    /**
+     * @brief Resolve a cell's surface heights for one layer.
+     *
+     * Reads the cell's elevation and this layer's @ref ElevationRole; for a Ramp it
+     * also reads the two neighbours along @ref GetElevationAxisAt, on the same
+     * layer. Reading a neighbour's raw cell elevation instead would let a layer
+     * that is not participating pull the ramp up.
+     *
+     * @param layer Layer to read roles from; runs never cross layers.
+     * @param tileX Column.
+     * @param tileY Row.
+     */
+    SurfaceSlope ResolveSurfaceSlope(const TileLayer& layer, int tileX, int tileY) const;
+
+    /**
      * @brief Render no-projection tiles from all background layers.
      * @param renderer Active renderer.
      * @param renderCam Camera position used for rendering offset.
-     * @param renderSize Visible area size for rendering.
+     * @param renderSize Currently unused; reserved for call-site symmetry. Extent
+     *                   comes from @p cullCam / @p cullSize, the draw offset from
+     *                   @p renderCam. Changing it has no effect.
      * @param cullCam Camera position used for tile culling.
      * @param cullSize Visible area size for tile culling.
      */
@@ -655,7 +837,9 @@ public:
      * @brief Render no-projection tiles from all foreground layers.
      * @param renderer Active renderer.
      * @param renderCam Camera position used for rendering offset.
-     * @param renderSize Visible area size for rendering.
+     * @param renderSize Currently unused; reserved for call-site symmetry. Extent
+     *                   comes from @p cullCam / @p cullSize, the draw offset from
+     *                   @p renderCam. Changing it has no effect.
      * @param cullCam Camera position used for tile culling.
      * @param cullSize Visible area size for tile culling.
      */
@@ -667,6 +851,7 @@ public:
 
 private:
     /// Shared implementation for background/foreground no-projection rendering.
+    /// `renderSize` is accepted for signature symmetry only and is never read.
     void RenderLayersNoProjection(IRenderer& renderer,
                                   glm::vec2 renderCam,
                                   glm::vec2 renderSize,
@@ -683,7 +868,7 @@ public:
     /** @} */
 
     /**
-     * @name No-Projection System
+     * @name No-projection system
      * @brief Per-tile flag to bypass 3D perspective transformation.
      *
      * Tiles marked with "no projection" will be rendered without 3D perspective
@@ -693,52 +878,62 @@ public:
      */
 
     /**
-     * @brief Get no-projection flag at tile coordinates for a specific layer.
+     * @brief Whether the tile at these coordinates is part of an upright structure.
      *
      * @warning This method uses **1-based** layer indexing (unlike the Dynamic
      * Layer System methods which are 0-based). Layer 1 maps to internal layer 0.
      * The 1-based convention is a legacy artifact preserved here so default
      * callers (`layer = 1`) keep targeting the Ground layer without churn.
-     * Prefer the 0-based layer accessors (e.g. `GetLayerNoProjection`) in new
-     * code; this overload is kept only for backward compatibility.
+     * Prefer the 0-based layer accessors (e.g. `GetLayerStance`) in new code;
+     * this overload is kept only for backward compatibility.
      *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
      * @param layer Layer index (1-based; internally converted to 0-based).
-     * @return true if tile should bypass 3D projection on that layer.
+     * @return true if the tile's stance is TileStance::Structure on that layer.
      */
-    bool GetNoProjection(int x, int y, int layer = 1) const;
+    bool IsStructureTile(int x, int y, int layer = 1) const;
 
     /**
-     * @brief Find the bounding box of the noProjection structure containing the given tile.
+     * @brief Bounding box of the 4-connected TileStance::Structure region containing a tile.
+     *
+     * A cell joins the region when any layer marks it TileStance::Structure, so the
+     * box is the union across the whole layer stack. Authored `structureId` values
+     * are not consulted: two adjacent authored structures return one box, and a
+     * structure cell with no id still returns one. The id-aware extent of a single
+     * authored structure comes from the internal structure-bounds cache instead.
+     *
+     * @warning Scratches an internal flood-fill buffer, so the call is not reentrant
+     *          and not safe to run concurrently on one Tilemap.
+     *
      * @param tileX Tile X coordinate.
      * @param tileY Tile Y coordinate.
-     * @param outMinX Output: minimum tile X of structure.
-     * @param outMaxX Output: maximum tile X of structure.
-     * @param outMinY Output: minimum tile Y of structure.
-     * @param outMaxY Output: maximum tile Y of structure.
-     * @return true if a noProjection structure was found at this tile.
+     * @param outMinX Output: minimum tile X of the region.
+     * @param outMaxX Output: maximum tile X of the region.
+     * @param outMinY Output: minimum tile Y of the region.
+     * @param outMaxY Output: maximum tile Y of the region.
+     * @return true when the starting tile is a Structure cell on some layer.
      */
     bool FindNoProjectionStructureBounds(
         int tileX, int tileY, int& outMinX, int& outMaxX, int& outMinY, int& outMaxY) const;
 
     /**
-     * @brief Project a world-space point onto a no-projection structure surface.
+     * @brief Map a world-space point onto an upright structure's surface.
      *
-     * Uses the same stepped shared-edge mesh math as no-projection structure tile
-     * rendering so attached effects (for example particles) remain locked to the
-     * structure under globe/fisheye projection.
+     * Uses the same stepped shared-edge mesh math as upright structure tile
+     * rendering, so attached effects (for example particles) stay locked to the
+     * structure's face. An upright structure stands on its anchor base and
+     * extrudes upward, so a point inside its footprint lands on that face rather
+     * than on the ground beneath it - this is not the identity mapping.
      *
-     * @param renderer Active renderer.
      * @param worldPos World position in pixels.
      * @param cameraPos Camera world position in pixels.
-     * @param[out] outScreenPos Output projected screen-space position.
-     * @return `true` when the point was projected using a matching no-projection
-     *         structure; `false` when no structure covers the point and callers
-     *         should use normal point projection/fallback placement.
+     * @param[out] outScreenPos Output screen-space position.
+     * @return `true` when the point was mapped onto a matching structure; `false`
+     *         when no structure covers the point and callers should fall back to
+     *         plain placement.
      */
-    bool ProjectNoProjectionStructurePoint(IRenderer& renderer,
-                                           const glm::vec2& worldPos,
+    bool ProjectNoProjectionStructurePoint(const glm::vec2& worldPos,
                                            const glm::vec2& cameraPos,
                                            glm::vec2& outScreenPos) const;
 
@@ -794,18 +989,27 @@ public:
 
     /**
      * @brief Get the structure ID assigned to a tile.
+     *
+     * @warning Like @ref IsStructureTile, this pair uses **1-based** layer indexing: it
+     * reads internal layer `layer - 1`, so `layer = 1` is the Ground layer and `layer = 0`
+     * always returns -1. The 0-based `GetLayer*` accessors do not share this convention.
+     *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
-     * @param layer Layer index.
+     * @param layer Layer index (1-based; internally converted to 0-based).
      * @return Structure ID (-1 = auto flood-fill, 0+ = belongs to structure).
      */
     int GetTileStructureId(int x, int y, int layer) const;
 
     /**
      * @brief Assign a tile to a structure.
+     *
+     * @warning 1-based layer indexing, matching @ref GetTileStructureId - see the warning
+     * there. A 0-based index silently writes the layer below, and index 0 writes nothing.
+     *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
-     * @param layer Layer index.
+     * @param layer Layer index (1-based; internally converted to 0-based).
      * @param structId Structure ID (-1 = auto flood-fill, 0+ = belongs to structure).
      */
     void SetTileStructureId(int x, int y, int layer, int structId);
@@ -818,7 +1022,7 @@ public:
     /** @} */
 
     /**
-     * @name Elevation System
+     * @name Elevation system
      * @brief Height offset for stairs and elevated areas.
      *
      * Elevation values are stored per-tile and affect the rendering Y position
@@ -841,6 +1045,19 @@ public:
      * @param elevation Elevation in pixels.
      */
     void SetElevation(int x, int y, int elevation);
+
+    /**
+     * @brief Connected non-zero-elevation region containing a tile.
+     *
+     * Region IDs are runtime-only and may change after elevation editing. A
+     * negative result means the tile is ordinary ground. Rendering uses this
+     * identity to apply under/on-surface ordering only to the structure whose
+     * footprint actually contains an actor.
+     */
+    int GetElevationRegionId(int x, int y) const;
+
+    /// @brief Elevation-region query using the bottom-center feet convention.
+    int GetElevationRegionIdAtWorldPos(float worldX, float worldY) const;
 
     /**
      * @brief Get elevation at world position.
@@ -870,59 +1087,110 @@ public:
     /**
      * @brief Auto-derive the elevation engagement axis for a tile.
      *
-     * The axis tells CharacterKinematics::UpdatePlane in which movement direction
-     * the player's logical plane should track this tile's elevation. The
-     * derivation looks at the four orthogonal neighbors:
+     * The axis identifies which tile edge can connect ground to this elevated
+     * surface. The derivation runs in order and stops at the first decision:
      *
-     * - If a neighbor on the X axis shares this tile's elevation but no
-     *   Y neighbor does, the tile lies along an X-extending elevated
-     *   strip (e.g. a horizontal bridge deck) -> returns Axis::X.
-     * - Symmetric for Y.
-     * - If neither (ramp tip, isolated cell) or both (cross junction)
-     *   share elevation, the gradient |dE_x| vs |dE_y| breaks the tie.
-     * - Ground tiles (elevation == 0) always return Axis::None so they
-     *   engage from any direction (falling-off-bridge case).
+     * 1. Elevation 0 -> ElevationAxis::None.
+     * 2. Compare the orthogonal gradients |eE - eW| and |eN - eS|; the larger
+     *    one wins. This is the primary signal, because a ramp keeps a strong
+     *    gradient on its own axis even when same-height neighbours flank it.
+     * 3. On a gradient tie (deck interior, isolated platform, symmetric cross),
+     *    walk outward up to 8 cells in each cardinal direction and count
+     *    contiguous elevated cells; the axis with the longer span wins.
+     * 4. Still tied (a symmetric platform) -> ElevationAxis::X.
      *
-     * Cost: 4 bounded array reads. Safe to call on out-of-bounds tiles.
+     * Cost: 4 neighbour reads in the common case, up to 36 when the gradient
+     * ties. Safe to call on out-of-bounds tiles.
      *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
-     * @return ElevationAxis::None | X | Y.
+     * @return ElevationAxis::None, ElevationAxis::X or ElevationAxis::Y.
      */
     ElevationAxis GetElevationAxisAt(int x, int y) const;
 
     /** @} */
 
     /**
-     * @name Y-Sorted Tile System
-     * @brief Per-tile flag for depth-sorted rendering with entities.
+     * @name World depth tile system
+     * @brief Explicit Y-sort and inferred elevated tiles rendered with entities.
      *
-     * Tiles marked as Y-sorted are rendered in the same pass as player/NPCs,
-     * sorted by Y position. This allows tiles to appear in front of or behind
-     * entities based on their relative positions.
+     * Authored layer role and Y-sort remain the baseline. Connected elevation
+     * region identity supplies only structure-local underpass/deck constraints.
+     *
+     * Tilemap owns only the first two stages: it decides which tiles are promoted
+     * and fills the payload. The depth key itself is `anchorY` alone, and the
+     * remaining fields reach the sorter as metadata for the surface-local pass.
+     *
+     * @htmlonly
+     * <pre class="mermaid">
+     * flowchart TD
+     *     Gate["IsDepthSortedTile: ySortPlus, or layer 2+ with elevation"]
+     *     Build["GetVisibleDepthSortedTiles: anchorY = stack bottom edge"]
+     *     Item["Game: Drawable.sortY = anchorY only"]
+     *     Sort["SortDrawables: phase, then sortY, then per-region edges"]
+     *     Gate --> Build
+     *     Build -- "supportHeight + surfaceRegionId are metadata, not depth" --> Item
+     *     Item --> Sort
+     * </pre>
+     * @endhtmlonly
      * @{
      */
 
     /**
-     * @brief Data for a Y-sort-plus tile to be rendered in sorted order.
+     * @brief Tile promoted from a fixed layer into the world depth queue.
+     *
+     * Explicit Y-sort tiles and tiles belonging to an elevated support surface
+     * share this payload. @ref surfaceRegionId associates overhanging artwork
+     * with one connected elevation footprint without globally reordering it.
      */
-    struct YSortPlusTile
+    struct DepthSortedTile
     {
-        int x, y;           ///< Tile coordinates
-        int layer;          ///< Layer index (0-based)
-        float anchorY;      ///< World Y position of tile bottom (for sorting)
-        bool noProjection;  ///< True if tile should render without perspective distortion
-        bool ySortMinus;    ///< True if player should render behind this tile at same Y
+        int x = 0, y = 0;      ///< Tile coordinates.
+        int layer = 0;         ///< Layer index (0-based).
+        float anchorY = 0.0f;  ///< World Y position of the tile/stack bottom.
+        /// Inherited surface elevation in pixels. Support metadata only; it is
+        /// never folded into the painter-depth key (@ref Drawable::supportHeight).
+        float supportHeight = 0;
+        SupportSurface supportSurface{
+            SupportSurface::Ground};  ///< Logical surface the artwork belongs to.
+        int surfaceRegionId = -1;     ///< Connected elevation footprint, or -1.
+        bool authoredYSort = false;   ///< Copy of the cell's authored ySortPlus flag.
+        bool isBackground = true;     ///< Original fixed-pass side of actors.
+        bool isStructure = false;     ///< Render upright, without perspective distortion.
+        bool ySortMinus = false;      ///< Tile wins near-depth entity comparisons.
     };
 
     /**
-     * @brief Collect all visible Y-sort-plus tiles for rendering.
+     * @brief Whether a tile is owned by the unified world depth queue.
+     *
+     * A tile is promoted when its `ySortPlus` flag is set, or when its layer index
+     * is >= 2 (the first object layer) and the cell's elevation is non-zero, which
+     * treats object/foreground artwork over elevation as the visible elevated
+     * surface. Layers 0 and 1 (ground and ground detail) stay in the fixed passes
+     * below it, so existing maps need no new authoring.
+     *
+     * @note `ySortMinus` never promotes a tile. It is only a tiebreaker applied to
+     *       tiles already in the queue, so authoring it alone on a non-promoted
+     *       tile has no effect.
+     */
+    bool IsDepthSortedTile(int x, int y, size_t layer) const;
+
+    /**
+     * @brief Collect all visible explicit/elevated tiles for depth sorting.
+     *
+     * @warning The returned reference aliases an internal per-frame cache. The next
+     *          call clears and rebuilds it, so two results cannot be held at once.
+     *          Copy the contents when they must outlive one call.
+     *
      * @param cullCam Camera position for culling.
      * @param cullSize Visible area size for culling.
-     * @return Vector of Y-sort-plus tiles within visible range.
+     * @return Reused vector of depth-sorted tiles. The scanned range is the cull
+     *         rectangle expanded by 8 tiles on every side, so tiles just outside
+     *         the visible rectangle are included on purpose - a tall structure
+     *         anchored off-screen still contributes its artwork.
      */
-    const std::vector<YSortPlusTile>& GetVisibleYSortPlusTiles(glm::vec2 cullCam,
-                                                               glm::vec2 cullSize) const;
+    const std::vector<DepthSortedTile>& GetVisibleDepthSortedTiles(glm::vec2 cullCam,
+                                                                   glm::vec2 cullSize) const;
 
     /**
      * @brief Render a single tile (for Y-sorted rendering).
@@ -931,16 +1199,13 @@ public:
      * @param y Tile Y coordinate.
      * @param layer Layer index (0-based, 0 to layer_count-1).
      * @param cameraPos Camera position in world coordinates.
-     * @param useNoProjection Override: -1=auto (read from layer), 0=force normal, 1=force
-     * noProjection.
      */
-    void RenderSingleTile(
-        IRenderer& r, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection = -1);
+    void RenderSingleTile(IRenderer& r, int x, int y, int layer, glm::vec2 cameraPos);
 
     /** @} */
 
     /**
-     * @name Serialization Functions
+     * @name Serialization functions
      * @brief Map persistence using JSON format.
      * @{
      */
@@ -953,7 +1218,7 @@ public:
      * world lights, animated tile definitions/placements, NPCs/dialogue, and
      * optional player spawn state.
      *
-     * @par JSON Structure
+     * @par JSON structure
      * Top-level fields are intentionally sparse; per-cell objects use the
      * row-major flat index `i = y * width + x`.
      * @code{.json}
@@ -972,7 +1237,8 @@ public:
      *       "isBackground": true,
      *       "tiles": { "42": 15 },
      *       "rotation": { "42": 90.0 },
-     *       "noProjection": [42],
+     *       "stance": { "42": 3 },
+     *       "elevationRole": { "42": 1 },
      *       "flipX": [42],
      *       "flipY": [],
      *       "ySortPlus": [],
@@ -983,7 +1249,10 @@ public:
      *   "noProjectionStructures": [
      *     { "id": 0, "name": "Cabin", "leftAnchor": [160, 192], "rightAnchor": [208, 192] }
      *   ],
-     *   "particleZones": [{ "x": 10, "y": 20, "width": 64, "height": 32, "type": 0 }],
+     *   "particleZones": [
+     *     { "x": 10, "y": 20, "width": 64, "height": 32, "type": 0,
+     *       "enabled": true, "noProjection": false }
+     *   ],
      *   "worldLights": [
      *     { "x": 120, "y": 88, "r": 1.0, "g": 0.85, "b": 0.55, "radius": 64,
      *       "schedule": "NightOnly" }
@@ -1007,8 +1276,8 @@ public:
      *     MapJSON --> Structures["noProjectionStructures[]"]
      *     MapJSON --> Effects["particleZones[] / worldLights[] / animatedTiles[]"]
      *     MapJSON --> Actors["npcs[] / player"]
-     *     Layers --> PerTile["tiles, rotation, flips, y-sort, structureId, animationMap"]
-     *     Structures --> PerTile
+     *     Layers --> PerTile["tiles, rotation, stance, elevationRole, flips, y-sort, structureId,
+     * animationMap"] Structures --> PerTile
      * </pre>
      * @endhtmlonly
      *
@@ -1032,14 +1301,32 @@ public:
      * NPC/player data from JSON, replacing all current map state. Returns `false`
      * on file-open or parse failure.
      *
-     * Tolerant of partial or legacy files: unknown or out-of-range entries are
-     * skipped (with a capped warning count) instead of aborting the load, and older
-     * key names (e.g. "ySorted", "navmesh", a flat "animationMap") are still
-     * accepted. A mid-load exception is caught and resets the tilemap to a clean
-     * empty state rather than leaving it half-populated.
+     * Tolerant of legacy key names: "ySorted", "navmesh" and a flat "animationMap"
+     * are still accepted.
+     *
+     * Per-entry tolerance is not universal. It covers the per-cell grids and the
+     * `dynamicLayers` fields, where a malformed or out-of-range entry is skipped
+     * (with a capped warning count) and the rest of the load continues. The
+     * `cornerCutBlocked`, `particleZones`, `worldLights`, `noProjectionStructures`
+     * and `animatedTiles` sections parse without a per-entry guard, as do the
+     * values in `layerAnimationMaps`, so one malformed entry there throws to the
+     * outer handler: the load returns `false` and the tilemap is reset to a clean
+     * empty state rather than left half-populated.
+     *
+     * @par Stance migration
+     * A layer with no `stance` key predates @ref TileStance and is migrated once, at
+     * load: a `noProjection` cell becomes TileStance::Structure; a y-sort cell on an
+     * object or foreground layer becomes TileStance::Wall when a 4-connected neighbour
+     * also migrates upright and TileStance::Prop when it stands alone; everything else
+     * stays TileStance::Flat. This is the only place the layer index or a cell's
+     * neighbours may influence a stance - see the note in TileRole.hpp. Re-saving the
+     * map writes `stance` and drops `noProjection`, which older builds cannot read.
      *
      * @param filename Input JSON file path.
-     * @param npcs Optional output for loaded NPCs.
+     * @param npcs Registry to repopulate. When the file carries an `npcs` array,
+     *             every existing NPC entity in this registry is destroyed before the
+     *             new roster spawns; a file without that key leaves the registry
+     *             untouched. Pass nullptr to skip NPC loading entirely.
      * @param playerTileX Optional output for player X coordinate.
      * @param playerTileY Optional output for player Y coordinate.
      * @param characterType Optional output for player's character type.
@@ -1053,7 +1340,7 @@ public:
     /** @} */
 
     /**
-     * @name Tileset Utilities
+     * @name Tileset utilities
      * @brief Helper functions for tileset operations.
      * @{
      */
@@ -1079,7 +1366,7 @@ public:
     /** @} */
 
     /**
-     * @name Particle Zones
+     * @name Particle zones
      * @brief Placeable particle emitter zones for fireflies, rain, snow.
      * @{
      */
@@ -1129,7 +1416,7 @@ public:
 
     /** @} */
 
-    /** @name World Lights
+    /** @name World lights
      * @brief Persistent point-light sources anchored to world positions.
      *
      * Rendered as additive soft-circle sprites in `Game::Render` with intensity
@@ -1161,7 +1448,7 @@ public:
 
     /** @} */
 
-    /** @name Animated Tiles
+    /** @name Animated tiles
      * @brief Methods for managing animated tile definitions.
      * @{
      */
@@ -1201,6 +1488,14 @@ public:
 
     /**
      * @brief Set a tile position to use an animation.
+     *
+     * When @p animId names an animation that has at least one frame, this also
+     * writes that animation's first frame into the layer's tile id at
+     * (@p x, @p y), overwriting whatever was painted there. Clearing with -1
+     * leaves the last written tile id in place, so an editor command must save
+     * and restore the original tile id as well as the animation id to undo
+     * losslessly.
+     *
      * @param x Tile X coordinate.
      * @param y Tile Y coordinate.
      * @param layer Layer index (0-based).
@@ -1255,7 +1550,7 @@ public:
     /** @} */
 
     /**
-     * @name Layer Field Accessor Templates
+     * @name Layer field accessor templates
      * @brief Generic get/set for any per-tile defaulted_vector field on TileLayer.
      * @{
      */
@@ -1327,7 +1622,7 @@ public:
     }
 
     /**
-     * @name Array Access Operators
+     * @name Array access operators
      * @brief 2D array syntax for Ground layer tiles (index 0).
      *
      * Provides convenient `tilemap[x][y]` access pattern.
@@ -1371,23 +1666,25 @@ private:
      * @name Tileset
      * @{
      */
-    Texture m_TilesetTexture;                   ///< Combined tileset texture
-    int m_TileWidth{16}, m_TileHeight{16};      ///< Tile dimensions in pixels
-    int m_TilesetWidth{0}, m_TilesetHeight{0};  ///< Tileset dimensions in tiles
-    int m_TilesPerRow{0};                       ///< Tiles per row in tileset
+    Texture m_TilesetTexture;               ///< Combined tileset texture.
+    int m_TileWidth{16}, m_TileHeight{16};  ///< Tile dimensions in pixels.
+    /// Combined atlas dimensions in pixels, not tile counts. The height grows
+    /// when @ref PackAdditionalSheets appends character sheets.
+    int m_TilesetWidth{0}, m_TilesetHeight{0};
+    int m_TilesPerRow{0};  ///< Tiles per row in tileset.
     /// @brief Smart pointer with custom deleter for tileset pixel data.
     using TilesetDataPtr = std::unique_ptr<unsigned char[], void (*)(unsigned char*)>;
     TilesetDataPtr m_TilesetData{nullptr, +[](unsigned char* p) { delete[] p; }};
-    int m_TilesetDataWidth{0}, m_TilesetDataHeight{0};  ///< Raw image dimensions
-    int m_TilesetChannels{0};  ///< Number of color channels (3=RGB, 4=RGBA)
+    int m_TilesetDataWidth{0}, m_TilesetDataHeight{0};  ///< Raw image dimensions.
+    int m_TilesetChannels{0};  ///< Number of color channels (3=RGB, 4=RGBA).
     /**
-     * Height of the atlas BEFORE any character sprite sheets were packed.
+     * Height of the atlas before any character sprite sheets were packed.
      * PackAdditionalSheets uses this as the baseline so subsequent calls
      * replace (not stack on top of) any previously-packed characters.
      */
     int m_TilesetOnlyHeight{0};
-    std::vector<uint8_t> m_TileTransparencyCache;  ///< Cached transparency results per tile ID
-    bool m_TransparencyCacheBuilt{false};          ///< Whether the cache has been built
+    std::vector<uint8_t> m_TileTransparencyCache;  ///< Cached transparency results per tile ID.
+    bool m_TransparencyCacheBuilt{false};          ///< Whether the cache has been built.
 
     /**
      * Pixel offsets within the atlas for character sprite sheets packed via
@@ -1397,69 +1694,84 @@ private:
     /// @}
 
     /**
-     * @name Map Dimensions
+     * @name Map dimensions
      * @{
      */
-    int m_MapWidth{125}, m_MapHeight{125};  ///< Map dimensions in tiles
+    int m_MapWidth{125}, m_MapHeight{125};  ///< Map dimensions in tiles.
     /// @}
 
     /**
-     * @name Dynamic Layers
+     * @name Dynamic layers
      * @{
      */
-    std::vector<TileLayer> m_Layers;  ///< All tile layers (10 layers: 5 background, 5 foreground)
+    /**
+     * @brief All tile layers, in index order.
+     *
+     * Size is data-driven: the default stack is 10 (5 background + 5 foreground), but
+     * LoadMapFromJSON rebuilds this from the map's dynamicLayers[] array. Read it through
+     * GetLayerCount(), never as a constant.
+     */
+    std::vector<TileLayer> m_Layers;
     /// @}
 
     /**
-     * @name Collision and Navigation
+     * @name Collision and navigation
      * @{
      */
-    CollisionMap<std::vector> m_CollisionMap;    ///< Collision flags
-    NavigationMap<std::vector> m_NavigationMap;  ///< NPC walkability flags
+    CollisionMap<std::vector> m_CollisionMap;    ///< Collision flags.
+    NavigationMap<std::vector> m_NavigationMap;  ///< NPC walkability flags.
     std::vector<uint8_t>
-        m_CornerCutBlocked;  ///< Per-tile corner cut disable mask (4 bits per tile)
+        m_CornerCutBlocked;  ///< Per-tile corner cut disable mask (4 bits per tile).
     /// @}
 
     /**
-     * @name Elevation Data
+     * @name Elevation data
      * @{
      */
-    std::vector<int> m_Elevation;  ///< Per-tile elevation in pixels (0 = ground)
+    std::vector<int> m_Elevation;  ///< Per-tile elevation in pixels (0 = ground).
+    mutable std::vector<int>
+        m_ElevationRegionIds;  ///< Cached connected-component id per elevation cell.
+    mutable bool m_ElevationRegionIdsDirty{true};
+
+    /// @brief Rebuild connected non-zero-elevation component IDs after map edits.
+    void RebuildElevationRegionIds() const;
     /// @}
 
     /**
-     * @name Particle Zones
+     * @name Particle zones
      * @{
      */
-    std::vector<ParticleZone> m_ParticleZones;  ///< Placeable particle emitter zones
+    std::vector<ParticleZone> m_ParticleZones;  ///< Placeable particle emitter zones.
     /// @}
 
     /**
-     * @name World Lights
+     * @name World lights
      * @{
      */
     std::vector<WorldLight> m_Lights;  ///< Persistent point lights (lamps, windows).
     /// @}
 
     /**
-     * @name Animated Tiles
+     * @name Animated tiles
      * @{
      */
-    std::vector<AnimatedTile> m_AnimatedTiles;  ///< Animation definitions
-    std::vector<int> m_TileAnimationMap;        ///< Per-tile animation ID (-1 = not animated)
-    float m_AnimationTime{0.0f};                ///< Global animation timer
+    std::vector<AnimatedTile> m_AnimatedTiles;  ///< Animation definitions.
+    /// Write-only leftover: sized/cleared by the constructor and SetTilemapSize and never
+    /// read, saved, or loaded. The live per-tile animation ids are TileLayer::animationMap.
+    std::vector<int> m_TileAnimationMap;
+    float m_AnimationTime{0.0f};  ///< Global animation timer.
     /// @}
 
     /**
-     * @name No-Projection Structures
+     * @name No-projection structures
      * @{
      */
     std::vector<NoProjectionStructure>
-        m_NoProjectionStructures;  ///< Manually defined structures with anchors
+        m_NoProjectionStructures;  ///< Manually defined structures with anchors.
     /// @}
 
     /**
-     * @name Structure Bounds Cache
+     * @name Structure bounds cache
      * @brief Cached bounding boxes per (layerIndex, structureId) to avoid full-map scans.
      * @{
      */
@@ -1493,21 +1805,21 @@ private:
     const StructureBounds* GetCachedStructureBounds(size_t layerIdx, int structId) const;
 
     mutable std::unordered_map<int64_t, StructureBounds>
-        m_StructureBoundsCache;  ///< (layerIdx<<32 | structId) -> bounds
-    mutable std::unordered_set<int64_t> m_DirtyStructureKeys;  ///< Per-structure dirty keys
-    mutable bool m_StructureBoundsCacheDirty = true;           ///< Whether full cache needs rebuild
+        m_StructureBoundsCache;  ///< (layerIdx<<32 | structId) -> bounds.
+    mutable std::unordered_set<int64_t> m_DirtyStructureKeys;  ///< Per-structure dirty keys.
+    mutable bool m_StructureBoundsCacheDirty = true;  ///< Whether the full cache needs a rebuild.
     /// @}
 
     /**
-     * @name Render Cache (reused each frame to avoid allocations)
+     * @name Render cache (reused each frame to avoid allocations)
      * @{
      */
-    mutable std::vector<YSortPlusTile>
-        m_YSortPlusTilesCache;                   ///< Cached Y-sort tiles (reused each frame)
-    mutable std::vector<bool> m_ProcessedCache;  ///< Cached processed flags (reused each frame)
+    mutable std::vector<DepthSortedTile>
+        m_DepthSortedTilesCache;                 ///< Cached depth tiles (reused each frame).
+    mutable std::vector<bool> m_ProcessedCache;  ///< Cached processed flags (reused each frame).
     mutable std::vector<bool>
-        m_RenderedStructuresCache;                   ///< Cached structure flags (reused each frame)
-    mutable std::vector<bool> m_FloodFillProcessed;  ///< Reusable buffer for flood-fill searches
+        m_RenderedStructuresCache;                   ///< Cached structure flags, reused each frame.
+    mutable std::vector<bool> m_FloodFillProcessed;  ///< Reusable buffer for flood-fill searches.
     /// @}
 
     /**

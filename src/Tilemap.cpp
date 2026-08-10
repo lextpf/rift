@@ -4,10 +4,13 @@
 #include "Dialogue.hpp"
 #include "DialogueStore.hpp"
 #include "EntityStore.hpp"
+#include "Frustum.hpp"
 #include "Logger.hpp"
 #include "NpcRecord.hpp"
 #include "NpcTag.hpp"
 #include "Patrol.hpp"
+#include "SceneMath.hpp"
+#include "TileRole.hpp"
 #include "WorldServices.hpp"
 
 #include <glad/glad.h>
@@ -24,7 +27,7 @@
 #include <vector>
 
 // Note: STB_IMAGE_IMPLEMENTATION is already defined in Texture.cpp
-// We just need the header for function declarations
+// Only the header is needed here, for the function declarations.
 #include <stb_image.h>
 
 #include "MathConstants.hpp"
@@ -33,44 +36,97 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Tilemap";
 
-// Extra cull padding prevents no-projection structures from popping at globe edges.
-constexpr float NO_PROJECTION_CULL_PADDING_TILES = 8.0f;
+// Extra scan padding so upright structures anchored just outside the cull rect
+// still contribute their tiles: their artwork is drawn above the base row, so a
+// structure whose base is off-screen can still have visible upper tiles.
+constexpr float STRUCTURE_SCAN_PADDING_TILES = 8.0f;
 
-// Return true when every vertex of a warped quad is behind the sphere.
-bool IsWarpedQuadFullyBehindSphere(IRenderer& renderer, const glm::vec2 (&corners)[4])
+// How many rows north of the visible range RenderWorld3D still scans for upright
+// tiles. Upright artwork is drawn above its base row, so a structure standing
+// just inside the range has its upper tiles on rows outside it; without the
+// margin, tall buildings lose their tops as the camera approaches from the south.
+// Sized for the tallest plausible structure rather than tuned by eye.
+constexpr int UPRIGHT_SCAN_MARGIN_TILES = 16;
+
+// First layer whose artwork is object/foreground rather than terrain. Layers 0-1
+// are Ground and Ground Detail; 2+ are Objects, Objects2, Objects3, Foreground
+// and the overlays. Read by the depth-queue promotion gate and, once per legacy
+// map, by the stance migration.
+constexpr size_t FIRST_OBJECT_LAYER = 2;
+
+// Translate a layer authored before TileStance existed.
+//
+//   noProjection                          -> Structure
+//   y-sort on an object/foreground layer  -> Wall when a 4-connected neighbour
+//                                            also stands up, else Prop
+//   anything else                         -> Flat
+//
+// The y-sort flags never had a geometric meaning in the flat pipeline - only
+// noProjection did - but the 3D path briefly stood them up, so maps authored in
+// that window rely on it for props. Restricting the promotion to object and
+// foreground layers is what keeps the ~170 Ground Detail decals on the floor
+// where they belong.
+//
+// Wall-vs-Prop reproduces the adjacency rule the alternative design would have
+// applied at render time forever, so as a one-OFF seed it cannot be worse, and
+// every cell it guesses wrong is one click to change.
+//
+// This is the only place the layer index or a cell's neighbours may influence a
+// stance - see the note in TileRole.hpp. Nothing at render time may consult
+// either.
+void MigrateLayerStance(TileLayer& layer,
+                        const std::vector<uint8_t>& legacyNoProjection,
+                        size_t layerIndex,
+                        int width,
+                        int height)
 {
-    int behindCount = 0;
-    for (int i = 0; i < 4; ++i)
+    const size_t mapSize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const bool objectLayer = layerIndex >= FIRST_OBJECT_LAYER;
+
+    const auto wasNoProjection = [&legacyNoProjection](size_t i)
+    { return i < legacyNoProjection.size() && legacyNoProjection[i] != 0; };
+
+    // Which cells stand up at all, resolved before any of them is classified so
+    // the neighbour test below sees the whole picture.
+    std::vector<uint8_t> upright(mapSize, 0);
+    for (size_t i = 0; i < mapSize; ++i)
     {
-        if (renderer.IsPointBehindSphere(corners[i]))
-            ++behindCount;
+        const bool ySorted = (i < layer.ySortPlus.size() && layer.ySortPlus[i]) ||
+                             (i < layer.ySortMinus.size() && layer.ySortMinus[i]);
+        upright[i] = (wasNoProjection(i) || (objectLayer && ySorted)) ? 1 : 0;
     }
 
-    return behindCount == 4;
-}
-
-// Return true when the full no-projection structure base segment is behind the globe.
-// We sample multiple points along the base to avoid false visibility on long bases.
-bool IsStructureBaseFullyBehindSphere(IRenderer& renderer,
-                                      float anchorMinScreenX,
-                                      float anchorMaxScreenX,
-                                      float bottomScreenY)
-{
-    constexpr int BASE_SAMPLES = 7;
-    for (int i = 0; i < BASE_SAMPLES; ++i)
+    for (int y = 0; y < height; ++y)
     {
-        float t = static_cast<float>(i) / static_cast<float>(BASE_SAMPLES - 1);
-        float x = anchorMinScreenX + (anchorMaxScreenX - anchorMinScreenX) * t;
-        if (!renderer.IsPointBehindSphere(glm::vec2(x, bottomScreenY)))
-            return false;
+        for (int x = 0; x < width; ++x)
+        {
+            const size_t i =
+                static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+            if (upright[i] == 0)
+            {
+                continue;
+            }
+            if (wasNoProjection(i))
+            {
+                layer.stance[i] = TileStance::Structure;
+                continue;
+            }
+
+            const bool hasUprightNeighbour =
+                (x > 0 && upright[i - 1] != 0) || (x + 1 < width && upright[i + 1] != 0) ||
+                (y > 0 && upright[i - static_cast<size_t>(width)] != 0) ||
+                (y + 1 < height && upright[i + static_cast<size_t>(width)] != 0);
+
+            layer.stance[i] = hasUprightNeighbour ? TileStance::Wall : TileStance::Prop;
+        }
     }
-    return true;
 }
 
-// Compute one edge point for a no-projection structure at an arbitrary world Y.
-// Accepts continuous Y so particles can stay locked to the same warped mesh.
-glm::vec2 ComputeEdgePoint(IRenderer& renderer,
-                           float anchorMinScreenX,
+// Compute one edge point of an upright structure at an arbitrary world Y.
+// Accepts continuous Y so particles can stay locked to the same mesh the tiles
+// are drawn on. The structure stands on its anchor base and extrudes straight
+// up: u picks the column across the base, v the height above it.
+glm::vec2 ComputeEdgePoint(float anchorMinScreenX,
                            float anchorMaxScreenX,
                            float bottomScreenY,
                            int layerMinY,
@@ -93,149 +149,9 @@ glm::vec2 ComputeEdgePoint(IRenderer& renderer,
     v = std::max(-2.0f, std::min(2.0f, v));
 
     float heightWorld = heightTiles * static_cast<float>(tileHeight);
-    return renderer.ComputeBuildingVertex(baseLeft, baseRight, u, v, heightWorld);
-}
 
-// Horizon-fade descriptor for no-projection structures in globe/fisheye mode:
-// how much of a structure to peel away as its base nears the globe's edge, and
-// in which direction. amount 0 = fully visible, 1 = fully faded.
-struct StructureHorizonFade
-{
-    float amount = 0.0f;
-    bool columnFade = false;  // true: fade by columns, false: fade by rows
-    bool fromLeft = true;
-    bool fromTop = false;
-};
-
-// Compute how far a structure has crossed into the globe's edge fade band, given
-// its base center in screen space. Returns amount 0 outside the band (no globe, or
-// well inside the disc) rising to 1 at/over the horizon, plus the peel direction.
-StructureHorizonFade ComputeStructureHorizonFade(IRenderer& renderer,
-                                                 const glm::vec2& structureBaseCenter,
-                                                 float fadeBandPixels)
-{
-    StructureHorizonFade result;
-
-    auto s = renderer.GetPerspectiveState();
-    bool hasGlobe = s.enabled && (s.mode == IRenderer::ProjectionMode::Globe ||
-                                  s.mode == IRenderer::ProjectionMode::Fisheye);
-    if (!hasGlobe)
-        return result;
-
-    float centerX = s.viewWidth * 0.5f;
-    float centerY = s.viewHeight * 0.5f;
-    float dx = structureBaseCenter.x - centerX;
-    float dy = structureBaseCenter.y - centerY;
-    float baseR = s.sphereRadius;
-    float radiusX = baseR * static_cast<float>(perspectiveTransform::kGlobeRadiusXScale);
-    float radiusY = baseR * static_cast<float>(perspectiveTransform::kGlobeRadiusYScale);
-    radiusX = std::max(1.0f, radiusX);
-    radiusY = std::max(1.0f, radiusY);
-    float dNorm = std::sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
-    float ndx = dx / radiusX;
-    float ndy = dy / radiusY;
-
-    float edgeNorm = rift::PiF * 0.5f;
-    float avgRadius = (radiusX + radiusY) * 0.5f;
-    float bandNorm = std::max(1e-4f, std::max(1.0f, fadeBandPixels) / std::max(1.0f, avgRadius));
-    float start = edgeNorm - bandNorm;
-    float end = edgeNorm + bandNorm;
-    float t = (dNorm - start) / (end - start);
-    result.amount = std::max(0.0f, std::min(1.0f, t));
-
-    // Side-on globe fade should peel by columns; top/bottom fade should peel by rows.
-    result.columnFade = std::abs(ndx) >= std::abs(ndy);
-    result.fromLeft = ndx < 0.0f;
-    result.fromTop = ndy < 0.0f;
-    return result;
-}
-
-// Discrete per-tile test: is tile (tileCol, tileY) within the peeled-away band of
-// `fade`? Peels whole columns (side-on globe) or whole rows (top/bottom-on globe).
-bool IsNoProjectionTileHiddenByHorizonFade(const StructureHorizonFade& fade,
-                                           int tileCol,
-                                           int structureWidthTiles,
-                                           int tileY,
-                                           int layerMinY,
-                                           int effMaxY)
-{
-    if (fade.amount <= 0.0f)
-        return false;
-
-    if (fade.columnFade)
-    {
-        int hiddenCols = std::max(
-            0,
-            std::min(structureWidthTiles,
-                     static_cast<int>(
-                         std::floor(fade.amount * static_cast<float>(structureWidthTiles)))));
-        if (hiddenCols <= 0)
-            return false;
-
-        if (fade.fromLeft)
-            return tileCol < hiddenCols;
-
-        return tileCol >= structureWidthTiles - hiddenCols;
-    }
-
-    int colHeightTiles = std::max(0, effMaxY - layerMinY + 1);
-    if (colHeightTiles <= 0)
-        return true;
-
-    int hiddenRows = std::max(
-        0,
-        std::min(colHeightTiles,
-                 static_cast<int>(std::floor(fade.amount * static_cast<float>(colHeightTiles)))));
-    if (hiddenRows <= 0)
-        return false;
-
-    int rowFromTop = tileY - layerMinY;
-    int rowFromBottom = effMaxY - tileY;
-    if (fade.fromTop)
-        return rowFromTop < hiddenRows;
-
-    return rowFromBottom < hiddenRows;
-}
-
-// Continuous counterpart of IsNoProjectionTileHiddenByHorizonFade for a sub-tile
-// point (fractional column/row), so particles locked to a structure fade at the
-// same rate as the tiles around them.
-bool IsNoProjectionPointHiddenByHorizonFade(const StructureHorizonFade& fade,
-                                            float localXTiles,
-                                            int structureWidthTiles,
-                                            float worldTileY,
-                                            int layerMinY,
-                                            int effMaxY)
-{
-    if (fade.amount <= 0.0f)
-        return false;
-
-    if (fade.columnFade)
-    {
-        float hiddenCols = fade.amount * static_cast<float>(structureWidthTiles);
-        if (hiddenCols <= 0.0f)
-            return false;
-
-        if (fade.fromLeft)
-            return localXTiles < hiddenCols;
-
-        return localXTiles >= static_cast<float>(structureWidthTiles) - hiddenCols;
-    }
-
-    float colHeightTiles = static_cast<float>(std::max(0, effMaxY - layerMinY + 1));
-    if (colHeightTiles <= 0.0f)
-        return true;
-
-    float hiddenRows = fade.amount * colHeightTiles;
-    if (hiddenRows <= 0.0f)
-        return false;
-
-    float rowFromTop = worldTileY - static_cast<float>(layerMinY);
-    float rowFromBottom = static_cast<float>(effMaxY) - worldTileY;
-    if (fade.fromTop)
-        return rowFromTop < hiddenRows;
-
-    return rowFromBottom < hiddenRows;
+    glm::vec2 basePoint = baseLeft + u * (baseRight - baseLeft);
+    return glm::vec2(basePoint.x, basePoint.y - v * heightWorld);
 }
 
 }  // namespace
@@ -356,8 +272,8 @@ void Tilemap::InvalidateStructureBoundsForTile(
         {
             m_StructureBoundsCache[key] = {x, x, y, y};
         }
-        // We just set bounds that include this tile, so any prior dirty mark
-        // on the new structure is satisfied.
+        // The bounds set above already include this tile, so any prior dirty mark on the
+        // new structure is satisfied.
         m_DirtyStructureKeys.erase(key);
     }
 
@@ -654,7 +570,7 @@ bool Tilemap::LoadCombinedTilesets(const std::vector<std::string>& paths,
     }
 
     // Store combined data for transparency checking (don't flip for data checking).
-    // Transfer ownership from the local unique_ptr<unsigned char[]> to our TilesetDataPtr.
+    // Transfer ownership from the local unique_ptr<unsigned char[]> to TilesetDataPtr.
     m_TilesetData = TilesetDataPtr(combinedData.release(), +[](unsigned char* p) { delete[] p; });
     m_TilesetDataWidth = combinedWidth;
     m_TilesetDataHeight = combinedHeight;
@@ -873,6 +789,8 @@ void Tilemap::SetTilemapSize(int width, int height, bool generateMap)
     const size_t mapSize = static_cast<size_t>(m_MapWidth) * static_cast<size_t>(m_MapHeight);
 
     m_Elevation.assign(mapSize, 0);
+    m_ElevationRegionIds.clear();
+    m_ElevationRegionIdsDirty = true;
 
     // Initialize dynamic layers (10 total: 5 background, 5 foreground)
     m_Layers.clear();
@@ -1041,15 +959,93 @@ void Tilemap::SetElevation(int x, int y, int elevation)
     if (index >= m_Elevation.size())
         return;
 
-    m_Elevation[index] = elevation;
+    if (m_Elevation[index] != elevation)
+    {
+        m_Elevation[index] = elevation;
+        m_ElevationRegionIdsDirty = true;
+    }
+}
+
+void Tilemap::RebuildElevationRegionIds() const
+{
+    const size_t mapSize = MapCellCount();
+    m_ElevationRegionIds.assign(mapSize, -1);
+
+    int nextRegionId = 0;
+    std::vector<size_t> pending;
+    for (size_t seed = 0; seed < mapSize; ++seed)
+    {
+        if (seed >= m_Elevation.size() || m_Elevation[seed] == 0 || m_ElevationRegionIds[seed] >= 0)
+        {
+            continue;
+        }
+
+        m_ElevationRegionIds[seed] = nextRegionId;
+        pending.push_back(seed);
+        while (!pending.empty())
+        {
+            const size_t current = pending.back();
+            pending.pop_back();
+
+            const int x = static_cast<int>(current % static_cast<size_t>(m_MapWidth));
+            const int y = static_cast<int>(current / static_cast<size_t>(m_MapWidth));
+            const int neighborX[] = {x - 1, x + 1, x, x};
+            const int neighborY[] = {y, y, y - 1, y + 1};
+            for (int neighbor = 0; neighbor < 4; ++neighbor)
+            {
+                const int nx = neighborX[neighbor];
+                const int ny = neighborY[neighbor];
+                if (nx < 0 || nx >= m_MapWidth || ny < 0 || ny >= m_MapHeight)
+                {
+                    continue;
+                }
+
+                const size_t neighborIndex = FlatIndex(nx, ny);
+                if (neighborIndex >= m_Elevation.size() || m_Elevation[neighborIndex] == 0 ||
+                    m_ElevationRegionIds[neighborIndex] >= 0)
+                {
+                    continue;
+                }
+
+                m_ElevationRegionIds[neighborIndex] = nextRegionId;
+                pending.push_back(neighborIndex);
+            }
+        }
+        ++nextRegionId;
+    }
+
+    m_ElevationRegionIdsDirty = false;
+}
+
+int Tilemap::GetElevationRegionId(int x, int y) const
+{
+    if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
+    {
+        return -1;
+    }
+    if (m_ElevationRegionIdsDirty || m_ElevationRegionIds.size() != MapCellCount())
+    {
+        RebuildElevationRegionIds();
+    }
+
+    const size_t index = FlatIndex(x, y);
+    return index < m_ElevationRegionIds.size() ? m_ElevationRegionIds[index] : -1;
+}
+
+int Tilemap::GetElevationRegionIdAtWorldPos(float worldX, float worldY) const
+{
+    int tileX = 0;
+    int tileY = 0;
+    WorldToTileCoord(worldX, worldY, tileX, tileY);
+    return GetElevationRegionId(tileX, tileY);
 }
 
 float Tilemap::GetElevationAtWorldPos(float worldX, float worldY) const
 {
     // Convert world position to tile coordinates
     // Note: Entity positions use "feet position" convention where Y is at the
-    // bottom of the tile (y * tileHeight + tileHeight). We subtract half a tile
-    // height to correctly map feet position back to the occupied tile.
+    // bottom of the tile (y * tileHeight + tileHeight). Subtracting half a tile height
+    // maps a feet position back to the tile it occupies.
     int tileX = static_cast<int>(std::floor(worldX / m_TileWidth));
     int tileY = static_cast<int>(std::floor((worldY - m_TileHeight * 0.5f) / m_TileHeight));
 
@@ -1129,7 +1125,7 @@ ElevationAxis Tilemap::GetElevationAxisAt(int x, int y) const
     return ElevationAxis::X;
 }
 
-bool Tilemap::GetNoProjection(int x, int y, int layer) const
+bool Tilemap::IsStructureTile(int x, int y, int layer) const
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return false;
@@ -1140,35 +1136,35 @@ bool Tilemap::GetNoProjection(int x, int y, int layer) const
         return false;
 
     size_t index = FlatIndex(x, y);
-    return m_Layers[layerIdx].noProjection[index];
+    return m_Layers[layerIdx].stance[index] == TileStance::Structure;
 }
 
 // Flood-fill from (tileX, tileY) across all layers to find the tile-space bounds of
-// the connected no-projection region containing it (4-connectivity; a tile counts
-// if any layer flags it noProjection). Writes the bounds to the out params and
+// the connected structure region containing it (4-connectivity; a tile counts if any
+// layer gives it TileStance::Structure). Writes the bounds to the out params and
 // returns true, or returns false if the seed tile is out of range or not part of
-// any no-projection region.
+// any structure region.
 bool Tilemap::FindNoProjectionStructureBounds(
     int tileX, int tileY, int& outMinX, int& outMaxX, int& outMinY, int& outMaxY) const
 {
     if (tileX < 0 || tileX >= m_MapWidth || tileY < 0 || tileY >= m_MapHeight)
         return false;
 
-    // Check if this tile has noProjection in ANY layer
+    // Check if this tile is a structure on any layer
     size_t idx = FlatIndex(tileX, tileY);
-    bool hasNoProj = false;
+    bool hasStructure = false;
     for (size_t li = 0; li < m_Layers.size(); ++li)
     {
-        if (idx < m_Layers[li].noProjection.size() && m_Layers[li].noProjection[idx])
+        if (idx < m_Layers[li].stance.size() && m_Layers[li].stance[idx] == TileStance::Structure)
         {
-            hasNoProj = true;
+            hasStructure = true;
             break;
         }
     }
-    if (!hasNoProj)
+    if (!hasStructure)
         return false;
 
-    // Flood-fill to find all connected noProjection tiles (same as RenderLayerNoProjection).
+    // Flood-fill to find all connected structure tiles (same as RenderLayersNoProjection).
     // Reuse the member buffer to avoid per-call allocation on large maps.
     const size_t mapSize = static_cast<size_t>(m_MapWidth) * static_cast<size_t>(m_MapHeight);
     if (m_FloodFillProcessed.size() != mapSize)
@@ -1200,17 +1196,18 @@ bool Tilemap::FindNoProjectionStructureBounds(
         if (processed[cIdx])
             continue;
 
-        // Check if this tile is no-projection in ANY layer
-        bool isNoProj = false;
+        // Check if this tile is a structure on any layer
+        bool isStructure = false;
         for (size_t li = 0; li < m_Layers.size(); ++li)
         {
-            if (cIdx < m_Layers[li].noProjection.size() && m_Layers[li].noProjection[cIdx])
+            if (cIdx < m_Layers[li].stance.size() &&
+                m_Layers[li].stance[cIdx] == TileStance::Structure)
             {
-                isNoProj = true;
+                isStructure = true;
                 break;
             }
         }
-        if (!isNoProj)
+        if (!isStructure)
             continue;
 
         processed[cIdx] = true;
@@ -1230,14 +1227,14 @@ bool Tilemap::FindNoProjectionStructureBounds(
     return true;
 }
 
-// Project a world-space point onto the warped mesh of the no-projection structure
-// beneath it, writing the on-screen position to outScreenPos. Finds the owning
-// structure (searching a few rows down from the point), then interpolates across
-// the structure's warped column edges at the point's fractional position. Returns
-// false when there is no structure, or it is culled behind the globe or horizon
-// fade. Lets particles stay locked to a warped building's surface.
-bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
-                                                const glm::vec2& worldPos,
+// Map a world-space point onto the mesh of the upright structure beneath it,
+// writing the on-screen position to outScreenPos. Finds the owning structure
+// (searching a few rows down from the point), then interpolates across the
+// structure's column edges at the point's fractional position. Returns false
+// when there is no structure under the point. Lets particles stay locked to a
+// building's face: the structure stands on its anchor base, so a point inside
+// its footprint lands on the extruded face rather than on the ground below.
+bool Tilemap::ProjectNoProjectionStructurePoint(const glm::vec2& worldPos,
                                                 const glm::vec2& cameraPos,
                                                 glm::vec2& outScreenPos) const
 {
@@ -1271,7 +1268,7 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
         for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
         {
             const TileLayer& layer = m_Layers[layerIdx];
-            if (idx >= layer.noProjection.size() || !layer.noProjection[idx])
+            if (idx >= layer.stance.size() || layer.stance[idx] != TileStance::Structure)
                 continue;
             if (idx >= layer.structureId.size())
                 continue;
@@ -1348,20 +1345,9 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
     float anchorMinScreenX = anchorMinX - cameraPos.x;
     float anchorMaxScreenX = anchorMaxX - cameraPos.x;
 
-    if (IsStructureBaseFullyBehindSphere(
-            renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
-        return false;
-
     float worldTileY = worldPos.y / tileHf;
-    glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f, bottomScreenY);
-    StructureHorizonFade horizonFade =
-        ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
-    if (IsNoProjectionPointHiddenByHorizonFade(
-            horizonFade, localXTiles, structureWidthTiles, worldTileY, minY, maxY))
-        return false;
 
-    glm::vec2 leftPoint = ComputeEdgePoint(renderer,
-                                           anchorMinScreenX,
+    glm::vec2 leftPoint = ComputeEdgePoint(anchorMinScreenX,
                                            anchorMaxScreenX,
                                            bottomScreenY,
                                            minY,
@@ -1371,8 +1357,7 @@ bool Tilemap::ProjectNoProjectionStructurePoint(IRenderer& renderer,
                                            leftEdgeIndex,
                                            worldTileY);
 
-    glm::vec2 rightPoint = ComputeEdgePoint(renderer,
-                                            anchorMinScreenX,
+    glm::vec2 rightPoint = ComputeEdgePoint(anchorMinScreenX,
                                             anchorMaxScreenX,
                                             bottomScreenY,
                                             minY,
@@ -1496,18 +1481,36 @@ void Tilemap::SetTileStructureId(int x, int y, int layer, int structId)
     InvalidateStructureBoundsForTile(layerIdx, x, y, oldStructId, structId);
 }
 
-// Rebuild and return the cached list of visible Y-sort-plus tiles (tiles that
-// interleave with entities in the depth sort). Every visible Y-sort-plus tile
-// becomes its own entry, but all tiles in a vertical column-stack take the bottom
-// tile's foot as their anchorY (and its ySortMinus flag), so the whole stack sorts
-// together. Culled to the view rect expanded by the no-projection pad.
-const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
+bool Tilemap::IsDepthSortedTile(int x, int y, size_t layerIdx) const
+{
+    if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight || layerIdx >= m_Layers.size())
+    {
+        return false;
+    }
+
+    const size_t index = FlatIndex(x, y);
+    const TileLayer& layer = m_Layers[layerIdx];
+    if (index >= layer.ySortPlus.size())
+    {
+        return false;
+    }
+
+    // The two ground/detail layers remain the implicit floor underneath elevated
+    // artwork. Existing maps need no new authoring: elevation on an object or
+    // foreground layer promotes that tile into the character depth queue.
+    return layer.ySortPlus[index] || (layerIdx >= FIRST_OBJECT_LAYER && GetElevation(x, y) != 0);
+}
+
+// Rebuild and return the cached list of visible tiles that participate in world
+// depth sorting. Explicit Y-sort column stacks retain their legacy bottom anchor;
+// elevated surface artwork gets one entry per tile and carries the cell height.
+const std::vector<Tilemap::DepthSortedTile>& Tilemap::GetVisibleDepthSortedTiles(
     glm::vec2 cullCam, glm::vec2 cullSize) const
 {
-    m_YSortPlusTilesCache.clear();
+    m_DepthSortedTilesCache.clear();
 
-    float padX = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileWidth);
-    float padY = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileHeight);
+    float padX = STRUCTURE_SCAN_PADDING_TILES * static_cast<float>(m_TileWidth);
+    float padY = STRUCTURE_SCAN_PADDING_TILES * static_cast<float>(m_TileHeight);
     glm::vec2 expandedCullCam(cullCam.x - padX, cullCam.y - padY);
     glm::vec2 expandedCullSize(cullSize.x + padX * 2.0f, cullSize.y + padY * 2.0f);
 
@@ -1523,19 +1526,29 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
                      x1,
                      y1);
 
-    // Helper to check if a tile at (x,y,layer) is Y-sorted and non-empty using dynamic layers
-    auto isYSortPlusTile = [this](int x, int y, size_t layerIdx) -> bool
+    // Explicit Y-sort stacks retain their legacy vertical anchor. Inferred
+    // elevated tiles remain individual queue entries; local region constraints
+    // later place them relative only to actors under/on that footprint.
+    auto isExplicitYSortTile = [this](int x, int y, size_t layerIdx) -> bool
     {
         if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
+        {
             return false;
+        }
         if (layerIdx >= m_Layers.size())
+        {
             return false;
-        size_t index = FlatIndex(x, y);
+        }
+        const size_t index = FlatIndex(x, y);
         const TileLayer& layer = m_Layers[layerIdx];
         if (index >= layer.ySortPlus.size())
+        {
             return false;
+        }
         if (!layer.ySortPlus[index])
+        {
             return false;
+        }
         // Check for animation before checking base tile
         int tileID = layer.tiles[index];
         if (index < layer.animationMap.size())
@@ -1551,8 +1564,161 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
         return true;
     };
 
-    // Check all dynamic layers for Y-sorted tiles
-    for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx)
+    struct RenderSupport
+    {
+        SupportSurface surface{SupportSurface::Ground};
+        int height{0};
+        int regionId{-1};
+        bool ambiguousRegion{false};
+    };
+    std::unordered_map<int64_t, RenderSupport> structureSupportCache;
+    auto getStructureSupport = [this, &structureSupportCache](size_t layerIdx,
+                                                              int structureId) -> RenderSupport
+    {
+        const int64_t key =
+            (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(structureId);
+        if (const auto cached = structureSupportCache.find(key);
+            cached != structureSupportCache.end())
+        {
+            return cached->second;
+        }
+
+        RenderSupport support;
+        const StructureBounds* bounds = GetCachedStructureBounds(layerIdx, structureId);
+        if (bounds != nullptr)
+        {
+            const TileLayer& structureLayer = m_Layers[layerIdx];
+            for (int sy = bounds->minY; sy <= bounds->maxY; ++sy)
+            {
+                for (int sx = bounds->minX; sx <= bounds->maxX; ++sx)
+                {
+                    const size_t structureIndex = FlatIndex(sx, sy);
+                    if (structureIndex >= structureLayer.structureId.size() ||
+                        structureLayer.structureId[structureIndex] != structureId)
+                    {
+                        continue;
+                    }
+
+                    const int height = GetElevation(sx, sy);
+                    if (std::abs(height) > std::abs(support.height))
+                    {
+                        support.height = height;
+                    }
+
+                    const int regionId = GetElevationRegionId(sx, sy);
+                    if (regionId >= 0)
+                    {
+                        if (support.regionId < 0)
+                        {
+                            support.regionId = regionId;
+                        }
+                        else if (support.regionId != regionId)
+                        {
+                            // One visual structure spanning unrelated elevation
+                            // footprints is ambiguous; do not apply local plane
+                            // constraints to its overhanging cells.
+                            support.ambiguousRegion = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (support.height != 0)
+        {
+            support.surface = SupportSurface::Elevation;
+        }
+        if (support.ambiguousRegion)
+        {
+            support.regionId = -1;
+        }
+        structureSupportCache.emplace(key, support);
+        return support;
+    };
+
+    std::unordered_map<int64_t, RenderSupport> ySortComponentSupportCache;
+    auto getYSortComponentSupport = [this, &isExplicitYSortTile, &ySortComponentSupportCache](
+                                        int seedX, int seedY, size_t layerIdx) -> RenderSupport
+    {
+        const size_t seedIndex = FlatIndex(seedX, seedY);
+        const int64_t seedKey =
+            (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(seedIndex);
+        if (const auto cached = ySortComponentSupportCache.find(seedKey);
+            cached != ySortComponentSupportCache.end())
+        {
+            return cached->second;
+        }
+
+        RenderSupport support;
+        std::vector<size_t> pending{seedIndex};
+        std::vector<size_t> component;
+        std::unordered_set<size_t> visited;
+        visited.insert(seedIndex);
+        while (!pending.empty())
+        {
+            const size_t current = pending.back();
+            pending.pop_back();
+            component.push_back(current);
+
+            const int x = static_cast<int>(current % static_cast<size_t>(m_MapWidth));
+            const int y = static_cast<int>(current / static_cast<size_t>(m_MapWidth));
+            const int height = GetElevation(x, y);
+            if (std::abs(height) > std::abs(support.height))
+            {
+                support.height = height;
+            }
+
+            const int regionId = GetElevationRegionId(x, y);
+            if (regionId >= 0)
+            {
+                if (support.regionId < 0)
+                {
+                    support.regionId = regionId;
+                }
+                else if (support.regionId != regionId)
+                {
+                    support.ambiguousRegion = true;
+                }
+            }
+
+            const int neighborX[] = {x - 1, x + 1, x, x};
+            const int neighborY[] = {y, y, y - 1, y + 1};
+            for (int neighbor = 0; neighbor < 4; ++neighbor)
+            {
+                const int nx = neighborX[neighbor];
+                const int ny = neighborY[neighbor];
+                if (!isExplicitYSortTile(nx, ny, layerIdx))
+                {
+                    continue;
+                }
+
+                const size_t neighborIndex = FlatIndex(nx, ny);
+                if (visited.insert(neighborIndex).second)
+                {
+                    pending.push_back(neighborIndex);
+                }
+            }
+        }
+
+        if (support.height != 0)
+        {
+            support.surface = SupportSurface::Elevation;
+        }
+        if (support.ambiguousRegion)
+        {
+            support.regionId = -1;
+        }
+        for (size_t componentIndex : component)
+        {
+            const int64_t componentKey =
+                (static_cast<int64_t>(layerIdx) << 32) | static_cast<int64_t>(componentIndex);
+            ySortComponentSupportCache.emplace(componentKey, support);
+        }
+        return support;
+    };
+
+    // Preserve authored layer render order for equal-depth tile ties.
+    for (size_t layerIdx : GetLayerRenderOrder())
     {
         const TileLayer& layer = m_Layers[layerIdx];
 
@@ -1561,11 +1727,10 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
             for (int x = x0; x <= x1; ++x)
             {
                 size_t index = FlatIndex(x, y);
-                if (index >= layer.ySortPlus.size())
+                if (index >= layer.ySortPlus.size() || !IsDepthSortedTile(x, y, layerIdx))
+                {
                     continue;
-
-                if (!layer.ySortPlus[index])
-                    continue;
+                }
 
                 // Check for animation before checking base tile
                 int tileID = layer.tiles[index];
@@ -1580,40 +1745,121 @@ const std::vector<Tilemap::YSortPlusTile>& Tilemap::GetVisibleYSortPlusTiles(
                 if (tileID < 0)
                     continue;
 
-                // Find the bottom-most Y-sorted tile in this column (same x, same layer)
-                // This groups vertically stacked tiles to sort together
+                // Find the bottom of an explicitly Y-sorted vertical object.
+                // Inferred elevated surface cells keep their own physical anchor.
                 int bottomY = y;
-                while (isYSortPlusTile(x, bottomY + 1, layerIdx))
+                if (layer.ySortPlus[index])
                 {
-                    bottomY++;
+                    while (isExplicitYSortTile(x, bottomY + 1, layerIdx))
+                    {
+                        bottomY++;
+                    }
                 }
 
-                YSortPlusTile tile;
+                // A tall visual structure often extends outside its walkable
+                // elevation cells. Inherit support from the whole authored
+                // structure (or, without a structure id, its vertical Y-sort
+                // stack) so underpass constraints can identify the same local
+                // elevation footprint without changing authored Y-sort roles.
+                int inheritedHeight = GetElevation(x, bottomY);
+                int inheritedRegionId = GetElevationRegionId(x, bottomY);
+                bool ambiguousRegion = false;
+                if (layer.ySortPlus[index])
+                {
+                    const RenderSupport componentSupport = getYSortComponentSupport(x, y, layerIdx);
+                    if (std::abs(componentSupport.height) > std::abs(inheritedHeight))
+                    {
+                        inheritedHeight = componentSupport.height;
+                    }
+                    if (inheritedRegionId < 0)
+                    {
+                        inheritedRegionId = componentSupport.regionId;
+                    }
+                    else if (componentSupport.regionId >= 0 &&
+                             inheritedRegionId != componentSupport.regionId)
+                    {
+                        ambiguousRegion = true;
+                    }
+
+                    int topY = y;
+                    while (isExplicitYSortTile(x, topY - 1, layerIdx))
+                    {
+                        topY--;
+                    }
+                    for (int stackY = topY; stackY <= bottomY; ++stackY)
+                    {
+                        const int stackHeight = GetElevation(x, stackY);
+                        if (std::abs(stackHeight) > std::abs(inheritedHeight))
+                        {
+                            inheritedHeight = stackHeight;
+                        }
+
+                        const int stackRegionId = GetElevationRegionId(x, stackY);
+                        if (stackRegionId >= 0)
+                        {
+                            if (inheritedRegionId < 0)
+                            {
+                                inheritedRegionId = stackRegionId;
+                            }
+                            else if (inheritedRegionId != stackRegionId)
+                            {
+                                ambiguousRegion = true;
+                            }
+                        }
+                    }
+                }
+
+                const int structureId =
+                    index < layer.structureId.size() ? layer.structureId[index] : -1;
+                if (structureId >= 0)
+                {
+                    const RenderSupport structureSupport =
+                        getStructureSupport(layerIdx, structureId);
+                    if (structureSupport.surface == SupportSurface::Elevation)
+                    {
+                        inheritedHeight = structureSupport.height;
+                        if (inheritedRegionId < 0)
+                        {
+                            inheritedRegionId = structureSupport.regionId;
+                        }
+                        else if (structureSupport.regionId >= 0 &&
+                                 inheritedRegionId != structureSupport.regionId)
+                        {
+                            ambiguousRegion = true;
+                        }
+                    }
+                }
+                if (ambiguousRegion)
+                {
+                    inheritedRegionId = -1;
+                }
+
+                DepthSortedTile tile;
                 tile.x = x;
                 tile.y = y;
-                tile.layer = static_cast<int>(layerIdx);  // Store dynamic layer index
-                // Use bottom tile's anchorY so entire vertical stack sorts together
+                tile.layer = static_cast<int>(layerIdx);
                 tile.anchorY = static_cast<float>((bottomY + 1) * m_TileHeight);
-                // Check if this tile has no-projection flag
-                tile.noProjection = layer.noProjection[index];
-                // Use bottom tile's ySortMinus flag so entire vertical stack sorts consistently
-                size_t bottomIndex = FlatIndex(x, bottomY);
+                tile.supportHeight = static_cast<float>(inheritedHeight);
+                tile.supportSurface =
+                    tile.supportHeight == 0.0f ? SupportSurface::Ground : SupportSurface::Elevation;
+                tile.surfaceRegionId = inheritedRegionId;
+                tile.authoredYSort = layer.ySortPlus[index];
+                tile.isBackground = layer.isBackground;
+                tile.isStructure = layer.stance[index] == TileStance::Structure;
+                const size_t bottomIndex = FlatIndex(x, bottomY);
                 tile.ySortMinus = layer.ySortMinus[bottomIndex];
-                m_YSortPlusTilesCache.push_back(tile);
+                m_DepthSortedTilesCache.push_back(tile);
             }
         }
     }
 
-    return m_YSortPlusTilesCache;
+    return m_DepthSortedTilesCache;
 }
 
-// Draw a single tile at (x, y) on the given layer. Handles animation-frame lookup,
-// transparency skipping, and the three no-projection paths: flat 2D, a
-// sphere-warped quad (when the tile belongs to a structure), and a
-// perspective-suspended fallback for structure-less no-projection tiles.
-// useNoProjection: -1 = use the layer's flag, 0 = force off, 1 = force on.
-void Tilemap::RenderSingleTile(
-    IRenderer& renderer, int x, int y, int layer, glm::vec2 cameraPos, int useNoProjection)
+// Draw a single tile at (x, y) on the given layer. Handles animation-frame lookup
+// and transparency skipping. Upright tiles draw exactly like flat ones here: the
+// stance only changes draw order in this pipeline, never geometry.
+void Tilemap::RenderSingleTile(IRenderer& renderer, int x, int y, int layer, glm::vec2 cameraPos)
 {
     if (x < 0 || x >= m_MapWidth || y < 0 || y >= m_MapHeight)
         return;
@@ -1649,10 +1895,6 @@ void Tilemap::RenderSingleTile(
     if (IsTileTransparent(tileID))
         return;
 
-    // Determine no-projection mode: -1=auto (from layer), 0=force off, 1=force on
-    bool isNoProjection =
-        (useNoProjection == -1) ? tileLayer.noProjection[index] : (useNoProjection == 1);
-
     int dataTilesPerRow = m_TilesetDataWidth / m_TileWidth;
     int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
     int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
@@ -1660,182 +1902,21 @@ void Tilemap::RenderSingleTile(
     glm::vec2 texSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
     bool flipY = renderer.RequiresYFlip();
 
-    if (isNoProjection)
-    {
-        // Check if perspective is enabled
-        bool perspectiveEnabled = renderer.GetPerspectiveState().enabled;
+    float worldX = static_cast<float>(x * m_TileWidth);
+    float worldY = static_cast<float>(y * m_TileHeight);
+    glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
+    glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
 
-        if (!perspectiveEnabled)
-        {
-            // 2D mode: render directly like normal tiles
-            float worldX = static_cast<float>(x * m_TileWidth);
-            float worldY = static_cast<float>(y * m_TileHeight);
-            glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
-            glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
-
-            renderer.DrawSpriteRegion(m_TilesetTexture,
-                                      screenPos,
-                                      renderSize,
-                                      texCoord,
-                                      texSize,
-                                      rotation,
-                                      glm::vec3(1.0f),
-                                      flipY,
-                                      tileFlipX,
-                                      tileFlipY);
-        }
-        else
-        {
-            // 3D mode: use structure-based rendering if tile has structure ID
-            int structId =
-                (index < tileLayer.structureId.size()) ? tileLayer.structureId[index] : -1;
-
-            if (structId >= 0 && structId < static_cast<int>(m_NoProjectionStructures.size()))
-            {
-                // Sphere-conforming warped building rendering
-                // Each tile is rendered as a warped quad that bends to match the sphere curvature
-                const NoProjectionStructure& structDef = m_NoProjectionStructures[structId];
-
-                // Look up cached structure bounds (O(1) instead of full-map scan)
-                const StructureBounds* bounds = GetCachedStructureBounds(layerIdx, structId);
-                if (!bounds)
-                    return;
-                int minX = bounds->minX, maxX = bounds->maxX;
-                int minY = bounds->minY, maxY = bounds->maxY;
-
-                int structureWidthTiles = maxX - minX + 1;
-                if (structureWidthTiles < 1)
-                    return;
-
-                int tileCol = x - minX;
-
-                float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
-                float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
-                float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
-                float bottomScreenY = bottomWorldY - cameraPos.y + 1.0f;
-
-                float anchorMinScreenX = anchorMinX - cameraPos.x;
-                float anchorMaxScreenX = anchorMaxX - cameraPos.x;
-
-                if (IsStructureBaseFullyBehindSphere(
-                        renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
-                    return;
-
-                int leftEdgeIndex = tileCol;
-                int rightEdgeIndex = tileCol + 1;
-                if (leftEdgeIndex < 0 || rightEdgeIndex > structureWidthTiles)
-                    return;
-
-                float topTileY = static_cast<float>(y);
-                float bottomTileY = topTileY + 1.0f;
-
-                glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
-                                              bottomScreenY);
-                StructureHorizonFade horizonFade =
-                    ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
-                if (IsNoProjectionTileHiddenByHorizonFade(
-                        horizonFade, tileCol, structureWidthTiles, y, minY, maxY))
-                    return;
-
-                glm::vec2 corners[4];
-                corners[0] = ComputeEdgePoint(renderer,
-                                              anchorMinScreenX,
-                                              anchorMaxScreenX,
-                                              bottomScreenY,
-                                              minY,
-                                              maxY,
-                                              m_TileHeight,
-                                              structureWidthTiles,
-                                              leftEdgeIndex,
-                                              topTileY);
-                corners[1] = ComputeEdgePoint(renderer,
-                                              anchorMinScreenX,
-                                              anchorMaxScreenX,
-                                              bottomScreenY,
-                                              minY,
-                                              maxY,
-                                              m_TileHeight,
-                                              structureWidthTiles,
-                                              rightEdgeIndex,
-                                              topTileY);
-                corners[2] = ComputeEdgePoint(renderer,
-                                              anchorMinScreenX,
-                                              anchorMaxScreenX,
-                                              bottomScreenY,
-                                              minY,
-                                              maxY,
-                                              m_TileHeight,
-                                              structureWidthTiles,
-                                              rightEdgeIndex,
-                                              bottomTileY);
-                corners[3] = ComputeEdgePoint(renderer,
-                                              anchorMinScreenX,
-                                              anchorMaxScreenX,
-                                              bottomScreenY,
-                                              minY,
-                                              maxY,
-                                              m_TileHeight,
-                                              structureWidthTiles,
-                                              leftEdgeIndex,
-                                              bottomTileY);
-
-                if (IsWarpedQuadFullyBehindSphere(renderer, corners))
-                    return;
-
-                // Render the tile as a warped quad (no additional perspective applied)
-                renderer.DrawWarpedQuad(m_TilesetTexture,
-                                        corners,
-                                        texCoord,
-                                        texSize,
-                                        glm::vec3(1.0f),
-                                        flipY,
-                                        tileFlipX,
-                                        tileFlipY);
-            }
-            else
-            {
-                // No structure assigned - render with simple projection (legacy fallback)
-                float worldX = static_cast<float>(x * m_TileWidth);
-                float worldY = static_cast<float>(y * m_TileHeight);
-                glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
-                glm::vec2 renderSize(static_cast<float>(m_TileWidth),
-                                     static_cast<float>(m_TileHeight));
-
-                {
-                    IRenderer::PerspectiveSuspendGuard guard(renderer);
-                    renderer.DrawSpriteRegion(m_TilesetTexture,
-                                              screenPos,
-                                              renderSize,
-                                              texCoord,
-                                              texSize,
-                                              rotation,
-                                              glm::vec3(1.0f),
-                                              flipY,
-                                              tileFlipX,
-                                              tileFlipY);
-                }
-            }
-        }
-    }
-    else
-    {
-        // Normal rendering: let renderer handle perspective
-        float worldX = static_cast<float>(x * m_TileWidth);
-        float worldY = static_cast<float>(y * m_TileHeight);
-        glm::vec2 screenPos(worldX - cameraPos.x, worldY - cameraPos.y);
-
-        glm::vec2 renderSize(static_cast<float>(m_TileWidth), static_cast<float>(m_TileHeight));
-        renderer.DrawSpriteRegion(m_TilesetTexture,
-                                  screenPos,
-                                  renderSize,
-                                  texCoord,
-                                  texSize,
-                                  rotation,
-                                  glm::vec3(1.0f),
-                                  flipY,
-                                  tileFlipX,
-                                  tileFlipY);
-    }
+    renderer.DrawSpriteRegion(m_TilesetTexture,
+                              screenPos,
+                              renderSize,
+                              texCoord,
+                              texSize,
+                              rotation,
+                              glm::vec3(1.0f),
+                              flipY,
+                              tileFlipX,
+                              tileFlipY);
 }
 
 TileLayer& Tilemap::GetLayer(size_t index)
@@ -1886,14 +1967,24 @@ void Tilemap::SetLayerRotation(int x, int y, size_t layer, float rotation)
     (m_Layers[layer].rotation)[FlatIndex(x, y)] = rotation;
 }
 
-bool Tilemap::GetLayerNoProjection(int x, int y, size_t layer) const
+TileStance Tilemap::GetLayerStance(int x, int y, size_t layer) const
 {
-    return GetLayerField<&TileLayer::noProjection>(x, y, layer);
+    return GetLayerField<&TileLayer::stance>(x, y, layer);
 }
 
-void Tilemap::SetLayerNoProjection(int x, int y, size_t layer, bool noProjection)
+void Tilemap::SetLayerStance(int x, int y, size_t layer, TileStance stance)
 {
-    SetLayerField<&TileLayer::noProjection>(x, y, layer, noProjection);
+    SetLayerField<&TileLayer::stance>(x, y, layer, stance);
+}
+
+ElevationRole Tilemap::GetLayerElevationRole(int x, int y, size_t layer) const
+{
+    return GetLayerField<&TileLayer::elevationRole>(x, y, layer);
+}
+
+void Tilemap::SetLayerElevationRole(int x, int y, size_t layer, ElevationRole role)
+{
+    SetLayerField<&TileLayer::elevationRole>(x, y, layer, role);
 }
 
 bool Tilemap::GetLayerFlipX(int x, int y, size_t layer) const
@@ -1952,9 +2043,413 @@ std::vector<size_t> Tilemap::GetLayerRenderOrder() const
     return indices;
 }
 
-// Draw all background (pre-player) layers in render order in a single pass over the
-// visible tile range, one tile position at a time. Skips no-projection and
-// Y-sort-plus tiles (drawn by their own passes) and transparent/empty tiles.
+int Tilemap::FindStructureBaseRow(const TileLayer& layer, int tileX, int tileY) const
+{
+    int baseRow = tileY;
+    while (baseRow + 1 < m_MapHeight)
+    {
+        const size_t belowIdx = static_cast<size_t>((baseRow + 1) * m_MapWidth + tileX);
+        if (layer.tiles[belowIdx] < 0)
+        {
+            break;
+        }
+        // Only Structure artwork continues the run. A fence post standing
+        // directly south of a building is a separate prop, not that building's
+        // ground floor.
+        if (!tileRole::StacksVertically(layer.stance[belowIdx]))
+        {
+            break;
+        }
+        ++baseRow;
+    }
+    return baseRow;
+}
+
+void Tilemap::FindStructureRunColumns(
+    const TileLayer& layer, int tileX, int tileY, int& outMinX, int& outMaxX) const
+{
+    const auto matchesAt = [&](int x)
+    {
+        const size_t idx = static_cast<size_t>(tileY * m_MapWidth + x);
+        if (layer.tiles[idx] < 0)
+        {
+            return false;
+        }
+        // Only Structure cells continue the run, so a Wall or a Prop standing
+        // beside a building is never absorbed into it and frozen with its pivot.
+        return tileRole::StacksVertically(layer.stance[idx]);
+    };
+
+    outMinX = tileX;
+    while (outMinX - 1 >= 0 && matchesAt(outMinX - 1))
+    {
+        --outMinX;
+    }
+
+    outMaxX = tileX;
+    while (outMaxX + 1 < m_MapWidth && matchesAt(outMaxX + 1))
+    {
+        ++outMaxX;
+    }
+}
+
+Tilemap::SurfaceSlope Tilemap::ResolveSurfaceSlope(const TileLayer& layer,
+                                                   int tileX,
+                                                   int tileY) const
+{
+    const size_t idx =
+        static_cast<size_t>(tileY) * static_cast<size_t>(m_MapWidth) + static_cast<size_t>(tileX);
+    const ElevationRole role = layer.elevationRole[idx];
+    const int elevation = GetElevation(tileX, tileY);
+
+    if (role != ElevationRole::Ramp)
+    {
+        const float height = elevationRole::SurfaceHeight(elevation, role);
+        return {height, height, false};
+    }
+
+    const bool alongZ = GetElevationAxisAt(tileX, tileY) == ElevationAxis::Y;
+    const int stepX = alongZ ? 0 : 1;
+    const int stepY = alongZ ? 1 : 0;
+
+    // Off-map reads as bare ground, so a ramp at the map edge runs down to 0
+    // rather than reading past the buffer.
+    const auto neighbourAt = [&](int nx, int ny)
+    {
+        elevationRole::NeighbourSurface neighbour{};
+        if (nx >= 0 && nx < m_MapWidth && ny >= 0 && ny < m_MapHeight)
+        {
+            neighbour.elevation = GetElevation(nx, ny);
+            neighbour.role =
+                layer.elevationRole[static_cast<size_t>(ny) * static_cast<size_t>(m_MapWidth) +
+                                    static_cast<size_t>(nx)];
+        }
+        return neighbour;
+    };
+
+    return {elevationRole::EdgeHeight(elevation, neighbourAt(tileX - stepX, tileY - stepY)),
+            elevationRole::EdgeHeight(elevation, neighbourAt(tileX + stepX, tileY + stepY)),
+            alongZ};
+}
+
+void Tilemap::RenderWorld3D(IRenderer& renderer, const cameraRig::RigParams& rig)
+{
+    const std::vector<size_t> order = GetLayerRenderOrder();
+    if (order.empty())
+    {
+        return;
+    }
+
+    // The visible ground area is a rotated trapezoid, so its axis-aligned bounds
+    // come from the camera itself rather than from a viewport rectangle. When
+    // the horizon is on screen the bounds are clamped rather than infinite, and
+    // ComputeTileRange clips them to the map either way.
+    const cameraRig::GroundBounds bounds = cameraRig::GroundFootprintAabb(rig);
+    const glm::vec2 cullCam = bounds.min;
+    const glm::vec2 cullSize = bounds.max - bounds.min;
+
+    int x0 = 0;
+    int y0 = 0;
+    int x1 = 0;
+    int y1 = 0;
+    ComputeTileRange(
+        m_MapWidth, m_MapHeight, m_TileWidth, m_TileHeight, cullCam, cullSize, x0, y0, x1, y1);
+
+    // Guarded rather than an early return: this function's job is geometry, and
+    // whether a tileset is loaded is the renderer's concern - DrawQuad3D
+    // drops any quad whose texture is not ready. Returning here instead would
+    // make the whole geometry path untestable without a GPU-loaded atlas.
+    const int dataTilesPerRow = std::max(1, m_TilesetDataWidth / m_TileWidth);
+
+    const float tileWf = static_cast<float>(m_TileWidth);
+    const float tileHf = static_cast<float>(m_TileHeight);
+    const glm::vec2 tileSize(tileWf, tileHf);
+    const bool flipY = renderer.RequiresYFlip();
+    const bool hasTransparencyCache = m_TransparencyCacheBuilt;
+    const std::vector<uint8_t>& transparencyCache = m_TileTransparencyCache;
+    const int transparencyCacheSize = static_cast<int>(transparencyCache.size());
+
+    // Two orientations cover every upright tile, and the camera does not change
+    // within a frame, so both are resolved once rather than per tile.
+    //
+    //  - pivot: turns toward the camera. Only safe for a pole - artwork with no
+    //    real extent across the pivot, which spins in place and never leaves its
+    //    anchor. Every TileStance::Prop uses it.
+    //  - wall:  yaw locked to the grid, leaning only with pitch. Every surface
+    //    uses it, because rotating a surface drags its far end off the spot it
+    //    was authored on, and a run of individually turning cards fans open like
+    //    venetian blinds. See tileRole::DampingFor.
+    const billboard::Orientation pivotOrientation =
+        billboard::Orient(rig.yawRadians, rig.pitchRadians, tileRole::DampingForWidth(1));
+    const billboard::Orientation wallOrientation =
+        billboard::Orient(rig.yawRadians, rig.pitchRadians, tileRole::DampingForWidth(2));
+
+    // The tile range above is an axis-aligned box around a rotated trapezoid, so
+    // at a 45 degree yaw a large fraction of it is off screen. A per-tile sphere
+    // test against the real frustum removes those corners. The sphere is sized
+    // to cover an upright tile as well as a flat one, since upright artwork
+    // extends a full tile above the ground.
+    const frustum::Frustum viewFrustum =
+        frustum::FromViewProjection(cameraRig::BuildViewProjection(rig));
+    const float tileRadius = std::sqrt(tileWf * tileWf + tileHf * tileHf);
+
+    // Upright artwork is drawn above its base row, so a structure whose base is
+    // inside the visible range can have its upper tiles on map rows north of it.
+    // Scanning a margin further north keeps tall buildings from losing their top
+    // as the camera moves. Flat tiles in that margin are skipped, so the extra
+    // rows only cost the upright test.
+    const int yScanStart = std::max(0, y0 - UPRIGHT_SCAN_MARGIN_TILES);
+
+    // No seam inflation here: corners derived from the tile grid are
+    // bit-identical between neighbours, so the shared edges close on their own.
+    //
+    // two passes, and the split is what stops rotated tiles flickering.
+    //
+    // Ground artwork is one flat sheet: every layer of it sits at height 0, so
+    // stacked tiles are exactly COPLANAR. While tiles were axis-aligned that was
+    // harmless - identical geometry rasterizes to bit-identical depth, and
+    // GL_LEQUAL then lets the later draw win deterministically, which is exactly
+    // the layer order the map asks for. Rotation defeats it: a rotated quad pokes out
+    // past its own cell into its neighbours', and those overlaps are coplanar
+    // surfaces with different geometry, so their interpolated depths differ only
+    // by floating-point noise. Which one wins then varies per pixel and shifts
+    // as the camera moves - z-fighting, seen as flicker.
+    //
+    // The fix is to stop asking depth a question it cannot answer. Ground draws
+    // first with depth off entirely, ordered by layer exactly as the flat
+    // pipeline ordered it - which is still correct for the coplanar case this
+    // pass exists to fix: every layer of one cell sits at the same height. Since
+    // ground can rise per cell (elevationRole::SurfaceHeight), a raised cell and
+    // a lower one at a different cell are no longer necessarily coplanar, but
+    // with depth off they are still only ever ordered by scan order rather than
+    // by actual distance. That is a known, accepted residual at the authored
+    // 6-10px surface heights, not a rule this pass enforces. Upright artwork and
+    // actors then draw with depth against each other, all of them at or above
+    // the ground plane.
+    //
+    // Splitting also keeps the batch whole: DepthMode is pipeline state, so
+    // interleaving the two would flush between every alternating tile.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const bool uprightPass = (pass == 1);
+
+        for (const size_t layerIdx : order)
+        {
+            const TileLayer& layer = m_Layers[layerIdx];
+
+            for (int y = yScanStart; y <= y1; ++y)
+            {
+                const int rowOffset = y * m_MapWidth;
+                const bool insideWindow = (y >= y0);
+
+                for (int x = x0; x <= x1; ++x)
+                {
+                    const size_t idx = static_cast<size_t>(rowOffset + x);
+
+                    int tileID = layer.tiles[idx];
+                    if (tileID < 0)
+                    {
+                        continue;
+                    }
+
+                    const TileStance stance = layer.stance[idx];
+                    const bool upright = tileRole::IsUpright(stance);
+                    if (upright != uprightPass)
+                    {
+                        continue;
+                    }
+                    if (!upright && !insideWindow)
+                    {
+                        // Ground artwork in the northern margin is genuinely off screen.
+                        continue;
+                    }
+
+                    if (idx < layer.animationMap.size())
+                    {
+                        const int animId = layer.animationMap[idx];
+                        if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
+                        {
+                            tileID = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
+                        }
+                    }
+                    if (tileID < 0)
+                    {
+                        continue;
+                    }
+
+                    if (hasTransparencyCache && tileID < transparencyCacheSize &&
+                        transparencyCache[tileID])
+                    {
+                        continue;
+                    }
+
+                    const float worldX = static_cast<float>(x) * tileWf;
+                    const float worldY = static_cast<float>(y) * tileHf;
+
+                    // Cheap reject against the real frustum before any quad is built.
+                    // Centred half a tile above this cell's surface, so the sphere
+                    // brackets upright artwork as well as flat ground and does not
+                    // sit under a raised deck.
+                    const float cullHeight =
+                        elevationRole::SurfaceHeight(GetElevation(x, y), layer.elevationRole[idx]);
+                    if (!frustum::IntersectsSphere(
+                            viewFrustum,
+                            sceneMath::ToScene({worldX + tileWf * 0.5f, worldY + tileHf * 0.5f},
+                                               cullHeight + tileHf * 0.5f),
+                            tileRadius))
+                    {
+                        continue;
+                    }
+
+                    glm::vec3 corners[sceneMath::QUAD_CORNER_COUNT];
+                    if (upright)
+                    {
+                        // A Structure is authored as a vertical run of tiles: in the
+                        // flat top-down view those rows paint one above the other and
+                        // read as a single tall image. Standing each tile on its own
+                        // grid row would put them at different DEPTHS - a column
+                        // marching away from the camera instead of a wall - so the
+                        // whole run is anchored on its bottom-most row and the tiles
+                        // above it are lifted.
+                        //
+                        //   grid rows          scene
+                        //   y   [roof ]         [roof ]   <- lifted 2 * tileH
+                        //   y+1 [wall ]   =>    [wall ]   <- lifted 1 * tileH
+                        //   y+2 [door ]         [door ]   <- stands on row y+2
+                        //                      =========  ground
+                        //
+                        // A Prop or a Wall is the opposite reading of the same shape:
+                        // a fence running north-south is three separate panels, each
+                        // one tile tall on its own row, receding along the ground. It
+                        // gets no base row and no lift, so it recedes instead of
+                        // climbing into a tower. See tileRole::StacksVertically.
+                        //
+                        // The lift runs along the billboard's own up axis, not along
+                        // world vertical. `up` leans north by the damped lean angle,
+                        // so lifting vertically would leave each quad's top edge
+                        // north of the next one's bottom edge and split the wall
+                        // open along every tile seam.
+                        //
+                        // A Structure must also rotate as one rigid body. A narrow one
+                        // still turns toward the camera, and quads turning about their
+                        // own centers tear apart the moment the yaw leaves zero - a
+                        // two-tile log breaks in half as the camera moves. Resolving
+                        // one shared pivot for the whole body and placing each tile as
+                        // a slice along the shared axes keeps it welded.
+                        //
+                        // Prop and Wall need none of that machinery. A Prop is a pole:
+                        // it spins in place about its own center and there is nothing
+                        // to weld it to. A Wall has yawFollow 0, so its right axis is
+                        // exactly world +X and placing it at its own cell gives the
+                        // same corners a shared pivot would - which means two Walls
+                        // side by side derive their common edge from the identical
+                        // grid expression and meet exactly, the same reason ground
+                        // quads need no seam inflation.
+                        const bool stacks = tileRole::StacksVertically(stance);
+
+                        int runMinX = x;
+                        int runMaxX = x;
+                        int baseRow = y;
+
+                        if (stacks)
+                        {
+                            // Prefer the authored no-projection structure: the editor
+                            // already groups these tiles and the map caches each
+                            // group's bounds, so the pivot is exact even for L-shaped
+                            // or hollow buildings that a contiguity scan would
+                            // mis-group. Tiles left on auto flood-fill
+                            // (structureId < 0) fall back to scanning their run.
+                            const int structId = layer.structureId[idx];
+                            const StructureBounds* structBounds =
+                                (structId >= 0) ? GetCachedStructureBounds(layerIdx, structId)
+                                                : nullptr;
+
+                            if (structBounds != nullptr)
+                            {
+                                runMinX = structBounds->minX;
+                                runMaxX = structBounds->maxX;
+                                baseRow = structBounds->maxY;
+                            }
+                            else
+                            {
+                                baseRow = FindStructureBaseRow(layer, x, y);
+                                FindStructureRunColumns(layer, x, y, runMinX, runMaxX);
+                            }
+                        }
+
+                        const float baseWorldY = static_cast<float>(baseRow) * tileHf;
+
+                        // Pole or surface. For a Structure this is still measured -
+                        // the extent of one authored body, so a narrow tower turns
+                        // while a wide facade holds its footprint. For a Prop or a
+                        // Wall the author decided, and neighbours never enter into it.
+                        const int structureWidth = runMaxX - runMinX + 1;
+                        const billboard::Orientation& orientation =
+                            tileRole::IsGridLocked(stance, structureWidth) ? wallOrientation
+                                                                           : pivotOrientation;
+
+                        const float runCentreX =
+                            static_cast<float>(runMinX + runMaxX + 1) * 0.5f * tileWf;
+                        const float sliceOffset =
+                            (static_cast<float>(x) + 0.5f) * tileWf - runCentreX;
+
+                        // The whole body shares one foot height, taken at the run's
+                        // center column on its base row, so a structure spanning
+                        // cells of differing elevation stays rigid instead of
+                        // tilting. For a one-wide Prop or Wall the center column is
+                        // the tile's own column, so this is the same value either way.
+                        const int footColumn = (runMinX + runMaxX) / 2;
+                        const size_t footIdx =
+                            static_cast<size_t>(baseRow) * static_cast<size_t>(m_MapWidth) +
+                            static_cast<size_t>(footColumn);
+                        const float footHeight = elevationRole::SurfaceHeight(
+                            GetElevation(footColumn, baseRow), layer.elevationRole[footIdx]);
+
+                        const glm::vec3 runFoot =
+                            sceneMath::ToScene({runCentreX, baseWorldY + tileHf}, footHeight);
+
+                        const float lift = static_cast<float>(baseRow - y) * tileHf;
+                        billboard::MakeQuad(
+                            runFoot + orientation.right * sliceOffset + orientation.up * lift,
+                            tileSize,
+                            orientation,
+                            corners,
+                            layer.rotation[idx]);
+                    }
+                    else
+                    {
+                        const SurfaceSlope slope = ResolveSurfaceSlope(layer, x, y);
+                        sceneMath::MakeGroundQuad(
+                            {worldX, worldY}, tileSize, 0.0f, layer.rotation[idx], corners);
+                        sceneMath::ApplySlopeHeights({worldX, worldY},
+                                                     tileSize,
+                                                     slope.minus,
+                                                     slope.plus,
+                                                     slope.alongZ,
+                                                     corners);
+                    }
+
+                    const int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
+                    const int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
+
+                    renderer.DrawQuad3D(
+                        m_TilesetTexture,
+                        corners,
+                        glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
+                        tileSize,
+                        glm::vec4(1.0f),
+                        renderModes::BlendMode::Alpha,
+                        uprightPass ? renderModes::DepthMode::TestAndWrite
+                                    : renderModes::DepthMode::None,
+                        flipY,
+                        layer.flipX[idx],
+                        layer.flipY[idx]);
+                }
+            }
+        }
+    }
+}
+
 void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
                                      glm::vec2 renderCam,
                                      glm::vec2 renderSize,
@@ -1988,8 +2483,7 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
     const float tileWf = static_cast<float>(m_TileWidth);
     const float tileHf = static_cast<float>(m_TileHeight);
     const glm::vec2 texSize(tileWf, tileHf);
-    const float seamFix = renderer.GetPerspectiveState().enabled ? 0.1f : 0.0f;
-    const glm::vec2 tileRenderSize(tileWf + seamFix, tileHf + seamFix);
+    const glm::vec2 tileRenderSize(tileWf, tileHf);
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
@@ -2011,16 +2505,6 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
                 static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
-            // Skip only when the whole tile quad is behind the sphere.
-            glm::vec2 tileCorners[4] = {
-                glm::vec2(tilePosX, tilePosY),
-                glm::vec2(tilePosX + tileWf, tilePosY),
-                glm::vec2(tilePosX + tileWf, tilePosY + tileHf),
-                glm::vec2(tilePosX, tilePosY + tileHf),
-            };
-            if (IsWarpedQuadFullyBehindSphere(renderer, tileCorners))
-                continue;
-
             // Render all background layers at this position (in render order)
             for (size_t layerIdx : bgLayers)
             {
@@ -2031,8 +2515,8 @@ void Tilemap::RenderBackgroundLayers(IRenderer& renderer,
                 if (tileID < 0)
                     continue;
 
-                // Skip if no-projection or Y-sorted (rendered separately)
-                if (layer.noProjection[idx] || layer.ySortPlus[idx])
+                // Skip upright structures and Y-sorted tiles (rendered separately)
+                if (layer.stance[idx] == TileStance::Structure || IsDepthSortedTile(x, y, layerIdx))
                     continue;
 
                 // Apply animated tile frame if present
@@ -2107,8 +2591,7 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
     const float tileWf = static_cast<float>(m_TileWidth);
     const float tileHf = static_cast<float>(m_TileHeight);
     const glm::vec2 texSize(tileWf, tileHf);
-    const float seamFix = renderer.GetPerspectiveState().enabled ? 0.1f : 0.0f;
-    const glm::vec2 tileRenderSize(tileWf + seamFix, tileHf + seamFix);
+    const glm::vec2 tileRenderSize(tileWf, tileHf);
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
     const bool hasTransparencyCache = m_TransparencyCacheBuilt;
@@ -2130,16 +2613,6 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
                 static_cast<double>(x) * m_TileWidth - static_cast<double>(renderCam.x);
             const float tilePosX = static_cast<float>(tilePosXd);
 
-            // Skip only when the whole tile quad is behind the sphere.
-            glm::vec2 tileCorners[4] = {
-                glm::vec2(tilePosX, tilePosY),
-                glm::vec2(tilePosX + tileWf, tilePosY),
-                glm::vec2(tilePosX + tileWf, tilePosY + tileHf),
-                glm::vec2(tilePosX, tilePosY + tileHf),
-            };
-            if (IsWarpedQuadFullyBehindSphere(renderer, tileCorners))
-                continue;
-
             // Render all foreground layers at this position (in render order)
             for (size_t layerIdx : fgLayers)
             {
@@ -2150,8 +2623,8 @@ void Tilemap::RenderForegroundLayers(IRenderer& renderer,
                 if (tileID < 0)
                     continue;
 
-                // Skip if no-projection or Y-sorted (rendered separately)
-                if (layer.noProjection[idx] || layer.ySortPlus[idx])
+                // Skip upright structures and Y-sorted tiles (rendered separately)
+                if (layer.stance[idx] == TileStance::Structure || IsDepthSortedTile(x, y, layerIdx))
                     continue;
 
                 // Check for animated tile
@@ -2211,12 +2684,9 @@ void Tilemap::RenderForegroundLayersNoProjection(IRenderer& renderer,
     RenderLayersNoProjection(renderer, renderCam, renderSize, cullCam, cullSize, false);
 }
 
-// Draw the no-projection tiles of either the background or foreground layer set.
-// In 2D mode this is a straight single pass. In any enabled perspective mode it
-// groups each structure's tiles, sorts the per-structure draw commands by layer then
-// row, and emits each tile as a warped quad. Globe/fisheye modes additionally widen
-// the cull margin for edge compression and cull/fade whole structures at the
-// horizon. Structure-less no-projection tiles are skipped in 3D.
+// Draw the upright (TileStance::Structure) tiles of either the background or
+// foreground layer set, in a single pass. Depth-sorted tiles are skipped here -
+// they are emitted by the Y-sorted pass instead.
 void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
                                        glm::vec2 renderCam,
                                        glm::vec2 renderSize,
@@ -2238,22 +2708,8 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     if (layers.empty())
         return;
 
-    float cullPadX = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileWidth);
-    float cullPadY = NO_PROJECTION_CULL_PADDING_TILES * static_cast<float>(m_TileHeight);
-    auto s = renderer.GetPerspectiveState();
-    bool hasGlobe = s.enabled && (s.mode == IRenderer::ProjectionMode::Globe ||
-                                  s.mode == IRenderer::ProjectionMode::Fisheye);
-    if (hasGlobe)
-    {
-        // Globe projection compresses distant world-space tiles toward the edge,
-        // so no-projection structures need a much wider world cull margin.
-        float ovalPadXFactor =
-            0.9f + 0.35f * static_cast<float>(perspectiveTransform::kGlobeRadiusXScale);
-        float ovalPadYFactor =
-            0.25f + 0.35f * static_cast<float>(perspectiveTransform::kGlobeRadiusYScale);
-        cullPadX = std::max(cullPadX, s.viewWidth * ovalPadXFactor);
-        cullPadY = std::max(cullPadY, s.viewHeight * ovalPadYFactor);
-    }
+    float cullPadX = STRUCTURE_SCAN_PADDING_TILES * static_cast<float>(m_TileWidth);
+    float cullPadY = STRUCTURE_SCAN_PADDING_TILES * static_cast<float>(m_TileHeight);
     glm::vec2 expandedCullCam(cullCam.x - cullPadX, cullCam.y - cullPadY);
     glm::vec2 expandedCullSize(cullSize.x + cullPadX * 2.0f, cullSize.y + cullPadY * 2.0f);
 
@@ -2275,362 +2731,56 @@ void Tilemap::RenderLayersNoProjection(IRenderer& renderer,
     const float tileHf = static_cast<float>(m_TileHeight);
     const bool flipY = renderer.RequiresYFlip();
     const glm::vec3 white(1.0f);
-    const bool perspectiveEnabled = renderer.GetPerspectiveState().enabled;
-
-    if (!perspectiveEnabled)
-    {
-        // 2D mode: single-pass all matching layers
-        for (int y = y0; y <= y1; ++y)
-        {
-            const int rowOffset = y * mapWidth;
-            const float tilePosY = y * tileHf - renderCam.y;
-
-            for (int x = x0; x <= x1; ++x)
-            {
-                const size_t idx = static_cast<size_t>(rowOffset + x);
-                const float tilePosX = x * tileWf - renderCam.x;
-
-                for (size_t layerIdx : layers)
-                {
-                    const TileLayer& layer = m_Layers[layerIdx];
-
-                    int tileID = layer.tiles[idx];
-
-                    if (tileID < 0)
-                        continue;
-
-                    if (!layer.noProjection[idx] || layer.ySortPlus[idx])
-                        continue;
-
-                    // Apply animated tile frame if present
-                    if (idx < layer.animationMap.size())
-                    {
-                        int animId = layer.animationMap[idx];
-                        if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
-                        {
-                            tileID = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
-                        }
-                    }
-
-                    if (IsTileTransparent(tileID))
-                        continue;
-
-                    int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
-                    int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
-
-                    renderer.DrawSpriteRegion(
-                        m_TilesetTexture,
-                        glm::vec2(tilePosX, tilePosY),
-                        glm::vec2(tileWf, tileHf),
-                        glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
-                        glm::vec2(tileWf, tileHf),
-                        layer.rotation[idx],
-                        white,
-                        flipY,
-                        layer.flipX[idx],
-                        layer.flipY[idx]);
-                }
-            }
-        }
-        return;
-    }
-
-    // 3D mode: structure-based rendering with shared processed array
-    size_t mapSize = MapCellCount();
-    m_ProcessedCache.assign(mapSize, false);
-    auto& processed = m_ProcessedCache;
-    m_RenderedStructuresCache.assign(m_NoProjectionStructures.size(), false);
-    auto& renderedStructures = m_RenderedStructuresCache;
 
     for (int y = y0; y <= y1; ++y)
     {
+        const int rowOffset = y * mapWidth;
+        const float tilePosY = y * tileHf - renderCam.y;
+
         for (int x = x0; x <= x1; ++x)
         {
-            size_t idx = FlatIndex(x, y);
+            const size_t idx = static_cast<size_t>(rowOffset + x);
+            const float tilePosX = x * tileWf - renderCam.x;
 
-            if (processed[idx])
-                continue;
-
-            bool hasNoProj = false;
-            int foundStructId = -1;
             for (size_t layerIdx : layers)
             {
-                if (m_Layers[layerIdx].noProjection[idx] && !m_Layers[layerIdx].ySortPlus[idx])
-                {
-                    hasNoProj = true;
-                    if (idx < m_Layers[layerIdx].structureId.size() &&
-                        m_Layers[layerIdx].structureId[idx] >= 0)
-                    {
-                        foundStructId = m_Layers[layerIdx].structureId[idx];
-                    }
-                    break;
-                }
-            }
-            if (!hasNoProj)
-                continue;
+                const TileLayer& layer = m_Layers[layerIdx];
 
-            if (foundStructId >= 0 &&
-                foundStructId < static_cast<int>(m_NoProjectionStructures.size()))
-            {
-                if (renderedStructures[foundStructId])
-                {
-                    processed[idx] = true;
-                    continue;
-                }
-                renderedStructures[foundStructId] = true;
+                int tileID = layer.tiles[idx];
 
-                const NoProjectionStructure& structDef = m_NoProjectionStructures[foundStructId];
-
-                struct LayerStructBounds
-                {
-                    bool valid = false;
-                    int minX = 0, maxX = 0, minY = 0, maxY = 0;
-                };
-                std::vector<LayerStructBounds> layerBounds(m_Layers.size());
-                std::vector<std::pair<int, int>> structureTiles;
-
-                // Populate per-layer bounds from the structure bounds cache
-                // instead of scanning the entire map.
-                int unionMinX = m_MapWidth, unionMaxX = -1;
-                int unionMinY = m_MapHeight, unionMaxY = -1;
-                for (size_t layerIdx : layers)
-                {
-                    const auto* cached = GetCachedStructureBounds(layerIdx, foundStructId);
-                    if (cached)
-                    {
-                        auto& b = layerBounds[layerIdx];
-                        b.valid = true;
-                        b.minX = cached->minX;
-                        b.maxX = cached->maxX;
-                        b.minY = cached->minY;
-                        b.maxY = cached->maxY;
-                        unionMinX = std::min(unionMinX, cached->minX);
-                        unionMaxX = std::max(unionMaxX, cached->maxX);
-                        unionMinY = std::min(unionMinY, cached->minY);
-                        unionMaxY = std::max(unionMaxY, cached->maxY);
-                    }
-                }
-
-                // Iterate only within (union bounds intersected with visible range)
-                int scanMinX = std::max(unionMinX, x0);
-                int scanMaxX = std::min(unionMaxX, x1);
-                int scanMinY = std::max(unionMinY, y0);
-                int scanMaxY = std::min(unionMaxY, y1);
-
-                for (int sy = scanMinY; sy <= scanMaxY; ++sy)
-                {
-                    for (int sx = scanMinX; sx <= scanMaxX; ++sx)
-                    {
-                        size_t sIdx = FlatIndex(sx, sy);
-                        if (processed[sIdx])
-                            continue;
-
-                        bool hasTileInStruct = false;
-                        for (size_t layerIdx : layers)
-                        {
-                            if (!m_Layers[layerIdx].noProjection[sIdx] ||
-                                m_Layers[layerIdx].ySortPlus[sIdx])
-                                continue;
-                            int sid = (sIdx < m_Layers[layerIdx].structureId.size())
-                                          ? m_Layers[layerIdx].structureId[sIdx]
-                                          : -1;
-                            if (sid == foundStructId)
-                            {
-                                hasTileInStruct = true;
-                                break;
-                            }
-                        }
-                        if (!hasTileInStruct)
-                            continue;
-
-                        processed[sIdx] = true;
-                        structureTiles.push_back({sx, sy});
-                    }
-                }
-
-                if (structureTiles.empty())
+                if (tileID < 0)
                     continue;
 
-                float anchorMinX = std::min(structDef.leftAnchor.x, structDef.rightAnchor.x);
-                float anchorMaxX = std::max(structDef.leftAnchor.x, structDef.rightAnchor.x);
-                float bottomWorldY = std::max(structDef.leftAnchor.y, structDef.rightAnchor.y);
-                float bottomScreenY = bottomWorldY - renderCam.y + 1.0f;
-                float anchorMinScreenX = anchorMinX - renderCam.x;
-                float anchorMaxScreenX = anchorMaxX - renderCam.x;
-
-                if (IsStructureBaseFullyBehindSphere(
-                        renderer, anchorMinScreenX, anchorMaxScreenX, bottomScreenY))
+                if (layer.stance[idx] != TileStance::Structure || IsDepthSortedTile(x, y, layerIdx))
                     continue;
 
-                struct NoProjectionDrawCmd
+                // Apply animated tile frame if present
+                if (idx < layer.animationMap.size())
                 {
-                    size_t layerIdx = 0;
-                    int layerRank = 0;
-                    int tx = 0;
-                    int ty = 0;
-                    int tid = -1;
-                    int structureWidthTiles = 0;
-                    int tileCol = 0;
-                    bool flipX = false;
-                    bool flipY = false;
-                };
-                std::vector<NoProjectionDrawCmd> drawCommands;
-                drawCommands.reserve(structureTiles.size() * layers.size());
-
-                for (const auto& [tx, ty] : structureTiles)
-                {
-                    size_t tIdx = FlatIndex(tx, ty);
-
-                    for (size_t layerRank = 0; layerRank < layers.size(); ++layerRank)
+                    int animId = layer.animationMap[idx];
+                    if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
                     {
-                        size_t layerIdx = layers[layerRank];
-                        const TileLayer& layer = m_Layers[layerIdx];
-
-                        if (!layer.noProjection[tIdx] || layer.ySortPlus[tIdx])
-                            continue;
-
-                        int tid = layer.tiles[tIdx];
-                        if (tid < 0)
-                            continue;
-
-                        if (tIdx < layer.animationMap.size())
-                        {
-                            int animId = layer.animationMap[tIdx];
-                            if (animId >= 0 && animId < static_cast<int>(m_AnimatedTiles.size()))
-                            {
-                                tid = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
-                            }
-                        }
-
-                        if (IsTileTransparent(tid))
-                            continue;
-
-                        const auto& b = layerBounds[layerIdx];
-                        if (!b.valid)
-                            continue;
-
-                        int structureWidthTiles = b.maxX - b.minX + 1;
-                        if (structureWidthTiles < 1)
-                            continue;
-
-                        int tileCol = tx - b.minX;
-
-                        NoProjectionDrawCmd cmd;
-                        cmd.layerIdx = layerIdx;
-                        cmd.layerRank = static_cast<int>(layerRank);
-                        cmd.tx = tx;
-                        cmd.ty = ty;
-                        cmd.tid = tid;
-                        cmd.structureWidthTiles = structureWidthTiles;
-                        cmd.tileCol = tileCol;
-                        cmd.flipX = layer.flipX[tIdx];
-                        cmd.flipY = layer.flipY[tIdx];
-                        drawCommands.push_back(cmd);
+                        tileID = m_AnimatedTiles[animId].GetFrameAtTime(m_AnimationTime);
                     }
                 }
 
-                std::sort(drawCommands.begin(),
-                          drawCommands.end(),
-                          [](const auto& a, const auto& b)
-                          {
-                              if (a.layerRank != b.layerRank)
-                                  return a.layerRank < b.layerRank;
-                              if (a.ty != b.ty)
-                                  return a.ty < b.ty;
-                              return a.tx < b.tx;
-                          });
+                if (IsTileTransparent(tileID))
+                    continue;
 
-                glm::vec2 structureBaseCenter((anchorMinScreenX + anchorMaxScreenX) * 0.5f,
-                                              bottomScreenY);
-                StructureHorizonFade horizonFade =
-                    ComputeStructureHorizonFade(renderer, structureBaseCenter, 64.0f);
+                int tilesetX = (tileID % dataTilesPerRow) * m_TileWidth;
+                int tilesetY = (tileID / dataTilesPerRow) * m_TileHeight;
 
-                for (const auto& cmd : drawCommands)
-                {
-                    const auto& b = layerBounds[cmd.layerIdx];
-                    if (!b.valid)
-                        continue;
-
-                    if (IsNoProjectionTileHiddenByHorizonFade(horizonFade,
-                                                              cmd.tileCol,
-                                                              cmd.structureWidthTiles,
-                                                              cmd.ty,
-                                                              b.minY,
-                                                              b.maxY))
-                        continue;
-
-                    int leftEdgeIndex = cmd.tileCol;
-                    int rightEdgeIndex = cmd.tileCol + 1;
-
-                    if (leftEdgeIndex < 0 || rightEdgeIndex > cmd.structureWidthTiles)
-                        continue;
-
-                    float topTileY = static_cast<float>(cmd.ty);
-                    float bottomTileY = topTileY + 1.0f;
-
-                    glm::vec2 corners[4];
-                    corners[0] = ComputeEdgePoint(renderer,
-                                                  anchorMinScreenX,
-                                                  anchorMaxScreenX,
-                                                  bottomScreenY,
-                                                  b.minY,
-                                                  b.maxY,
-                                                  m_TileHeight,
-                                                  cmd.structureWidthTiles,
-                                                  leftEdgeIndex,
-                                                  topTileY);
-                    corners[1] = ComputeEdgePoint(renderer,
-                                                  anchorMinScreenX,
-                                                  anchorMaxScreenX,
-                                                  bottomScreenY,
-                                                  b.minY,
-                                                  b.maxY,
-                                                  m_TileHeight,
-                                                  cmd.structureWidthTiles,
-                                                  rightEdgeIndex,
-                                                  topTileY);
-                    corners[2] = ComputeEdgePoint(renderer,
-                                                  anchorMinScreenX,
-                                                  anchorMaxScreenX,
-                                                  bottomScreenY,
-                                                  b.minY,
-                                                  b.maxY,
-                                                  m_TileHeight,
-                                                  cmd.structureWidthTiles,
-                                                  rightEdgeIndex,
-                                                  bottomTileY);
-                    corners[3] = ComputeEdgePoint(renderer,
-                                                  anchorMinScreenX,
-                                                  anchorMaxScreenX,
-                                                  bottomScreenY,
-                                                  b.minY,
-                                                  b.maxY,
-                                                  m_TileHeight,
-                                                  cmd.structureWidthTiles,
-                                                  leftEdgeIndex,
-                                                  bottomTileY);
-
-                    if (IsWarpedQuadFullyBehindSphere(renderer, corners))
-                        continue;
-
-                    int tsX = (cmd.tid % dataTilesPerRow) * m_TileWidth;
-                    int tsY = (cmd.tid / dataTilesPerRow) * m_TileHeight;
-
-                    renderer.DrawWarpedQuad(
-                        m_TilesetTexture,
-                        corners,
-                        glm::vec2(static_cast<float>(tsX), static_cast<float>(tsY)),
-                        glm::vec2(tileWf, tileHf),
-                        white,
-                        flipY,
-                        cmd.flipX,
-                        cmd.flipY);
-                }
-            }
-            else
-            {
-                // No defined structure - skip (requires structure assignment for no-projection)
-                processed[idx] = true;
+                renderer.DrawSpriteRegion(
+                    m_TilesetTexture,
+                    glm::vec2(tilePosX, tilePosY),
+                    glm::vec2(tileWf, tileHf),
+                    glm::vec2(static_cast<float>(tilesetX), static_cast<float>(tilesetY)),
+                    glm::vec2(tileWf, tileHf),
+                    layer.rotation[idx],
+                    white,
+                    flipY,
+                    layer.flipX[idx],
+                    layer.flipY[idx]);
             }
         }
     }
@@ -2648,7 +2798,7 @@ void Tilemap::GenerateDefaultMap()
         return;
     }
 
-    // === Phase 1 & 2: Scan tileset for valid (non-transparent) tiles ===
+    // Phases 1 and 2: scan the tileset for valid, non-transparent tiles.
     std::vector<int> validTileIDs;
 
     int totalTilesX = m_TilesetDataWidth / m_TileWidth;
@@ -2694,7 +2844,7 @@ void Tilemap::GenerateDefaultMap()
         return;
     }
 
-    // === Phase 3: Fill map with random valid tiles ===
+    // Phase 3: fill the map with random valid tiles.
     std::mt19937 mapRng(std::random_device{}());
     std::uniform_int_distribution<int> tileDist(0, static_cast<int>(validTileIDs.size()) - 1);
 
@@ -2966,16 +3116,42 @@ bool Tilemap::SaveMapToJSON(const std::string& filename,
         }
         layerJson["rotation"] = rotObj;
 
-        // NoProjection (array of indices)
-        json noProjArr = json::array();
-        for (size_t i = 0; i < layer.noProjection.size(); ++i)
+        // Stance (sparse; an enum, so an object of values rather than an index
+        // array - three parallel arrays could each claim the same cell, which is
+        // precisely the ambiguity this field replaced). Omitted entirely when the
+        // whole layer is Flat, like structureId. The legacy "noProjection" key is
+        // never written again; LoadMapFromJSON migrates it.
+        json stanceObj = json::object();
+        for (size_t i = 0; i < layer.stance.size(); ++i)
         {
-            if (layer.noProjection[i])
+            if (layer.stance[i] != TileStance::Flat)
             {
-                noProjArr.push_back(static_cast<int>(i));
+                stanceObj[std::to_string(i)] =
+                    static_cast<int>(std::to_underlying(layer.stance[i]));
             }
         }
-        layerJson["noProjection"] = noProjArr;
+        if (!stanceObj.empty())
+        {
+            layerJson["stance"] = stanceObj;
+        }
+
+        // Elevation role (sparse; same object-of-values shape as stance, and for
+        // the same reason - parallel index arrays could each claim one cell).
+        // Omitted when the whole layer is Ground, which is also exactly what a map
+        // authored before this field looks like.
+        json elevationRoleObj = json::object();
+        for (size_t i = 0; i < layer.elevationRole.size(); ++i)
+        {
+            if (layer.elevationRole[i] != ElevationRole::Ground)
+            {
+                elevationRoleObj[std::to_string(i)] =
+                    static_cast<int>(std::to_underlying(layer.elevationRole[i]));
+            }
+        }
+        if (!elevationRoleObj.empty())
+        {
+            layerJson["elevationRole"] = elevationRoleObj;
+        }
 
         // FlipX (array of indices for tiles mirrored around vertical axis)
         json flipXArr = json::array();
@@ -3462,9 +3638,13 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                     }
                 }
 
-                // Load noProjection (array of indices)
+                // Legacy "noProjection" (array of indices). Only captured here -
+                // it cannot be turned into a stance until the y-sort flags below
+                // have been read, so the migration runs after them.
+                std::vector<uint8_t> legacyNoProjection;
                 if (layerJson.contains("noProjection") && layerJson["noProjection"].is_array())
                 {
+                    legacyNoProjection.assign(mapSize, 0);
                     for (const auto& idx : layerJson["noProjection"])
                     {
                         try
@@ -3472,7 +3652,7 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                             size_t index = static_cast<size_t>(idx.get<int>());
                             if (index < mapSize)
                             {
-                                layer.noProjection[index] = true;
+                                legacyNoProjection[index] = 1;
                             }
                         }
                         catch (const std::exception& e)
@@ -3560,6 +3740,71 @@ bool Tilemap::LoadMapFromJSON(const std::string& filename,
                         catch (const std::exception& e)
                         {
                             reportLoadWarning("dynamicLayers.ySortMinus", "[array]", e.what());
+                        }
+                    }
+                }
+
+                // Load stance (sparse object of TileStance values), or migrate a
+                // map authored before the field existed. A present "stance" key
+                // wins outright, so a stale "noProjection" left over from an
+                // older writer is ignored rather than fighting it.
+                if (layerJson.contains("stance") && layerJson["stance"].is_object())
+                {
+                    for (auto& [key, value] : layerJson["stance"].items())
+                    {
+                        try
+                        {
+                            const size_t index = static_cast<size_t>(std::stoi(key));
+                            const int raw = value.get<int>();
+                            if (index < mapSize && raw >= 0 &&
+                                static_cast<size_t>(raw) < TILE_STANCE_COUNT)
+                            {
+                                layer.stance[index] = static_cast<TileStance>(raw);
+                            }
+                            else if (index < mapSize)
+                            {
+                                reportLoadWarning(
+                                    "dynamicLayers.stance", key, "value out of range");
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.stance", key, e.what());
+                        }
+                    }
+                }
+                else
+                {
+                    // m_Layers has not been grown yet, so its current size is this
+                    // layer's own index.
+                    MigrateLayerStance(layer, legacyNoProjection, m_Layers.size(), width, height);
+                }
+
+                // Elevation role (sparse object). Deliberately no migration: a map
+                // without the key is all-Ground, which reproduces the pre-field
+                // rendering exactly, so absence is already the right answer.
+                if (layerJson.contains("elevationRole") && layerJson["elevationRole"].is_object())
+                {
+                    for (auto& [key, value] : layerJson["elevationRole"].items())
+                    {
+                        try
+                        {
+                            const size_t index = static_cast<size_t>(std::stoi(key));
+                            const int raw = value.get<int>();
+                            if (index < mapSize && raw >= 0 &&
+                                static_cast<size_t>(raw) < ELEVATION_ROLE_COUNT)
+                            {
+                                layer.elevationRole[index] = static_cast<ElevationRole>(raw);
+                            }
+                            else if (index < mapSize)
+                            {
+                                reportLoadWarning(
+                                    "dynamicLayers.elevationRole", key, "value out of range");
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            reportLoadWarning("dynamicLayers.elevationRole", key, e.what());
                         }
                     }
                 }
