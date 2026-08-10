@@ -7,7 +7,11 @@
 
 #include "../src/AnimationState.hpp"
 #include "../src/CharacterConstants.hpp"
+#include "../src/CharacterKinematics.hpp"
+#include "../src/CollisionSystem.hpp"
+#include "../src/Elevation.hpp"
 #include "../src/EntityStore.hpp"
+#include "../src/Hitbox.hpp"
 #include "../src/Motor.hpp"
 #include "../src/PlayerInputState.hpp"
 #include "../src/PlayerModes.hpp"
@@ -137,6 +141,38 @@ TEST_F(PlayerMovementTest, AnimationFollowsVelocityNotInput)
     EXPECT_FALSE(IsMoving());  // eventually idles when velocity reaches zero
 }
 
+TEST_F(PlayerMovementTest, InputCaptureStopClearsLatchedWalkAnimation)
+{
+    PlayerSystem::SetPositionRaw(
+        world, player, glm::vec2(10.0f * TILE + 8.0f, 10.0f * TILE + 16.0f));
+    for (int i = 0; i < 30; ++i)
+    {
+        PlayerSystem::Move(world, player, glm::vec2(1.0f, 0.0f), DT, &tilemap, nullptr);
+        PlayerSystem::Update(world, player, DT);
+    }
+
+    ASSERT_TRUE(IsMoving());
+    ASSERT_GT(glm::length(world.get<Motor>(player).velocity), 0.0f);
+    ASSERT_NE(world.get<PlayerModes>(player).animationType, AnimationType::IDLE);
+
+    // Console input capture skips subsequent movement steps, while the cosmetic
+    // update continues. Its explicit stop must clear both sources of walk animation.
+    PlayerSystem::Stop(world, player);
+    for (int i = 0; i < 60; ++i)
+    {
+        PlayerSystem::Update(world, player, DT);
+    }
+
+    const Motor& motor = world.get<Motor>(player);
+    const AnimationState& animation = world.get<AnimationState>(player);
+    EXPECT_FALSE(IsMoving());
+    EXPECT_FLOAT_EQ(motor.velocity.x, 0.0f);
+    EXPECT_FLOAT_EQ(motor.velocity.y, 0.0f);
+    EXPECT_EQ(world.get<PlayerModes>(player).animationType, AnimationType::IDLE);
+    EXPECT_EQ(animation.currentFrame, 0);
+    EXPECT_EQ(animation.walkSequenceIndex, 0);
+}
+
 // Regression: rounding a collision-box corner while holding a direction must not
 // stutter to a crawl ("jelly"). A perpendicular corner slide redirects the blocked
 // forward velocity into a productive move, so the motor must KEEP that velocity
@@ -165,6 +201,24 @@ TEST_F(PlayerMovementTest, CornerSlideRoundsAtFullSpeedNotJelly)
     // of that to the upward slide. Measured: ~38 px with the fix, ~29 px with the jelly bug
     // (forward velocity zeroed each slide). 33 px sits cleanly between the two.
     EXPECT_GT(forwardProgress, 33.0f);
+}
+
+TEST_F(PlayerMovementTest, LaneSnapCorrectionDoesNotBecomeDiagonalInput)
+{
+    // The player is moving RIGHT while a gentle lane correction nudges DOWN.
+    // The correction grazes the blocked tile's bottom-left corner. Cardinal
+    // collision intentionally permits that shallow diagonal-tile overlap; a
+    // second probe that reclassifies the correction as diagonal input rejects
+    // the exact same movement and leaves the player stuck in place.
+    tilemap.SetTileCollision(6, 4, true);
+    tilemap.SetCornerCutBlocked(6, 4, Tilemap::CORNER_BL, true);
+    PlayerSystem::SetPositionRaw(world, player, glm::vec2(89.0f, 92.0f));
+
+    const glm::vec2 before = Pos();
+    PlayerSystem::Move(world, player, glm::vec2(1.0f, 0.0f), DT, &tilemap, nullptr);
+
+    EXPECT_GT(Pos().x, before.x);
+    EXPECT_GT(Pos().y, before.y);
 }
 
 // A faster WALK (speed multiplier) advances the walk cycle in fewer frames than a
@@ -204,4 +258,79 @@ TEST_F(PlayerMovementTest, FasterSpeedAnimatesQuicker)
     int normalFrames = framesForAdvances(1.0f, 8);  // ~50 px/s, WALK
     int fastFrames = framesForAdvances(2.0f, 8);    // ~100 px/s, WALK
     EXPECT_LT(fastFrames, normalFrames);
+}
+
+TEST_F(PlayerMovementTest, PerpendicularBridgeCrossingWalksUnder)
+{
+    for (int x = 8; x <= 14; ++x)
+    {
+        tilemap.SetElevation(x, 10, 10);
+    }
+    tilemap.SetTileCollision(10, 10, true);
+    PlayerSystem::SetPositionRaw(world, player, glm::vec2(10.0f * TILE + 8.0f, 10.0f * TILE));
+
+    for (int i = 0; i < 120; ++i)
+    {
+        PlayerSystem::Move(world, player, glm::vec2(0.0f, 1.0f), DT, &tilemap, nullptr);
+    }
+
+    EXPECT_GT(Pos().y, 11.0f * TILE);
+    EXPECT_EQ(world.get<Elevation>(player).surface, SupportSurface::Ground);
+    EXPECT_EQ(world.get<Elevation>(player).plane, 0);
+}
+
+TEST_F(PlayerMovementTest, RampEntryPromotesPlayerOntoDeck)
+{
+    for (int y = 9; y <= 11; ++y)
+    {
+        tilemap.SetElevation(11, y, 6);
+        for (int x = 12; x <= 18; ++x)
+        {
+            tilemap.SetElevation(x, y, 10);
+        }
+    }
+    PlayerSystem::SetPositionRaw(
+        world, player, glm::vec2(10.0f * TILE + 8.0f, 10.0f * TILE + 16.0f));
+
+    for (int i = 0; i < 120; ++i)
+    {
+        PlayerSystem::Move(world, player, glm::vec2(1.0f, 0.0f), DT, &tilemap, nullptr);
+    }
+
+    EXPECT_GT(Pos().x, 12.0f * TILE);
+    EXPECT_EQ(world.get<Elevation>(player).surface, SupportSurface::Elevation);
+    EXPECT_EQ(world.get<Elevation>(player).plane, 10);
+}
+
+TEST_F(PlayerMovementTest, DeckCollisionBlocksBeforeSupportCommit)
+{
+    for (int y = 8; y <= 12; ++y)
+    {
+        tilemap.SetElevation(11, y, 6);
+        for (int x = 12; x <= 18; ++x)
+        {
+            tilemap.SetElevation(x, y, 10);
+        }
+        tilemap.SetTileCollision(12, y, true);
+    }
+    PlayerSystem::SetPositionRaw(
+        world, player, glm::vec2(10.0f * TILE + 8.0f, 10.0f * TILE + 16.0f));
+
+    for (int i = 0; i < 180; ++i)
+    {
+        PlayerSystem::Move(world, player, glm::vec2(1.0f, 0.0f), DT, &tilemap, nullptr);
+    }
+
+    const Elevation& elevation = world.get<Elevation>(player);
+    EXPECT_LT(Pos().x, 12.0f * TILE);
+    EXPECT_EQ(elevation.surface, SupportSurface::Elevation);
+    EXPECT_EQ(elevation.plane, 6);
+    EXPECT_FALSE(
+        CollisionSystem::CollidesWithTilesStrict(world.get<Hitbox>(player),
+                                                 Pos(),
+                                                 &tilemap,
+                                                 0,
+                                                 0,
+                                                 false,
+                                                 CharacterKinematics::GetSupport(elevation)));
 }
