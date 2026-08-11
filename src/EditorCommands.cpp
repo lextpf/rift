@@ -12,6 +12,9 @@
 #include <string>
 #include <utility>
 
+// Two passes: first move the cells to their mirrored positions, then fix up each cell's
+// own orientation. Both are needed - swapping positions alone mirrors the layout but
+// leaves every individual tile facing the wrong way.
 void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
 {
     const int W = region.width;
@@ -42,6 +45,11 @@ void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
         }
     }
 
+    // Per-cell orientation fix-up. A mirror reverses the sense of a rotation - reflecting
+    // a tile drawn at r degrees looks the same as drawing it at -r and then mirroring it
+    // (M * R(r) == R(-r) * M). So each layer both toggles its flip flag on the reflected
+    // axis and negates its rotation; doing only one of the two leaves rotated tiles
+    // visibly wrong. Together they make the transform an involution.
     for (auto& cell : region.cells)
     {
         for (auto& layer : cell.layers)
@@ -50,6 +58,8 @@ void ReflectClipboardRegion(ClipboardRegion& region, bool flipXAxis)
                 layer.flipX = !layer.flipX;
             else
                 layer.flipY = !layer.flipY;
+            // Normalize into [0, 360): fmod alone can return a negative for rotations
+            // outside that range (e.g. 450 -> -90).
             float r = std::fmod(360.0f - layer.rotation, 360.0f);
             if (r < 0.0f)
                 r += 360.0f;
@@ -215,21 +225,38 @@ std::string NavigationStrokeCmd::DebugLabel() const
     return "Toggle navigation (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
-void NoProjectionToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
+void SetTileStancesCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
-        tilemap.SetLayerNoProjection(e.tileX, e.tileY, e.layer, e.newFlag);
+        tilemap.SetLayerStance(e.tileX, e.tileY, e.layer, e.newStance);
 }
 
-void NoProjectionToggleCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
+void SetTileStancesCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
     for (const Entry& e : m_Entries)
-        tilemap.SetLayerNoProjection(e.tileX, e.tileY, e.layer, e.oldFlag);
+        tilemap.SetLayerStance(e.tileX, e.tileY, e.layer, e.oldStance);
 }
 
-std::string NoProjectionToggleCmd::DebugLabel() const
+std::string SetTileStancesCmd::DebugLabel() const
 {
-    return "Toggle no-projection (" + std::to_string(m_Entries.size()) + " tile(s))";
+    return "Set tile stance (" + std::to_string(m_Entries.size()) + " tile(s))";
+}
+
+void SetElevationRolesCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
+{
+    for (const Entry& e : m_Entries)
+        tilemap.SetLayerElevationRole(e.tileX, e.tileY, e.layer, e.newRole);
+}
+
+void SetElevationRolesCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
+{
+    for (const Entry& e : m_Entries)
+        tilemap.SetLayerElevationRole(e.tileX, e.tileY, e.layer, e.oldRole);
+}
+
+std::string SetElevationRolesCmd::DebugLabel() const
+{
+    return "Set elevation role (" + std::to_string(m_Entries.size()) + " tile(s))";
 }
 
 void YSortPlusToggleCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
@@ -346,9 +373,12 @@ void RemoveStructureCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 
     m_Snapshot = *s;
 
-    // Capture per-tile structureId references that point to our id BEFORE
+    // Capture per-tile structureId references pointing at this id before
     // RemoveNoProjectionStructure clears them. Iterate all layers / tiles -
     // expensive but rare (right-click clear in G mode).
+    // The loop counter is a 0-based layer index but GetTileStructureId/SetTileStructureId
+    // take a 1-based one, so this scan is shifted by a layer relative to the editor call
+    // sites (which pass m_CurrentLayer + 1).
     m_TileRefs.clear();
     int w = tilemap.GetMapWidth();
     int h = tilemap.GetMapHeight();
@@ -388,7 +418,7 @@ void AddParticleZoneCmd::Apply(Tilemap& tilemap, ecs::registry& /*npcs*/)
 
 void AddParticleZoneCmd::Revert(Tilemap& tilemap, ecs::registry& /*npcs*/)
 {
-    // LIFO invariant: our zone is the last one in the vector.
+    // LIFO invariant: this command's zone is the last one in the vector.
     auto* zones = tilemap.GetParticleZonesMutable();
     if (zones && !zones->empty())
         zones->pop_back();
@@ -464,6 +494,18 @@ ClipboardRegion PasteRegionCmd::SnapshotRegion(
     return region;
 }
 
+// Snapshot one cell. The loop bound is ClipboardCell::LAYER_COUNT (a fixed 10), not
+// tm.GetLayerCount(), because the destination struct is a fixed-size array. On a map with
+// more than 10 dynamicLayers the extra layers are silently not copied - and WriteCellInto
+// below is bounded the same way, so they are also not overwritten on paste. Reads past the
+// tilemap's real layer count are safe: the Tilemap getters return field defaults for an
+// out-of-range layer.
+//
+// Note the odd one out: `layer` is 0-based for every accessor here EXCEPT
+// GetTileStructureId, which takes a 1-based index (it reads internal layer `layer - 1`).
+// WriteCellInto has the same asymmetry, so a copy/paste round-trip is self-consistent, but
+// the structureId a cell carries is the one from the layer below it: slot 0 always holds
+// -1, and layer 9's structureId is never copied at all.
 ClipboardCell PasteRegionCmd::ReadCellFrom(const Tilemap& tm, int x, int y)
 {
     ClipboardCell cell;
@@ -471,7 +513,8 @@ ClipboardCell PasteRegionCmd::ReadCellFrom(const Tilemap& tm, int x, int y)
     {
         cell.layers[layer].tileId = tm.GetLayerTile(x, y, layer);
         cell.layers[layer].rotation = tm.GetLayerRotation(x, y, layer);
-        cell.layers[layer].noProjection = tm.GetLayerNoProjection(x, y, layer);
+        cell.layers[layer].stance = tm.GetLayerStance(x, y, layer);
+        cell.layers[layer].elevationRole = tm.GetLayerElevationRole(x, y, layer);
         cell.layers[layer].flipX = tm.GetLayerFlipX(x, y, layer);
         cell.layers[layer].flipY = tm.GetLayerFlipY(x, y, layer);
         cell.layers[layer].structureId = tm.GetTileStructureId(x, y, static_cast<int>(layer));
@@ -491,7 +534,8 @@ void PasteRegionCmd::WriteCellInto(Tilemap& tm, int destX, int destY, const Clip
     {
         tm.SetLayerTile(destX, destY, layer, cell.layers[layer].tileId);
         tm.SetLayerRotation(destX, destY, layer, cell.layers[layer].rotation);
-        tm.SetLayerNoProjection(destX, destY, layer, cell.layers[layer].noProjection);
+        tm.SetLayerStance(destX, destY, layer, cell.layers[layer].stance);
+        tm.SetLayerElevationRole(destX, destY, layer, cell.layers[layer].elevationRole);
         tm.SetLayerFlipX(destX, destY, layer, cell.layers[layer].flipX);
         tm.SetLayerFlipY(destX, destY, layer, cell.layers[layer].flipY);
         tm.SetTileStructureId(
