@@ -15,6 +15,45 @@
 namespace
 {
 
+// Overlay tint per tile stance. Structure keeps the orange the no-projection flag
+// used, so existing muscle memory still reads. Wall and Prop take blue and yellow,
+// which are clear of the y-sort teal/magenta and the collision/navigation colors.
+// Alpha is set by the caller; only the hue carries meaning here.
+glm::vec4 StanceOverlayColor(TileStance stance)
+{
+    switch (stance)
+    {
+        case TileStance::Prop:
+            return {1.0f, 0.9f, 0.1f, 1.0f};
+        case TileStance::Wall:
+            return {0.2f, 0.5f, 1.0f, 1.0f};
+        case TileStance::Structure:
+            return {1.0f, 0.6f, 0.0f, 1.0f};
+        case TileStance::Flat:
+        default:
+            return {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+}
+
+// Overlay tint per elevation role. Ground is untinted; Raised keeps the magenta
+// the elevation overlay has always used, and Ramp takes cyan so a slope reads
+// apart from a level deck at a glance. Alpha is set by the caller.
+glm::vec4 ElevationRoleOverlayColor(ElevationRole role)
+{
+    switch (role)
+    {
+        case ElevationRole::Raised:
+            return {0.8f, 0.2f, 0.8f, 1.0f};
+        case ElevationRole::Ramp:
+            return {0.2f, 0.9f, 0.9f, 1.0f};
+        case ElevationRole::Ground:
+        default:
+            return {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+}
+
+// Tile-space culling window shared by every overlay pass. startX/startY are inclusive and
+// endX/endY EXCLUSIVE, so the loops below are all `for (x = startX; x < endX; ++x)`.
 struct VisibleTileRange
 {
     int tileWidth, tileHeight;
@@ -22,6 +61,11 @@ struct VisibleTileRange
     int startX, endX, startY, endY;
 };
 
+// Which tiles the overlays have to visit this frame: the camera rect scaled by
+// zoom, plus a one-tile margin on each side for tiles only partially visible at
+// the edge.
+//
+// Returns a zeroed range for a degenerate tile size, which makes every caller's loop empty.
 VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
 {
     VisibleTileRange r{};
@@ -39,27 +83,6 @@ VisibleTileRange CalcVisibleTileRange(const EditorContext& ctx)
     float cullMinY = ctx.camera.position.y;
     float cullMaxX = ctx.camera.position.x + worldWidth;
     float cullMaxY = ctx.camera.position.y + worldHeight;
-
-    auto s = ctx.renderer.GetPerspectiveState();
-    if (s.enabled)
-    {
-        float safeHorizonScale = std::max(s.horizonScale, 0.001f);
-        float expansion = 1.0f / safeHorizonScale;
-        bool hasGlobe = (s.mode == IRenderer::ProjectionMode::Globe ||
-                         s.mode == IRenderer::ProjectionMode::Fisheye);
-        float cullWidthScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(hasGlobe));
-        float cullHeightScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(hasGlobe));
-        float expandedWidth = worldWidth * expansion * cullWidthScale;
-        float expandedHeight = worldHeight * expansion * cullHeightScale;
-        float widthPadding = (expandedWidth - worldWidth) * 0.5f;
-        float heightPadding = (expandedHeight - worldHeight) * 0.5f;
-        cullMinX -= widthPadding;
-        cullMaxX += widthPadding;
-        cullMinY -= heightPadding;
-        cullMaxY += heightPadding;
-    }
 
     r.startX = std::max(0, static_cast<int>(std::floor(cullMinX / r.tileWidth)) - 1);
     r.endX = std::min(ctx.tilemap.GetMapWidth(),
@@ -93,28 +116,18 @@ void ForVisibleFlaggedTiles(const EditorContext& ctx, Predicate predicate, const
     }
 }
 
-bool IsRectFullyBehindSphere(IRenderer& renderer, const glm::vec2& pos, const glm::vec2& size)
-{
-    auto s = renderer.GetPerspectiveState();
-    if (!s.enabled)
-        return false;
-
-    glm::vec2 corners[4] = {
-        pos,
-        glm::vec2(pos.x + size.x, pos.y),
-        glm::vec2(pos.x + size.x, pos.y + size.y),
-        glm::vec2(pos.x, pos.y + size.y),
-    };
-
-    return renderer.IsPointBehindSphere(corners[0]) && renderer.IsPointBehindSphere(corners[1]) &&
-           renderer.IsPointBehindSphere(corners[2]) && renderer.IsPointBehindSphere(corners[3]);
-}
-
+// Inclusive tile-space bounding box of one connected structure-stance group.
 struct StructureBounds
 {
     int minX, maxX, minY, maxY;
 };
 
+// 4-connected flood fill over "this cell has stance TileStance::Structure on any layer",
+// accumulating the group's bounding box. There is no per-layer no-projection flag; the
+// predicate is GetLayerStance. The `processed` grid is shared across calls by
+// EnsureNoProjBoundsCache so each cell joins exactly one group and the whole map costs one
+// pass. Iterative with an explicit stack rather than recursion, because a group can span
+// the entire map.
 StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap,
                                       int startX,
                                       int startY,
@@ -139,16 +152,16 @@ StructureBounds FloodFillNoProjBounds(const Tilemap& tilemap,
         if (processed[cIdx])
             continue;
 
-        bool isNoProj = false;
+        bool isStructure = false;
         for (size_t li = 0; li < layerCount; ++li)
         {
-            if (tilemap.GetLayerNoProjection(cx, cy, li))
+            if (tilemap.GetLayerStance(cx, cy, li) == TileStance::Structure)
             {
-                isNoProj = true;
+                isStructure = true;
                 break;
             }
         }
-        if (!isNoProj)
+        if (!isStructure)
             continue;
 
         processed[cIdx] = 1;
@@ -174,6 +187,13 @@ void DrawCrossMarker(IRenderer& renderer, const glm::vec2& pos, float size, cons
         glm::vec2(pos.x - 1.0f, pos.y - size), glm::vec2(2.0f, size * 2.0f), color);
 }
 
+// Editor-only swatch for particle zone overlays and the zone HUD - unrelated to the colors
+// the particles actually render with. This switch is the single place editor colors are
+// defined. It has no default label, but the build enables no unhandled-enumerator warning
+// (no /W4, no /w14062, and no switch-coverage clang-tidy check), so a missing case fails
+// silently: the type falls through to the white return below and renders white in the
+// editor. Adding a ParticleType means adding a row here as well as to EnumTraits and
+// kParticleVisuals.
 glm::vec4 GetParticleTypeColor(ParticleType type, float alpha)
 {
     switch (type)
@@ -264,10 +284,18 @@ glm::vec4 GetParticleTypeColor(ParticleType type, float alpha)
             return glm::vec4(0.95f, 0.90f, 0.70f, alpha);
         case ParticleType::Ink:
             return glm::vec4(0.20f, 0.20f, 0.30f, alpha);
+        case ParticleType::RainSplash:
+            return glm::vec4(0.82f, 0.88f, 1.0f, alpha);
+        case ParticleType::SnowSplash:
+            return glm::vec4(0.95f, 0.97f, 1.0f, alpha);
     }
     return glm::vec4(1.0f, 1.0f, 1.0f, alpha);
 }
 
+// Truncate text with an ellipsis so it fits maxWidth at the given scale. Measurement goes
+// through the renderer because glyph widths depend on the loaded font, so this cannot be a
+// character count. Returns the text untouched when it already fits, and an empty string
+// when even "..." does not - callers must handle an empty result.
 std::string FitText(IRenderer& renderer, const std::string& text, float scale, float maxWidth)
 {
     if (maxWidth <= 0.0f)
@@ -301,6 +329,9 @@ std::string BasenameWithoutExtension(const std::string& path)
     return filename.empty() ? path : filename;
 }
 
+// HUD label for a tile id, annotated with the id's (column, row) in the tileset - the
+// inverse of the tileID = row * tilesPerRow + column packing. Degrades to the bare id when
+// the tileset geometry is not known yet (no tileset loaded), and to "None" for -1.
 std::string TileLabel(const Tilemap& tilemap, int tileID)
 {
     if (tileID < 0)
@@ -316,6 +347,9 @@ std::string TileLabel(const Tilemap& tilemap, int tileID)
            std::to_string(tileID / tilesPerRow) + ")";
 }
 
+// HUD label for the active layer. Displays 1-based ("3/10 Objects") because the layer
+// hotkeys are 1-9 and 0, while m_CurrentLayer is the 0-based index - hence the +1 on every
+// branch. The count comes from the tilemap, so it tracks a map with a non-default stack.
 std::string LayerLabel(const Tilemap& tilemap, int currentLayer)
 {
     size_t layerCount = tilemap.GetLayerCount();
@@ -332,6 +366,12 @@ std::string LayerLabel(const Tilemap& tilemap, int currentLayer)
 
 }  // anonymous namespace
 
+// One full-map pass per frame that groups every cell carrying the Structure stance on any
+// layer into connected regions, one cache entry per region, and caches each region's
+// inclusive bounds. Guarded by m_NoProjBoundsCached, which Editor::Render clears at
+// the top of each frame, so the several overlay passes that need the groups share one scan.
+// The `processed` grid is local and rebuilt per scan; it is what keeps each cell in exactly
+// one group.
 void Editor::EnsureNoProjBoundsCache(const EditorContext& ctx)
 {
     if (m_NoProjBoundsCached)
@@ -353,16 +393,16 @@ void Editor::EnsureNoProjBoundsCache(const EditorContext& ctx)
             if (processed[idx])
                 continue;
 
-            bool isNoProj = false;
+            bool isStructure = false;
             for (size_t li = 0; li < layerCount; ++li)
             {
-                if (ctx.tilemap.GetLayerNoProjection(x, y, li))
+                if (ctx.tilemap.GetLayerStance(x, y, li) == TileStance::Structure)
                 {
-                    isNoProj = true;
+                    isStructure = true;
                     break;
                 }
             }
-            if (!isNoProj)
+            if (!isStructure)
                 continue;
 
             auto [minX, maxX, minY, maxY] = FloodFillNoProjBounds(
@@ -429,45 +469,49 @@ void Editor::RenderElevationOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
-    bool perspectiveEnabled = ctx.renderer.GetPerspectiveState().enabled;
-
     for (int y = vr.startY; y < vr.endY; ++y)
     {
         for (int x = vr.startX; x < vr.endX; ++x)
         {
-            int elevation = ctx.tilemap.GetElevation(x, y);
-            if (elevation <= 0)
+            const int elevation = ctx.tilemap.GetElevation(x, y);
+            const ElevationRole role = ctx.tilemap.GetLayerElevationRole(x, y, m_CurrentLayer);
+
+            // Worth showing if it has a height or a role. The old `elevation <= 0`
+            // skip hid pits entirely, which was survivable while elevation had no
+            // visual effect; lifted quads give a negative cell a real one.
+            if (elevation == 0 && role == ElevationRole::Ground)
                 continue;
 
             glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
                               y * vr.tileHeight - ctx.camera.position.y);
 
-            float alpha = std::min(0.5f, static_cast<float>(elevation) / 32.0f * 0.5f + 0.15f);
+            // std::abs so a pit ramps its alpha the same way a rise does.
+            const float alpha =
+                std::min(0.5f, static_cast<float>(std::abs(elevation)) / 32.0f * 0.5f + 0.15f);
 
+            glm::vec4 color = ElevationRoleOverlayColor(role);
+            color.a = alpha;
             ctx.renderer.DrawColoredRect(
                 tilePos,
                 glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
-                glm::vec4(0.8f, 0.2f, 0.8f, alpha));
+                color);
 
-            if (!perspectiveEnabled)
-            {
-                std::string elevText = std::to_string(elevation);
-                float textScale = 0.2f;
-                float textWidth = elevText.length() * 8.0f * textScale;
-                float textX = tilePos.x + (vr.tileWidth - textWidth) * 0.5f;
-                float textY = tilePos.y + vr.tileHeight * 0.6f;
-                ctx.renderer.DrawText(elevText,
-                                      glm::vec2(textX, textY),
-                                      textScale,
-                                      glm::vec3(1.0f, 1.0f, 0.2f),
-                                      0.0f,
-                                      0.15f);
-            }
+            std::string elevText = std::to_string(elevation);
+            float textScale = 0.2f;
+            float textWidth = elevText.length() * 8.0f * textScale;
+            float textX = tilePos.x + (vr.tileWidth - textWidth) * 0.5f;
+            float textY = tilePos.y + vr.tileHeight * 0.6f;
+            ctx.renderer.DrawText(elevText,
+                                  glm::vec2(textX, textY),
+                                  textScale,
+                                  glm::vec3(1.0f, 1.0f, 0.2f),
+                                  0.0f,
+                                  0.15f);
         }
     }
 }
 
-void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
+void Editor::RenderStanceOverlays(const EditorContext& ctx)
 {
     auto vr = CalcVisibleTileRange(ctx);
 
@@ -477,29 +521,38 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
     {
         for (int x = vr.startX; x < vr.endX; ++x)
         {
-            // In no-projection edit mode, only show flags for current layer
-            if (m_EditMode == EditMode::NoProjection)
+            // In stance edit mode, only show the current layer - the author is
+            // painting one layer and needs to see exactly what a click will change.
+            if (m_EditMode == EditMode::Stance)
             {
-                if (!ctx.tilemap.GetLayerNoProjection(x, y, m_CurrentLayer))
+                const TileStance stance = ctx.tilemap.GetLayerStance(x, y, m_CurrentLayer);
+                if (stance == TileStance::Flat)
                     continue;
 
                 glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
                                   y * vr.tileHeight - ctx.camera.position.y);
 
-                // Orange overlay for no-projection tiles
+                glm::vec4 color = StanceOverlayColor(stance);
+                color.a = 0.5f;
                 ctx.renderer.DrawColoredRect(
                     tilePos,
                     glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
-                    glm::vec4(1.0f, 0.6f, 0.0f, 0.5f));
+                    color);
             }
             else
             {
-                // Check tile for all layers
+                // Debug overlay: summarise every layer at this cell. The tint is
+                // the strongest stance present, the alpha how many layers carry one.
                 int count = 0;
+                TileStance strongest = TileStance::Flat;
                 for (size_t layer = 0; layer < layerCount; ++layer)
                 {
-                    if (ctx.tilemap.GetLayerNoProjection(x, y, layer))
-                        count++;
+                    const TileStance stance = ctx.tilemap.GetLayerStance(x, y, layer);
+                    if (stance == TileStance::Flat)
+                        continue;
+                    count++;
+                    if (std::to_underlying(stance) > std::to_underlying(strongest))
+                        strongest = stance;
                 }
 
                 if (count == 0)
@@ -508,42 +561,36 @@ void Editor::RenderNoProjectionOverlays(const EditorContext& ctx)
                 glm::vec2 tilePos(x * vr.tileWidth - ctx.camera.position.x,
                                   y * vr.tileHeight - ctx.camera.position.y);
 
-                // Alpha based on number of layers with flag
-                float alpha =
+                glm::vec4 color = StanceOverlayColor(strongest);
+                color.a =
                     0.15f + (static_cast<float>(count) / static_cast<float>(layerCount)) * 0.35f;
-
-                // Orange overlay for no-projection tiles
                 ctx.renderer.DrawColoredRect(
                     tilePos,
                     glm::vec2(static_cast<float>(vr.tileWidth), static_cast<float>(vr.tileHeight)),
-                    glm::vec4(1.0f, 0.6f, 0.0f, alpha));
+                    color);
             }
         }
     }
 
-    // Draw anchor markers for detected no-projection structures (2D mode only)
-    auto perspState = ctx.renderer.GetPerspectiveState();
-    if (!perspState.enabled)
+    // Anchor markers for detected upright structures.
+    EnsureNoProjBoundsCache(ctx);
+
+    float markerSize = 6.0f;
+    glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
+
+    for (const auto& bounds : m_CachedNoProjBounds)
     {
-        EnsureNoProjBoundsCache(ctx);
+        int leftPixelX = bounds.minX * vr.tileWidth;
+        int rightPixelX = (bounds.maxX + 1) * vr.tileWidth;
+        int bottomPixelY = (bounds.maxY + 1) * vr.tileHeight;
 
-        float markerSize = 6.0f;
-        glm::vec4 anchorColor(0.0f, 1.0f, 0.0f, 1.0f);
+        glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.camera.position.x,
+                             static_cast<float>(bottomPixelY) - ctx.camera.position.y);
+        glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.camera.position.x,
+                              static_cast<float>(bottomPixelY) - ctx.camera.position.y);
 
-        for (const auto& bounds : m_CachedNoProjBounds)
-        {
-            int leftPixelX = bounds.minX * vr.tileWidth;
-            int rightPixelX = (bounds.maxX + 1) * vr.tileWidth;
-            int bottomPixelY = (bounds.maxY + 1) * vr.tileHeight;
-
-            glm::vec2 anchorLeft(static_cast<float>(leftPixelX) - ctx.camera.position.x,
-                                 static_cast<float>(bottomPixelY) - ctx.camera.position.y);
-            glm::vec2 anchorRight(static_cast<float>(rightPixelX) - ctx.camera.position.x,
-                                  static_cast<float>(bottomPixelY) - ctx.camera.position.y);
-
-            DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
-            DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
-        }
+        DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
+        DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
     }
 }
 
@@ -551,10 +598,6 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
 {
     if (!m_ShowNoProjectionAnchors)
         return;
-
-    // Check if 3D perspective is enabled
-    auto perspState = ctx.renderer.GetPerspectiveState();
-    bool is3DMode = perspState.enabled;
 
     int tileWidth = ctx.tilemap.GetTileWidth();
     int tileHeight = ctx.tilemap.GetTileHeight();
@@ -577,22 +620,8 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
         glm::vec2 screenRight(static_cast<float>(rightPixelX) - ctx.camera.position.x,
                               static_cast<float>(bottomPixelY) - ctx.camera.position.y);
 
-        // Skip anchors behind the sphere in globe mode
-        if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
-            ctx.renderer.IsPointBehindSphere(screenRight))
-            continue;
-
-        // In 3D mode, project through perspective
-        glm::vec2 anchorLeft = is3DMode ? ctx.renderer.ProjectPoint(screenLeft) : screenLeft;
-        glm::vec2 anchorRight = is3DMode ? ctx.renderer.ProjectPoint(screenRight) : screenRight;
-
-        // Bottom-left anchor (only if visible)
-        if (!ctx.renderer.IsPointBehindSphere(screenLeft))
-            DrawCrossMarker(ctx.renderer, anchorLeft, markerSize, anchorColor);
-
-        // Bottom-right anchor (only if visible)
-        if (!ctx.renderer.IsPointBehindSphere(screenRight))
-            DrawCrossMarker(ctx.renderer, anchorRight, markerSize, anchorColor);
+        DrawCrossMarker(ctx.renderer, screenLeft, markerSize, anchorColor);
+        DrawCrossMarker(ctx.renderer, screenRight, markerSize, anchorColor);
     }
 
     // Draw manually defined structure anchors (cyan to distinguish from auto-detected green)
@@ -607,41 +636,17 @@ void Editor::RenderNoProjectionAnchorsImpl(const EditorContext& ctx)
         glm::vec2 screenRight(s.rightAnchor.x - ctx.camera.position.x,
                               s.rightAnchor.y - ctx.camera.position.y);
 
-        // Skip anchors behind the sphere in globe mode
-        if (ctx.renderer.IsPointBehindSphere(screenLeft) &&
-            ctx.renderer.IsPointBehindSphere(screenRight))
-            continue;
-
-        // In 3D mode, project through perspective
-        glm::vec2 anchorLeft = is3DMode ? ctx.renderer.ProjectPoint(screenLeft) : screenLeft;
-        glm::vec2 anchorRight = is3DMode ? ctx.renderer.ProjectPoint(screenRight) : screenRight;
-
-        // Left anchor cross (only if visible)
-        if (!ctx.renderer.IsPointBehindSphere(screenLeft))
-            DrawCrossMarker(ctx.renderer, anchorLeft, defMarkerSize, definedAnchorColor);
-
-        // Right anchor cross (only if visible)
-        if (!ctx.renderer.IsPointBehindSphere(screenRight))
-            DrawCrossMarker(ctx.renderer, anchorRight, defMarkerSize, definedAnchorColor);
+        DrawCrossMarker(ctx.renderer, screenLeft, defMarkerSize, definedAnchorColor);
+        DrawCrossMarker(ctx.renderer, screenRight, defMarkerSize, definedAnchorColor);
 
         // Straight base line between anchors
-        if (!ctx.renderer.IsPointBehindSphere(screenLeft) &&
-            !ctx.renderer.IsPointBehindSphere(screenRight))
         {
             glm::vec4 lineColor(0.0f, 1.0f, 1.0f, 0.5f);
             float baseY = std::max(screenLeft.y, screenRight.y);
             float lineX = std::min(screenLeft.x, screenRight.x);
             float lineW = std::abs(screenRight.x - screenLeft.x);
-            glm::vec2 hScreen(lineX, baseY - 1.0f);
-            glm::vec2 hSize(lineW, 2.0f);
-            if (is3DMode)
-            {
-                glm::vec2 p0 = ctx.renderer.ProjectPoint(hScreen);
-                glm::vec2 p1 = ctx.renderer.ProjectPoint(glm::vec2(lineX + lineW, baseY - 1.0f));
-                hScreen = p0;
-                hSize = glm::vec2(p1.x - p0.x, 2.0f);
-            }
-            ctx.renderer.DrawColoredRect(hScreen, hSize, lineColor);
+            ctx.renderer.DrawColoredRect(
+                glm::vec2(lineX, baseY - 1.0f), glm::vec2(lineW, 2.0f), lineColor);
         }
     }
 }
@@ -810,8 +815,6 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
         if (screenPos.x + zone.size.x < 0 || screenPos.x > worldWidth ||
             screenPos.y + zone.size.y < 0 || screenPos.y > worldHeight)
             continue;
-        if (IsRectFullyBehindSphere(ctx.renderer, screenPos, zone.size))
-            continue;
 
         // Color based on particle type
         glm::vec4 color = GetParticleTypeColor(zone.type, 0.3f);
@@ -864,10 +867,7 @@ void Editor::RenderParticleZoneOverlays(const EditorContext& ctx)
 
         glm::vec2 previewPos(zr.x - ctx.camera.position.x, zr.y - ctx.camera.position.y);
         glm::vec2 previewSize(zr.w, zr.h);
-        if (!IsRectFullyBehindSphere(ctx.renderer, previewPos, previewSize))
-        {
-            ctx.renderer.DrawColoredRect(previewPos, previewSize, previewColor);
-        }
+        ctx.renderer.DrawColoredRect(previewPos, previewSize, previewColor);
     }
 }
 
@@ -1075,6 +1075,21 @@ void Editor::RenderLayerOverlay(const EditorContext& ctx, int layerIndex, const 
             }
 }
 
+// Tile picker draw pass. Three coordinate spaces are in play, and every draw call below
+// rescales window pixels into the picker's ortho units - that is what the unlabelled
+// (x / screenWidth) * worldWidth expressions are doing.
+//
+//   window px  --(- offset, / tileSizePixels, floor)-->  picker cell (col, row)
+//   picker cell  --(row * tilesPerRow + col)-->          tileID
+//   window px  --(* worldWidth / screenWidth)-->         picker ortho units (draw space)
+//
+//   tileSizePixels = (screenWidth / tilesPerRow) * 1.5 * zoom
+//                    1.5 = padding, so the sheet overflows the window and can be panned
+//
+// The picker ortho is sized by tilesVisible * tileSize and deliberately ignores the camera
+// zoom, so the panel keeps its size while the world zooms. The inverse mapping (cursor ->
+// tileID) is duplicated, in window pixels only, by ProcessMouseInput, HandleScroll and
+// RenderEditorHUD, so a change to tileSizePixels here has to be made in all four places.
 void Editor::RenderEditorUI(const EditorContext& ctx)
 {
     // Set tile picker projection and use base world dimensions without camera zoom
@@ -1323,8 +1338,8 @@ void Editor::RenderEditorHUD(const EditorContext& ctx)
                 return "Elevation";
             case EditMode::NPCPlacement:
                 return "NPC";
-            case EditMode::NoProjection:
-                return "No Projection";
+            case EditMode::Stance:
+                return "Stance";
             case EditMode::YSortPlus:
                 return "Y-Sort +";
             case EditMode::YSortMinus:
@@ -1365,12 +1380,19 @@ void Editor::RenderEditorHUD(const EditorContext& ctx)
             case EditMode::Navigation:
                 return {leftOrSelection("none"), "paint walkability"};
             case EditMode::Elevation:
-                return {leftOrSelection("paint elevation"), "clear elevation"};
+            {
+                const std::string roleName{
+                    EnumTraits<ElevationRole>::ToString(m_CurrentElevationRole)};
+                return {leftOrSelection("paint elev + " + roleName), "clear elev + role"};
+            }
             case EditMode::NPCPlacement:
                 return {leftOrSelection("place/remove NPC"), "none"};
-            case EditMode::NoProjection:
-                return {leftOrSelection(shiftHeld ? "flood set no-proj" : "set no-proj"),
-                        shiftHeld ? "flood clear no-proj" : "clear no-proj"};
+            case EditMode::Stance:
+            {
+                const std::string name{EnumTraits<TileStance>::ToString(m_CurrentStance)};
+                return {leftOrSelection(shiftHeld ? "flood set " + name : "set " + name),
+                        shiftHeld ? "flood set Flat" : "set Flat"};
+            }
             case EditMode::YSortPlus:
                 return {leftOrSelection(shiftHeld ? "flood set Y+" : "set Y+"),
                         shiftHeld ? "flood clear Y+" : "clear Y+"};
@@ -1517,9 +1539,10 @@ void Editor::RenderEditorHUD(const EditorContext& ctx)
         "Tool: " + toolLabel() + " | Lyr: " + LayerLabel(ctx.tilemap, m_CurrentLayer) +
         " | Tile: " + TileLabel(ctx.tilemap, selectedTileID) +
         " | Rot: " + std::to_string(m_MultiTile.rotation) + " | Flip: " + flipText +
-        " | Elev: " + std::to_string(m_CurrentElevation) + " | Cur: " + cursorText +
-        " | Sel: " + selectionText + " | NPC: " + npcText + " | FX: " + particleText +
-        " | Struct: " + structureText;
+        " | Elev: " + std::to_string(m_CurrentElevation) + " " +
+        std::string(EnumTraits<ElevationRole>::ToString(m_CurrentElevationRole)) + " (L" +
+        std::to_string(m_CurrentLayer + 1) + ") | Cur: " + cursorText + " | Sel: " + selectionText +
+        " | NPC: " + npcText + " | FX: " + particleText + " | Struct: " + structureText;
     ctx.renderer.DrawText(FitText(ctx.renderer, rowText, scale, actionX - x - 16.0f),
                           glm::vec2(x, textY),
                           scale,
@@ -1581,7 +1604,7 @@ void Editor::RenderEditorTopBar(const EditorContext& ctx)
                 return key == 'H';
             case EditMode::NPCPlacement:
                 return key == 'N';
-            case EditMode::NoProjection:
+            case EditMode::Stance:
                 return key == 'B';
             case EditMode::YSortPlus:
                 return key == 'Y';
@@ -1609,7 +1632,7 @@ void Editor::RenderEditorTopBar(const EditorContext& ctx)
         {'T', "[T] Picker"},
         {'M', "[M] Nav"},
         {'H', "[H] Elev"},
-        {'B', "[B] No-Proj"},
+        {'B', "[B] Stance"},
         {'Y', "[Y] Y+"},
         {'O', "[O] Y-"},
         {'J', "[J] Particle"},
@@ -1723,7 +1746,7 @@ void Editor::RenderPlacementPreview(const EditorContext& ctx)
             animStatus, glm::vec2(20.0f, 20.0f), 0.4f, glm::vec3(0.0f, 1.0f, 0.0f));
     }
 
-    // Only show preview if we have a selection and are not in tile picker
+    // Show the preview only when a selection exists and the tile picker is closed.
     if (m_ShowTilePicker)
         return;
     if (m_MultiTile.selectedStartID < 0)
