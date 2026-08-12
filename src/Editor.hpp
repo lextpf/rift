@@ -22,9 +22,10 @@ struct CameraState;
  * @ingroup Editor
  *
  * EditorContext is constructed by Game::MakeEditorContext() each frame and passed
- * by value to every Editor method. Value members are snapshots (window size,
- * visible tiles); reference members allow the editor to mutate shared state
- * (camera position, zoom, free-camera flag) without a back-pointer to Game.
+ * as `const EditorContext&` to every Editor method. Value members are snapshots
+ * (window size, visible tiles); reference members allow the editor to mutate shared
+ * state (camera position, zoom, free-camera flag) without a back-pointer to Game -
+ * const on the context does not make the referenced Game state const.
  *
  * @par Usage
  * @code{.cpp}
@@ -34,9 +35,9 @@ struct CameraState;
  * m_Editor.Render(ctx);
  * @endcode
  *
- * @par Design Rationale
+ * @par Design rationale
  * Using a context struct instead of a Game pointer keeps Editor decoupled from
- * the Game class definition. Editor.h never includes Game.h, which prevents
+ * the Game class definition. Editor.hpp never includes Game.hpp, which prevents
  * circular dependencies and makes the editor testable in isolation.
  *
  * @see Editor, Game::MakeEditorContext()
@@ -52,7 +53,7 @@ struct EditorContext
     int screenHeight;           ///< Window height in pixels.
     int tilesVisibleWidth;      ///< Tiles visible horizontally at current zoom.
     int tilesVisibleHeight;     ///< Tiles visible vertically at current zoom.
-    CameraState& camera;        ///< Camera state (position/zoom/tilt/3D/follow/freeMode), mutable.
+    CameraState& camera;        ///< Camera state (position, follow, zoom, free mode), mutable.
     Tilemap& tilemap;           ///< Active tilemap for tile queries and edits.
     ecs::entity playerEntity;   ///< Player entity (resolve via @ref npcs, the world).
     ecs::registry& npcs;        ///< Live NPC + player store (the ECS registry / world).
@@ -76,24 +77,43 @@ struct EditorContext
  * Toggled via the developer-console `editor [on|off|toggle]` command. When
  * active the tile picker opens automatically; when deactivated it closes.
  *
- * @par Editor Modes
+ * @par Editor modes
  * Only one sub-mode is active at a time, selected by hotkey:
  *
  * | Key | Mode               | Left-Click Action                | Right-Click Action           |
  * |-----|--------------------|----------------------------------|------------------------------|
- * |   T | Tile Picker        | Select tile / multi-tile region  | -                            |
- * |   M | Navigation Edit    | -                                | Toggle walkability (drag)    |
- * |   N | NPC Placement      | Place / remove NPC               | -                            |
- * |   B | No-Projection Edit | Set no-projection flag (flood)   | Clear flag (flood)           |
- * |   G | Structure Edit     | Anchor + flood assign structure  | Clear structure assignment   |
- * |   H | Elevation Edit     | Paint elevation value            | Clear elevation              |
+ * |   T | Tile Picker        | Select tile / multi-tile region  | - (picker swallows it)       |
+ * |   M | Navigation Edit    | (falls through to Default)       | Toggle walkability (drag)    |
+ * |   N | NPC Placement      | Place / remove NPC               | (falls through to Default)   |
+ * |   B | Stance Edit        | Paint selected stance            | Reset to Flat                |
+ * |   G | Structure Edit     | Anchor / flood / stance toggle   | Clear structure assignment   |
+ * |   H | Elevation Edit     | Paint height + role              | Clear height + role          |
  * |   J | Particle Zone Edit | Drag to create zone              | Remove zone                  |
  * |   K | Animation Edit     | Apply animation to tile          | Remove animation             |
  * |   Y | Y-Sort-Plus Edit   | Set Y-sort-plus flag             | Clear Y-sort-plus flag       |
  * |   O | Y-Sort-Minus Edit  | Set Y-sort-minus flag            | Clear Y-sort-minus flag      |
  * |   - | Default            | Place selected tile (drag)       | Toggle collision (drag)      |
  *
- * @par Per-Frame Pipeline
+ * A mode claims only the buttons listed for it. Each button is dispatched as one ordered
+ * if/else chain, so a mode that does not claim a button falls through to the Default row's
+ * action for that button: a left click in M paints a tile, a right click in N paints
+ * collision. Holding Shift widens the single-cell edit of B, G, Y and O to a 4-connected
+ * flood fill. In G, Ctrl+click sets the left anchor and a second Ctrl+click sets the right
+ * anchor and creates the structure, Shift+click flood-assigns the current structure ID, and
+ * a plain click toggles the tile between the Structure and Flat stance.
+ *
+ * @verbatim
+ * LEFT    Ctrl-drag map selection (every mode but G)  -- consumes the button
+ *         tile picker open                           -- consumes the button
+ *         N -> J -> K (only with a selected animation) -> H -> G -> B -> Y -> O
+ *         fall-through: stamp the multi-tile brush, else paint one tile
+ *
+ * RIGHT   tile picker open                           -- suppressed entirely
+ *         K -> H -> G -> B -> Y/O -> J -> M
+ *         else: toggle tile collision
+ * @endverbatim
+ *
+ * @par Per-frame pipeline
  * @code
  * Game::ProcessInput   -->  Editor::ProcessInput       (keyboard)
  *                      -->  Editor::ProcessMouseInput  (mouse)
@@ -102,11 +122,14 @@ struct EditorContext
  * Game::ScrollCallback -->  Editor::HandleScroll    (elevation / tile picker)
  * @endcode
  *
- * @par Debug Overlays
+ * @par Debug overlays
  * When debug mode is active (toggled with `debug.overlays` in the developer
- * console, independently of editor mode), all overlay layers are rendered:
- * collision, navigation, elevation, corner cutting, no-projection,
- * structures, Y-sort flags, particle zones, and NPC patrol info.
+ * console, independently of editor mode), these overlays are rendered: collision,
+ * navigation, stance, elevation, Y-sort flags, corner cutting, particle zones, NPC
+ * patrol info, and a colour-coded highlight of layers 1-9. The structure overlay is
+ * in the same call list but returns immediately unless EditMode::Structure is
+ * selected, so debug mode alone never shows it; the stance overlay still draws the
+ * auto-detected upright anchors.
  *
  * @see EditorContext, Game::MakeEditorContext()
  */
@@ -149,8 +172,10 @@ public:
 
     /**
      * @brief Process keyboard input for editor hotkeys and mode switching.
-     * @param deltaTime Frame time in seconds (for camera pan speed).
-     * @param ctx Editor context providing window and game state.
+     * @param deltaTime Frame time in seconds. Scales the arrow-key pan speed of the tile
+     *                  picker (1000 px/s, 2.5x with Shift); unused when the picker is closed.
+     *                  The world camera is panned by Game, not here.
+     * @param ctx       Editor context providing window and game state.
      */
     void ProcessInput(float deltaTime, const EditorContext& ctx);
 
@@ -177,16 +202,24 @@ public:
     /**
      * @brief Render editor overlays and tile picker.
      *
-     * Handles perspective suspension internally for the tile picker.
-     * Called from Game::Render() when editor or debug mode is active.
+     * Called from Game::Render() when editor or debug mode is active. The tile picker,
+     * top bar, HUD and status toast each bind their own orthographic projection, so the
+     * renderer is left in a UI projection whenever the editor is active.
+     *
+     * @post The world projection is not restored. The caller must rebind it before the
+     *       next world draw; Game::Render does this immediately after the call.
      */
     void Render(const EditorContext& ctx);
 
     /**
      * @brief Render no-projection anchor markers on top of everything.
      *
-     * Separate from Render() because anchors must appear above all UI.
-     * Caller is responsible for suspending perspective before calling.
+     * Separate from Render() because anchors must appear above all UI. Does nothing
+     * unless IsShowNoProjectionAnchors() is true. Game calls it only while the editor
+     * is inactive: in editor mode RenderStanceOverlays already draws the same
+     * auto-detected anchors.
+     *
+     * @pre The renderer is bound to the world projection.
      */
     void RenderNoProjectionAnchors(const EditorContext& ctx);
 
@@ -222,7 +255,10 @@ public:
 
     /**
      * @brief Set debug overlay rendering on/off explicitly.
-     * Mirrors the visibility of no-projection anchor markers.
+     *
+     * Also drives no-projection anchor-marker visibility: IsShowNoProjectionAnchors()
+     * always equals IsDebugMode(), because nothing else writes that flag. There is no
+     * independent toggle for the markers.
      */
     void SetDebugMode(bool enabled);
 
@@ -237,14 +273,21 @@ public:
     void ResetTilePickerState();
 
     /**
-     * @brief Drop all undo/redo history. Call on level load before mutating
-     * the new tilemap so stale commands cannot revert against the wrong map.
+     * @brief Drop all undo/redo history.
+     *
+     * Call this on level load before mutating the new tilemap, so stale commands cannot
+     * revert against the wrong map.
+     *
+     * @warning Only the editor's own L-key reload calls it. The `map.load` console
+     * command and Game::LoadGameWorld replace the tilemap without it, so commands
+     * captured against the previous map stay on the stack and remain revertible. Any
+     * new load path must call this itself.
      */
     void ClearUndoHistory();
 
 private:
     /**
-     * @name Render Methods
+     * @name Render methods
      * @brief Private overlay and UI rendering routines.
      * @{
      */
@@ -261,13 +304,23 @@ private:
     void RenderNavigationOverlays(const EditorContext& ctx);
     /// @brief Render elevation value overlay.
     void RenderElevationOverlays(const EditorContext& ctx);
-    /// @brief Render no-projection flag overlay.
-    void RenderNoProjectionOverlays(const EditorContext& ctx);
+    /// @brief Render the per-tile stance overlay.
+    void RenderStanceOverlays(const EditorContext& ctx);
     /// @brief Render no-projection anchor markers (implementation).
     void RenderNoProjectionAnchorsImpl(const EditorContext& ctx);
     /// @brief Render structure assignment overlay.
     void RenderStructureOverlays(const EditorContext& ctx);
-    /// @brief Render generic layer flag overlay using a getter method pointer.
+    /**
+     * @brief Render a generic per-layer flag overlay using a getter method pointer.
+     *
+     * @param ctx      Editor context.
+     * @param editMode true = authoring view: draw only the cells whose flag is set on
+     *                 m_CurrentLayer, at a fixed alpha of 0.5. false = debug summary:
+     *                 count how many layers carry the flag at each cell and scale the
+     *                 alpha by that fraction (0.15 + fraction * 0.35).
+     * @param getter   Tilemap flag reader; takes a 0-based layer index.
+     * @param color    RGB tint. Alpha comes from the branch above, not from the caller.
+     */
     void RenderLayerFlagOverlays(const EditorContext& ctx,
                                  bool editMode,
                                  bool (Tilemap::*getter)(int, int, size_t) const,
@@ -317,13 +370,22 @@ private:
      */
     struct ScreenToTile
     {
-        float worldX = 0.0f;
-        float worldY = 0.0f;
+        float worldX = 0.0f;  ///< World X in pixels (camera position + zoomed screen offset).
+        float worldY = 0.0f;  ///< World Y in pixels; +Y is down, matching the tilemap.
+        /// Bare floor(world / tileSize); not clamped to the map, so it can be negative or
+        /// past the last row/column. Callers bounds-check before touching the tilemap.
         int tileX = -1;
         int tileY = -1;
     };
 
-    /// @brief Convert screen-space mouse coordinates to world and tile coordinates.
+    /**
+     * @brief Convert screen-space mouse coordinates to world and tile coordinates.
+     *
+     * @warning Valid only on the flat 2.5D orthographic path: it inverts camera.position
+     * and camera.zoom and nothing else. Under the `world3d` orbit camera Game::Render
+     * skips Editor::Render entirely, yet Game::ProcessInput still drives the editor input,
+     * so a click there edits a tile that matches nothing on screen.
+     */
     [[nodiscard]] ScreenToTile ScreenToTileCoords(const EditorContext& ctx,
                                                   double mouseX,
                                                   double mouseY) const;
@@ -344,7 +406,7 @@ private:
      * @brief Toggle a per-tile layer flag using the provided setter, with
      * single-tile or Shift+flood-fill behavior. Captures pre-mutation old
      * values so the caller can wrap the entries in the appropriate cmd
-     * class (NoProjection / YSortPlus / YSortMinus all share the entry shape).
+     * class (YSortPlus / YSortMinus share the entry shape).
      *
      * Mutates the tilemap in place. Returns the entries the caller should
      * push onto the undo stack as a per-mode cmd. Skips no-op entries (where
@@ -395,7 +457,7 @@ private:
         Navigation,    ///< Painting walkability flags (M key).
         Elevation,     ///< Painting elevation values (H key).
         NPCPlacement,  ///< Placing / removing NPCs (N key).
-        NoProjection,  ///< Editing no-projection flags (B key).
+        Stance,        ///< Painting per-tile TileStance (B key).
         YSortPlus,     ///< Editing Y-sort-plus flags (Y key).
         YSortMinus,    ///< Editing Y-sort-minus flags (O key).
         ParticleZone,  ///< Defining particle emitter zones (J key).
@@ -404,17 +466,31 @@ private:
     };
 
     /**
-     * @name Mode State
+     * @name Mode state
      * @{
      */
     bool m_Active;          ///< Master toggle for the level editor (`editor` cmd).
     bool m_ShowTilePicker;  ///< Whether the tile picker panel is visible.
     EditMode m_EditMode;    ///< Current sub-mode (only one active at a time).
+
+    /**
+     * @brief Stance a left click paints in @c EditMode::Stance, cycled with , and .
+     *
+     * Never @c TileStance::Flat: right click is how a cell is cleared, so offering
+     * Flat as a paintable value would give the same action two bindings and cost a
+     * step in the cycle.
+     *
+     * @warning The cycle is modular arithmetic over the range 1..TILE_STANCE_COUNT-1.
+     * A static_assert in TileStance.hpp pins Flat to 0, but nothing checks that the
+     * paintable values stay contiguous: adding a non-paintable enumerator in the middle
+     * makes , and . paint the wrong stance.
+     */
+    TileStance m_CurrentStance;
     /// @}
 
     /**
-     * @name Particle Zone Editing
-     * State for drag-to-create particle emitter zones.
+     * @name Particle zone editing
+     * @brief State for drag-to-create particle emitter zones (J mode).
      * @{
      */
     ParticleType m_CurrentParticleType;  ///< Visual type for new zones (e.g. Firefly).
@@ -424,9 +500,11 @@ private:
     /// @}
 
     /**
-     * @name Structure Editing
-     * State for the two-anchor structure workflow: place left anchor, right anchor,
-     * then flood-assign tiles between them to a structure ID.
+     * @name Structure editing
+     * @brief State for the two-anchor structure workflow (G mode).
+     *
+     * Place the left anchor, then the right anchor, then flood-assign the tiles between
+     * them to a structure ID.
      * @{
      */
     int m_CurrentStructureId;          ///< Active structure ID, or -1 if none selected.
@@ -437,7 +515,7 @@ private:
     /// @}
 
     /**
-     * @name Animation Editing
+     * @name Animation editing
      * @{
      */
     std::vector<int> m_AnimationFrames;  ///< Tile IDs composing the current animation sequence.
@@ -446,7 +524,7 @@ private:
     /// @}
 
     /**
-     * @name Debug Flags
+     * @name Debug flags
      * @{
      */
     bool m_DebugMode;                ///< Enables all debug overlays (`debug.overlays` cmd).
@@ -455,13 +533,24 @@ private:
     bool m_HasUnsavedChanges;        ///< True after edits since the last successful save/load.
     /// @}
 
-    static constexpr float EDITOR_HUD_HEIGHT = 40.0f;
-    static constexpr float EDITOR_TOPBAR_HEIGHT = 56.0f;
+    /**
+     * @name Editor chrome bands
+     * @brief Heights of the opaque bands drawn over the world view, in screen pixels.
+     *
+     * @warning Neither band is excluded from mouse picking. ProcessMouseInput converts the
+     * raw cursor position straight to a tile, so a click on a top-bar chip or on the HUD
+     * also edits the tile drawn behind it.
+     * @{
+     */
+    static constexpr float EDITOR_HUD_HEIGHT = 40.0f;     ///< Bottom HUD band height.
+    static constexpr float EDITOR_TOPBAR_HEIGHT = 56.0f;  ///< Top shortcut-bar band height.
+    /// @}
 
     /**
      * @name Status toast
-     * On-screen transient message (save success/failure, load result). Drawn
-     * while m_StatusTimer > 0 and decremented by Update().
+     * @brief On-screen transient message (save success/failure, load result).
+     *
+     * Drawn while m_StatusTimer &gt; 0, which Update() decrements by the frame delta.
      * @{
      */
     std::string m_StatusMessage;       ///< Text to display; empty = hidden.
@@ -470,17 +559,44 @@ private:
     /// @}
 
     /**
-     * @name Tile Selection
-     * Currently selected tile, layer, and elevation for placement.
+     * @name Tile selection
+     * @brief Currently selected tile, layer, and elevation for placement.
      * @{
      */
-    int m_SelectedTileID;    ///< Tile atlas index chosen in the tile picker.
-    int m_CurrentLayer;      ///< Active tilemap layer (0-9) for placement.
-    int m_CurrentElevation;  ///< Active elevation level (default 4 = ground).
+    /**
+     * @brief Tile ID last clicked in the tile picker.
+     *
+     * While a picker drag is in progress it tracks the moving end corner of the selection
+     * rectangle, with MultiTileState's selectionStartTileID as the anchor corner.
+     */
+    int m_SelectedTileID;
+    /// Active tilemap layer index (0-based) for placement. Keys 1-9 and 0 select indices
+    /// 0-9, so a map loaded with more than 10 dynamicLayers has no hotkey for the rest.
+    int m_CurrentLayer;
+    /**
+     * @brief Elevation value painted in H mode, in pixels - written straight through to
+     * Tilemap::SetElevation, where 0 means ground level.
+     *
+     * The scroll wheel steps it by 2 and clamps to [-32, +32]. Starts at 4, i.e. slightly
+     * above ground, not at ground.
+     */
+    int m_CurrentElevation;
+    /**
+     * @brief Role a left click paints in @c EditMode::Elevation, cycled with , and .
+     *
+     * Never @c ElevationRole::Ground: right click is how a cell is cleared, so
+     * offering Ground as a paintable value would give the same action two bindings.
+     *
+     * @warning The cycle is modular arithmetic over the range 1..ELEVATION_ROLE_COUNT-1.
+     * A static_assert in ElevationRole.hpp pins Ground to 0, but nothing checks that the
+     * paintable values stay contiguous: adding a non-paintable enumerator in the middle
+     * makes , and . paint the wrong role.
+     */
+    ElevationRole m_CurrentElevationRole;
     /// @}
 
     /**
-     * @name NPC Types
+     * @name NPC types
      * @{
      */
     std::vector<std::string> m_AvailableNPCTypes;  ///< Sprite paths loaded at init.
@@ -496,62 +612,94 @@ private:
     /// @}
 
     /**
-     * @name Mouse/Drag State
-     * Tracks mouse position and per-mode drag state. "Last" tile coords use -1
-     * as a sentinel meaning "no tile touched yet this drag".
+     * @name Mouse/drag state
+     * @brief Cursor position plus per-mode drag bookkeeping.
+     *
+     * The `last*Tile` pairs make drag-painting idempotent: a handler only acts when the
+     * cursor has entered a different tile than the one it last wrote. They are reset to
+     * the -1 sentinel ("no tile touched yet this drag") on the corresponding button-up.
+     * The `*DragState` booleans latch the target value chosen by the first cell of a
+     * right-drag so the whole stroke paints one value instead of toggling per cell.
      * @{
      */
     struct MouseDragState
     {
+        /// Cursor position in window pixels as of the last ProcessMouseInput call. Currently
+        /// write-only - nothing reads either field, so no behavior depends on them.
         double lastMouseX = 0.0;
         double lastMouseY = 0.0;
+        /**
+         * @brief Latched "left button already handled" flag.
+         *
+         * Set by whichever mode handler consumed the press so the remaining handlers skip
+         * it, and to distinguish the first frame of a drag from its continuation. Cleared
+         * on button-up.
+         */
         bool mousePressed = false;
+        /// Right-button analog of `mousePressed`; also gates the "first cell of the
+        /// stroke" branch that decides `navigationDragState` / `collisionDragState`.
         bool rightMousePressed = false;
-        int lastPlacedTileX = -1;
-        int lastPlacedTileY = -1;
-        int lastNavigationTileX = -1;
-        int lastNavigationTileY = -1;
-        bool navigationDragState = false;
-        int lastCollisionTileX = -1;
-        int lastCollisionTileY = -1;
-        bool collisionDragState = false;
-        int lastNPCPlacementTileX = -1;
-        int lastNPCPlacementTileY = -1;
+        int lastPlacedTileX = -1;          ///< Last tile column painted this left-drag (-1 = none).
+        int lastPlacedTileY = -1;          ///< Last tile row painted this left-drag (-1 = none).
+        int lastNavigationTileX = -1;      ///< Last tile column touched this nav drag (-1 = none).
+        int lastNavigationTileY = -1;      ///< Last tile row touched this nav drag (-1 = none).
+        bool navigationDragState = false;  ///< Walkability value the whole M-mode stroke writes.
+        int lastCollisionTileX = -1;  ///< Last tile column touched this collision drag (-1 = none).
+        int lastCollisionTileY = -1;  ///< Last tile row touched this collision drag (-1 = none).
+        bool collisionDragState = false;  ///< Collision value the whole right-drag stroke writes.
+        int lastNPCPlacementTileX = -1;   ///< Last tile column an NPC was placed on (-1 = none).
+        int lastNPCPlacementTileY = -1;   ///< Last tile row an NPC was placed on (-1 = none).
     };
     MouseDragState m_Mouse;
     /// @}
 
     /**
-     * @name Tile Picker State
-     * Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
+     * @name Tile picker state
+     * @brief Camera controls for the tile picker panel (zoom + smooth-scrolled offset).
+     *
+     * Pan input - arrow keys and a plain scroll - writes only `target*`; Update() eases the
+     * live `offset*` toward it each frame and snaps once within 0.1px. Ctrl+scroll zoom and
+     * ResetTilePickerState write both, so the change lands the same frame. SetActive equates
+     * the two when the picker opens, so reopening does not replay a stale glide.
      * @{
      */
     struct TilePickerCamera
     {
-        float zoom = 2.0f;
-        float offsetX = 0.0f;
-        float offsetY = 0.0f;
-        float targetOffsetX = 0.0f;
-        float targetOffsetY = 0.0f;
+        float zoom = 2.0f;     ///< Picker magnification, clamped to [0.25, 8] by Ctrl+scroll.
+        float offsetX = 0.0f;  ///< Rendered pan X in screen pixels (eased toward targetOffsetX).
+        float offsetY = 0.0f;  ///< Rendered pan Y in screen pixels (eased toward targetOffsetY).
+        float targetOffsetX = 0.0f;  ///< Requested pan X; clamped so the sheet stays on screen.
+        float targetOffsetY = 0.0f;  ///< Requested pan Y; clamped so the sheet stays on screen.
     };
     TilePickerCamera m_TilePicker;
     /// @}
 
     /**
-     * @name Multi-Tile Selection
-     * Allows selecting and placing rectangular regions of tiles from the picker.
+     * @name Multi-tile selection
+     * @brief Rectangular tile "brush" (stamp) selected from the picker.
+     *
+     * Drag inside the tile picker to define a rectangle; on release a region larger than
+     * 1x1 arms `selectionMode` and resets the brush transform. Rotation and flips are
+     * applied at paint/preview time by CalculateBrushSourceTile, so `width` / `height`
+     * always describe the unrotated source region.
      * @{
      */
     struct MultiTileState
     {
+        /// True once a region larger than 1x1 is armed: left-click stamps the whole brush
+        /// instead of a single tile. Reset to false when a 1x1 region is picked.
         bool selectionMode = false;
-        int selectedStartID = 0;
-        int width = 1;
-        int height = 1;
-        bool isSelecting = false;
-        int selectionStartTileID = -1;
+        int selectedStartID = 0;        ///< Tile ID of the brush's top-left cell in the tileset.
+        int width = 1;                  ///< Brush width in tiles, before rotation.
+        int height = 1;                 ///< Brush height in tiles, before rotation.
+        bool isSelecting = false;       ///< True while dragging out a rectangle in the picker.
+        int selectionStartTileID = -1;  ///< Anchor corner of that drag (-1 = not dragging).
+        /// Unused: never read or written anywhere in the editor.
         float placementCameraZoom = 1.0f;
+        /// Write-only mirror of selectionMode; nothing reads it, so it drives no behavior.
         bool isPlacing = false;
+        /// Brush rotation in degrees counter-clockwise: 0, 90, 180, or 270, cycled by R.
+        /// At 90/270 the stamped footprint is height x width (the dimensions swap).
         int rotation = 0;
         bool flipX = false;  ///< Brush mirror around vertical axis (toggled by F).
         bool flipY = false;  ///< Brush mirror around horizontal axis (toggled by Shift+F).
@@ -560,8 +708,11 @@ private:
     /// @}
 
     /**
-     * @name Key Debounce State
-     * Per-key pressed tracking for edge-triggered input (replaces function-local statics).
+     * @name Key debounce state
+     * @brief Per-key pressed tracking for edge-triggered input.
+     *
+     * Held per instance rather than in function-local statics, so two Editor
+     * instances (or a reload) cannot share debounce state.
      * @{
      */
     std::bitset<GLFW_KEY_LAST + 1> m_KeyPressed;  ///< True while a key is held from last press.
@@ -570,49 +721,69 @@ private:
     /// @}
 
     /**
-     * @name No-Projection Bounds Cache
-     * Computed once per frame and shared between overlay rendering passes.
+     * @name No-projection bounds cache
+     * @brief Connected no-projection groups, computed once per frame.
+     *
+     * EnsureNoProjBoundsCache scans the whole map once and 4-connected flood-fills every
+     * cell whose stance is @c TileStance::Structure on any layer. Each component becomes
+     * its own entry, so the vector holds one inclusive tile bounding box per group. The
+     * cache exists so the several overlay passes in a single Render() share that one scan
+     * instead of repeating it.
      * @{
      */
+
+    /// Inclusive tile-space bounding box of one connected structure-stance group.
     struct NoProjGroupBounds
     {
         int minX, maxX, minY, maxY;
     };
-    std::vector<NoProjGroupBounds> m_CachedNoProjBounds;
+    std::vector<NoProjGroupBounds> m_CachedNoProjBounds;  ///< One entry per connected group.
     bool m_NoProjBoundsCached = false;  ///< Reset at the start of each Render() call.
     /// @}
 
     /**
-     * @name Undo / Redo
-     * Bounded command-pattern history for editor mutations. Default capacity
-     * is UndoRedoStack::DEFAULT_CAPACITY. Cleared on level load.
-     * Stroke accumulators batch per-tile mutations during a drag-paint and
-     * commit a single composite cmd at mouse-up; Drop() in ClearAllEditModes
-     * discards an in-progress stroke when the mode changes mid-drag.
+     * @name Undo / redo
+     * @brief Bounded command-pattern history plus the drag-paint stroke accumulators.
+     *
+     * Default capacity is UndoRedoStack::DEFAULT_CAPACITY. Only the editor's own L-key
+     * reload clears the stack, through ClearUndoHistory; the `map.load` console command
+     * and Game::LoadGameWorld do not. Stroke accumulators batch per-tile mutations during
+     * a drag-paint and commit a single composite cmd at mouse-up; Drop() in
+     * ClearAllEditModes discards an in-progress stroke when the mode changes mid-drag.
      * @{
      */
-    UndoRedoStack m_UndoStack;
-    TilePlaceStrokeAccum m_TileStroke;
-    CollisionStrokeAccum m_CollisionStroke;
-    ElevationStrokeAccum m_ElevationStroke;
-    NavigationStrokeAccum m_NavigationStroke;
+    UndoRedoStack m_UndoStack;                 ///< Bounded history; owns all pushed commands.
+    TilePlaceStrokeAccum m_TileStroke;         ///< Default-mode left-drag tile painting.
+    CollisionStrokeAccum m_CollisionStroke;    ///< Default-mode right-drag collision painting.
+    ElevationStrokeAccum m_ElevationStroke;    ///< H-mode left-drag elevation painting.
+    NavigationStrokeAccum m_NavigationStroke;  ///< M-mode right-drag walkability painting.
     /// @}
 
     /**
-     * @name Region Copy/Paste (Ctrl+drag, Ctrl+C, Ctrl+V)
-     * MapRegionSelection tracks the current rectangular tile-region the user
-     * has selected on the map (Ctrl+left-drag to define). m_Clipboard holds
-     * the most recently copied region; PasteRegionCmd writes from there.
+     * @name Region copy/paste (Ctrl+drag, Ctrl+C, Ctrl+V)
+     * @brief On-map rectangular selection and the copied-region clipboard.
+     *
+     * MapRegionSelection tracks the current rectangular tile-region the user has selected
+     * on the map (Ctrl+left-drag to define). m_Clipboard holds the most recently copied
+     * region; PasteRegionCmd writes from there.
      * @{
+     */
+
+    /**
+     * @brief Rectangular map selection.
+     *
+     * The corners are stored as picked, so `start` may be to the right of / below `end`;
+     * the accessors below normalize that. Coordinates are tile indices and both ends are
+     * inclusive, hence the +1 in Width()/Height().
      */
     struct MapRegionSelection
     {
-        bool active = false;
-        bool isDragging = false;
-        int startX = 0;
-        int startY = 0;
-        int endX = 0;
-        int endY = 0;
+        bool active = false;      ///< A committed selection exists (Ctrl+C / overlay use it).
+        bool isDragging = false;  ///< A drag is in progress; ends on left-button release.
+        int startX = 0;           ///< Anchor corner column (where the drag began).
+        int startY = 0;           ///< Anchor corner row.
+        int endX = 0;             ///< Moving corner column (frozen if Ctrl is let go mid-drag).
+        int endY = 0;             ///< Moving corner row.
 
         [[nodiscard]] int MinX() const { return std::min(startX, endX); }
         [[nodiscard]] int MinY() const { return std::min(startY, endY); }
@@ -620,6 +791,6 @@ private:
         [[nodiscard]] int Height() const { return std::abs(endY - startY) + 1; }
     };
     MapRegionSelection m_MapSelection;
-    ClipboardRegion m_Clipboard;
+    ClipboardRegion m_Clipboard;  ///< Last Ctrl+C snapshot; empty until the first copy.
     /// @}
 };

@@ -32,6 +32,7 @@ Editor::Editor()
     : m_Active(false),
       m_ShowTilePicker(false),
       m_EditMode(EditMode::None),
+      m_CurrentStance(TileStance::Prop),  // first paintable stance; Flat is right-click
 
       // -- Particle zone editing --
       m_CurrentParticleType(ParticleType::Firefly),  // default particle visual
@@ -56,10 +57,13 @@ Editor::Editor()
       m_ShowNoProjectionAnchors(false),
       m_HasUnsavedChanges(false),
 
-      // -- Tile selection: layer 0, elevation 4 is the default ground level --
+      // -- Tile selection: layer 0 (Ground) and a 4-pixel elevation brush. Elevation is a
+      // raw pixel value handed to Tilemap::SetElevation, where 0 is ground level, so the
+      // initial brush paints one scroll step above ground rather than "ground".
       m_SelectedTileID(0),
       m_CurrentLayer(0),
       m_CurrentElevation(4),
+      m_CurrentElevationRole(ElevationRole::Raised),  // first paintable; Ground is right-click
 
       // -- NPC placement --
       m_SelectedNPCTypeIndex(0),
@@ -282,7 +286,6 @@ void Editor::Render(const EditorContext& ctx)
     // Render editor tile picker UI
     if (m_Active && m_ShowTilePicker)
     {
-        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         RenderEditorUI(ctx);
     }
 
@@ -291,7 +294,8 @@ void Editor::Render(const EditorContext& ctx)
     {
         RenderCollisionOverlays(ctx);
         RenderNavigationOverlays(ctx);
-        RenderNoProjectionOverlays(ctx);
+        RenderStanceOverlays(ctx);
+        RenderElevationOverlays(ctx);
         RenderStructureOverlays(ctx);
         RenderYSortPlusOverlays(ctx);
         RenderYSortMinusOverlays(ctx);
@@ -313,7 +317,6 @@ void Editor::Render(const EditorContext& ctx)
     if (m_DebugMode && !m_ShowTilePicker)
     {
         RenderCornerCuttingOverlays(ctx);
-        RenderElevationOverlays(ctx);
         RenderParticleZoneOverlays(ctx);
         RenderNPCDebugInfo(ctx);
 
@@ -325,21 +328,18 @@ void Editor::Render(const EditorContext& ctx)
 
     if (m_Active)
     {
-        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         RenderEditorTopBar(ctx);
         RenderEditorHUD(ctx);
     }
 
     // Status toast (save success/failure, flip confirmation, etc.). Rendered
     // last so that:
-    //   - It draws ON TOP of every overlay rather than beneath them.
+    //   - It draws on top of every overlay rather than beneath them.
     //   - Its UI-ortho SetProjection() does not leak into the world-projection
-    //     overlays above. PerspectiveSuspendGuard restores the suspension
-    //     flag but not the projection matrix; Game::Render re-binds the world
-    //     projection after Editor::Render returns.
+    //     overlays above. Game::Render re-binds the world projection after
+    //     Editor::Render returns.
     if (m_Active && m_StatusTimer > 0.0f && !m_StatusMessage.empty())
     {
-        IRenderer::PerspectiveSuspendGuard guard(ctx.renderer);
         glm::mat4 uiProjection = glm::ortho(0.0f,
                                             static_cast<float>(ctx.screenWidth),
                                             static_cast<float>(ctx.screenHeight),
