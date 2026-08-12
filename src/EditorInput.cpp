@@ -79,19 +79,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_T] = false;
     }
 
-    // R rotates the selected tile(s) by 90 degrees (works on single tiles and multi-tile
-    // selections; tile picker must be closed).
-    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
-        !m_ShowTilePicker)
-    {
-        m_MultiTile.rotation = (m_MultiTile.rotation + 90) % 360;
-        m_KeyPressed[GLFW_KEY_R] = true;
-        Logger::InfoF(LOG_SUBSYSTEM, "Tile rotation: {} degrees", m_MultiTile.rotation);
-    }
-    if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_RELEASE)
-    {
-        m_KeyPressed[GLFW_KEY_R] = false;
-    }
+    // R is handled once, further down, next to F - see the note there.
 
     // Tile picker pan with arrow keys (Shift = 2.5x speed). Target-based
     // smooth scrolling.
@@ -198,9 +186,11 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         {
             m_EditMode = EditMode::Elevation;
             Logger::InfoF(LOG_SUBSYSTEM,
-                          "Elevation edit mode: ON - Current elevation: {} pixels",
-                          m_CurrentElevation);
+                          "Elevation edit mode: ON - Current elevation: {} pixels, role: {}",
+                          m_CurrentElevation,
+                          EnumTraits<ElevationRole>::ToString(m_CurrentElevationRole));
             Logger::Info(LOG_SUBSYSTEM, "Use scroll wheel to adjust elevation value");
+            Logger::Info(LOG_SUBSYSTEM, "  , / . cycle the role a click paints");
         }
         else
         {
@@ -213,31 +203,99 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_H] = false;
     }
 
-    // B: no-projection mode. LMB sets the flag (renders without 3D effect),
-    // RMB clears. Used for buildings that should appear to have height in 3D.
+    // ,/. cycles the elevation role a left click paints. Ground is excluded: right
+    // click is how a cell is cleared, so offering it here would double-bind that.
+    if (m_Active && (m_EditMode == EditMode::Elevation))
+    {
+        constexpr int PAINTABLE = static_cast<int>(ELEVATION_ROLE_COUNT) - 1;
+        const auto cycleRole = [this](int delta)
+        {
+            const int current = static_cast<int>(std::to_underlying(m_CurrentElevationRole)) - 1;
+            const int next = (current + PAINTABLE + delta) % PAINTABLE;
+            m_CurrentElevationRole = static_cast<ElevationRole>(next + 1);
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Paint elevation role: {}",
+                          EnumTraits<ElevationRole>::ToString(m_CurrentElevationRole));
+        };
+
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
+        {
+            cycleRole(-1);
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
+        }
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
+
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
+        {
+            cycleRole(1);
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
+        }
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
+    }
+
+    // B: stance mode. LMB paints the selected stance, RMB clears to Flat, both on
+    // the current layer only. , and . cycle which stance a click paints.
     if (m_Active && glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_B])
     {
-        const bool enabling = m_EditMode != EditMode::NoProjection;
+        const bool enabling = m_EditMode != EditMode::Stance;
         ClearAllEditModes();
         if (enabling)
         {
-            m_EditMode = EditMode::NoProjection;
-            Logger::InfoF(
-                LOG_SUBSYSTEM,
-                "No-projection edit mode: ON (Layer {}) - Click to mark tiles that bypass 3D "
-                "projection",
-                m_CurrentLayer);
-            Logger::Info(LOG_SUBSYSTEM, "Use 1-6 keys to change layer");
+            m_EditMode = EditMode::Stance;
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Stance edit mode: ON (Layer {}) - painting {}",
+                          m_CurrentLayer,
+                          EnumTraits<TileStance>::ToString(m_CurrentStance));
+            Logger::Info(LOG_SUBSYSTEM,
+                         "  Prop = turns to the camera, Wall = locked to the grid, "
+                         "Structure = one tile of a taller body");
+            Logger::Info(LOG_SUBSYSTEM,
+                         "  , / . cycle stance | Shift+click floods | RMB clears to Flat");
+            Logger::Info(LOG_SUBSYSTEM, "Use 1-9 and 0 keys to change layer");
         }
         else
         {
-            Logger::Info(LOG_SUBSYSTEM, "No-projection edit mode: OFF");
+            Logger::Info(LOG_SUBSYSTEM, "Stance edit mode: OFF");
         }
         m_KeyPressed[GLFW_KEY_B] = true;
     }
     if (glfwGetKey(ctx.window, GLFW_KEY_B) == GLFW_RELEASE)
     {
         m_KeyPressed[GLFW_KEY_B] = false;
+    }
+
+    // ,/. cycles the stance a left click paints. Flat is excluded: right click is
+    // how a cell is cleared, so offering it here would double-bind that action.
+    if (m_Active && (m_EditMode == EditMode::Stance))
+    {
+        constexpr int PAINTABLE = static_cast<int>(TILE_STANCE_COUNT) - 1;
+        const auto cycleStance = [this](int delta)
+        {
+            const int current = static_cast<int>(std::to_underlying(m_CurrentStance)) - 1;
+            const int next = (current + PAINTABLE + delta) % PAINTABLE;
+            m_CurrentStance = static_cast<TileStance>(next + 1);
+            Logger::InfoF(LOG_SUBSYSTEM,
+                          "Paint stance: {}",
+                          EnumTraits<TileStance>::ToString(m_CurrentStance));
+        };
+
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_COMMA])
+        {
+            cycleStance(-1);
+            m_KeyPressed[GLFW_KEY_COMMA] = true;
+        }
+        if (glfwGetKey(ctx.window, GLFW_KEY_COMMA) == GLFW_RELEASE)
+            m_KeyPressed[GLFW_KEY_COMMA] = false;
+
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_PERIOD])
+        {
+            cycleStance(1);
+            m_KeyPressed[GLFW_KEY_PERIOD] = true;
+        }
+        if (glfwGetKey(ctx.window, GLFW_KEY_PERIOD) == GLFW_RELEASE)
+            m_KeyPressed[GLFW_KEY_PERIOD] = false;
     }
 
     // Y: Y-sort-plus mode. LMB sets flag (tile sorts with entities by Y),
@@ -258,7 +316,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
                     "Y-sort+1 edit mode: ON (Layer {}) - Click to mark tiles for Y-sorting "
                     "with entities",
                     m_CurrentLayer);
-                Logger::Info(LOG_SUBSYSTEM, "Use 1-6 keys to change layer");
+                Logger::Info(LOG_SUBSYSTEM, "Use 1-9 and 0 keys to change layer");
             }
             else
             {
@@ -468,7 +526,11 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         if (glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
             m_KeyPressed[GLFW_KEY_ESCAPE] = false;
 
-        // Delete to remove current structure
+        // Delete removes the currently selected structure.
+        //
+        // NOT undoable: this calls Tilemap::RemoveNoProjectionStructure directly instead of
+        // going through RemoveStructureCmd, so neither the structure record nor the per-tile
+        // structureId references it clears and renumbers come back with Ctrl+Z.
         if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_DELETE])
         {
             if (m_CurrentStructureId >= 0)
@@ -727,6 +789,10 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
 
     // Removes tiles under the mouse cursor on the currently selected layer.
     // Hold DEL and drag to delete multiple tiles continuously.
+    //
+    // NOT undoable: unlike every other paint path this writes the tilemap directly instead
+    // of through m_TileStroke / PlaceTilesCmd, so a DEL-drag leaves no undo entry. The same
+    // unrecorded write also clears the tile's animation id.
     if (glfwGetKey(ctx.window, GLFW_KEY_DELETE) == GLFW_PRESS && m_Active && !m_ShowTilePicker)
     {
         double mouseX, mouseY;
@@ -758,32 +824,62 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_LastDeletedTileY = -1;
     }
 
-    // Rotates the tile under the mouse cursor by 90 on the current layer.
-    // Note: This is different from multi-tile rotation which uses R when
-    //       m_MultiTile.selectionMode is true.
+    // R rotates the brush by 90 degrees and rotates the tile under the cursor on
+    // the current layer, in one press - the same two-jobs-per-key contract F uses
+    // for flips.
+    //
+    // Both jobs must stay in this one handler. GLFW_KEY_R shares a single debounce slot in
+    // m_KeyPressed, so a second `if` on that key anywhere in ProcessInput would silently disable
+    // whichever handler runs later.
     if (glfwGetKey(ctx.window, GLFW_KEY_R) == GLFW_PRESS && !m_KeyPressed[GLFW_KEY_R] && m_Active &&
         !m_ShowTilePicker)
     {
+        // The brush rotation applies to the NEXT stamp. Single-tile painting reads
+        // it too (via GetCompensatedTileRotation), so it cannot be gated behind
+        // m_MultiTile.selectionMode without losing rotated 1x1 placement.
+        m_MultiTile.rotation = (m_MultiTile.rotation + 90) % 360;
+        Logger::InfoF(LOG_SUBSYSTEM, "Brush rotation: {} degrees", m_MultiTile.rotation);
+
         double mouseX, mouseY;
         glfwGetCursorPos(ctx.window, &mouseX, &mouseY);
         auto st = ScreenToTileCoords(ctx, mouseX, mouseY);
-        int tileX = st.tileX;
-        int tileY = st.tileY;
+        const bool inBounds = st.tileX >= 0 && st.tileX < ctx.tilemap.GetMapWidth() &&
+                              st.tileY >= 0 && st.tileY < ctx.tilemap.GetMapHeight();
+        const int tileId =
+            inBounds ? ctx.tilemap.GetLayerTile(st.tileX, st.tileY, m_CurrentLayer) : -1;
 
-        if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
-            tileY < ctx.tilemap.GetMapHeight())
+        // An empty cell is left alone rather than rotated and reported: claiming a
+        // rotation that nothing can show is the same confusion this handler's
+        // unreachability caused.
+        if (tileId >= 0)
         {
-            // Rotate tile by 90 degrees on selected layer
-            float currentRotation = ctx.tilemap.GetLayerRotation(tileX, tileY, m_CurrentLayer);
-            float newRotation = currentRotation + 90.0f;
-            ctx.tilemap.SetLayerRotation(tileX, tileY, m_CurrentLayer, newRotation);
-            MarkDirty();
+            // Routed through PlaceTilesCmd so the edit is undoable, matching F. Writing
+            // SetLayerRotation directly here would put the edit out of Ctrl+Z's reach.
+            PlaceTilesCmd::Entry entry{};
+            entry.tileX = st.tileX;
+            entry.tileY = st.tileY;
+            entry.layer = m_CurrentLayer;
+            entry.oldTileId = tileId;
+            entry.newTileId = tileId;
+            entry.oldRotation = ctx.tilemap.GetLayerRotation(st.tileX, st.tileY, m_CurrentLayer);
+            entry.newRotation = std::fmod(entry.oldRotation + 90.0f, 360.0f);
+            entry.oldFlipX = ctx.tilemap.GetLayerFlipX(st.tileX, st.tileY, m_CurrentLayer);
+            entry.newFlipX = entry.oldFlipX;
+            entry.oldFlipY = ctx.tilemap.GetLayerFlipY(st.tileX, st.tileY, m_CurrentLayer);
+            entry.newFlipY = entry.oldFlipY;
+
+            std::vector<PlaceTilesCmd::Entry> entries;
+            entries.push_back(entry);
+            ExecuteEditorCommand(
+                std::make_unique<PlaceTilesCmd>(std::move(entries)), ctx.tilemap, ctx.npcs);
+
             Logger::InfoF(LOG_SUBSYSTEM,
                           "Rotated Layer {} tile at ({}, {}) to {} degrees",
                           m_CurrentLayer + 1,
-                          tileX,
-                          tileY,
-                          newRotation);
+                          st.tileX,
+                          st.tileY,
+                          entry.newRotation);
+            ShowStatus("Rotated tile (90 deg)", glm::vec3(0.6f, 1.0f, 0.6f));
         }
         m_KeyPressed[GLFW_KEY_R] = true;
     }
@@ -792,7 +888,7 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
         m_KeyPressed[GLFW_KEY_R] = false;
     }
 
-    // F / Shift+F mirror the brush flip flag (matching R's rotate contract) AND
+    // F / Shift+F mirror the brush flip flag (matching R's rotate contract) and
     // reflect the current selection on the same press. Gated outside ParticleZone
     // where F drives the per-zone noProjection toggle.
     if (m_Active && !m_ShowTilePicker && m_EditMode != EditMode::ParticleZone &&
@@ -903,9 +999,12 @@ void Editor::ProcessInput(float deltaTime, const EditorContext& ctx)
     }
 
     // Ctrl+Z (undo) and Ctrl+Y (redo). KeyToggle's variadic template uses OR-
-    // press semantics that fire on either key alone, so we check the Ctrl
-    // modifier inline (see GameInput.cpp:798-801 for the same pattern in
-    // ScrollCallback) and use the per-key bitset for edge-triggered debounce.
+    // press semantics that fire on either key alone, so the handler checks the Ctrl
+    // modifier inline (see the `ctrlPressed` check in Game::ScrollCallback for the same
+    // pattern) and use the per-key bitset for edge-triggered debounce.
+    //
+    // Trap: Game's own Z handler is unmodified, so Ctrl+Z reaches it too. Every editor
+    // undo therefore also resets the camera zoom to 1.0x and the tile picker zoom/pan.
     const bool ctrlHeld = glfwGetKey(ctx.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                           glfwGetKey(ctx.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
     if (m_Active && ctrlHeld && glfwGetKey(ctx.window, GLFW_KEY_Z) == GLFW_PRESS &&
@@ -1015,7 +1114,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
     bool leftMouseDown = (leftMouseButton == GLFW_PRESS);
     bool rightMouseDown = (rightMouseButton == GLFW_PRESS);
 
-    // Ctrl+left-drag defines a map-region selection for Ctrl+C copy. We
+    // Ctrl+left-drag defines a map-region selection for Ctrl+C copy. The editor
     // intercept here, before mode-specific handlers, so selection works in
     // any mode except Structure (G uses Ctrl-click for anchor placement).
     //
@@ -1126,20 +1225,43 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 return;
             }
             // Elevation edit mode, right-click clears elevation at tile.
-            // Right-click is a single action, not a drag, so we Execute
+            // Right-click is a single action rather than a drag, so it executes
             // directly rather than going through the stroke accumulator.
             else if ((m_EditMode == EditMode::Elevation))
             {
-                int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
+                const int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
+                const ElevationRole oldRole =
+                    ctx.tilemap.GetLayerElevationRole(tileX, tileY, m_CurrentLayer);
+
+                std::vector<std::unique_ptr<EditorCommand>> children;
                 if (oldElevation != 0)
                 {
+                    children.push_back(std::make_unique<ElevationSetCmd>(
+                        std::vector<ElevationSetCmd::Entry>{{tileX, tileY, oldElevation, 0}}));
+                }
+                if (oldRole != ElevationRole::Ground)
+                {
+                    children.push_back(
+                        std::make_unique<SetElevationRolesCmd>(std::vector<LayerElevationRoleEntry>{
+                            {tileX,
+                             tileY,
+                             static_cast<std::size_t>(m_CurrentLayer),
+                             oldRole,
+                             ElevationRole::Ground}}));
+                }
+                if (children.size() == 1)
+                {
+                    ExecuteEditorCommand(std::move(children[0]), ctx.tilemap, ctx.npcs);
+                }
+                else if (!children.empty())
+                {
                     ExecuteEditorCommand(
-                        std::make_unique<ElevationSetCmd>(
-                            std::vector<ElevationSetCmd::Entry>{{tileX, tileY, oldElevation, 0}}),
+                        std::make_unique<CompositeCmd>("Clear elevation", std::move(children)),
                         ctx.tilemap,
                         ctx.npcs);
                 }
-                Logger::InfoF(LOG_SUBSYSTEM, "Cleared elevation at ({}, {})", tileX, tileY);
+                Logger::InfoF(
+                    LOG_SUBSYSTEM, "Cleared elevation and role at ({}, {})", tileX, tileY);
                 m_Mouse.rightMousePressed = true;
             }
             // Structure edit mode, right-click clears structure assignment from tiles
@@ -1150,6 +1272,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
                 std::vector<SetTileStructureIdsCmd::Entry> structEntries;
+                // +1 converts to Tilemap's 1-based structureId layer indexing (see
+                // Tilemap::GetTileStructureId, where layer 0 always returns -1). It is not
+                // the 1-based layer number that log text shows the user.
                 int layer = m_CurrentLayer + 1;
                 if (shiftHeld)
                 {
@@ -1187,63 +1312,55 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
                 m_Mouse.rightMousePressed = true;
             }
-            // No-projection edit mode, right-click clears no-projection flag for current layer
-            // Shift+right-click, flood-fill to clear all connected tiles
-            else if ((m_EditMode == EditMode::NoProjection))
+            // Stance edit mode: right-click resets the tile to Flat.
+            // Shift+right-click flood-clears the connected non-Flat region.
+            //
+            // Both act on the current layer only, matching left-click. The old
+            // no-projection mode cleared all ten layers from one right-click while
+            // its left-click set a single layer - an asymmetry that made per-tile
+            // authoring on a multi-layer cell effectively impossible.
+            else if ((m_EditMode == EditMode::Stance))
             {
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
-                std::vector<LayerFlagEntry> entries;
+                const size_t layer = m_CurrentLayer;
+                std::vector<LayerStanceEntry> entries;
                 if (shiftHeld)
                 {
-                    size_t layerCount = ctx.tilemap.GetLayerCount();
                     int count = FloodFill(
                         ctx.tilemap,
                         tileX,
                         tileY,
                         [&](int cx, int cy)
-                        {
-                            for (size_t li = 0; li < layerCount; ++li)
-                                if (ctx.tilemap.GetLayerNoProjection(cx, cy, li))
-                                    return true;
-                            return false;
-                        },
+                        { return ctx.tilemap.GetLayerStance(cx, cy, layer) != TileStance::Flat; },
                         [&](int cx, int cy)
                         {
-                            for (size_t li = 0; li < layerCount; ++li)
+                            const TileStance oldStance = ctx.tilemap.GetLayerStance(cx, cy, layer);
+                            if (oldStance != TileStance::Flat)
                             {
-                                bool oldF = ctx.tilemap.GetLayerNoProjection(cx, cy, li);
-                                if (oldF)
-                                {
-                                    entries.push_back({cx, cy, li, oldF, false});
-                                    ctx.tilemap.SetLayerNoProjection(cx, cy, li, false);
-                                }
+                                entries.push_back({cx, cy, layer, oldStance, TileStance::Flat});
+                                ctx.tilemap.SetLayerStance(cx, cy, layer, TileStance::Flat);
                             }
                         });
                     Logger::InfoF(LOG_SUBSYSTEM,
-                                  "Cleared no-projection on {} connected tiles (all layers)",
-                                  count);
+                                  "Cleared stance on {} connected tiles (layer {})",
+                                  count,
+                                  layer);
                 }
                 else
                 {
-                    // Clear noProjection on ALL layers at this position
-                    for (size_t li = 0; li < ctx.tilemap.GetLayerCount(); ++li)
+                    const TileStance oldStance = ctx.tilemap.GetLayerStance(tileX, tileY, layer);
+                    if (oldStance != TileStance::Flat)
                     {
-                        bool oldF = ctx.tilemap.GetLayerNoProjection(tileX, tileY, li);
-                        if (oldF)
-                        {
-                            entries.push_back({tileX, tileY, li, oldF, false});
-                            ctx.tilemap.SetLayerNoProjection(tileX, tileY, li, false);
-                        }
+                        entries.push_back({tileX, tileY, layer, oldStance, TileStance::Flat});
+                        ctx.tilemap.SetLayerStance(tileX, tileY, layer, TileStance::Flat);
                     }
-                    Logger::InfoF(LOG_SUBSYSTEM,
-                                  "Cleared no-projection at ({}, {}) all layers",
-                                  tileX,
-                                  tileY);
+                    Logger::InfoF(
+                        LOG_SUBSYSTEM, "Stance at ({}, {}) layer {} -> Flat", tileX, tileY, layer);
                 }
                 if (!entries.empty())
-                    PushEditorCommand(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
+                    PushEditorCommand(std::make_unique<SetTileStancesCmd>(std::move(entries)));
                 m_Mouse.rightMousePressed = true;
             }
             // Y-sort-plus / Y-sort-minus edit modes share the same clear logic.
@@ -1560,7 +1677,8 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
         // Early return to prevent tile placement when tile picker is shown
         if (m_ShowTilePicker)
         {
-            // Update mouse position for preview
+            // Record the cursor. Currently unread - RenderPlacementPreview calls
+            // glfwGetCursorPos itself - so this is debug state only.
             m_Mouse.lastMouseX = mouseX;
             m_Mouse.lastMouseY = mouseY;
             return;  // Don't process tile placement when picker is shown
@@ -1669,7 +1787,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     }
                 }
             }
-            // In NPC placement mode we don't place tiles
+            // NPC placement mode does not place tiles.
             return;
         }
 
@@ -1726,20 +1844,42 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
             {
-                int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
-                if (oldElevation != m_CurrentElevation)
+                const int oldElevation = ctx.tilemap.GetElevation(tileX, tileY);
+                const ElevationRole oldRole =
+                    ctx.tilemap.GetLayerElevationRole(tileX, tileY, m_CurrentLayer);
+                const bool heightChanged = oldElevation != m_CurrentElevation;
+                const bool roleChanged = oldRole != m_CurrentElevationRole;
+
+                // Height and role are independent writes - a click that only changes
+                // one of them must still commit that one. Both share a single stroke
+                // (Begin()'d once, whichever write triggers it first) so mouse-up still
+                // commits one composite undo entry covering whatever actually changed.
+                if ((heightChanged || roleChanged) && !m_ElevationStroke.IsActive())
+                    m_ElevationStroke.Begin();
+
+                if (heightChanged)
                 {
-                    if (!m_ElevationStroke.IsActive())
-                        m_ElevationStroke.Begin();
                     m_ElevationStroke.Touch(tileX, tileY, oldElevation, m_CurrentElevation);
                     ctx.tilemap.SetElevation(tileX, tileY, m_CurrentElevation);
                     MarkDirty();
                 }
+                if (roleChanged)
+                {
+                    m_ElevationStroke.TouchRole(tileX,
+                                                tileY,
+                                                static_cast<std::size_t>(m_CurrentLayer),
+                                                oldRole,
+                                                m_CurrentElevationRole);
+                    ctx.tilemap.SetLayerElevationRole(
+                        tileX, tileY, m_CurrentLayer, m_CurrentElevationRole);
+                    MarkDirty();
+                }
                 Logger::InfoF(LOG_SUBSYSTEM,
-                              "Set elevation at ({}, {}) to {}",
+                              "Set elevation at ({}, {}) to {} pixels, role: {}",
                               tileX,
                               tileY,
-                              m_CurrentElevation);
+                              m_CurrentElevation,
+                              EnumTraits<ElevationRole>::ToString(m_CurrentElevationRole));
             }
             return;
         }
@@ -1814,11 +1954,11 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
                 else if (shiftHeld && !m_Mouse.mousePressed)
                 {
-                    // Shift+click: flood-fill set no-projection and assign to structure
+                    // Shift+click: flood-fill to Structure stance and assign to structure
                     m_Mouse.mousePressed = true;
                     int layer = m_CurrentLayer;
                     int structId = m_CurrentStructureId;
-                    std::vector<LayerFlagEntry> noProjEntries;
+                    std::vector<LayerStanceEntry> stanceEntries;
                     std::vector<SetTileStructureIdsCmd::Entry> structEntries;
                     int count = FloodFill(
                         ctx.tilemap,
@@ -1831,15 +1971,19 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         },
                         [&](int cx, int cy)
                         {
-                            bool oldNP = ctx.tilemap.GetLayerNoProjection(cx, cy, layer);
-                            if (!oldNP)
+                            const TileStance oldStance = ctx.tilemap.GetLayerStance(cx, cy, layer);
+                            if (oldStance != TileStance::Structure)
                             {
-                                noProjEntries.push_back(
-                                    {cx, cy, static_cast<std::size_t>(layer), oldNP, true});
-                                ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
+                                stanceEntries.push_back({cx,
+                                                         cy,
+                                                         static_cast<std::size_t>(layer),
+                                                         oldStance,
+                                                         TileStance::Structure});
+                                ctx.tilemap.SetLayerStance(cx, cy, layer, TileStance::Structure);
                             }
                             if (structId >= 0)
                             {
+                                // layer + 1: structureId accessors index layers 1-based.
                                 int oldSid = ctx.tilemap.GetTileStructureId(cx, cy, layer + 1);
                                 if (oldSid != structId)
                                 {
@@ -1850,17 +1994,18 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         });
                     if (structId >= 0)
                         Logger::InfoF(LOG_SUBSYSTEM,
-                                      "Set no-projection on {} tiles, assigned to structure {}",
+                                      "Set Structure stance on {} tiles, assigned to structure {}",
                                       count,
                                       structId);
                     else
-                        Logger::InfoF(
-                            LOG_SUBSYSTEM, "Set no-projection on {} tiles (no structure)", count);
+                        Logger::InfoF(LOG_SUBSYSTEM,
+                                      "Set Structure stance on {} tiles (no structure)",
+                                      count);
 
                     std::vector<std::unique_ptr<EditorCommand>> children;
-                    if (!noProjEntries.empty())
+                    if (!stanceEntries.empty())
                         children.push_back(
-                            std::make_unique<NoProjectionToggleCmd>(std::move(noProjEntries)));
+                            std::make_unique<SetTileStancesCmd>(std::move(stanceEntries)));
                     if (!structEntries.empty())
                         children.push_back(
                             std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
@@ -1872,19 +2017,25 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 }
                 else if (!ctrlHeld && !shiftHeld && !m_Mouse.mousePressed)
                 {
-                    // Normal click: toggle no-projection on single tile
+                    // Normal click: toggle the single tile between Structure and Flat
                     m_Mouse.mousePressed = true;
-                    bool current = ctx.tilemap.GetLayerNoProjection(tileX, tileY, m_CurrentLayer);
-                    std::vector<LayerFlagEntry> noProjEntries;
+                    // A Prop or Wall here counts as "not yet a structure", so the
+                    // click promotes it and undo restores whatever it was before.
+                    const TileStance oldStance =
+                        ctx.tilemap.GetLayerStance(tileX, tileY, m_CurrentLayer);
+                    const bool current = oldStance == TileStance::Structure;
+                    const TileStance newStance = current ? TileStance::Flat : TileStance::Structure;
+                    std::vector<LayerStanceEntry> stanceEntries;
                     std::vector<SetTileStructureIdsCmd::Entry> structEntries;
-                    noProjEntries.push_back({tileX,
+                    stanceEntries.push_back({tileX,
                                              tileY,
                                              static_cast<std::size_t>(m_CurrentLayer),
-                                             current,
-                                             !current});
-                    ctx.tilemap.SetLayerNoProjection(tileX, tileY, m_CurrentLayer, !current);
+                                             oldStance,
+                                             newStance});
+                    ctx.tilemap.SetLayerStance(tileX, tileY, m_CurrentLayer, newStance);
                     if (m_CurrentStructureId >= 0 && !current)
                     {
+                        // m_CurrentLayer + 1: structureId accessors index layers 1-based.
                         int oldSid =
                             ctx.tilemap.GetTileStructureId(tileX, tileY, m_CurrentLayer + 1);
                         if (oldSid != m_CurrentStructureId)
@@ -1896,14 +2047,14 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         }
                     }
                     Logger::InfoF(LOG_SUBSYSTEM,
-                                  "{} no-projection at ({}, {})",
-                                  current ? "Cleared" : "Set",
+                                  "Stance at ({}, {}) -> {}",
                                   tileX,
-                                  tileY);
+                                  tileY,
+                                  EnumTraits<TileStance>::ToString(newStance));
 
                     std::vector<std::unique_ptr<EditorCommand>> children;
                     children.push_back(
-                        std::make_unique<NoProjectionToggleCmd>(std::move(noProjEntries)));
+                        std::make_unique<SetTileStancesCmd>(std::move(stanceEntries)));
                     if (!structEntries.empty())
                         children.push_back(
                             std::make_unique<SetTileStructureIdsCmd>(std::move(structEntries)));
@@ -1917,9 +2068,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             return;
         }
 
-        // No-projection editing mode, set no-projection flag for current layer
-        // Shift+click, flood-fill to mark all connected tiles in the shape
-        if (m_Active && (m_EditMode == EditMode::NoProjection))
+        // Stance editing mode: paint the selected stance on the current layer.
+        // Shift+click floods the connected shape, exactly as the other flag modes do.
+        if (m_Active && (m_EditMode == EditMode::Stance))
         {
             if (tileX >= 0 && tileX < ctx.tilemap.GetMapWidth() && tileY >= 0 &&
                 tileY < ctx.tilemap.GetMapHeight())
@@ -1927,8 +2078,9 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                 bool shiftHeld = (glfwGetKey(ctx.window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                   glfwGetKey(ctx.window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
 
-                std::vector<LayerFlagEntry> entries;
+                std::vector<LayerStanceEntry> entries;
                 std::size_t layer = static_cast<std::size_t>(m_CurrentLayer);
+                const TileStance target = m_CurrentStance;
 
                 if (shiftHeld)
                 {
@@ -1944,36 +2096,37 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                         },
                         [&](int cx, int cy)
                         {
-                            bool oldF = ctx.tilemap.GetLayerNoProjection(cx, cy, layer);
-                            if (!oldF)
+                            const TileStance oldStance = ctx.tilemap.GetLayerStance(cx, cy, layer);
+                            if (oldStance != target)
                             {
-                                entries.push_back({cx, cy, layer, oldF, true});
-                                ctx.tilemap.SetLayerNoProjection(cx, cy, layer, true);
+                                entries.push_back({cx, cy, layer, oldStance, target});
+                                ctx.tilemap.SetLayerStance(cx, cy, layer, target);
                             }
                         });
                     Logger::InfoF(LOG_SUBSYSTEM,
-                                  "Set no-projection on {} connected tiles (layer {})",
+                                  "Set {} on {} connected tiles (layer {})",
+                                  EnumTraits<TileStance>::ToString(target),
                                   count,
                                   layer + 1);
                 }
                 else
                 {
-                    // Single tile: set noProjection on current layer only
-                    bool oldF = ctx.tilemap.GetLayerNoProjection(tileX, tileY, layer);
-                    if (!oldF)
+                    const TileStance oldStance = ctx.tilemap.GetLayerStance(tileX, tileY, layer);
+                    if (oldStance != target)
                     {
-                        entries.push_back({tileX, tileY, layer, oldF, true});
-                        ctx.tilemap.SetLayerNoProjection(tileX, tileY, layer, true);
+                        entries.push_back({tileX, tileY, layer, oldStance, target});
+                        ctx.tilemap.SetLayerStance(tileX, tileY, layer, target);
                     }
                     Logger::InfoF(LOG_SUBSYSTEM,
-                                  "Set no-projection at ({}, {}) on layer {}",
+                                  "Set {} at ({}, {}) on layer {}",
+                                  EnumTraits<TileStance>::ToString(target),
                                   tileX,
                                   tileY,
                                   m_CurrentLayer + 1);
                 }
 
                 if (!entries.empty())
-                    PushEditorCommand(std::make_unique<NoProjectionToggleCmd>(std::move(entries)));
+                    PushEditorCommand(std::make_unique<SetTileStancesCmd>(std::move(entries)));
             }
             return;
         }
@@ -2180,7 +2333,7 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
                     {
                         for (size_t layer = 0; layer < ctx.tilemap.GetLayerCount(); layer++)
                         {
-                            if (ctx.tilemap.GetLayerNoProjection(tx, ty, layer))
+                            if (ctx.tilemap.GetLayerStance(tx, ty, layer) == TileStance::Structure)
                             {
                                 hasNoProjection = true;
                                 break;
@@ -2217,7 +2370,8 @@ void Editor::ProcessMouseInput(const EditorContext& ctx)
             m_ElevationStroke.Commit(m_UndoStack);
     }
 
-    // Update mouse position for preview
+    // Record the cursor. Currently unread - RenderPlacementPreview calls
+    // glfwGetCursorPos itself - so this is debug state only.
     m_Mouse.lastMouseX = mouseX;
     m_Mouse.lastMouseY = mouseY;
 }
