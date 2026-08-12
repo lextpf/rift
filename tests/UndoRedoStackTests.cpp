@@ -635,6 +635,41 @@ TEST_F(StrokeAccumulatorTest, Elevation_RoundTripDrag)
     EXPECT_EQ(tilemap.GetElevation(1, 0), 4);
 }
 
+TEST_F(StrokeAccumulatorTest, ElevationAndRole_CommitAsOneUndoEntry)
+{
+    // H mode paints a height and a role in one click, so ONE Ctrl+Z must undo
+    // both. Two separate undo entries would make the author press undo twice to
+    // reverse a single action.
+    ElevationStrokeAccum accum;
+    accum.Begin();
+    accum.Touch(1, 1, 0, 6);
+    accum.TouchRole(1, 1, 2, ElevationRole::Ground, ElevationRole::Raised);
+    tilemap.SetElevation(1, 1, 6);
+    tilemap.SetLayerElevationRole(1, 1, 2, ElevationRole::Raised);
+    accum.Commit(stack);
+
+    EXPECT_EQ(stack.UndoSize(), 1u) << "the pair landed as two undo entries";
+
+    EXPECT_TRUE(stack.Undo(tilemap, npcs));
+    EXPECT_EQ(tilemap.GetElevation(1, 1), 0);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(1, 1, 2), ElevationRole::Ground);
+}
+
+TEST_F(StrokeAccumulatorTest, ElevationOnlyStrokeStillCommitsASingleCommand)
+{
+    // The height-only path must be unchanged - Elevation_RoundTripDrag depends on
+    // it, and a stroke that touched no role must not gain a pointless composite.
+    ElevationStrokeAccum accum;
+    accum.Begin();
+    accum.Touch(2, 2, 0, 4);
+    tilemap.SetElevation(2, 2, 4);
+    accum.Commit(stack);
+
+    EXPECT_EQ(stack.UndoSize(), 1u);
+    EXPECT_TRUE(stack.Undo(tilemap, npcs));
+    EXPECT_EQ(tilemap.GetElevation(2, 2), 0);
+}
+
 TEST_F(StrokeAccumulatorTest, Multiple_LayersIndependentlyTracked)
 {
     // Same (x, y) on different layers should not dedup against each other.
@@ -763,13 +798,28 @@ protected:
     void SetUp() override { tilemap.SetTilemapSize(8, 8, false); }
 };
 
-TEST_F(FlagToggleCmdTest, NoProjection_RoundTrip)
+TEST_F(FlagToggleCmdTest, Stance_RoundTrip)
 {
-    NoProjectionToggleCmd cmd{std::vector<LayerFlagEntry>{{2, 2, 0, /*old=*/false, /*new=*/true}}};
+    SetTileStancesCmd cmd{std::vector<LayerStanceEntry>{
+        {2, 2, 0, /*old=*/TileStance::Flat, /*new=*/TileStance::Structure}}};
     cmd.Apply(tilemap, npcs);
-    EXPECT_TRUE(tilemap.GetLayerNoProjection(2, 2, 0));
+    EXPECT_EQ(tilemap.GetLayerStance(2, 2, 0), TileStance::Structure);
     cmd.Revert(tilemap, npcs);
-    EXPECT_FALSE(tilemap.GetLayerNoProjection(2, 2, 0));
+    EXPECT_EQ(tilemap.GetLayerStance(2, 2, 0), TileStance::Flat);
+}
+
+TEST_F(FlagToggleCmdTest, Stance_RoundTripBetweenTwoNonFlatValues)
+{
+    // Undo has to restore the PREVIOUS stance, not just clear the cell. A bool
+    // flag could only ever go back to false; re-marking a Wall as a Prop and
+    // undoing must give the Wall back.
+    tilemap.SetLayerStance(4, 4, 2, TileStance::Wall);
+    SetTileStancesCmd cmd{std::vector<LayerStanceEntry>{
+        {4, 4, 2, /*old=*/TileStance::Wall, /*new=*/TileStance::Prop}}};
+    cmd.Apply(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerStance(4, 4, 2), TileStance::Prop);
+    cmd.Revert(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerStance(4, 4, 2), TileStance::Wall);
 }
 
 TEST_F(FlagToggleCmdTest, YSortPlus_RoundTrip)
@@ -793,16 +843,16 @@ TEST_F(FlagToggleCmdTest, YSortMinus_RoundTrip)
 
 TEST_F(FlagToggleCmdTest, MultipleEntries_AllRoundTrip)
 {
-    std::vector<LayerFlagEntry> entries;
+    std::vector<LayerStanceEntry> entries;
     for (int i = 0; i < 5; ++i)
-        entries.push_back({i, 0, 0, false, true});
-    NoProjectionToggleCmd cmd{std::move(entries)};
+        entries.push_back({i, 0, 0, TileStance::Flat, TileStance::Structure});
+    SetTileStancesCmd cmd{std::move(entries)};
     cmd.Apply(tilemap, npcs);
     for (int i = 0; i < 5; ++i)
-        EXPECT_TRUE(tilemap.GetLayerNoProjection(i, 0, 0));
+        EXPECT_EQ(tilemap.GetLayerStance(i, 0, 0), TileStance::Structure);
     cmd.Revert(tilemap, npcs);
     for (int i = 0; i < 5; ++i)
-        EXPECT_FALSE(tilemap.GetLayerNoProjection(i, 0, 0));
+        EXPECT_EQ(tilemap.GetLayerStance(i, 0, 0), TileStance::Flat);
 }
 
 // --- SetTileAnimationCmd ----------------------------------------------------
@@ -876,6 +926,42 @@ TEST_F(FlagToggleCmdTest, SetTileStructureIds_RoundTrip)
     EXPECT_EQ(tilemap.GetTileStructureId(3, 3, 1), -1);
 }
 
+// --- SetElevationRolesCmd ----------------------------------------------------
+
+TEST_F(FlagToggleCmdTest, ElevationRole_RoundTrip)
+{
+    SetElevationRolesCmd cmd{std::vector<LayerElevationRoleEntry>{
+        {2, 2, 0, /*old=*/ElevationRole::Ground, /*new=*/ElevationRole::Raised}}};
+    cmd.Apply(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(2, 2, 0), ElevationRole::Raised);
+    cmd.Revert(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(2, 2, 0), ElevationRole::Ground);
+}
+
+TEST_F(FlagToggleCmdTest, ElevationRole_RoundTripBetweenTwoNonGroundValues)
+{
+    // Undo must restore the PREVIOUS role, not merely clear the cell. A bool pair
+    // could only ever go back to Ground; re-marking a Raised cell as a Ramp and
+    // undoing has to give Raised back. This is why the entry carries an enum pair.
+    tilemap.SetLayerElevationRole(4, 4, 2, ElevationRole::Raised);
+    SetElevationRolesCmd cmd{std::vector<LayerElevationRoleEntry>{
+        {4, 4, 2, ElevationRole::Raised, ElevationRole::Ramp}}};
+    cmd.Apply(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(4, 4, 2), ElevationRole::Ramp);
+    cmd.Revert(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(4, 4, 2), ElevationRole::Raised);
+}
+
+TEST_F(FlagToggleCmdTest, ElevationRole_IsPerLayer)
+{
+    // The entry carries a layer index; writing one layer must not disturb another.
+    SetElevationRolesCmd cmd{std::vector<LayerElevationRoleEntry>{
+        {5, 5, 3, ElevationRole::Ground, ElevationRole::Ramp}}};
+    cmd.Apply(tilemap, npcs);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(5, 5, 3), ElevationRole::Ramp);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(5, 5, 0), ElevationRole::Ground);
+}
+
 // --- CompositeCmd -----------------------------------------------------------
 
 TEST_F(FlagToggleCmdTest, CompositeCmd_AppliesAllInOrder)
@@ -883,18 +969,18 @@ TEST_F(FlagToggleCmdTest, CompositeCmd_AppliesAllInOrder)
     int sid = tilemap.AddNoProjectionStructure({0, 0}, {64, 64});
 
     std::vector<std::unique_ptr<EditorCommand>> children;
-    children.push_back(std::make_unique<NoProjectionToggleCmd>(
-        std::vector<LayerFlagEntry>{{1, 1, 0, false, true}}));
+    children.push_back(std::make_unique<SetTileStancesCmd>(
+        std::vector<LayerStanceEntry>{{1, 1, 0, TileStance::Flat, TileStance::Structure}}));
     children.push_back(std::make_unique<SetTileStructureIdsCmd>(
         std::vector<SetTileStructureIdsCmd::Entry>{{1, 1, 1, -1, sid}}));
 
     CompositeCmd cmd{"Structure assign", std::move(children)};
     cmd.Apply(tilemap, npcs);
-    EXPECT_TRUE(tilemap.GetLayerNoProjection(1, 1, 0));
+    EXPECT_EQ(tilemap.GetLayerStance(1, 1, 0), TileStance::Structure);
     EXPECT_EQ(tilemap.GetTileStructureId(1, 1, 1), sid);
 
     cmd.Revert(tilemap, npcs);
-    EXPECT_FALSE(tilemap.GetLayerNoProjection(1, 1, 0));
+    EXPECT_EQ(tilemap.GetLayerStance(1, 1, 0), TileStance::Flat);
     EXPECT_EQ(tilemap.GetTileStructureId(1, 1, 1), -1);
 }
 
@@ -1111,10 +1197,11 @@ TEST_F(PasteRegionCmdTest, Paste_OutOfBounds_ClampsAndRevertWorks)
     EXPECT_EQ(tilemap.GetLayerTile(7, 7, 0), 999);
 }
 
-TEST_F(PasteRegionCmdTest, Paste_PreservesCollisionAndElevation)
+TEST_F(PasteRegionCmdTest, Paste_PreservesCollisionElevationAndRole)
 {
     tilemap.SetTileCollision(0, 0, true);
     tilemap.SetElevation(0, 0, 16);
+    tilemap.SetLayerElevationRole(0, 0, 0, ElevationRole::Raised);
     auto region = PasteRegionCmd::SnapshotRegion(tilemap, 0, 0, 1, 1);
 
     tilemap.SetTileCollision(4, 4, false);
@@ -1124,10 +1211,12 @@ TEST_F(PasteRegionCmdTest, Paste_PreservesCollisionAndElevation)
     cmd.Apply(tilemap, npcs);
     EXPECT_TRUE(tilemap.GetTileCollision(4, 4));
     EXPECT_EQ(tilemap.GetElevation(4, 4), 16);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(4, 4, 0), ElevationRole::Raised);
 
     cmd.Revert(tilemap, npcs);
     EXPECT_FALSE(tilemap.GetTileCollision(4, 4));
     EXPECT_EQ(tilemap.GetElevation(4, 4), 0);
+    EXPECT_EQ(tilemap.GetLayerElevationRole(4, 4, 0), ElevationRole::Ground);
 }
 
 TEST_F(PasteRegionCmdTest, EmptyClipboard_NoOp)
