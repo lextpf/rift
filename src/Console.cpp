@@ -291,7 +291,7 @@ std::vector<ConsoleCommandRegistry::MatchEntry> ConsoleCommandRegistry::MatchPre
     {
         if (startsWith(name))
         {
-            // Canonical match: empty canonical signals "this IS the canonical".
+            // Canonical match: empty canonical signals "this is the canonical".
             out.push_back(MatchEntry{name, ""});
         }
         for (const auto& alias : cmd.aliases)
@@ -394,7 +394,7 @@ Console::SuggestionResult Console::ComputeSuggestions(std::size_t maxCount) cons
     {
         return result;
     }
-    // tokens[0] is the verb; positional args follow. We're typing arg index
+    // tokens[0] is the verb; positional args follow. The cursor sits at arg index
     // `tokens.size() - 1` (zero for the first arg after the verb).
     const std::size_t argIndex = tokens.size() - 1;
     auto candidates = cmd->argCompletions(argIndex);
@@ -711,14 +711,36 @@ void Console::Submit(std::string_view line)
     cmd->handler(args, *this);
 }
 
+// Overlay layout. The projection installed below is glm::ortho(0, w, h, 0):
+// the origin is the top-left corner and y grows DOWNWARD, and DrawText takes y
+// as the glyph baseline, not the top edge of the row.
+//
+//  y=0  +-------------------------------------------+ <- overlay top
+//   |   |  TOP_PAD                                  |
+//   |   |  scrollTop = TOP_PAD + ascent   ...oldest |   scrollback baselines
+//   |   |    :                                ^     |   are emitted upward
+//   |   |    :                                |     |   from scrollBottom, so
+//   v   |  scrollBottom = promptBaseline - lineH    |   row i sits at
+//       |  > input_    <- promptBaseline            |   scrollBottom - i*lineH
+//       |                 = overlayH - BOTTOM_PAD   |
+//       +===========================================+ <- separator, Half only
+//          (world stays visible below in Half mode)     overlayH = h*0.5 Half
+//                                                       overlayH = h     Full
+//
+// visibleLines = (scrollBottom - scrollTop) / lineH, cached in
+// m_LastVisibleLines for ScrollToOutputTop.
+//
+// The dropdown is anchored under the word being completed:
+// boxX = LEFT_PAD + width("> " + input[0 .. wordStart]), slid left when it
+// would clip the right edge. It sits BELOW the prompt in Half
+// (boxY = promptBaseline + DROPDOWN_PAD + DROPDOWN_GAP) and ABOVE it in Full,
+// where there is no room below (boxY = promptBaseline - ascent - boxH - GAP).
 void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
 {
     if (m_State == State::Closed)
     {
         return;
     }
-
-    IRenderer::PerspectiveSuspendGuard guard(renderer);
 
     const float w = static_cast<float>(screenWidth);
     const float h = static_cast<float>(screenHeight);
@@ -750,7 +772,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
     const float ascent = renderer.GetTextAscent(TEXT_SCALE);
     const float lineH = ascent * LINE_GAP_FACTOR;
 
-    // IRenderer::DrawText takes y as the glyph baseline (see IRenderer.h).
+    // IRenderer::DrawText takes y as the glyph baseline (see IRenderer.hpp).
 
     // Prompt + input + cursor at the bottom of the overlay.
     const float promptBaseline = overlayH - BOTTOM_PAD;
@@ -820,7 +842,7 @@ void Console::Render(IRenderer& renderer, int screenWidth, int screenHeight)
 
             // Width is sized to the widest *visible* item, including its
             // " -> canonical" annotation when the row represents an alias.
-            // Recomputed every frame so it matches the rows actually shown.
+            // Recomputed every frame so it matches the rows shown.
             constexpr std::string_view kAnnotationSep = " -> ";
             float widest = 0.0f;
             for (std::size_t i = 0; i < visibleRows; ++i)
