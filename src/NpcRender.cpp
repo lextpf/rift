@@ -1,11 +1,13 @@
 #include "NpcRender.hpp"
 
 #include "AnimationState.hpp"
+#include "CameraFacing.hpp"
 #include "CharacterConstants.hpp"
 #include "CharacterRender.hpp"
 #include "Elevation.hpp"
 #include "Facing.hpp"
 #include "NpcSprite.hpp"
+#include "SceneMath.hpp"
 #include "Texture.hpp"
 #include "TextureStore.hpp"
 #include "Transform.hpp"
@@ -79,7 +81,7 @@ const Texture& NpcRender::ResolveRenderSheet(const ecs::registry& world,
 
 // Pipeline: pick UVs (SpriteCoords) -> resolve sheet + fold atlas offset
 // (ResolveRenderSheet) -> place with elevation (ComputeRenderPos) -> draw the
-// requested half (DrawPart, perspective suspended).
+// requested half (DrawPart).
 void NpcRender::DrawHalf(const ecs::registry& world,
                          IRenderer& renderer,
                          glm::vec2 cameraPos,
@@ -94,16 +96,46 @@ void NpcRender::DrawHalf(const ecs::registry& world,
                                static_cast<float>(CharacterConstants::SPRITE_HEIGHT));
     glm::vec2 spriteCoords = SpriteCoords(anim.currentFrame, facing.dir);
     const Texture& sheet = ResolveRenderSheet(world, sprite, spriteCoords);
-    glm::vec2 renderPos = CharacterRender::ComputeRenderPos(
-        renderer, xf.position, cameraPos, elev.offset, spriteSize);
+    glm::vec2 renderPos =
+        CharacterRender::ComputeRenderPos(xf.position, cameraPos, elev.offset, spriteSize);
     CharacterRender::DrawPart(
         renderer,
         sheet,
         renderPos,
         spriteCoords,
         spriteSize,
-        topHalf ? CharacterRender::Part::TopHalf : CharacterRender::Part::BottomHalf,
-        /*suspendPerspective=*/true);
+        topHalf ? CharacterRender::Part::TopHalf : CharacterRender::Part::BottomHalf);
+}
+
+// 3D pipeline: same sheet/UV resolution as DrawHalf, but the feet anchor stays in
+// world space and the elevation lift becomes real scene height rather than a
+// pre-projection screen nudge.
+void NpcRender::Draw3D(const ecs::registry& world,
+                       IRenderer& renderer,
+                       const billboard::Orientation& orientation,
+                       const Transform& xf,
+                       const Elevation& elev,
+                       const Facing& facing,
+                       const AnimationState& anim,
+                       const NpcSprite& sprite)
+{
+    const glm::vec2 spriteSize(static_cast<float>(CharacterConstants::SPRITE_WIDTH),
+                               static_cast<float>(CharacterConstants::SPRITE_HEIGHT));
+
+    // Sheet rows are screen directions: the row is picked from the facing
+    // rotated into the camera's frame, using the billboard's own yaw so the row
+    // agrees with how far the quad turned. The stored Facing is untouched.
+    const CharacterDirection screenDir =
+        cameraFacing::ScreenFacing(facing.dir, orientation.yawRadians);
+
+    glm::vec2 spriteCoords = SpriteCoords(anim.currentFrame, screenDir);
+    const Texture& sheet = ResolveRenderSheet(world, sprite, spriteCoords);
+
+    // Elevation::offset only - see the note in PlayerRender::Draw3D.
+    const glm::vec3 footCenter = sceneMath::ToScene(xf.position, elev.offset);
+
+    CharacterRender::DrawBillboard(
+        renderer, sheet, footCenter, spriteCoords, spriteSize, orientation);
 }
 
 // Type id = the sprite's filename stem: strip any directory, then a trailing
