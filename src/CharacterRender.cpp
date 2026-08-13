@@ -1,20 +1,44 @@
 #include "CharacterRender.hpp"
 
 #include "IRenderer.hpp"
+#include "RenderModes.hpp"
+#include "SceneMath.hpp"
 
 namespace CharacterRender
 {
-glm::vec2 ComputeRenderPos(IRenderer& renderer,
-                           glm::vec2 feetWorld,
+void DrawBillboard(IRenderer& renderer,
+                   const Texture& sheet,
+                   glm::vec3 footCenter,
+                   glm::vec2 spriteCoords,
+                   glm::vec2 spriteSize,
+                   const billboard::Orientation& orientation)
+{
+    glm::vec3 corners[sceneMath::QUAD_CORNER_COUNT];
+    billboard::MakeQuad(footCenter, spriteSize, orientation, corners);
+
+    // flipY = false for the same reason DrawPart uses it: these sheets, and the
+    // atlas offsets baked by PackAdditionalSheets, are already in GL row space.
+    // Characters draw in the opaque pass - their sprites are hard-edged cutouts,
+    // so the alpha test gives them correct per-pixel occlusion with no sorting.
+    renderer.DrawQuad3D(sheet,
+                        corners,
+                        spriteCoords,
+                        spriteSize,
+                        glm::vec4(1.0f),
+                        renderModes::BlendMode::Alpha,
+                        renderModes::DepthMode::TestAndWrite,
+                        /*flipY=*/false);
+}
+
+glm::vec2 ComputeRenderPos(glm::vec2 feetWorld,
                            glm::vec2 cameraPos,
                            float elevationOffset,
                            glm::vec2 spriteSize)
 {
-    // Screen-space bottom-center, elevation applied BEFORE projection (moves the
-    // sprite up on stairs), then converted from bottom-center to top-left.
+    // Screen-space bottom-center, elevation raising the sprite on stairs, then
+    // converted from bottom-center to top-left.
     glm::vec2 bottomCenter = feetWorld - cameraPos;
     bottomCenter.y -= elevationOffset;
-    bottomCenter = renderer.ProjectPointSafe(bottomCenter);
     return bottomCenter - glm::vec2(spriteSize.x * 0.5f, spriteSize.y);
 }
 
@@ -23,8 +47,7 @@ void DrawPart(IRenderer& renderer,
               glm::vec2 renderPos,
               glm::vec2 spriteCoords,
               glm::vec2 spriteSize,
-              Part part,
-              bool suspendPerspective)
+              Part part)
 {
     glm::vec2 drawPos = renderPos;
     glm::vec2 drawSize = spriteSize;
@@ -49,17 +72,7 @@ void DrawPart(IRenderer& renderer,
     // the renderer's UV math lands on the packed region with flipY off.
     constexpr bool useAtlasFlip = false;
 
-    if (suspendPerspective)
-    {
-        // Position is already projected; don't double-project.
-        IRenderer::PerspectiveSuspendGuard guard(renderer);
-        renderer.DrawSpriteRegion(
-            sheet, drawPos, drawSize, drawCoords, drawSize, 0.0f, glm::vec3(1.0f), useAtlasFlip);
-    }
-    else
-    {
-        renderer.DrawSpriteRegion(
-            sheet, drawPos, drawSize, drawCoords, drawSize, 0.0f, glm::vec3(1.0f), useAtlasFlip);
-    }
+    renderer.DrawSpriteRegion(
+        sheet, drawPos, drawSize, drawCoords, drawSize, 0.0f, glm::vec3(1.0f), useAtlasFlip);
 }
 }  // namespace CharacterRender
