@@ -29,9 +29,13 @@ namespace
 {
 constexpr const char* LOG_SUBSYSTEM = "Game";
 
-constexpr float INTERACTION_RANGE = 32.0f;   ///< NPC interaction range in pixels (2 tiles)
-constexpr float COLLISION_DISTANCE = 20.0f;  ///< Very close = colliding with NPC
-constexpr float DIRECTION_LENIENCY = 8.0f;   ///< Pixels of directional leniency when very close
+// NPC interaction range in world pixels (2 tiles at 16px).
+constexpr float INTERACTION_RANGE = 32.0f;
+// Below this center-to-center distance the NPC counts as "very close", which
+// relaxes the facing test to DIRECTION_LENIENCY instead of exact tile alignment.
+constexpr float COLLISION_DISTANCE = 20.0f;
+// Pixels of directional slack allowed by that relaxed facing test.
+constexpr float DIRECTION_LENIENCY = 8.0f;
 }  // namespace
 
 void Game::ProcessInput(float deltaTime)
@@ -44,6 +48,13 @@ void Game::ProcessInput(float deltaTime)
     }
     if (m_Console.IsOpen())
     {
+        // Input capture skips ProcessPlayerMovement below. Explicitly clear the
+        // latched motor and animation state; otherwise Update() keeps advancing
+        // the walk cycle from the last non-zero velocity while position is frozen.
+        if (m_GameMode == GameMode::Playing)
+        {
+            PlayerSystem::Stop(m_World, m_PlayerEntity);
+        }
         PumpConsoleKeys();
         return;  // Suppress player movement, editor toggles, F-keys, etc.
     }
@@ -78,6 +89,50 @@ void Game::ProcessInput(float deltaTime)
             m_MenuLastMouseY = -1.0;
             m_MenuMouseLeftPrev = true;
             return;
+        }
+    }
+
+    // Mouse-drag camera orbit. Gameplay only, and only on the 3D path: nothing
+    // else in gameplay uses the left button (the editor's own bindings land when
+    // its overlays move off the flat pipeline), and the flat renderer would
+    // ignore the angles anyway, leaving movement rotated against a view that
+    // never turned.
+    if (m_World3DEnabled && !m_Editor.IsActive())
+    {
+        const bool orbiting = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+
+        double cursorX = 0.0;
+        double cursorY = 0.0;
+        glfwGetCursorPos(m_Window, &cursorX, &cursorY);
+
+        if (orbiting)
+        {
+            if (m_CameraDragActive)
+            {
+                const glm::vec2 dragPixels(static_cast<float>(cursorX - m_CameraDragCursor.x),
+                                           static_cast<float>(cursorY - m_CameraDragCursor.y));
+
+                cameraRig::OrbitAngles angles;
+                angles.yawRadians = m_CameraYaw;
+                angles.pitchRadians = m_CameraPitch;
+                angles = cameraRig::ApplyOrbitDrag(angles,
+                                                   dragPixels,
+                                                   glm::vec2(static_cast<float>(m_ScreenWidth),
+                                                             static_cast<float>(m_ScreenHeight)));
+
+                // ApplyOrbitDrag already wrapped and clamped, so assign directly
+                // rather than going through SetCameraYaw/SetCameraPitch.
+                m_CameraYaw = angles.yawRadians;
+                m_CameraPitch = angles.pitchRadians;
+                // Classic and DS pin their angles; dragging means a free orbit.
+                m_CameraPreset = cameraRig::Preset::Free;
+            }
+            m_CameraDragActive = true;
+            m_CameraDragCursor = {cursorX, cursorY};
+        }
+        else
+        {
+            m_CameraDragActive = false;
         }
     }
 
@@ -169,8 +224,10 @@ void Game::ProcessInput(float deltaTime)
         }
     }
 
-    // B toggles bicycle mode (2.25x base speed; see CharacterConstants::BICYCLE_SPEED_MULTIPLIER),
-    // center-only collision, may use a different sprite sheet.
+    // B toggles bicycle mode (2.25x base speed; see CharacterConstants::BICYCLE_SPEED_MULTIPLIER)
+    // and swaps to the bicycle sprite sheet. It does not change collision: the feet
+    // hitbox is identical in every movement mode, and CollisionSystem never reads
+    // `isBicycling`.
     if (!m_Editor.IsActive() && m_KeyB.JustPressed(m_Window))
     {
         bool currentBicycling = m_World.get<PlayerModes>(m_PlayerEntity).isBicycling;
@@ -272,6 +329,7 @@ void Game::ProcessInput(float deltaTime)
         !m_DialogueUi.snap.active && m_KeyF.JustPressed(m_Window))
     {
         glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
+        const SupportSurface playerSurface = m_World.get<Elevation>(m_PlayerEntity).surface;
         Direction playerDir = m_World.get<Facing>(m_PlayerEntity).dir;
 
         int playerTileX = TileMath::TileIndex(playerPos.x, static_cast<float>(TILE_PIXEL_SIZE));
@@ -300,12 +358,12 @@ void Game::ProcessInput(float deltaTime)
 
         // First NPC in range + roughly in front triggers the dialogue snap. each<>
         // can't break, so a flag short-circuits the rest once one is chosen
-        // (iteration order matches the old EntityStore::Entities pool order).
+        // (iteration follows registry dense order, the same order EntityStore::Entities gives).
         bool dialogueStarted = false;
-        m_World.each<const Transform, const NpcTag>(
-            [&](ecs::entity npcE, const Transform& npcTransform)
+        m_World.each<const Transform, const Elevation, const NpcTag>(
+            [&](ecs::entity npcE, const Transform& npcTransform, const Elevation& npcElevation)
             {
-                if (dialogueStarted)
+                if (dialogueStarted || npcElevation.surface != playerSurface)
                     return;
                 glm::vec2 npcPos = npcTransform.position;
                 float distance = glm::length(npcPos - playerPos);
@@ -419,7 +477,7 @@ void Game::ProcessInput(float deltaTime)
                         playerTileY = TileMath::StandingTileRow(
                             playerPos.y, static_cast<float>(TILE_PIXEL_SIZE));
 
-                        // Use the new NPC tile coordinates so we look for a snap spot
+                        // Use the new NPC tile coordinates so the search for a snap spot
                         // relative to where the NPC ended up.
                         npcTileY = snapTileY;
 
@@ -540,6 +598,13 @@ void Game::ProcessInput(float deltaTime)
     }
 
     ProcessDialogueInput();
+
+    // WASD stays world-absolute even when the camera has orbited: W is always
+    // map-north, never "away from the camera". Deliberate - it keeps movement
+    // predictable against the tile grid the collision and navigation maps are
+    // built on, and matches how the flat pipeline has always behaved. Only the
+    // sprite row is camera-relative (see cameraFacing::ScreenFacing), so a
+    // character walking north still shows the correct side to the viewer.
     ProcessPlayerMovement(moveDirection, deltaTime);
 
     // Process mouse input for editor
@@ -593,24 +658,25 @@ void Game::ProcessPlayerMovement(glm::vec2 moveDirection, float deltaTime)
 
         // Reuses the pre-allocated member (no per-frame alloc). The ECS analog
         // is world.each<const Transform, const NpcTag>.
-        BuildNpcFeet(m_World, m_NpcPositions);
+        BuildNpcCollisionBodies(m_World, m_NpcBodies);
 
         // No-clip bypasses tile + NPC collision via null pointers; Move() and
         // CollisionSystem::HandleStuckRecovery both handle null safely.
         const Tilemap* tilemap =
             m_World.get<PlayerModes>(m_PlayerEntity).noClip ? nullptr : &m_Tilemap;
-        const std::vector<glm::vec2>* npcPositions =
-            m_World.get<PlayerModes>(m_PlayerEntity).noClip ? nullptr : &m_NpcPositions;
-        PlayerSystem::Move(
-            m_World, m_PlayerEntity, moveDirection, deltaTime, tilemap, npcPositions);
+        const std::vector<CharacterCollisionBody>* npcBodies =
+            m_World.get<PlayerModes>(m_PlayerEntity).noClip ? nullptr : &m_NpcBodies;
+        PlayerSystem::Move(m_World, m_PlayerEntity, moveDirection, deltaTime, tilemap, npcBodies);
 
-        // Derive the player's logical plane from this frame's move, mirroring the NPC
-        // path in NpcAiSystem::UpdateAll. Uses m_Tilemap directly (not the null no-clip
-        // collision tilemap) so elevation still tracks while no-clipping.
-        CharacterKinematics::DerivePlane(m_World.get<Elevation>(m_PlayerEntity),
-                                         beforeMove,
-                                         m_World.get<Transform>(m_PlayerEntity).position,
-                                         m_Tilemap);
+        // Collision-aware movement already committed support atomically. No-clip
+        // has no movement probe, so derive its support from the completed move.
+        if (!tilemap)
+        {
+            CharacterKinematics::DerivePlane(m_World.get<Elevation>(m_PlayerEntity),
+                                             beforeMove,
+                                             m_World.get<Transform>(m_PlayerEntity).position,
+                                             m_Tilemap);
+        }
     }
     else if (m_DialogueUi.inDialogue || m_DialogueUi.snap.active)
     {
