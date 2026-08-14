@@ -5,13 +5,20 @@
 #include "Game.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "AnimationState.hpp"
+#include "Billboard.hpp"
 #include "CharacterConstants.hpp"
 #include "Dialogue.hpp"
 #include "DrawTracer.hpp"
+#include "Elevation.hpp"
+#include "Facing.hpp"
 #include "Logger.hpp"
+#include "NpcRender.hpp"
 #include "NpcSprite.hpp"
 #include "NpcTag.hpp"
 #include "ParticleSystem.hpp"
+#include "PlayerModes.hpp"
+#include "PlayerRender.hpp"
 #include "PlayerSprite.hpp"
 #include "PlayerSystem.hpp"
 #include "PostFXParams.hpp"
@@ -77,7 +84,10 @@ constexpr float MENU_LINE_HEIGHT = 48.0f;
 // default size and scales proportionally as the window grows/shrinks.
 constexpr float MENU_REFERENCE_WIDTH = 1520.0f;
 constexpr float MENU_REFERENCE_HEIGHT = 800.0f;
-constexpr float VERSION_TEXT_SCALE = 0.7f;
+constexpr const char* FOOTER_WATERMARK_TEXT = "@lextpf";
+constexpr float FOOTER_TEXT_SCALE = 0.7f;
+constexpr float FOOTER_HORIZONTAL_MARGIN = 16.0f;
+constexpr float FOOTER_BASELINE_OFFSET = 28.0f;
 constexpr float PAUSE_HEADER_SCALE = 1.8f;
 constexpr float MODAL_TEXT_SCALE = 1.0f;
 
@@ -348,7 +358,7 @@ void Game::PackCharactersIntoAtlas()
     sheets.reserve(EntityStore::Count(m_World) + 3 + 8);
 
     // De-duplicate NPC types - multiple NPCs of the same type share one
-    // sheet, so we only need one atlas region per type. First-seen wins.
+    // sheet, so only one atlas region per type is needed. First-seen wins.
     std::unordered_set<std::string> seenTypes;
     m_World.each<const Dialogue, const NpcSprite, const NpcTag>(
         [&](const Dialogue& dial, const NpcSprite& sprite)
@@ -558,9 +568,9 @@ void Game::LoadTitleScreenWorld()
     m_WeatherDirector.Reset(m_TimeManager);
     m_WeatherDirector.SetEnabled(false);  // title weather is scripted, not directed
     m_TimeManager.SetTime(TITLE_WORLD_TIME_OF_DAY);
-    // AuroraNight enables aurora curtains + floating wisps (SkyRenderer reads
+    // Aurora enables aurora curtains + floating wisps (SkyRenderer reads
     // weather each frame). Cherry blossoms still drift via the title zone.
-    m_TimeManager.SetWeather(WeatherState::AuroraNight);
+    m_TimeManager.SetWeather(WeatherState::Aurora);
 
     // Bump per-zone cap for a denser backdrop (one zone per type, whole-map).
     // Reset to gameplay value when a real game world loads.
@@ -635,7 +645,7 @@ void Game::RebuildTitleMenu()
 
 void Game::ProcessTitleInput()
 {
-    // Lazy first-time init so we don't have to reach into Initialize.
+    // Lazy first-time init, which avoids reaching into Initialize.
     // Cheap to repeat (size never grows).
     if (m_TitleMenu.enabled.size() != static_cast<size_t>(TITLE_ITEM_COUNT))
     {
@@ -867,8 +877,8 @@ void Game::ProcessPauseInput()
         case PAUSE_QUIT_TO_TITLE:
         {
             Logger::Info(LOG_SUBSYSTEM, "Quit to Title (no save)");
-            // Restore the cosmetic title world so the menu sits over grass +
-            // fireflies again instead of the abandoned session.
+            // Restore the cosmetic title world so the menu sits over the grass +
+            // ambient-particle backdrop again instead of the abandoned session.
             LoadTitleScreenWorld();
             m_GameMode = GameMode::Title;
             RebuildTitleMenu();
@@ -877,6 +887,118 @@ void Game::ProcessPauseInput()
         default:
             break;
     }
+}
+
+// Bridge the flat camera to the orbit rig. `camera.position` is the viewport's
+// top-left corner, so the equivalent orbit focus is that corner plus half the
+// visible extent - i.e. the point the 2D view was already centered on. Switching
+// paths therefore does not move the view.
+cameraRig::RigParams Game::BuildCameraRig() const
+{
+    const glm::vec2 world = VisibleWorldSize();
+    const float zoom = std::max(m_Camera.GetState().zoom, 0.001f);
+    const glm::vec2 visible = world / zoom;
+
+    cameraRig::RigParams rig;
+    rig.visibleWorldSize = visible;
+    rig.target = m_Camera.GetState().position + visible * 0.5f;
+    rig.yawRadians = m_CameraYaw;
+    rig.pitchRadians = m_CameraPitch;
+
+    // Depth range must span the map, not just the viewport, or tall billboards
+    // near the edges would clip.
+    const float mapW = static_cast<float>(m_Tilemap.GetMapWidth() * m_Tilemap.GetTileWidth());
+    const float mapH = static_cast<float>(m_Tilemap.GetMapHeight() * m_Tilemap.GetTileHeight());
+    rig.sceneRadius = std::max(256.0f, std::sqrt(mapW * mapW + mapH * mapH));
+
+    // The preset sets projection kind and, for Classic/DS, the angles; Free
+    // keeps whatever the live yaw/pitch already are.
+    cameraRig::ApplyPreset(rig, m_CameraPreset);
+    return rig;
+}
+
+// Self-contained gameplay frame through the world-space 3D path, structured like
+// RenderTitleFrame. Deliberately minimal for now: tiles and characters only.
+// Particles, sky parallax, world lights and editor overlays still belong to the
+// flat pipeline and are ported in a later phase - so this is a look preview, not
+// yet a replacement.
+void Game::RenderFrame3D()
+{
+    m_Renderer->BeginFrame();
+    m_Renderer->BeginScene();
+
+    DrawTracer::Mark("== gameplay frame (3D) ==", m_Renderer->GetDrawCallCount());
+
+    const glm::vec3 skyColor = m_TimeManager.GetSkyColor();
+    m_Renderer->Clear(skyColor.r, skyColor.g, skyColor.b, 1.0f);
+    m_Renderer->SetAmbientColor(m_TimeManager.GetAmbientColor());
+
+    const cameraRig::RigParams rig = BuildCameraRig();
+    m_Renderer->SetViewProjection(cameraRig::BuildViewProjection(rig));
+
+    DrawTracer::Mark("section: World3D", m_Renderer->GetDrawCallCount());
+    m_Tilemap.RenderWorld3D(*m_Renderer, rig);
+
+    // Characters follow the camera's yaw completely so they are never seen
+    // edge-on; tile scenery deliberately under-follows (see billboard::Role).
+    const billboard::Orientation actorOrientation = billboard::Orient(
+        rig.yawRadians, rig.pitchRadians, billboard::DefaultDamping(billboard::Role::Character));
+    DrawTracer::Mark("section: NPCs3D", m_Renderer->GetDrawCallCount());
+    // NpcTag is filter-only in this ECS - tags select the archetype but are not
+    // passed to the callback.
+    m_World.each<Transform, Elevation, Facing, AnimationState, NpcSprite, NpcTag>(
+        [&](Transform& xf, Elevation& elev, Facing& facing, AnimationState& anim, NpcSprite& sprite)
+        {
+            NpcRender::Draw3D(
+                m_World, *m_Renderer, actorOrientation, xf, elev, facing, anim, sprite);
+        });
+
+    DrawTracer::Mark("section: Player3D", m_Renderer->GetDrawCallCount());
+    if (m_World.alive(m_PlayerEntity))
+    {
+        PlayerRender::Draw3D(m_World,
+                             *m_Renderer,
+                             actorOrientation,
+                             m_World.get<Transform>(m_PlayerEntity),
+                             m_World.get<Elevation>(m_PlayerEntity),
+                             m_World.get<Facing>(m_PlayerEntity),
+                             m_World.get<AnimationState>(m_PlayerEntity),
+                             m_World.get<PlayerModes>(m_PlayerEntity),
+                             m_World.get<PlayerSprite>(m_PlayerEntity));
+    }
+
+    PostFXParams postFX;
+    postFX.timeOfDay = m_TimeManager.GetTimeOfDay();
+    postFX.nightFactor = m_TimeManager.GetStarVisibility();
+    postFX.time = m_PostFXTime;
+    postFX.postFXEnabled = m_PostFXEnabled;
+    if (m_PostFXEnabled)
+    {
+        postFX.vignetteIntensity = ambience::VIGNETTE_INTENSITY;
+        postFX.grainIntensity = ambience::GRAIN_INTENSITY;
+        postFX.bloomIntensity = ambience::BLOOM_INTENSITY;
+        postFX.gradingParams = ComputeGradingParams(postFX.timeOfDay, postFX.nightFactor);
+    }
+    DrawTracer::Mark("section: PostFX", m_Renderer->GetDrawCallCount());
+    m_Renderer->EndSceneApplyPostFX(postFX);
+
+    // Screen-space UI after PostFX, on the untouched 2D path.
+    DrawTracer::Mark("section: UI overlays", m_Renderer->GetDrawCallCount());
+    m_Renderer->SetProjection(MakeUIProjection(m_ScreenWidth, m_ScreenHeight));
+    m_Console.Render(*m_Renderer, m_ScreenWidth, m_ScreenHeight);
+
+    m_Renderer->EndFrame();
+
+    // Present. Easy to miss: the flat path swaps at the end of Game::Render, so
+    // a path that returns early from Render must swap for itself - exactly as
+    // RenderTitleFrame does. Without this the frame renders and composites
+    // correctly and is then never shown.
+    if (m_RendererAPI == RendererAPI::OpenGL)
+    {
+        glfwSwapBuffers(m_Window);
+    }
+
+    m_Fps.drawCallAccumulator += m_Renderer->GetDrawCallCount();
 }
 
 void Game::RenderTitleFrame()
@@ -902,7 +1024,7 @@ void Game::RenderTitleFrame()
     const float worldHeight = static_cast<float>(m_ScreenHeight) / static_cast<float>(PIXEL_SCALE);
     const float zoomedWidth = worldWidth / m_Camera.GetState().zoom;
     const float zoomedHeight = worldHeight / m_Camera.GetState().zoom;
-    m_Camera.ConfigurePerspective(*m_Renderer, zoomedWidth, zoomedHeight);
+    m_Renderer->SetViewSize({zoomedWidth, zoomedHeight});
     glm::mat4 projection = CameraController::GetOrthoProjection(zoomedWidth, zoomedHeight);
     m_Renderer->SetProjection(projection);
 
@@ -920,13 +1042,11 @@ void Game::RenderTitleFrame()
     // Sky overlay (stars, moon, dawn glow). World projection with parallax
     // driven by the menu's renderCam, matching the gameplay path.
     DrawTracer::Mark("section: Sky", m_Renderer->GetDrawCallCount());
-    m_Renderer->SuspendPerspective(true);
     m_SkyRenderer.Render(*m_Renderer,
                          m_TimeManager,
                          renderCam,
                          static_cast<int>(worldWidth),
                          static_cast<int>(worldHeight));
-    m_Renderer->SuspendPerspective(false);
 
     // Composite through PostFX. Modest bloom so fireflies glow without
     // blowing the screen out.
@@ -964,12 +1084,11 @@ void Game::RenderTitleFrame()
         RenderConfirmOverwritePrompt();
     }
 
-    // Perf overlay (F4): FPS + right-column renderer/res/zoom. Player position
-    // and quests are intentionally omitted on title.
+    // Perf overlay (toggled via the debug.info console command): FPS + right-column
+    // renderer/res/zoom. Player position and quests are intentionally omitted on title.
     if (m_Editor.IsShowDebugInfo())
     {
         constexpr float kMargin = 12.0f;
-        constexpr float kCharWidth = 12.0f;
         constexpr float kLineHeight = 28.0f;
         constexpr float kHudAlpha = 0.6f;  // Slightly transparent overlay (matches gameplay HUD).
         const glm::vec3 kFpsColor(1.0f, 1.0f, 0.0f);
@@ -995,7 +1114,7 @@ void Game::RenderTitleFrame()
 
         char rendererText[32];
         std::snprintf(rendererText, sizeof(rendererText), "%s", rendererName);
-        float textWidth = strnlen(rendererText, sizeof(rendererText)) * kCharWidth;
+        float textWidth = m_Renderer->GetTextWidth(rendererText, 1.0f);
         m_Renderer->DrawText(rendererText,
                              glm::vec2(rightMargin - textWidth, 32.0f),
                              1.0f,
@@ -1005,7 +1124,7 @@ void Game::RenderTitleFrame()
 
         char resText[32];
         std::snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
-        textWidth = strnlen(resText, sizeof(resText)) * kCharWidth;
+        textWidth = m_Renderer->GetTextWidth(resText, 1.0f);
         m_Renderer->DrawText(resText,
                              glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight),
                              1.0f,
@@ -1016,7 +1135,7 @@ void Game::RenderTitleFrame()
         char frameTimeText[32];
         float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
         std::snprintf(frameTimeText, sizeof(frameTimeText), "%.2fms", frameTimeMs);
-        textWidth = strnlen(frameTimeText, sizeof(frameTimeText)) * kCharWidth;
+        textWidth = m_Renderer->GetTextWidth(frameTimeText, 1.0f);
         m_Renderer->DrawText(frameTimeText,
                              glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight * 2),
                              1.0f,
@@ -1026,7 +1145,7 @@ void Game::RenderTitleFrame()
 
         char zoomText[32];
         std::snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.GetState().zoom);
-        textWidth = strnlen(zoomText, sizeof(zoomText)) * kCharWidth;
+        textWidth = m_Renderer->GetTextWidth(zoomText, 1.0f);
         m_Renderer->DrawText(zoomText,
                              glm::vec2(rightMargin - textWidth, 32.0f + kLineHeight * 3),
                              1.0f,
@@ -1059,8 +1178,6 @@ void Game::RenderTitleFrame()
 
 void Game::RenderTitleContent()
 {
-    IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
-
     glm::mat4 uiProjection = MakeUIProjection(m_ScreenWidth, m_ScreenHeight);
     m_Renderer->SetProjection(uiProjection);
 
@@ -1102,7 +1219,7 @@ void Game::RenderTitleContent()
                              1.0f);
     }
 
-    // Version footer (bottom-right) - the same label the in-game HUD shows.
+    // Footer labels - the same pair the in-game HUD shows.
     RenderVersionFooter();
 }
 
@@ -1111,28 +1228,35 @@ void Game::RenderVersionFooter()
     // Self-contained so both the title screen and the in-game HUD can call it:
     // suspend perspective and draw in a screen-space UI projection. Callers that
     // resume world-space drawing afterward restore their own projection.
-    IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
     m_Renderer->SetProjection(MakeUIProjection(m_ScreenWidth, m_ScreenHeight));
 
     const float screenW = static_cast<float>(m_ScreenWidth);
     const float screenH = static_cast<float>(m_ScreenHeight);
     const float uiScale = viewScaling::MenuUiScale(
         m_ScreenWidth, m_ScreenHeight, MENU_REFERENCE_WIDTH, MENU_REFERENCE_HEIGHT);
+    const float textScale = FOOTER_TEXT_SCALE * uiScale;
+    const float footerY = screenH - FOOTER_BASELINE_OFFSET * uiScale;
+    const float horizontalMargin = FOOTER_HORIZONTAL_MARGIN * uiScale;
+
+    m_Renderer->DrawText(FOOTER_WATERMARK_TEXT,
+                         glm::vec2(horizontalMargin, footerY),
+                         textScale,
+                         TITLE_DISABLED_COLOR,
+                         1.0f,
+                         0.85f);
 
     const std::string versionText = std::string("rift ") + RIFT_VERSION;
-    const float versionWidth = m_Renderer->GetTextWidth(versionText, VERSION_TEXT_SCALE * uiScale);
-    m_Renderer->DrawText(
-        versionText,
-        glm::vec2(screenW - versionWidth - 16.0f * uiScale, screenH - 28.0f * uiScale),
-        VERSION_TEXT_SCALE * uiScale,
-        TITLE_DISABLED_COLOR,
-        1.0f,
-        0.85f);
+    const float versionWidth = m_Renderer->GetTextWidth(versionText, textScale);
+    m_Renderer->DrawText(versionText,
+                         glm::vec2(screenW - versionWidth - horizontalMargin, footerY),
+                         textScale,
+                         TITLE_DISABLED_COLOR,
+                         1.0f,
+                         0.85f);
 }
 
 void Game::RenderConfirmOverwritePrompt()
 {
-    IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
     glm::mat4 uiProjection = MakeUIProjection(m_ScreenWidth, m_ScreenHeight);
     m_Renderer->SetProjection(uiProjection);
 
@@ -1207,7 +1331,6 @@ void Game::RenderPauseOverlay()
         m_PauseMenu.selected = 0;
     }
 
-    IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
     glm::mat4 uiProjection = MakeUIProjection(m_ScreenWidth, m_ScreenHeight);
     m_Renderer->SetProjection(uiProjection);
 
