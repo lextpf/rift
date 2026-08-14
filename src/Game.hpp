@@ -39,51 +39,54 @@
  * @struct FPSCounter
  * @brief Frame rate measurement and display state.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Core
  */
 struct FPSCounter
 {
-    float updateTimer = 0.0f;     ///< Accumulator for FPS update interval
-    float consoleTimer = 0.0f;    ///< Timer for console FPS output
-    int frameCount = 0;           ///< Frames since last FPS update
-    float currentFps = 0.0f;      ///< Calculated FPS for display
-    float targetFps = 0.0f;       ///< Target FPS limit (<=0 = unlimited)
-    int drawCallAccumulator = 0;  ///< Accumulated draw calls since last update
-    int currentDrawCalls = 0;     ///< Average draw calls per frame for display
+    float updateTimer = 0.0f;     ///< Accumulator for FPS update interval (seconds).
+    float consoleTimer = 0.0f;    ///< Unused: the per-second console stats dump is disabled.
+    int frameCount = 0;           ///< Frames since last FPS update.
+    float currentFps = 0.0f;      ///< Calculated FPS for display.
+    float targetFps = 0.0f;       ///< Target FPS limit; &lt;= 0 means unlimited.
+    int drawCallAccumulator = 0;  ///< Accumulated draw calls since last update.
+    int currentDrawCalls = 0;     ///< Average draw calls per frame for display.
 };
 
 /**
  * @struct DialogueSnapState
  * @brief Smooth pre-dialogue alignment animation state.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Dialogue
  *
  * Player + NPC slide into final talk positions before dialogue begins.
  */
 struct DialogueSnapState
 {
-    bool active = false;                       ///< Whether snap animation is in progress
-    float timer = 0.0f;                        ///< Elapsed time during snap animation
-    float duration = 0.4f;                     ///< Total snap animation duration in seconds
-    glm::vec2 playerStart{0.0f};               ///< Player position at snap start
-    glm::vec2 playerTarget{0.0f};              ///< Player target position (facing NPC)
-    glm::vec2 npcStart{0.0f};                  ///< NPC position at snap start
-    glm::vec2 npcTarget{0.0f};                 ///< NPC target position (facing player)
-    bool hasPlayerTile = true;                 ///< Whether player has a valid target tile
-    int playerTileX = 0;                       ///< Player target tile column
-    int playerTileY = 0;                       ///< Player target tile row
-    int npcTileX = 0;                          ///< NPC target tile column
-    int npcTileY = 0;                          ///< NPC target tile row
-    Direction playerFacing = Direction::DOWN;  ///< Player facing after snap
-    Direction npcFacing = Direction::DOWN;     ///< NPC facing after snap
-    bool prefersTree = false;                  ///< Use branching tree dialogue after snap
-    std::string fallbackText;                  ///< Simple text if no tree available
+    bool active = false;                       ///< Whether snap animation is in progress.
+    float timer = 0.0f;                        ///< Elapsed time during snap animation.
+    float duration = 0.4f;                     ///< Total snap animation duration in seconds.
+    glm::vec2 playerStart{0.0f};               ///< Player position at snap start.
+    glm::vec2 playerTarget{0.0f};              ///< Player target position (facing NPC).
+    glm::vec2 npcStart{0.0f};                  ///< NPC position at snap start.
+    glm::vec2 npcTarget{0.0f};                 ///< NPC target position (facing player).
+    bool hasPlayerTile = true;                 ///< Whether player has a valid target tile.
+    int playerTileX = 0;                       ///< Player target tile column.
+    int playerTileY = 0;                       ///< Player target tile row.
+    int npcTileX = 0;                          ///< NPC target tile column.
+    int npcTileY = 0;                          ///< NPC target tile row.
+    Direction playerFacing = Direction::DOWN;  ///< Player facing after snap.
+    Direction npcFacing = Direction::DOWN;     ///< NPC facing after snap.
+    bool prefersTree = false;                  ///< Use branching tree dialogue after snap.
+    std::string fallbackText;                  ///< Simple text if no tree available.
 };
 
 /**
  * @struct DialogueUiState
  * @brief Presentation state of the single active conversation.
  * @author Alex (https://github.com/lextpf)
+ * @ingroup Dialogue
  *
- * Groups the formerly-loose Game members describing the one active dialogue. The
+ * Groups the Game members describing the one active dialogue. The
  * branching-tree runtime lives in @ref DialogueManager and the per-NPC tree data
  * in the @ref Dialogue component; this is just the simple-text + pagination +
  * fade/typewriter + snap presentation. The speaker is referenced by @ref npcId
@@ -97,7 +100,7 @@ struct DialogueUiState
     int page = 0;               ///< Current page (pagination).
     int totalPages = 1;         ///< Total pages (cached during render).
     float boxFadeTimer = 0.0f;  ///< Dialogue-box fade-in timer (seconds).
-    float charReveal = -1.0f;   ///< Typewriter char count (<0 = fully revealed).
+    float charReveal = -1.0f;   ///< Typewriter char count; &lt; 0 means fully revealed.
     DialogueSnapState snap;     ///< Pre-dialogue snap-alignment animation state.
 };
 
@@ -107,82 +110,110 @@ struct DialogueUiState
  * @author Alex (https://github.com/lextpf)
  * @ingroup Core
  *
- * The Game class is the application's entry point and primary coordinator.
- * It owns all major game systems and manages their lifecycle.
+ * Game is the composition root. It owns the window, the renderer, the tilemap and every
+ * subsystem by value, and drives their lifecycle from Initialize() through Run() to Shutdown().
  *
- * @par Game Loop
- * Uses a simple variable-timestep loop:
- * @code
- * while (!shouldClose) {
+ * It also owns the ECS registry @c m_World. Shared services do not live on entities: Game
+ * publishes non-owning pointers to them into `m_World.globals()` as a @ref WorldServices bundle,
+ * which is how stateless systems reach a texture store or a dialogue tree.
  *
- * float deltaTime = currentTime - lastTime;
+ * The implementation is split across partials by concern: `Game.cpp` for lifecycle and the frame
+ * loop, `GameInput.cpp` for input routing, `GameMenus.cpp` for title and pause menus plus the
+ * title and 3D render paths, and `GameDialogue.cpp` for dialogue presentation.
+ *
+ * @par Game loop
+ * A variable-timestep loop. The delta is sampled before polling, and polling runs before input so
+ * handlers see this frame's key state.
+ * @code{.cpp}
+ * while (!shouldClose)
+ * {
+ *     float deltaTime = currentTime - lastTime;
  *     glfwPollEvents();
- * ProcessInput(deltaTime);
- *
- * Update(deltaTime);
+ *     deltaTime = std::min(deltaTime, MAX_DELTA_TIME);
+ *     ProcessInput(deltaTime);
+ *     Update(deltaTime);
  *     Render();
  * }
  * @endcode
  *
- * @par Frame Timing
- * Delta time is clamped to 0.1s (MAX_DELTA_TIME) to prevent physics
- * explosions after debugger pauses or window drag stalls. See Run().
+ * @par Frame timing
+ * Run() clamps delta time to MAX_DELTA_TIME, which is 0.1 s. Without the clamp, a debugger pause
+ * or a window drag stall would deliver one enormous frame and push characters through walls.
  *
- * @par Game Modes
- * The game supports multiple modes:
+ * @par Game modes
+ * @ref GameMode is the mutually exclusive top-level state. Editor and dialogue are
+ * not modes: they never change @c m_GameMode, and both are only reachable inside
+ * @c GameMode::Playing. They are also mutually exclusive with each other in
+ * practice, because the F-to-talk branch refuses to run while the editor is active
+ * (GameInput.cpp asserts this when the snap starts).
  *
- * | Mode     | Input          | Features                          |
- * |----------|----------------|-----------------------------------|
- * | Gameplay | WASD movement  | Player control, NPC interaction   |
- * | Dialogue | W/S or Up/Down | Conversation with NPCs            |
- * | Editor   | Mouse + keys   | Tile placement, collision editing |
+ * | Mode    | Input source | Features                                                 |
+ * |---------|--------------|----------------------------------------------------------|
+ * | Title   | Title menu   | Cosmetic world; New Game / Continue / Settings(*) / Quit |
+ * | Playing | WASD + mouse | Player control, NPC interaction, editor                  |
+ * | Paused  | Pause menu   | Frozen world; Resume / Quit to Title                     |
+ *
+ * (*) Settings is a permanently disabled stub; Continue is greyed out with no save.
  *
  * Toggle editor mode from the developer console with
  * `editor [on|off|toggle]` (alias: `ed`).
  * Dialogue activates on NPC interaction.
  *
- * @par Camera System
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     [*] --> Title
+ *     Title --> Playing: Continue / New Game
+ *     Playing --> Paused: Esc (only when no dialogue is open)
+ *     Paused --> Playing: Esc / Resume
+ *     Paused --> Title: Quit to Title
+ *     state Playing {
+ *         [*] --> Roaming
+ *         Roaming --> Editing: console command editor on
+ *         Editing --> Roaming: console command editor off
+ *         Roaming --> Snapping: F near an NPC (editor off)
+ *         Snapping --> Talking: snap timer elapsed
+ *         Talking --> Roaming: Enter / Space / Esc
+ *     }
+ * </pre>
+ * @endhtmlonly
+ *
+ * @par Camera system
  * The camera follows the player with smooth interpolation:
  * @f[
  * camera_{new} = camera_{old} + (target - camera_{old}) \times \alpha
  * @f]
  *
- * Where @f$ \alpha @f$ is calculated for a specific settle time.
- * The camera is also clamped to keep the player centered in the viewport.
+ * Where @f$ \alpha @f$ comes from @c rift::ExpApproachAlpha for a fixed settle time,
+ * which makes the approach frame-rate independent. The camera is then clamped to the
+ * map bounds, so near a map edge the viewport stops and the player drifts off-center
+ * rather than the camera revealing space outside the map.
  *
- * @par Render Order
+ * @par Render order
  * The playing render path draws world content into an offscreen scene target,
- * composites PostFX,
- * then draws sharp UI directly to the swapchain. Title mode
- * returns early through
- * RenderTitleFrame(), which renders a cosmetic title world
- * plus menu UI without player/NPC
- * gameplay passes.
+ * composites PostFX, then draws sharp UI directly to the swapchain. Title mode
+ * returns early through RenderTitleFrame(), which renders a cosmetic title world
+ * plus menu UI without the player/NPC gameplay passes.
  *
  * @htmlonly
  * <pre class="mermaid">
  * flowchart TD
- * Begin[BeginFrame]
- * --> Scene[BeginScene offscreen]
+ *     Begin[BeginFrame] --> Scene[BeginScene offscreen]
  *     Scene --> World[Background and no-projection layers]
- *
- * World --> Sort[Y-sorted tiles, NPCs, player]
- *     Sort --> Foreground[Foreground layers and
- * particles]
- *     Foreground --> Lighting[Cloud shadows, world lights, sky overlay]
- * Lighting
- * --> PostFX[EndSceneApplyPostFX]
+ *     World --> Sort[Y-sort tiles, NPCs, player by Y plus support height]
+ *     Sort --> Foreground[Foreground layers and particles]
+ *     Foreground --> Lighting[World lights, sky overlay]
+ *     Lighting --> PostFX[EndSceneApplyPostFX]
  *     PostFX --> UI[Editor, debug, dialogue, menu, console UI]
-
- * *     UI --> End[EndFrame]
+ *     UI --> End[EndFrame]
  * </pre>
  * @endhtmlonly
  *
- * @par Viewport Configuration
- * The game uses a tile-based virtual resolution:
- * - Visible tile counts are derived from current window size.
- * - Default startup target is 19x10 tiles (at 16px per tile = 304x160 virtual pixels).
- * - Scaled to fit window while maintaining aspect ratio
+ * @par Viewport configuration
+ * The game renders at a tile-based virtual resolution.
+ * - Visible tile counts derive from the current window size.
+ * - The startup target is 19x10 tiles, which is 304x160 virtual pixels at 16px per tile.
+ * - The result scales to fit the window and keeps its aspect ratio.
  *
  * @htmlonly
  * <pre class="mermaid">
@@ -206,14 +237,14 @@ struct DialogueUiState
  * @endhtmlonly
  *
  * @par Lifecycle
- * @code
+ * @code{.cpp}
  * Game g;
- * g.Initialize();  // Create window, load assets
- * g.Run();         // Main loop (blocks until window closes)
- * g.Shutdown();    // Release resources
+ * g.Initialize();  // Create the window and load assets.
+ * g.Run();         // Main loop; blocks until the window closes.
+ * g.Shutdown();    // Release resources.
  * @endcode
  *
- * @see PlayerSystem, Tilemap, IRenderer
+ * @see PlayerSystem, Tilemap, IRenderer, WorldServices, GameMode
  */
 class Game
 {
@@ -225,9 +256,7 @@ public:
      */
     Game();
 
-    /**
-     * @brief Destructor calls Shutdown() if not already called.
-     */
+    /// @brief Destructor calls Shutdown() if not already called.
     ~Game();
 
     /// Game owns the GLFW window and renderer resources; copying is unsupported.
@@ -241,27 +270,26 @@ public:
      * @brief Initialize all game systems.
      *
      * Performs the startup sequence:
-     * 1. Initialize GLFW and load/validate
-     * `rift.project.json` (or built-in defaults).
-     * 2. Select the startup renderer from the
-     * manifest and create the window.
-     * 3. Create and initialize the renderer, then configure
-     * the initial viewport.
-     * 4. Load tilesets, NPC sprites, fonts, and player character
-     * sprite assets.
-     * 5. Initialize particles, time, sky, dialogue, and editor subsystems.
-
-     * * 6. Set the game day duration to 1200 real seconds and load the cosmetic
-     * title-screen
-     * world.
+     * 1. Install the process-global ECS violation handler (game only, never in tests),
+     *    publish @ref WorldServices into `m_World.globals()`, and mint the player entity,
+     *    so @c m_PlayerEntity is valid from the title screen on, before any world loads.
+     * 2. Initialize GLFW and load/validate `rift.project.json` (or built-in defaults).
+     * 3. Select the startup renderer from the manifest and create the window.
+     * 4. Create and initialize the renderer, then configure the initial viewport.
+     * 5. Load tilesets, NPC sprites, fonts, and player character sprite assets.
+     * 6. Initialize the editor, particles, time, sky, and dialogue subsystems.
+     * 7. Load the cosmetic title-screen world.
+     *
+     * The day/night cycle is left at TimeManager's own default length: step 6 calls
+     * bare `TimeManager::Initialize()` and nothing calls `SetDayDuration`, so one
+     * in-game day lasts the class default (24 real seconds), not a configured value.
      *
      * NPC patrol routes are initialized lazily during NPC update when needed.
-
-     * * The player's save/default gameplay world is not loaded until the user
-     * chooses
+     *
+     * The player's save/default gameplay world is not loaded until the user chooses
      * Continue or New Game from the title menu.
      *
-     * @par Error Handling
+     * @par Error handling
      * Returns false if any critical initialization fails.
      * Errors are logged via Logger.
      *
@@ -270,45 +298,43 @@ public:
     bool Initialize();
 
     /**
-     * @brief Starts and maintains the engine's main game loop (variable timestep).
+     * @brief Start and run the engine's main game loop.
      *
-     * @details
-     * This function is **blocking** and returns only when the application is asked to exit
+     * Blocking. It returns when the window is asked to close, or when an exception escapes
+     * a frame stage - the exception is logged and the loop is abandoned, so a return does
+     * not imply a clean exit.
      *
      * The loop uses a **variable timestep**: each iteration computes a frame-to-frame
-     * delta time based on the current GLFW time and forwards it to the simulation and rendering
-     * stages.
+     * delta time based on the current GLFW time and forwards it to the simulation and
+     * rendering stages.
      *
      * @par Per-frame execution order
      * Each frame performs the following steps in order:
- * -
-     * Compute @p deltaTime since the previous frame
-     * - Poll GLFW events via @c
-     * glfwPollEvents()
+     * - Sample the frame start time and compute deltaTime since the previous frame
+     * - Poll GLFW events via @c glfwPollEvents() (before input, so the polled key
+     *   state is this frame's)
+     * - Clamp deltaTime to MAX_DELTA_TIME (0.1s)
      * - @ref ProcessInput(float) "ProcessInput(deltaTime)"
-     * - @ref
-     * Update(float) "Update(deltaTime)"
+     * - @ref Update(float) "Update(deltaTime)"
      * - @ref Render() "Render()"
+     * - Optional FPS limiter: sleep then spin-yield to the frame deadline, skipped
+     *   entirely when @c FPSCounter::targetFps is 0
      *
      * @htmlonly
-
-     * * <pre class="mermaid">
+     * <pre class="mermaid">
      * sequenceDiagram
      *     participant Loop as Game::Run
- *
-     * participant GLFW as GLFW
+     *     participant GLFW as GLFW
      *     participant Input as ProcessInput
-     *     participant
-     * Update as Update
+     *     participant Update as Update
      *     participant Render as Render
-     *     Loop->>Loop: compute and
-     * clamp deltaTime
+     *     Loop->>Loop: sample frame start, compute deltaTime
      *     Loop->>GLFW: glfwPollEvents()
-     *     Loop->>Input:
-     * ProcessInput(deltaTime)
+     *     Loop->>Loop: clamp deltaTime to 0.1s
+     *     Loop->>Input: ProcessInput(deltaTime)
      *     Loop->>Update: Update(deltaTime)
-     *     Loop->>Render:
-     * Render()
+     *     Loop->>Render: Render()
+     *     Loop->>Loop: FPS limiter (sleep + spin)
      * </pre>
      * @endhtmlonly
      *
@@ -332,17 +358,71 @@ public:
 
     /**
      * @brief Set the target FPS limit.
-     * @param fps Target FPS (<=0 = unlimited, default).
+     * @param fps Target FPS; &lt;= 0 disables the limiter (the default).
      */
     void SetTargetFps(float fps) { m_Fps.targetFps = fps; }
 
     /**
-     * @brief Switch to a different renderer API at runtime.
-     * @param api The renderer API to switch to (OpenGL or Vulkan).
-     * @return true if switch was successful, false otherwise.
+     * @name World-space 3D path (console-facing)
+     * @brief Accessors for the `world3d` and `cam.*` commands.
      *
-     * This destroys the current renderer and creates a new one.
-     * Textures and other GPU resources will need to be re-uploaded.
+     * Public rather than friend-only because the console's command handlers are free
+     * functions reaching Game through @c CommandContext::game.
+     * @{
+     */
+    bool IsWorld3DEnabled() const { return m_World3DEnabled; }
+    void SetWorld3DEnabled(bool enabled) { m_World3DEnabled = enabled; }
+    cameraRig::Preset GetCameraPreset() const { return m_CameraPreset; }
+    float GetCameraYaw() const { return m_CameraYaw; }
+    float GetCameraPitch() const { return m_CameraPitch; }
+
+    // Defined inline rather than in GameMenus.cpp so the console's command
+    // handlers link into rift_tests, which compiles ConsoleCommands.cpp but not
+    // the Game translation units.
+
+    /// @brief Select a preset and adopt its angles, so `cam.preset ds` snaps the
+    /// live yaw/pitch rather than leaving a stale value from a previous preset.
+    void SetCameraPreset(cameraRig::Preset preset)
+    {
+        m_CameraPreset = preset;
+
+        cameraRig::RigParams probe;
+        probe.yawRadians = m_CameraYaw;
+        probe.pitchRadians = m_CameraPitch;
+        cameraRig::ApplyPreset(probe, preset);
+        m_CameraYaw = probe.yawRadians;
+        m_CameraPitch = probe.pitchRadians;
+    }
+
+    /// @brief Set the orbit yaw; wrapped to (-pi, pi]. Implies the Free preset,
+    /// because Classic and DS pin their angles and would discard the change.
+    void SetCameraYaw(float radians)
+    {
+        m_CameraYaw = cameraRig::WrapYaw(radians);
+        m_CameraPreset = cameraRig::Preset::Free;
+    }
+
+    /// @brief Set the orbit pitch; clamped above the horizon. Implies Free.
+    void SetCameraPitch(float radians)
+    {
+        m_CameraPitch = cameraRig::ClampPitch(radians);
+        m_CameraPreset = cameraRig::Preset::Free;
+    }
+    /// @}
+
+    /**
+     * @brief Switch to a different renderer API at runtime.
+     *
+     * Both the GLFW window and the renderer are destroyed and recreated, because the two
+     * APIs need incompatible window hints. Any cached @c GLFWwindow* or @c IRenderer*
+     * dangles afterwards; window position is the only preserved state. Textures are
+     * re-uploaded and characters re-packed into the tile atlas before the call returns.
+     *
+     * @param api  The renderer API to switch to (OpenGL or Vulkan).
+     * @return     `true` when the switch succeeded, or when @p api was already active (no-op).
+     *             `false` when @p api is unavailable, and also after a successful rollback
+     *             to the previous API. If the rollback fails too, this calls Shutdown() and
+     *             the application cannot continue.
      */
     bool SwitchRenderer(RendererAPI api);
 
@@ -360,7 +440,7 @@ public:
      * Used by the developer console's `dialogue.end` command.
      *
      * @note Defined inline so the symbol exists in every TU that includes
-     * Game.h, including the test target (which does not link GameInput.cpp).
+     * Game.hpp, including the test target (which does not link GameInput.cpp).
      * The body intentionally inlines the parts of ForceCloseTreeDialogue /
      * CloseSimpleDialogue / ReleaseDialogueNPC that it needs rather than
      * calling them, since those are defined in GameInput.cpp.
@@ -438,14 +518,22 @@ public:
     std::uint64_t GetDialogueNPCId() const { return m_DialogueUi.npcId; }
 
     /**
-     * @brief GLFW scroll callback for tile picker navigation.
+     * @brief GLFW scroll callback: console scrollback, editor scroll, camera zoom.
      *
-     * Static callback registered with GLFW to handle mouse wheel events.
-     * Behavior depends on current mode:
-     * - **Elevation edit mode** (no Ctrl): Adjusts elevation paint value (0-32)
-     * - **Ctrl+scroll** (tile picker closed): Camera zoom (0.1x-4.0x)
-     * - **Ctrl+scroll** (tile picker open): Tile picker zoom
-     * - **Scroll** (tile picker open, no Ctrl): Tile picker navigation
+     * Static callback registered with GLFW. The wheel is claimed by the first
+     * branch that applies, in this order:
+     * 1. **Console open** - exclusive. The suggestion dropdown gets first refusal
+     *    (wheel over it scrolls suggestions); otherwise the wheel scrolls the
+     *    console scrollback. Returns without reaching the editor or the camera.
+     * 2. **Editor active** - forwarded to @c Editor::HandleScroll, which owns every
+     *    editor-specific wheel behavior (tile-picker navigation/zoom, elevation
+     *    paint value, ...). If the tile picker is open it swallows the event and
+     *    this returns.
+     * 3. **Ctrl held** - camera zoom around the player's visual center. Gameplay
+     *    clamps zoom to 0.4x-4.0x; the wider 0.1x floor applies only in editor
+     *    free-camera mode (see @ref CameraController::HandleZoomScroll).
+     *
+     * A bare wheel with no console, no editor and no Ctrl does nothing.
      *
      * @param window GLFW window handle.
      * @param xoffset Horizontal scroll offset (unused).
@@ -466,7 +554,7 @@ private:
     /**
      * Console is an authorised mutator of game state (it's the developer's
      * REPL). Granting friendship lets the default command bindings reach
-     * m_Player / m_GameState / m_TimeManager / m_Tilemap / m_World without
+     * m_PlayerEntity / m_GameState / m_TimeManager / m_Tilemap / m_World without
      * adding accessors that exist solely for console use.
      */
     friend class Console;
@@ -490,11 +578,15 @@ private:
     /**
      * @brief Update game state.
      *
-     * Updates all dynamic elements:
-     * 1. Player animation
-     * 2. NPC AI and animation
-     * 3. Camera following
-     * 4. Dialogue state
+     * Mode-gated, with two early returns:
+     * 1. Every mode: title ambient latch, FPS counters, deferred window snap.
+     *    Returns here when Paused, which freezes everything.
+     * 2. Playing only: player, time, weather director. Other modes instead fade the
+     *    weather overlay alone, so the authored title hour holds.
+     * 3. Every non-Paused mode: sky, particles, PostFX clock, animated tiles.
+     *    Returns here unless Playing.
+     * 4. Playing only, in this order: dialogue snap, typewriter reveal, stale-speaker
+     *    cleanup, NPC AI, editor, camera follow, NPC-vs-player overlap stop.
      *
      * @param deltaTime Frame time in seconds.
      */
@@ -503,13 +595,20 @@ private:
     /**
      * @brief Render all game elements.
      *
-     * Performs the full render pass:
-     * 1. Begin frame (clear, set projection)
-     * 2. Render tilemap layers (with depth ordering)
-     * 3. Render entities (NPCs, player)
-     * 4. Render editor UI (if active)
-     * 5. Render debug overlays (if enabled)
-     * 6. End frame
+     * A no-op while another Render() or Update() is on the stack, so a
+     * WindowRefreshCallback that fires during a resize drag may produce no frame.
+     *
+     * Title mode and the `world3d` toggle each return early into a self-contained
+     * pipeline (@ref RenderTitleFrame, @ref RenderFrame3D). The steps below are the flat
+     * gameplay path only:
+     * 1. Begin frame, then begin the offscreen scene target.
+     * 2. Background layers, then one Y-sorted pass over tiles, NPCs and the player
+     *    assembled into a single Drawable list.
+     * 3. Foreground layers, particles, world lights, sky.
+     * 4. EndSceneApplyPostFX composites the scene into the swapchain.
+     * 5. UI straight to the swapchain, so it is neither graded nor bloomed: editor,
+     *    dialogue, debug HUD, pause overlay, console.
+     * 6. End frame.
      */
     void Render();
 
@@ -520,7 +619,7 @@ private:
      * is only valid for the current frame. It must be passed straight to the
      * Editor and discarded; storing it across frames will leave dangling
      * references when Game state is rebuilt (e.g. on `renderer.set` or
-     * map reload). See `Editor.h` for the full lifetime contract.
+     * map reload). See `Editor.hpp` for the full lifetime contract.
      *
      * @return EditorContext with references to Game-owned state.
      */
@@ -536,8 +635,11 @@ private:
     /**
      * @brief Render text inside the dialogue box.
      *
-     * @param boxPos  Center position of dialogue box.
-     * @param boxSize Dimensions of dialogue box.
+     * Lines are wrapped to `boxSize.x - 20`, centered horizontally across the box
+     * width, and dropped once the next line would pass `boxPos.y + boxSize.y`.
+     *
+     * @param boxPos  Top-left corner of the text area, in screen pixels.
+     * @param boxSize Dimensions of the text area.
      */
     void RenderDialogueText(glm::vec2 boxPos, glm::vec2 boxSize);
 
@@ -550,13 +652,18 @@ private:
 
     /**
      * @brief Check if dialogue is on the last page.
-     * @return True if on last page or no dialogue active.
+     *
+     * Only meaningful while a tree dialogue is being rendered: the page count is written
+     * by RenderDialogueTreeBox(), so this input-time query lags the layout by one frame
+     * and keeps answering from the last conversation once dialogue closes.
+     *
+     * @return True when the current page is the last one according to the page count
+     *         cached by the most recent RenderDialogueTreeBox() call.
      */
     bool IsDialogueOnLastPage();
 
-    /**
-     * @brief Release the NPC currently held in dialogue and reset dialogue NPC index.
-     */
+    /// @brief Un-stop the NPC currently held in dialogue and clear @c m_DialogueUi.npcId.
+    /// Leaves @c inDialogue, @c text, @c page and @c snap to the callers.
     void ReleaseDialogueNPC();
 
     /// @brief Whether m_DialogueUi.npcId currently resolves to a live NPC.
@@ -573,43 +680,47 @@ private:
     ecs::entity FindNPCById(std::uint64_t id) { return EntityStore::FindById(m_World, id); }
     ecs::entity FindNPCById(std::uint64_t id) const { return EntityStore::FindById(m_World, id); }
 
-    /**
-     * @brief Close simple (non-tree) dialogue and release the NPC.
-     */
+    /// @brief Close simple (non-tree) dialogue and release the NPC.
     void CloseSimpleDialogue();
 
     /**
-     * @brief Advance tree dialogue page, or confirm selection on last page.
+     * @brief Handle a confirm press in tree dialogue.
+     *
+     * Three outcomes, in priority order. While the typewriter is still revealing, the
+     * press completes the reveal and does nothing else - this is what a player hits on
+     * every page. Otherwise it advances one page. On the last page it confirms the
+     * selected option, restarts pagination at page 0, and releases the NPC if the tree
+     * ended.
      */
     void ConfirmOrAdvanceTreeDialogue();
 
-    /**
-     * @brief Force-close tree dialogue via Escape.
-     */
+    /// @brief Force-close tree dialogue via Escape.
     void ForceCloseTreeDialogue();
 
     /**
-     * @name Title Screen / Pause Overlay
+     * @name Title screen / pause overlay
      * @brief Top-level menu state and dispatch (see @c GameMenus.cpp).
      * @{
      */
 
     /**
      * True when @c rift.save.json (or whatever the manifest configures)
-     * exists as a regular file. Used to grey out @em Continue and to gate
-     * the overwrite-confirmation prompt on @em New @em Game.
+     * exists as a regular file. Used to grey out "Continue" and to gate the
+     * overwrite-confirmation prompt on "New Game".
      */
     [[nodiscard]] bool CheckSaveExists() const;
 
     /**
      * Load the game world: tilemap, NPCs, player position, camera target.
+     *
+     * Called from "Continue" and "New Game" in the title menu. Boot uses
+     * @c LoadTitleScreenWorld instead so gameplay content is not loaded until the
+     * player leaves the title screen.
+     *
      * @param loadSave  True when the caller is continuing the configured map;
      *                  false for New Game. Both paths load the configured authored
      *                  map when it exists, falling back to generated terrain when
      *                  unavailable; New Game separately resets transient state.
-     * Called from @em Continue / @em New @em Game in the title menu.
-     * Boot uses @c LoadTitleScreenWorld instead so gameplay content is not loaded
-     * until the player leaves the title screen.
      */
     void LoadGameWorld(bool loadSave);
 
@@ -635,17 +746,20 @@ private:
     void RefreshTitleWorldForViewport(bool forceRepaint);
 
     /**
-     * Load the cosmetic title-screen world: a plain grass map populated
-     * with firefly particle zones and frozen at night. No player, no NPCs.
-     * Used at boot and on @em Quit @em to @em Title to keep the title's
-     * scenic background separate from the player's actual save.
+     * Load the cosmetic title-screen world: a grass map carrying one whole-map zone
+     * per atmospheric particle type, time frozen at 23:00 with the weather director
+     * disabled and Aurora imposed, the per-zone particle cap raised and the pool
+     * pre-warmed. NPCs are destroyed; the player entity survives, parked at tile
+     * (0,0) and skipped by the render pass rather than removed. Used at boot and on
+     * "Quit to Title", which keeps the title's scenic background separate from the
+     * player's save.
      */
     void LoadTitleScreenWorld();
 
     /**
      * Reset world + per-session state back to a fresh start.
      * Wraps @c LoadGameWorld(false) plus @c TimeManager::Initialize and
-     * @c GameStateManager::Clear. Does @b not touch the on-disk save.
+     * @c GameStateManager::Clear. It does not touch the on-disk save.
      */
     void ResetWorldToDefaults();
 
@@ -669,6 +783,28 @@ private:
     void RenderTitleFrame();
 
     /**
+     * Render an entire gameplay frame through the world-space 3D path.
+     *
+     * Called as an early return from @c Render(), the same way
+     * @c RenderTitleFrame is, so the flat path below it stays completely
+     * untouched while the two coexist. That is deliberate: the 3D path is opt-in
+     * via the `world3d` console command, and the flat path remains the default
+     * and the comparison baseline until the new look is signed off.
+     *
+     * @see BuildCameraRig, Tilemap::RenderWorld3D
+     */
+    void RenderFrame3D();
+
+    /**
+     * Derive this frame's camera parameters from the live camera state.
+     *
+     * Bridges the flat camera (a viewport top-left corner plus a zoom) to the
+     * orbit rig (a ground focus point plus angles): the focus is the center of
+     * what the 2D camera was showing, so switching paths does not jump the view.
+     */
+    cameraRig::RigParams BuildCameraRig() const;
+
+    /**
      * Render the title screen content (logo + menu + version) into the
      * current frame after @c EndSceneApplyPostFX. Used by
      * @c RenderTitleFrame.
@@ -676,11 +812,12 @@ private:
     void RenderTitleContent();
 
     /**
-     * Draw the "rift <version>" label in the bottom-right corner (the same
-     * footer shown on the title screen). Self-contained: it suspends
-     * perspective and switches to a screen-space UI projection, so a caller
-     * that draws in world space afterward must restore its own projection.
-     * Shared by the title screen and the in-game HUD.
+     * Draw the "\@lextpf" watermark in the bottom-left and the
+     * "rift <version>" label in the bottom-right (the same footer shown on the
+     * title screen). Self-contained: it suspends perspective and switches to a
+     * screen-space UI projection, so a caller that draws in world space
+     * afterward must restore its own projection. Shared by the title screen
+     * and the in-game HUD.
      */
     void RenderVersionFooter();
 
@@ -700,8 +837,18 @@ private:
     /**
      * @brief Find a valid tile for the player to stand on during dialogue snap.
      *
-     * Searches cardinal directions from the NPC tile, preferring the direction
-     * the player approached from. Falls back to current player tile or (-1,-1).
+     * A tile is valid when it is in bounds, is not the NPC's own tile, and is not
+     * flagged as blocking in the collision map. Resolution order:
+     * 1. **Stay put** - if the player's current tile is already valid and cardinally
+     *    adjacent to the NPC, it is returned unchanged (no snap movement at all).
+     *    This is checked first, before any search.
+     * 2. **Preferred cardinal**, then down, up, right, left from the NPC tile.
+     * 3. **Current player tile** again, even when not adjacent.
+     * 4. `(-1, -1)` when nothing is safe.
+     *
+     * A zero preferred direction (player and NPC resolved to the same tile) is
+     * rewritten to `(0, +1)` - down, since world Y grows downward - so step 2 always
+     * has a first candidate to try.
      *
      * @param npcTileX NPC tile column.
      * @param npcTileY NPC tile row.
@@ -719,29 +866,31 @@ private:
                                     int preferredDy) const;
 
     /**
-     * @name Window Management
+     * @name Window management
      * @{
      */
-    GLFWwindow* m_Window = nullptr;  ///< GLFW window handle
-    int m_ScreenWidth = 1520;        ///< Window width in pixels (19 tiles * 80 px)
-    int m_ScreenHeight = 800;        ///< Window height in pixels (10 tiles * 80 px)
-    bool m_GlfwInitialized = false;  ///< Whether glfwInit() succeeded (for safe Shutdown)
+    GLFWwindow* m_Window = nullptr;  ///< GLFW window handle.
+    int m_ScreenWidth = 1520;        ///< Window width in pixels (19 tiles * 80 px).
+    int m_ScreenHeight = 800;        ///< Window height in pixels (10 tiles * 80 px).
+    bool m_GlfwInitialized = false;  ///< Whether glfwInit() succeeded (for safe Shutdown).
     /// @}
 
     /**
-     * @name Viewport Settings
+     * @name Viewport settings
      * @brief Define the virtual game resolution based on window size.
      *
-     * The number of visible tiles is calculated from window size, with the
-     * window size snapped to tile boundaries (16 pixel increments) for clean rendering.
+     * The number of visible tiles is derived from the window size by integer
+     * division, and the window itself is snapped to whole tiles for clean
+     * rendering. One tile occupies `TILE_PIXEL_SIZE * PIXEL_SCALE` = 80 screen
+     * pixels, so the snap increment is 80 px, not 16.
      * @{
      */
-    int m_TilesVisibleWidth = 19;   ///< Tiles visible horizontally (based on window width)
-    int m_TilesVisibleHeight = 10;  ///< Tiles visible vertically (based on window height)
-    static constexpr int TILE_PIXEL_SIZE = 16;  ///< Size of a tile in pixels
-    static constexpr int PIXEL_SCALE = 5;       ///< Scale factor for rendering (5x)
-    float m_ResizeSnapTimer = 0.0f;             ///< Timer for deferred window snap after resize
-    bool m_PendingWindowSnap = false;           ///< Whether a window snap is pending
+    int m_TilesVisibleWidth = 19;   ///< Tiles visible horizontally (based on window width).
+    int m_TilesVisibleHeight = 10;  ///< Tiles visible vertically (based on window height).
+    static constexpr int TILE_PIXEL_SIZE = 16;  ///< Tile size in world pixels.
+    static constexpr int PIXEL_SCALE = 5;       ///< World-pixel to screen-pixel scale (5x).
+    float m_ResizeSnapTimer = 0.0f;             ///< Countdown (seconds) to the deferred snap.
+    bool m_PendingWindowSnap = false;           ///< Whether a window snap is pending.
     /** @} */
 
     /**
@@ -752,63 +901,66 @@ private:
     void OnFramebufferResized(int width, int height);
 
     /**
-     * @brief Snap window to tile boundaries (called after resize settles).
+     * @brief Snap the window to whole tiles (called after resize settles).
+     *
+     * Rounds the client area DOWN to a multiple of 80 screen pixels, with a floor
+     * of 5x4 tiles (400x320). A no-op when the size is already aligned.
      */
     void SnapWindowToTileBoundaries();
 
-    /**
-     * @brief GLFW framebuffer size callback.
-     */
+    /// @brief GLFW framebuffer size callback.
     static void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
 
-    /**
-     * @brief GLFW window refresh callback - redraws during resize drag.
-     */
+    /// @brief GLFW window refresh callback - redraws during resize drag.
     static void WindowRefreshCallback(GLFWwindow* window);
 
     /**
-     * @name Game Entities
+     * @name Game entities
      * @brief Core game objects.
      * @{
      */
     TextureStore m_TextureStore;    ///< Owns sprite textures (player/NPC) keyed by handle.
     DialogueStore m_DialogueStore;  ///< Owns NPC dialogue trees keyed by handle.
-    AssetRegistry m_Assets;         ///< Character/NPC sprite asset paths (demoted statics).
+    AssetRegistry m_Assets;         ///< Character/NPC sprite asset paths.
     /**
      * @brief The world's NPC-AI random source, owned here and published into
-     * globals() via WorldServices::npcRng so NpcAiSystem draws from one
-     * world-scoped stream (replacing its former file-local static engine).
+     * globals() via WorldServices::npcRng so every NpcAiSystem call draws from
+     * one world-scoped stream that a test can seed.
      */
     std::mt19937 m_NpcRng{std::random_device{}()};
     /**
-     * @brief The ECS world. Shared services live in its globals() (WorldServices);
-     * the entity migration (player/NPCs -> registry) is in progress.
+     * @brief The ECS world: every player/NPC entity plus the shared services
+     * published into its globals() as a @ref WorldServices. Systems reach the
+     * services through the registry rather than through per-entity back-pointers.
      */
     ecs::registry m_World;
-    Tilemap m_Tilemap;                      ///< The game world
-    ecs::entity m_PlayerEntity{};           ///< Player entity in m_World (PlayerTag + components)
-    ParticleSystem m_Particles;             ///< Ambient particle effects (fireflies, etc.)
-    TimeManager m_TimeManager;              ///< Day/night cycle time management
-    WeatherDirector m_WeatherDirector;      ///< Weather transition choreography
-    SkyRenderer m_SkyRenderer;              ///< Sky rendering (sun, moon, stars)
-    std::unique_ptr<IRenderer> m_Renderer;  ///< Graphics renderer
-    RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type
+    Tilemap m_Tilemap;                      ///< The game world.
+    ecs::entity m_PlayerEntity{};           ///< Player entity in m_World (PlayerTag + components).
+    ParticleSystem m_Particles;             ///< Ambient particle effects (fireflies, etc.).
+    TimeManager m_TimeManager;              ///< Day/night cycle time management.
+    WeatherDirector m_WeatherDirector;      ///< Weather transition choreography.
+    SkyRenderer m_SkyRenderer;              ///< Sky rendering (sun, moon, stars).
+    std::unique_ptr<IRenderer> m_Renderer;  ///< Graphics renderer.
+    RendererAPI m_RendererAPI = RendererAPI::OpenGL;  ///< Active renderer type.
     std::vector<std::string> m_FontCandidates;     ///< Project-configured renderer font candidates.
     std::string m_SaveMapPath = "rift.save.json";  ///< Project-configured save/load JSON path.
     /** @} */
 
-    CameraController m_Camera;   ///< Camera controller (position, zoom, perspective)
-    bool m_IsRendering = false;  ///< Reentrancy guard for Render()
-    bool m_IsUpdating = false;   ///< True while Update() runs; prevents
-                                 ///< WindowRefreshCallback from firing Render()
-                                 ///< on mid-Update state via synchronous WM_SIZE
-                                 ///< from SnapWindowToTileBoundaries().
+    CameraController m_Camera;   ///< Camera controller (position, zoom, perspective).
+    bool m_IsRendering = false;  ///< Reentrancy guard for Render().
+    /**
+     * @brief True while Update() runs.
+     *
+     * Prevents WindowRefreshCallback from firing Render() on mid-Update state via
+     * synchronous WM_SIZE from SnapWindowToTileBoundaries().
+     */
+    bool m_IsUpdating = false;
 
     /**
-     * @name Frame Timing
+     * @name Frame timing
      * @{
      */
-    float m_LastFrameTime = 0.0f;  ///< Timestamp of last frame (for delta calculation)
+    float m_LastFrameTime = 0.0f;  ///< Timestamp of last frame (for delta calculation).
 
     /**
      * Time accumulator threaded into PostFXParams. Drives the grain noise
@@ -827,26 +979,26 @@ private:
     bool m_PostFXEnabled = true;
     /// @}
 
-    FPSCounter m_Fps;  ///< Frame rate measurement
+    FPSCounter m_Fps;  ///< Frame rate measurement.
 
     /**
      * @name Editor
      * @{
      */
-    Editor m_Editor;  ///< Level editor (extracted from Game)
+    Editor m_Editor;  ///< Level editor; owns its own input/undo state.
     /// @}
 
     /**
-     * @name Collision Resolution
-     * @brief Per-frame NPC-collision scratch (the player plane is derived inline in
-     *        ProcessPlayerMovement; NPCs in NpcAiSystem::UpdateAll).
+     * @name Collision resolution
+     * @brief Per-frame NPC feet/support scratch for same-surface collision.
      * @{
      */
-    std::vector<glm::vec2> m_NpcPositions;  ///< Pre-allocated for per-frame NPC collision checks
+    std::vector<CharacterCollisionBody>
+        m_NpcBodies;  ///< Pre-allocated feet/support records for NPC collision checks.
     /** @} */
 
     /**
-     * @name Render Sorting
+     * @name Render sorting
      * @brief Y-sorted render list reused each frame to avoid allocation.
      * @{
      */
@@ -854,17 +1006,44 @@ private:
     /// @}
 
     /**
-     * @name Dialogue System
+     * @name World-space 3D path
+     * @{
+     */
+    /**
+     * @brief Whether gameplay frames render through @c RenderFrame3D instead of the flat pipeline.
+     *
+     * Toggled by the `world3d` console command. Off by default while the two paths
+     * coexist, so nothing changes until asked for.
+     */
+    bool m_World3DEnabled = false;
+    /// Camera preset the 3D path builds its rig from (`cam.preset`).
+    cameraRig::Preset m_CameraPreset = cameraRig::Preset::DS;
+    /// Live orbit angles, so `cam.yaw` / `cam.pitch` survive between frames.
+    float m_CameraYaw = 0.0f;
+    float m_CameraPitch = cameraRig::DS_PITCH_RADIANS;
+    /**
+     * @brief True while the mouse button that orbits the camera is held.
+     *
+     * Tracked so a press only starts accumulating from the second frame - otherwise the
+     * first frame's delta would be measured against a stale cursor position and snap the
+     * camera on click.
+     */
+    bool m_CameraDragActive = false;
+    glm::dvec2 m_CameraDragCursor{0.0};  ///< Cursor position at the previous drag frame.
+    /// @}
+
+    /**
+     * @name Dialogue system
      * @brief NPC dialogue UI state.
      * @{
      */
-    DialogueUiState m_DialogueUi;       ///< Active-conversation presentation state (grouped)
-    DialogueManager m_DialogueManager;  ///< Branching dialogue tree manager
-    GameStateManager m_GameState;       ///< Game flags and state for consequences
+    DialogueUiState m_DialogueUi;       ///< Active-conversation presentation state (grouped).
+    DialogueManager m_DialogueManager;  ///< Branching dialogue tree manager.
+    GameStateManager m_GameState;       ///< Game flags and state for consequences.
     /** @} */
 
     /**
-     * @name Input Toggle State
+     * @name Input toggle state
      * @brief Debounced key toggles for one-shot actions (moved from function-local statics).
      * @{
      */
@@ -903,7 +1082,7 @@ private:
     /// @}
 
     /**
-     * @name Top-Level Mode + Menu State
+     * @name Top-level mode + menu state
      * @{
      */
     GameMode m_GameMode = GameMode::Title;     ///< Top-level game state.
@@ -922,7 +1101,7 @@ private:
     bool m_MenuMouseLeftPrev = false;
     /**
      * One-shot latch: the first time the console opens during a title
-     * session, the title's ambient particle zones AND the initial weather
+     * session, the title's ambient particle zones and the initial weather
      * are cleared so the user can `weather <state>` against a clean canvas.
      * Stays cleared for the rest of the title session, even after the
      * console is closed. Reset to false when @ref LoadTitleScreenWorld
@@ -940,12 +1119,16 @@ private:
     /// @}
 
     /**
-     * @name Developer Console
+     * @name Developer console
      * @{
-     * Drains console-mode key events while the console is open. Reads
-     * the polled GLFW key state via local KeyToggle<> instances and
-     * forwards edge transitions to m_Console. Called as the early-return
-     * path in ProcessInput when the console has focus.
+     */
+
+    /**
+     * @brief Drain console-mode key events while the console is open.
+     *
+     * Reads the polled GLFW key state via local KeyToggle<> instances and forwards
+     * edge transitions to m_Console. Called as the early-return path in ProcessInput
+     * when the console has focus.
      */
     void PumpConsoleKeys();
 
@@ -953,7 +1136,7 @@ private:
     /**
      * Edge-detection state for mouse clicks while the console is open. The
      * console eats clicks that land on the suggestion dropdown; this tracks
-     * the previous-frame button state so we only fire on the press edge.
+     * the previous-frame button state so the action fires only on the press edge.
      */
     bool m_ConsoleMouseLeftPrev = false;
     /// @}
