@@ -63,7 +63,6 @@ constexpr const char* LOG_SUBSYSTEM = "Game";
 constexpr float HORIZON_SCALE_BASE = 0.6f;
 constexpr float HORIZON_SCALE_TILT_RANGE = 0.15f;
 constexpr float DEBUG_TEXT_MARGIN = 12.0f;
-constexpr float DEBUG_CHAR_WIDTH = 12.0f;
 constexpr float DEBUG_HUD_ALPHA = 0.6f;      // Debug/FPS HUD text opacity (slightly transparent).
 constexpr float DEBUG_HUD_ALPHA_DIM = 0.5f;  // Dimmer secondary HUD lines (quest descriptions).
 constexpr float SEAM_FIX_OVERLAP = 0.1f;
@@ -164,8 +163,10 @@ bool Game::Initialize()
     m_SaveMapPath = manifest.defaultMap.empty() ? "rift.save.json"
                                                 : manifest.ResolvePathString(manifest.defaultMap);
 
-    Logger::InfoF(
-        LOG_SUBSYSTEM, "Renderer API: {} (press F1 to switch)", RendererApiName(m_RendererAPI));
+    Logger::InfoF(LOG_SUBSYSTEM,
+                  "Renderer API: {} (switch with the console command 'renderer.set "
+                  "opengl|vulkan')",
+                  RendererApiName(m_RendererAPI));
     Logger::Info(LOG_SUBSYSTEM, "Available renderers: OpenGL, Vulkan");
 
     Logger::Info(LOG_SUBSYSTEM, "Initialize() step 4: Setting window hints...");
@@ -274,7 +275,7 @@ bool Game::Initialize()
 
     float initWorldWidth = static_cast<float>(m_TilesVisibleWidth * m_Tilemap.GetTileWidth());
     float initWorldHeight = static_cast<float>(m_TilesVisibleHeight * m_Tilemap.GetTileHeight());
-    m_Camera.ConfigurePerspective(*m_Renderer, initWorldWidth, initWorldHeight);
+    m_Renderer->SetViewSize({initWorldWidth, initWorldHeight});
     glm::mat4 projection = CameraController::GetOrthoProjection(initWorldWidth, initWorldHeight);
     m_Renderer->SetProjection(projection);
 
@@ -487,7 +488,7 @@ void Game::Update(float deltaTime)
     } updateGuard(m_IsUpdating);
 
     // One-shot: first console open during a title session permanently
-    // strips the title's ambient zones AND the initial weather so the rest
+    // strips the title's ambient zones and the initial weather so the rest
     // of the session shows only what the user sets via the console. Cleared
     // state persists after the console closes (still in Title); only
     // LoadTitleScreenWorld resets the latch. In-game is unaffected because
@@ -502,7 +503,10 @@ void Game::Update(float deltaTime)
             zones->clear();
         }
         m_TimeManager.SetWeather(WeatherState::Clear);
-        m_TimeManager.SetWeatherIntensity(0.0f);
+        // Clear already has no weather particles. Keep full intensity so the
+        // first weather command entered against this clean title canvas is
+        // actually visible.
+        m_TimeManager.SetWeatherIntensity(1.0f);
     }
 
     m_Fps.frameCount++;
@@ -557,28 +561,24 @@ void Game::Update(float deltaTime)
         m_TimeManager.Update(deltaTime);  // Frozen in Title so night setting holds.
         m_WeatherDirector.Update(deltaTime, m_TimeManager);
     }
+    else
+    {
+        // Keep the authored title hour fixed while allowing manual overlays
+        // selected from the console to fade in and out.
+        m_TimeManager.UpdateWeatherEffects(deltaTime);
+    }
     m_SkyRenderer.Update(deltaTime, m_TimeManager);
 
-    glm::vec2 particleCullCam = m_Camera.GetState().position;
     // Accurate pixel-based extent (matches the render projection) so weather +
     // ambient particles cover the true viewport, not a truncated tile count.
-    glm::vec2 viewSize = VisibleWorldSizeZoomed();
-    if (m_Camera.GetState().enable3DEffect)
-    {
-        float horizonScale =
-            HORIZON_SCALE_BASE + (1.0f - m_Camera.GetState().tilt) * HORIZON_SCALE_TILT_RANGE;
-        float expansion = 1.0f / std::max(horizonScale, 0.001f);
-        float cullWidthScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(true));
-        float cullHeightScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(true));
-        glm::vec2 expandedSize(viewSize.x * expansion * cullWidthScale,
-                               viewSize.y * expansion * cullHeightScale);
-        glm::vec2 padding = (expandedSize - viewSize) * 0.5f;
-        particleCullCam -= padding;
-        viewSize = expandedSize;
-    }
+    const glm::vec2 particleCullCam = m_Camera.GetState().position;
+    const glm::vec2 viewSize = VisibleWorldSizeZoomed();
     m_Particles.SetNightFactor(m_TimeManager.GetStarVisibility());
+    // Splash/impact fade keys on actual scene darkness, not weather star
+    // visibility (precipitation forces the latter to 0, so a night storm would
+    // otherwise read as daytime and the impacts stay bright).
+    m_Particles.SetSceneNightFactor(
+        std::max(m_TimeManager.GetNaturalStarVisibility(), m_TimeManager.GetStarVisibility()));
     m_Particles.SetTimeOfDay(m_TimeManager.GetTimeOfDay());
     // Bottom-center of the player sprite; used by PollenStorm / FallingLeaves
     // for hitbox-anchored avoidance.
@@ -596,6 +596,10 @@ void Game::Update(float deltaTime)
     m_Particles.SetWeatherTransition(streams.outgoing, streams.incoming, streams.weight);
     m_Particles.SetWeatherState(&m_TimeManager.GetEffectiveWeatherDefinition(),
                                 m_TimeManager.GetWeatherIntensity());
+    const float overlayBlend = m_TimeManager.GetOverlayBlend();
+    m_Particles.SetWeatherOverlay(
+        overlayBlend > 0.001f ? &GetWeatherDefinition(m_TimeManager.GetWeatherOverlay()) : nullptr,
+        overlayBlend);
     m_Particles.Update(deltaTime, particleCullCam, viewSize);
 
     // Post-FX time accumulator (grain noise, subtle time-based motion).
@@ -666,13 +670,15 @@ void Game::Update(float deltaTime)
                                         /*preserveRoute=*/true);
 
                 PlayerSystem::Stop(m_World, m_PlayerEntity);
-                // Re-derive the player's logical plane for the snapped-to tile: a snap
-                // can cross an elevation boundary, and ProcessPlayerMovement's plane
-                // derive is gated off during a snap. (The NPC is repositioned the same
-                // way; its plane re-derives next frame in NpcAiSystem::UpdateAll.)
+                // Dialogue alignment bypasses normal movement probes, so commit
+                // any connected support transition for both participants here.
                 CharacterKinematics::DerivePlane(m_World.get<Elevation>(m_PlayerEntity),
                                                  m_DialogueUi.snap.playerStart,
                                                  m_World.get<Transform>(m_PlayerEntity).position,
+                                                 m_Tilemap);
+                CharacterKinematics::DerivePlane(m_World.get<Elevation>(npcE),
+                                                 m_DialogueUi.snap.npcStart,
+                                                 m_World.get<Transform>(npcE).position,
                                                  m_Tilemap);
                 m_World.get<Facing>(m_PlayerEntity).dir = m_DialogueUi.snap.playerFacing;
                 m_World.get<Facing>(npcE).dir = m_DialogueUi.snap.npcFacing;
@@ -723,7 +729,14 @@ void Game::Update(float deltaTime)
     const bool inAnyDialogue =
         m_DialogueUi.inDialogue || m_DialogueManager.IsActive() || m_DialogueUi.snap.active;
     const std::uint64_t frozenNpcId = inAnyDialogue ? m_DialogueUi.npcId : 0;
-    NpcAiSystem::UpdateAll(m_World, m_Tilemap, playerPos, m_NpcRng, frozenNpcId, deltaTime);
+    NpcAiSystem::UpdateAll(
+        m_World,
+        m_Tilemap,
+        CharacterCollisionBody{
+            playerPos, CharacterKinematics::GetSupport(m_World.get<Elevation>(m_PlayerEntity))},
+        m_NpcRng,
+        frozenNpcId,
+        deltaTime);
 
     m_Editor.Update(deltaTime, MakeEditorContext());
 
@@ -803,7 +816,10 @@ void Game::Update(float deltaTime)
     m_Camera.Update(camParams);
 
     // Stop NPCs overlapping the player (visual de-overlap), after all positions settle.
-    NpcAiSystem::ApplyPlayerOverlapStop(m_World, playerPos);
+    NpcAiSystem::ApplyPlayerOverlapStop(
+        m_World,
+        CharacterCollisionBody{
+            playerPos, CharacterKinematics::GetSupport(m_World.get<Elevation>(m_PlayerEntity))});
 }
 
 void Game::Render()
@@ -833,7 +849,15 @@ void Game::Render()
         return;
     }
 
-    // Render order: see docs/RENDERING.md (also summarized in CLAUDE.md).
+    // The world-space 3D path is likewise self-contained and returns early, so
+    // the flat pipeline below is untouched while both exist.
+    if (m_World3DEnabled)
+    {
+        RenderFrame3D();
+        return;
+    }
+
+    // Render order: see docs/RENDERING.md.
 
     // Visual-debug pause after each draw call.
     if (IsDebugDrawSleepEnabled())
@@ -866,7 +890,7 @@ void Game::Render()
     // Apply camera zoom (>1 = smaller world view, <1 = larger).
     float zoomedWidth = worldWidth / m_Camera.GetState().zoom;
     float zoomedHeight = worldHeight / m_Camera.GetState().zoom;
-    m_Camera.ConfigurePerspective(*m_Renderer, zoomedWidth, zoomedHeight);
+    m_Renderer->SetViewSize({zoomedWidth, zoomedHeight});
     glm::mat4 projection = CameraController::GetOrthoProjection(zoomedWidth, zoomedHeight);
     m_Renderer->SetProjection(projection);
 
@@ -887,33 +911,6 @@ void Game::Render()
         renderCam.y = snapToPixel(originalCamera.y, pixelStepY);
     }
 
-    // Perspective off: cull rect == camera viewport. Perspective on: the horizon
-    // foreshortens distant tiles, so much *more* world fits above the horizon
-    // than the viewport's world-space size implies. Compensate by inflating the
-    // cull rect by 1/horizonScale, then by the projection mode's width/height
-    // scales (globe/fisheye warp differently from flat tilt).
-    if (m_Camera.GetState().enable3DEffect)
-    {
-        float horizonScale =
-            HORIZON_SCALE_BASE + (1.0f - m_Camera.GetState().tilt) * HORIZON_SCALE_TILT_RANGE;
-        float expansion = 1.0f / horizonScale;
-        auto persp = m_Renderer->GetPerspectiveState();
-        bool hasGlobe = persp.enabled && (persp.mode == IRenderer::ProjectionMode::Globe ||
-                                          persp.mode == IRenderer::ProjectionMode::Fisheye);
-        float cullWidthScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullWidthScale(hasGlobe));
-        float cullHeightScale =
-            static_cast<float>(perspectiveTransform::GetPerspectiveCullHeightScale(hasGlobe));
-        float expandedWidth = zoomedWidth * expansion * cullWidthScale;
-        float expandedHeight = zoomedHeight * expansion * cullHeightScale;
-
-        float widthDiff = (expandedWidth - zoomedWidth) * 0.5f;
-        float heightDiff = (expandedHeight - zoomedHeight) * 0.5f;
-        cullCam.x = originalCamera.x - widthDiff;
-        cullCam.y = originalCamera.y - heightDiff;
-        cullSize = glm::vec2(expandedWidth, expandedHeight);
-    }
-
     // Render uses snapped camera (restored at end of function).
     m_Camera.GetState().position = renderCam;
 
@@ -922,109 +919,78 @@ void Game::Render()
     m_Tilemap.RenderBackgroundLayers(*m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
     // Suspend perspective for character rendering.
-    m_Renderer->SuspendPerspective(true);
 
     // No-projection background tiles (buildings/entities that stay upright).
     DrawTracer::Mark("section: BackgroundLayersNoProjection", m_Renderer->GetDrawCallCount());
     m_Tilemap.RenderBackgroundLayersNoProjection(
         *m_Renderer, renderCam, renderSize, cullCam, cullSize);
 
-    auto ySortPlusTiles = m_Tilemap.GetVisibleYSortPlusTiles(cullCam, cullSize);
+    const auto& depthSortedTiles = m_Tilemap.GetVisibleDepthSortedTiles(cullCam, cullSize);
 
-    // Build unified render list: Y-sorted tiles + entities, sorted by Y so
-    // objects lower on screen render on top. Characters split into top/bottom
-    // halves for proper tile occlusion.
+    // Build one authored baseline list, then add local support constraints only
+    // between an actor and the elevation footprint containing its feet. Each
+    // character remains atomic, so no tile can slice through its sprite.
     m_RenderList.clear();
-    size_t estimatedSize = ySortPlusTiles.size() + EntityStore::Count(m_World) * 2 + 2;
+    size_t estimatedSize = depthSortedTiles.size() + EntityStore::Count(m_World) + 1;
     if (m_RenderList.capacity() < estimatedSize)
     {
         m_RenderList.reserve(estimatedSize);
     }
 
-    // Y-sorted tiles (sort key = bottom edge). Skip tiles behind the sphere
-    // when the full globe is visible.
+    // Depth-sorted tiles (base key = bottom edge, plus support height).
     int tileW = m_Tilemap.GetTileWidth();
     int tileH = m_Tilemap.GetTileHeight();
-    for (const auto& tile : ySortPlusTiles)
+    for (const auto& tile : depthSortedTiles)
     {
-        float tileX = static_cast<float>(tile.x * tileW) - renderCam.x;
-        float tileY = static_cast<float>(tile.y * tileH) - renderCam.y;
-        glm::vec2 corners[4] = {
-            glm::vec2(tileX, tileY),
-            glm::vec2(tileX + tileW, tileY),
-            glm::vec2(tileX + tileW, tileY + tileH),
-            glm::vec2(tileX, tileY + tileH),
-        };
-        if (m_Renderer->IsPointBehindSphere(corners[0]) &&
-            m_Renderer->IsPointBehindSphere(corners[1]) &&
-            m_Renderer->IsPointBehindSphere(corners[2]) &&
-            m_Renderer->IsPointBehindSphere(corners[3]))
-            continue;
-
         Drawable item;
         item.cls = DrawableClass::Tile;
+        item.phase = TileDrawablePhase(tile);
         item.sortY = tile.anchorY;
+        item.supportHeight = tile.supportHeight;
+        item.surfaceRegionId = tile.surfaceRegionId;
         item.isYSortMinus = tile.ySortMinus;
         item.tieBias = TIE_TILE;
         item.tile = tile;
         m_RenderList.push_back(item);
     }
 
-    // NPCs split into bottom/top halves for tile occlusion: bottom sorts at the
-    // feet anchor, top sorts slightly higher so it can pass behind tall tiles.
-    // Skip NPCs behind the sphere when the full globe is visible.
-    m_World.each<const Transform, const NpcTag>(
-        [&](ecs::entity e, const Transform& xf)
+    // NPCs are atomic queue items anchored at their feet. Their two sprite
+    // submissions remain consecutive inside the draw thunk.
+    m_World.each<const Transform, const Elevation, const NpcTag>(
+        [&](ecs::entity e, const Transform& xf, const Elevation& elevation)
         {
             glm::vec2 npcPos = xf.position;
-            float screenX = npcPos.x - renderCam.x;
-            float screenY = npcPos.y - renderCam.y;
-            if (m_Renderer->IsPointBehindSphere(glm::vec2(screenX, screenY)))
-            {
-                return;
-            }
 
-            AddNpcDrawables(m_RenderList,
-                            m_World,
-                            e,
-                            npcPos,
-                            CharacterConstants::HALF_HITBOX_HEIGHT,
-                            TIE_NPC_BOTTOM,
-                            TIE_NPC_TOP);
+            AddNpcDrawable(m_RenderList,
+                           m_World,
+                           e,
+                           npcPos,
+                           elevation.surface,
+                           static_cast<float>(elevation.plane),
+                           m_Tilemap.GetElevationRegionIdAtWorldPos(npcPos.x, npcPos.y),
+                           TIE_NPC);
         });
 
-    // Player. Both halves sort at the anchor. Skipped behind the sphere (edge
-    // case when zoomed out) and in Title (menu shows a clean scenic world).
+    // Player. The complete sprite sorts at its feet anchor. The Title test below is
+    // dead: Render() early-returns into RenderTitleFrame() before reaching this point.
     if (!m_Editor.IsActive() && m_GameMode != GameMode::Title)
     {
         glm::vec2 playerPos = m_World.get<Transform>(m_PlayerEntity).position;
-        float playerScreenX = playerPos.x - renderCam.x;
-        float playerScreenY = playerPos.y - renderCam.y;
-        if (!m_Renderer->IsPointBehindSphere(glm::vec2(playerScreenX, playerScreenY)))
-        {
-            AddPlayerDrawables(m_RenderList,
-                               m_World,
-                               m_PlayerEntity,
-                               playerPos,
-                               0.0f,
-                               TIE_PLAYER_BOTTOM,
-                               TIE_PLAYER_TOP);
-        }
+        const Elevation& playerElevation = m_World.get<Elevation>(m_PlayerEntity);
+        AddPlayerDrawable(m_RenderList,
+                          m_World,
+                          m_PlayerEntity,
+                          playerPos,
+                          playerElevation.surface,
+                          static_cast<float>(playerElevation.plane),
+                          m_Tilemap.GetElevationRegionIdAtWorldPos(playerPos.x, playerPos.y),
+                          TIE_PLAYER);
     }
 
-    // Lower Y renders first; ySortMinus tiles (anchored at top) get a half-tile
-    // offset for fair comparison against entity feet; equal-depth ties resolve
-    // by tieBias so entities sit in front of terrain. The ordering lives in
-    // DrawableDepthLess (RenderDrawable.hpp) so it is unit-tested in isolation.
-    std::stable_sort(m_RenderList.begin(), m_RenderList.end(), DrawableDepthLess);
+    // Preserve layer/Y-sort authoring everywhere, then enforce underpass/deck
+    // relations only for actors inside the corresponding elevation component.
+    SortDrawables(m_RenderList);
 
-    // Perspective state is sticky across iterations: tiles want it enabled,
-    // entities suspended. Flip only on transitions so contiguous runs stay in
-    // one sprite batch. Contract: enter and leave with perspective suspended.
-    // SuspendPerspective is reference-counted, so any guard a render method
-    // constructs internally cycles depth 1<->2 without crossing the 0/1
-    // boundary (no flush). Any unbalanced suspend/resume pair inside this
-    // loop would leak depth across frames and the BeginFrame assert will fire.
     {
         char ysortLabel[64];
         std::snprintf(ysortLabel,
@@ -1033,18 +999,11 @@ void Game::Render()
                       m_RenderList.size());
         DrawTracer::Mark(ysortLabel, m_Renderer->GetDrawCallCount());
     }
-    bool ySortSuspended = true;
     for (const auto& item : m_RenderList)
     {
-        bool wantSuspend = (item.cls == DrawableClass::Entity);
-        if (ySortSuspended != wantSuspend)
-        {
-            m_Renderer->SuspendPerspective(wantSuspend);
-            ySortSuspended = wantSuspend;
-        }
         if (item.cls == DrawableClass::Entity)
         {
-            item.drawHalf(item, *m_Renderer, m_Camera.GetState().position, item.topHalf);
+            item.drawEntity(item, *m_Renderer, m_Camera.GetState().position);
         }
         else
         {
@@ -1052,13 +1011,8 @@ void Game::Render()
                                        item.tile.x,
                                        item.tile.y,
                                        item.tile.layer,
-                                       m_Camera.GetState().position,
-                                       item.tile.noProjection ? 1 : 0);
+                                       m_Camera.GetState().position);
         }
-    }
-    if (!ySortSuspended)
-    {
-        m_Renderer->SuspendPerspective(true);
     }
 
     // No-projection foreground tiles.
@@ -1072,7 +1026,6 @@ void Game::Render()
 
     // Resume perspective for the regular foreground (may still be suspended from
     // the Y-sorted loop if no no-projection structures were processed).
-    m_Renderer->SuspendPerspective(false);
 
     // Foreground layers (Y-sorted and no-projection tiles are skipped here).
     DrawTracer::Mark("section: ForegroundLayers", m_Renderer->GetDrawCallCount());
@@ -1080,15 +1033,6 @@ void Game::Render()
 
     DrawTracer::Mark("section: Particles(world)", m_Renderer->GetDrawCallCount());
     m_Particles.Render(*m_Renderer, m_Camera.GetState().position, false, false);
-
-    // Cloud shadows (multiplicative darkening). Drawn BEFORE the screen-space
-    // sky overlay so they darken ground/entities but not sun rays/stars/glow.
-    DrawTracer::Mark("section: CloudShadows", m_Renderer->GetDrawCallCount());
-    m_SkyRenderer.RenderCloudShadows(*m_Renderer,
-                                     m_Camera.GetState().position,
-                                     glm::vec2(zoomedWidth, zoomedHeight),
-                                     m_PostFXTime,
-                                     m_TimeManager.GetStarVisibility());
 
     // World-anchored light pools (lamps, lit windows). Drawn under the world
     // projection with perspective ON so they warp with the world plane. Only
@@ -1114,21 +1058,19 @@ void Game::Render()
         }
     }
 
-    // Sky pass under the WORLD projection (no projection swap). Sky elements
+    // Sky pass under the world projection (no projection swap). Sky elements
     // compute their own parallax against `cameraPos` so they drift slowly with
     // the player. Perspective is suspended so the sky doesn't 3D-distort.
     DrawTracer::Mark("section: Sky", m_Renderer->GetDrawCallCount());
-    m_Renderer->SuspendPerspective(true);
     m_SkyRenderer.Render(*m_Renderer,
                          m_TimeManager,
                          m_Camera.GetState().position,
                          static_cast<int>(worldWidth),
                          static_cast<int>(worldHeight));
-    m_Renderer->SuspendPerspective(false);
 
     // Composite the offscreen scene through the post-FX chain (bloom + grading
     // + vignette + grain) into the swapchain. Subsequent UI draws (editor,
-    // dialogue, debug HUD) go directly to the swapchain and are NOT post-processed.
+    // dialogue, debug HUD) go directly to the swapchain and are not post-processed.
     {
         PostFXParams postFX;
         postFX.timeOfDay = m_TimeManager.GetTimeOfDay();
@@ -1172,13 +1114,11 @@ void Game::Render()
     // Fallback head text for NPCs without dialogue trees.
     if (m_DialogueUi.inDialogue)
     {
-        IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
         RenderNPCHeadText();
     }
 
     if (m_DialogueManager.IsActive())
     {
-        IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
         RenderDialogueTreeBox();
     }
 
@@ -1312,7 +1252,7 @@ void Game::Render()
 
         char rendererText[32];
         snprintf(rendererText, sizeof(rendererText), "%s", rendererName);
-        float textWidth = strnlen(rendererText, sizeof(rendererText)) * DEBUG_CHAR_WIDTH;
+        float textWidth = m_Renderer->GetTextWidth(rendererText, 1.0f);
         m_Renderer->DrawText(rendererText,
                              glm::vec2(rightMargin - textWidth, 32.0f),
                              1.0f,
@@ -1322,7 +1262,7 @@ void Game::Render()
 
         char resText[32];
         snprintf(resText, sizeof(resText), "%dx%d", m_ScreenWidth, m_ScreenHeight);
-        textWidth = strnlen(resText, sizeof(resText)) * DEBUG_CHAR_WIDTH;
+        textWidth = m_Renderer->GetTextWidth(resText, 1.0f);
         m_Renderer->DrawText(resText,
                              glm::vec2(rightMargin - textWidth, 32.0f + lineHeight),
                              1.0f,
@@ -1333,7 +1273,7 @@ void Game::Render()
         char frameTimeText[32];
         float frameTimeMs = (m_Fps.currentFps > 0) ? (1000.0f / m_Fps.currentFps) : 0.0f;
         snprintf(frameTimeText, sizeof(frameTimeText), "%.2fms", frameTimeMs);
-        textWidth = strnlen(frameTimeText, sizeof(frameTimeText)) * DEBUG_CHAR_WIDTH;
+        textWidth = m_Renderer->GetTextWidth(frameTimeText, 1.0f);
         m_Renderer->DrawText(frameTimeText,
                              glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 2),
                              1.0f,
@@ -1343,7 +1283,7 @@ void Game::Render()
 
         char zoomText[32];
         snprintf(zoomText, sizeof(zoomText), "Zoom: %.1fx", m_Camera.GetState().zoom);
-        textWidth = strnlen(zoomText, sizeof(zoomText)) * DEBUG_CHAR_WIDTH;
+        textWidth = m_Renderer->GetTextWidth(zoomText, 1.0f);
         m_Renderer->DrawText(zoomText,
                              glm::vec2(rightMargin - textWidth, 32.0f + lineHeight * 3),
                              1.0f,
@@ -1366,7 +1306,7 @@ void Game::Render()
         m_Renderer->SetProjection(projection);
     }
 
-    // Build-version footer (bottom-right), mirroring the title screen. Shown
+    // Watermark and build-version footer, mirroring the title screen. Shown
     // during normal gameplay; suppressed in the editor (its dense UI owns the
     // screen edges) and outside Playing (Title draws its own footer; the pause
     // menu omits it). RenderVersionFooter switches to a UI projection, so
@@ -1381,7 +1321,6 @@ void Game::Render()
     // structure visuals and adding markers on top just clutters the edit view.
     if (m_Editor.IsShowNoProjectionAnchors() && !m_Editor.IsActive())
     {
-        IRenderer::PerspectiveSuspendGuard guard(*m_Renderer);
         m_Editor.RenderNoProjectionAnchors(MakeEditorContext());
     }
 
@@ -1579,7 +1518,7 @@ bool Game::SwitchRenderer(RendererAPI api)
         const glm::vec2 world = VisibleWorldSizeZoomed();
         float worldWidth = world.x;
         float worldHeight = world.y;
-        m_Camera.ConfigurePerspective(*m_Renderer, worldWidth, worldHeight);
+        m_Renderer->SetViewSize({worldWidth, worldHeight});
         glm::mat4 projection = CameraController::GetOrthoProjection(worldWidth, worldHeight);
         m_Renderer->SetProjection(projection);
 
