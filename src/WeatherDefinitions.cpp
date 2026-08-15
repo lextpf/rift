@@ -7,7 +7,7 @@
 namespace
 {
 // One entry per WeatherState, indexed by std::to_underlying(state).
-// Order MUST match the WeatherState enum.
+// Order must match the WeatherState enum.
 const std::array<WeatherDefinition, 17> kWeatherTable = {{
     // Baseline.
     // Clear
@@ -66,9 +66,9 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .showCelestialBodies = false,
         .windIntensity = 1.0f,
         .secondaryParticleType = WeatherParticleType::Fog,
-        .secondaryBaseSpawnRate = 27.0f,  // thinned blizzard mist (was 45)
+        .secondaryBaseSpawnRate = 15.0f,  // thinned blizzard mist (was 45, then 27)
         .secondaryMaxWeatherParticles = 10000,
-        .fogAlphaMultiplier = 0.6f,  // softened so stacked fog stays translucent (was 0.85)
+        .fogAlphaMultiplier = 0.4f,  // softened further so it isn't a whiteout wall (was 0.85, 0.6)
     },
 
     // Atmosphere.
@@ -152,23 +152,22 @@ const std::array<WeatherDefinition, 17> kWeatherTable = {{
         .windIntensity = 0.5f,
     },
 
-    // Special / night.
-    // AuroraNight: the primary stream is the dedicated Aurora particle - the
-    // hand-painted aurora/aurora2/aurora3 motes on slow ribbon drift, night-
-    // gated in their Update so they bloom after dark. A sparse Wisp secondary
-    // keeps a little spiraling aurora dust beneath the ribbons. Rates stay
-    // low so the SkyRenderer ribbons remain the hero element.
+    // Special / events.
+    // Aurora: the primary stream is the dedicated Aurora particle - the
+    // hand-painted aurora/aurora2/aurora3 motes on slow ribbon drift. It does
+    // not override ambient light, the sky, stars, or celestial bodies, so the
+    // clock remains authoritative and the effect works unchanged at any hour.
+    // A sparse Wisp secondary keeps a little spiraling dust beneath the ribbons.
     WeatherDefinition{
-        .ambientTintMultiplier = {0.85f, 0.92f, 1.08f},
+        .ambientTintMultiplier = {1.00f, 1.00f, 1.00f},
         .particleType = WeatherParticleType::Aurora,
-        .baseSpawnRate = 25.0f,
-        .maxWeatherParticles = 400,
-        .particleSizeScale = 0.85f,
-        .starVisibilityOverride = 0.85f,
+        .baseSpawnRate = 9.0f,
+        .maxWeatherParticles = 140,
+        .particleSizeScale = 0.72f,
         .showAurora = true,
         .secondaryParticleType = WeatherParticleType::Wisp,
-        .secondaryBaseSpawnRate = 12.0f,
-        .secondaryMaxWeatherParticles = 200,
+        .secondaryBaseSpawnRate = 3.0f,
+        .secondaryMaxWeatherParticles = 60,
     },
     // MeteorShower: rate bump to 12 collapses the spawn interval (~4s base / 12
     // ~0.3s). Per-star size/brightness boost lives in
@@ -268,7 +267,7 @@ float ComputeLightIntensity(LightSchedule schedule, float hourOfDay)
     if (h < 0.0f)
         h += 24.0f;
 
-    // Schedule windows. Both wrap midnight; we treat the daytime gap as zero,
+    // Schedule windows. Both wrap midnight, and the daytime gap counts as zero,
     // and ramp at the boundaries.
     float rampOnStart = (schedule == LightSchedule::DuskToDawn) ? 18.0f : 20.0f;
     float rampOnEnd = (schedule == LightSchedule::DuskToDawn) ? 20.0f : 22.0f;
