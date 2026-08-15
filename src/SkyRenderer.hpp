@@ -17,21 +17,45 @@ class TimeManager;
 /**
  * @struct Star
  * @brief Represents a single star in the night sky with twinkling animation.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * Stars are positioned in normalized sky-space coordinates (0-1) and rendered
  * at screen-space positions. Each star has independent twinkle animation
  * controlled by phase and speed parameters.
  *
- * @par Twinkle Animation
- * Brightness oscillates using a sine wave:
+ * @par Twinkle animation
+ * The two star layers use different envelopes. SkyRenderer::RenderStars first
+ * dims the incoming star visibility, then each layer applies its own factor -
+ * the drawn alpha is well below `baseBrightness * twinkle * visibility`:
+ * @verbatim
+ *   visibility = TimeManager::GetStarVisibility() * 0.35
+ *   b          = baseBrightness * twinkle * visibility
+ *   background alpha      = b * 0.3
+ *   foreground core alpha = b * 0.7
+ *   foreground glow alpha = (b - 0.25) * 0.1
+ * @endverbatim
+ *
+ * Background stars (SkyRenderer::RenderStars, first pass) use one sine at 1.5x
+ * the star's speed:
  * @f[
- * brightness = baseBrightness \times (0.5 + 0.5 \times \sin(time \times twinkleSpeed +
- * twinklePhase))
+ * twinkle = 0.6 + 0.4\sin(t \cdot speed \cdot 1.5 + phase)
  * @f]
  *
- * @par Color Variation
+ * Foreground stars use three incommensurate sines plus a sparkle burst, so the
+ * pattern does not repeat and bright flares are brief:
+ * @f[
+ * t_1 = \sin(t \cdot speed \cdot 1.2 + phase),\quad
+ * t_2 = \sin(t \cdot speed \cdot 2.7 + 1.3\,phase),\quad
+ * t_3 = \sin(t \cdot speed \cdot 0.5 + 2.1\,phase)
+ * @f]
+ * @f[
+ * twinkle = 0.4 + 0.35\,t_1 + 0.15\,t_3 + 0.25\max(0,\ t_1 t_2)
+ * @f]
+ * That same `max(0, t1*t2)` sparkle term also gates the per-star glow sprite:
+ * a glow is emitted only when brightness &gt; 0.25 and sparkle &gt; 0.3.
+ *
+ * @par Color variation
  * Stars have subtle color tints to simulate different star temperatures:
  * - Blue-white: Hot stars (O/B class)
  * - White: Sun-like (G class)
@@ -39,24 +63,37 @@ class TimeManager;
  */
 struct Star
 {
-    glm::vec2 position;    ///< Normalized position (0-1) in sky space, mapped to screen on render
-    float baseBrightness;  ///< Base brightness (0-1), modulated by twinkle animation
-    float twinklePhase;    ///< Phase offset for twinkle sine wave (radians)
-    float twinkleSpeed;    ///< Twinkle frequency multiplier (higher = faster flicker)
-    float size;            ///< Size multiplier applied to base star texture size
-    glm::vec3 color;       ///< RGB color tint (typically near white with subtle hue)
+    /**
+     * @brief Normalized (0-1) position inside the star-field tile, not the screen.
+     *
+     * RenderStars scales it by the tile size (3 viewports wide x 2 tall) and wraps
+     * the result near the camera, so one array covers the whole map.
+     */
+    glm::vec2 position;
+    float baseBrightness;  ///< Base brightness (0-1), modulated by twinkle animation.
+    float twinklePhase;    ///< Phase offset for twinkle sine wave (radians).
+    float twinkleSpeed;    ///< Twinkle frequency multiplier (higher = faster flicker).
+    /**
+     * @brief Size input in [0, 1].
+     *
+     * Background sprite = `1.0 + size * 1.2` px; the foreground core =
+     * `(1.5 + size * 3.0) * (0.5 + brightness * 0.5)` px and its glow =
+     * `6.0 + size * 8.0` px.
+     */
+    float size;
+    glm::vec3 color;  ///< RGB color tint (typically near white with subtle hue).
 };
 
 /**
  * @struct LightRay
  * @brief Represents a single light ray emanating from the sun or moon.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * Light rays create a "god rays" effect radiating outward from the light source.
  * Each ray has its own angle, length, and animation phase for organic movement.
  *
- * @par Ray Geometry
+ * @par Ray geometry
  * Rays are rendered as elongated textured quads with soft falloff:
  * @code
  *        Light Source
@@ -70,22 +107,48 @@ struct Star
  *
  * @par Animation
  * Ray brightness pulses subtly using phase offset to prevent uniform appearance.
+ *
+ * @par Field units
+ * Every field is a normalized shaping input, not a pixel or radian value; the
+ * pixel geometry is derived per frame. Sun rays (RenderSunRays) resolve them
+ * as:
+ * @verbatim
+ *   rayAngleDeg = (xPosition - 0.5) * SUN_RAY_SPREAD + angle * 10   [degrees]
+ *   rayWidth    = 50 + width * RAY_WIDTH                            [pixels]
+ *   rayLength   = screenHeight * (0.5 + length * 0.4)               [pixels]
+ *   originPx    = originOffset * (screenWidth * SUN_BAND_WIDTH * 0.5)
+ * @endverbatim
+ * Moon rays (RenderMoonRays) use the same shape with their own constants: a
+ * 60-degree spread, `angle * 8`, `50 + width * 70`, and
+ * `screenHeight * (0.35 + length * 0.45)`.
  */
 struct LightRay
 {
-    float xPosition;     ///< Normalized X position (0-1) relative to light source spread
-    float originOffset;  ///< Horizontal offset from sun center (-1 to 1, scaled by SUN_BAND_WIDTH)
-    float angle;         ///< Angle in radians from vertical (0 = straight down)
-    float length;        ///< Ray length multiplier (1.0 = MAX_RAY_LENGTH pixels)
-    float width;         ///< Ray width in pixels
-    float brightness;    ///< Base brightness (0-1), modulated by time-of-day
-    float phase;         ///< Animation phase offset for pulsing effect
+    /// Fan slot in [0.05, 0.95]. Selects the ray's ANGLE within the fan, not a
+    /// position: `(xPosition - 0.5) * SUN_RAY_SPREAD` degrees off vertical.
+    float xPosition;
+    float originOffset;  ///< Horizontal offset from sun center (-1 to 1, scaled by SUN_BAND_WIDTH).
+    /**
+     * @brief Dimensionless angle jitter, generated in [-0.15, 0.15].
+     *
+     * Added to the fan angle as `angle * 10` DEGREES (sun) or `angle * 8` (moon),
+     * i.e. roughly +/-1.5 degrees of wobble - despite the name it is not radians.
+     */
+    float angle;
+    /// Length input, 0.45-0.90 (sun) / 0.30-0.70 (moon). Scales screen height,
+    /// not an absolute pixel count: sun rays span 68-86% of screen height.
+    float length;
+    /// Width input, 0.7-1.2. A multiplier on top of a fixed 50 px base, so the
+    /// drawn ray is 106-146 px wide for the sun. Not a pixel width itself.
+    float width;
+    float brightness;  ///< Base brightness (0-1), modulated by time-of-day.
+    float phase;       ///< Animation phase offset for pulsing effect.
 };
 
 /**
  * @struct ShootingStar
  * @brief Represents an animated shooting star (meteor) streaking across the sky.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * Shooting stars spawn randomly during night hours and travel in a straight line
@@ -102,38 +165,59 @@ struct LightRay
  *             (fades out)
  * @endcode
  *
- * @par Brightness Curve
- * Uses a parabolic fade: brightest at midpoint of lifetime, fading at both ends.
+ * @par Brightness curve
+ * A trapezoid, not a parabola: two independent linear clamps multiply, so the
+ * streak reaches full brightness after 0.08 s, holds a plateau, then falls
+ * over the last 0.12 s. Lifetimes are 0.3-0.7 s (0.55-0.95 s during a meteor
+ * shower), so short streaks may never reach the plateau.
+ * @verbatim
+ *   fadeIn  = min(1, (maxLifetime - lifetime) / 0.08)
+ *   fadeOut = min(1, lifetime / 0.12)
+ *   alpha   = brightness * fadeIn * fadeOut * starVisibility
+ * @endverbatim
  */
 struct ShootingStar
 {
-    glm::vec2 position;  ///< Current screen-space position in pixels
-    glm::vec2 velocity;  ///< Movement vector (pixels per second)
-    float lifetime;      ///< Remaining lifetime in seconds
-    float maxLifetime;   ///< Total lifetime for fade calculations
-    float brightness;    ///< Peak brightness at lifetime midpoint
-    float length;        ///< Trail length in pixels (stretched behind velocity)
+    /**
+     * @brief world position inside the star-field tile (see SkyRenderer::RenderStars),
+     *        in pixels - not a screen position.
+     *
+     * RenderShootingStars wraps it near the camera before drawing, so a streak may
+     * cross a wrap seam mid-flight.
+     */
+    glm::vec2 position;
+    glm::vec2 velocity;  ///< Movement vector (pixels per second).
+    float lifetime;      ///< Remaining lifetime in seconds.
+    float maxLifetime;   ///< Total lifetime for fade calculations.
+    float brightness;    ///< Peak alpha reached on the plateau (see the curve above).
+    float length;        ///< Trail length in pixels (stretched behind velocity).
 };
 
 /**
  * @struct DewSparkle
  * @brief Represents a glinting dew drop catching early morning sunlight.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * Dew sparkles appear during dawn/morning hours in the lower portion of the
  * screen, simulating sunlight catching morning dew on grass and foliage.
  *
- * @par Sparkle Animation
+ * @par Sparkle animation
  * Each sparkle twinkles independently with a sharper, more "glint-like"
- * animation compared to stars (using abs(sin) for sharp peaks).
+ * animation than a star: everything below 0.5 of a sine is clipped away, the
+ * remaining top half is rescaled to [0, 1] and squared. A sparkle therefore
+ * rests fully dark for most of its cycle and glints once per period - not the
+ * two peaks per period an abs(sin) envelope would give.
+ * @f[
+ * twinkle = \left(\frac{\max(0,\ \sin(t \cdot speed + phase) - 0.5)}{0.5}\right)^2
+ * @f]
  */
 struct DewSparkle
 {
-    glm::vec2 position;  ///< Normalized position (0-1), biased to lower screen
-    float phase;         ///< Animation phase offset for twinkle timing
-    float brightness;    ///< Base brightness (0-1)
-    float speed;         ///< Twinkle animation speed multiplier
+    glm::vec2 position;  ///< Normalized position (0-1), biased to lower screen.
+    float phase;         ///< Animation phase offset for twinkle timing.
+    float brightness;    ///< Base brightness (0-1).
+    float speed;         ///< Twinkle animation speed multiplier.
 };
 
 /**
@@ -143,73 +227,108 @@ struct DewSparkle
  *
  * Populated during the compute pass in SkyRenderer::RenderStars and consumed
  * by two emit passes (glow, then core) so the sprite batch doesn't alternate
- * between m_StarGlowTexture and m_StarTexture once per star.
+ * between the star-glow and star textures once per star. Both emits are
+ * additive, so splitting them does not change the rendered result.
  */
 struct VisibleStar
 {
-    glm::vec2 screenPos;  ///< Camera-relative screen position (top-left of glow/core)
-    glm::vec3 color;      ///< Star tint
-    float size;           ///< Core sprite size in pixels
-    float brightness;     ///< Core alpha multiplier (pre-additive)
-    float glowSize;       ///< Glow sprite size in pixels; <=0 means skip glow this frame
-    float glowAlpha;      ///< Glow alpha multiplier (pre-additive)
+    glm::vec2 screenPos;  ///< Camera-relative screen position (top-left of glow/core).
+    glm::vec3 color;      ///< Star tint.
+    float size;           ///< Core sprite size in pixels.
+    float brightness;     ///< Core alpha multiplier (pre-additive).
+    float glowSize;       ///< Glow sprite size in pixels; <=0 means skip glow this frame.
+    float glowAlpha;      ///< Glow alpha multiplier (pre-additive).
 };
 
 /**
  * @class SkyRenderer
  * @brief Renders atmospheric sky effects synchronized with the day/night cycle.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * The SkyRenderer creates an immersive sky atmosphere by rendering multiple
- * layered effects that respond to the current time of day. All effects are
- * rendered as screen-space overlays on top of the game world.
+ * layered effects that respond to the current time of day. Most effects are
+ * world-anchored and handed to the renderer camera-relative (see @ref Render);
+ * only the full-screen washes - dawn gradient and glow, atmospheric glow,
+ * lightning flash and bolt, dew sparkles - are true screen-space overlays.
  *
  * @par Features
- * | Effect            | Time Active     | Description                          |
- * |-------------------|-----------------|--------------------------------------|
- * | Stars             | Night/Dusk/Dawn | Twinkling stars with color variation |
- * | Background Stars  | Night           | Dimmer distant star field            |
- * | Shooting Stars    | Night           | Random meteor streaks                |
- * | Sun Rays          | Day             | God rays from sun position           |
- * | Moon Rays         | Night           | Softer rays from moon                |
- * | Atmospheric Glow  | Night           | Subtle horizon/upper-sky wash        |
- * | Dawn Gradient     | Dawn            | Purple-to-orange sky gradient        |
- * | Dawn Horizon Glow | Dawn            | Warm glow at horizon                 |
- * | Dew Sparkles      | Morning         | Glinting ground-level sparkles       |
+ * "Time active" is the gate in Render(); weather can move it, because star
+ * visibility and the celestial/aurora fades are weather-resolved.
+ * | Effect            | Gate                        | Description                     |
+ * |-------------------|-----------------------------|---------------------------------|
+ * | Dawn Gradient     | dawnIntensity &gt; 0.01     | Purple-to-orange sky gradient   |
+ * | Dawn Horizon Glow | dawnIntensity &gt; 0.01     | Warm glow at horizon            |
+ * | Atmospheric Glow  | starVisibility &gt;= 0.2    | Horizon/upper-sky wash          |
+ * | Aurora            | auroraFade &gt; 0.01        | Shimmering upper-sky bands      |
+ * | Stars             | starVisibility &gt; 0.01    | Twinkling stars, color variety  |
+ * | Background Stars  | starVisibility &gt; 0.01    | Dimmer distant star field       |
+ * | Shooting Stars    | starVisibility &gt; 0.3     | Random meteor streaks           |
+ * | Dew Sparkles      | sunArc in [0, 0.25)         | Glinting ground-level sparkles  |
+ * | Sun Rays          | sun up + celestialFade      | God rays from sun position      |
+ * | Moon Rays         | moon up + night + celestial | Softer rays from moon           |
+ * | Lightning Flash   | weather lightning interval  | Brief cool-white full-screen    |
+ * | Lightning Bolt    | same frame as each flash    | Jagged screen-space polyline    |
  *
- * @par Time Integration
+ * Atmospheric Glow is listed at its effective gate: @ref Render tests 0.1, but
+ * @ref RenderAtmosphericGlow returns again below 0.2, so nothing is drawn in
+ * the 0.1-0.2 band. The lightning bolt is generated and armed in the same frame
+ * as the flash and merely outlives it (0.18 s bolt against 0.08 s flash); no
+ * delay is inserted.
+ *
+ * @par Time integration
  * Effects are driven by the TimeManager which provides:
  * - `GetSunArc()`: Sun position (0 at sunrise, 0.5 at noon, 1.0 at sunset)
  * - `GetMoonArc()`: Moon position for night sky
- * - `GetStarVisibility()`: Fade factor for stars (1.0 at night, 0.0 at day)
- * - `GetTimePeriod()`: Discrete time periods (Dawn, Morning, Day, etc.)
+ * - `GetStarVisibility()`: Fade factor for stars. Weather-resolved, not a pure
+ *   clock value - a meteor shower can force it to 1.0 at noon and heavy
+ *   precipitation to 0.0 at midnight, which moves every gate that reads it
+ *   (stars, shooting stars, atmospheric glow, moon rays)
+ * - `GetDawnIntensity()`: Dawn gradient and horizon glow strength
+ * - `GetMoonPhase()`: Moon-ray brightness (full 1.0, new floored at 0.3)
+ * - `GetSunColor()` / `GetSkyColor()`: Ray and aurora tinting
+ * - `GetEffectiveWeatherDefinition()`, `GetCelestialFade()`,
+ *   `GetAuroraFade()`, `GetEffectiveMeteorRate()`: weather-transition ramps,
+ *   all cached once per frame in @ref Update
  *
- * @par Render Order
- * Effects are rendered in this order (back to front):
+ * `GetTimePeriod()` is deliberately not used - every gate here is continuous,
+ * so a discrete period would snap.
+ *
+ * @par Render order
+ * Effects are rendered back to front, matching the body of @ref Render.
  * 1. Dawn gradient (full-screen color overlay)
  * 2. Dawn horizon glow (bottom of screen)
  * 3. Night atmospheric glow (horizon + subtle upper-sky shimmer)
- * 4. Background stars (dim, distant)
- * 5. Foreground stars (bright, twinkling)
+ * 4. Aurora bands (behind the stars, world-projected)
+ * 5. Background stars (dim, distant), then foreground stars (bright)
  * 6. Shooting stars (with trails)
  * 7. Dew sparkles (morning only)
- * 8. Sun/Moon rays (god rays effect)
+ * 8. Sun rays, then moon rays (god rays effect)
+ * 9. Lightning flash (full-screen cool-white wash)
+ * 10. Lightning bolt (jagged polyline, drawn on top of the flash)
  *
- * @par Procedural Textures
- * All textures are generated procedurally at initialization:
- * - Star texture: Soft circular gradient with glow
- * - Ray texture: Vertical gradient for light rays
- * - Glow texture: Large soft radial gradient
+ * @par Procedural textures
+ * Every sky sprite but one is generated at initialization and adopted by the
+ * TextureStore, which owns them and re-uploads them on a renderer switch:
+ * - Star texture: Soft circular gradient, plus a larger star-glow variant
+ * - Ray texture: Vertical gradient for sun/moon light rays
+ * - Shooting-star texture: Elongated streak
+ * - Glow texture: Large soft radial gradient (atmosphere, lightning flash)
+ * - Light-pool texture: Soft circle for WorldLight pools
+ * - Aurora curtain and beam textures (see AuroraTextures)
+ *
+ * The only loaded asset is the hand-painted aurora mote, whose path the
+ * caller resolves from the project manifest; missing or unlinked leaves an
+ * empty texture that renders as a colored rect.
  *
  * @par Usage
  * @code
  * SkyRenderer sky;
- * sky.Initialize();  // Generate textures and populate star/ray arrays
+ * sky.Initialize(textureStore);  // Generate textures, populate star/ray arrays
  *
  * // In game loop:
  * sky.Update(deltaTime, timeManager);
- * sky.Render(renderer, timeManager, screenWidth, screenHeight);
+ * sky.Render(renderer, timeManager, cameraPos, screenWidth, screenHeight);
  * @endcode
  *
  * @see TimeManager, IRenderer
@@ -236,21 +355,18 @@ public:
      * Generates procedural textures and populates star/ray arrays.
      * Must be called before Render().
      *
-     * @par Initialization Steps
+     * @par Initialization steps
      * 1. Generate ray texture (soft vertical gradient)
-     * 2.
-     * Generate star textures (point + glow)
-     * 3. Generate shooting star texture (elongated
-     * streak)
-     * 4. Generate atmospheric glow, glow pool, light-pool, and aurora textures
-     * 5. Populate star arrays with random positions/properties
-     * 6. Populate light ray arrays for
-     * sun and moon
-     * 7. Generate dew sparkle positions
+     * 2. Generate star textures (point + glow)
+     * 3. Generate shooting star texture (elongated streak)
+     * 4. Populate light ray, star, background-star and dew-sparkle arrays
+     * 5. Generate the atmospheric glow, light-pool, and aurora textures
+     * 6. Load the hand-painted aurora mote (or leave an empty texture)
      *
-     * Safe to call more than
-     * once; generated resources are replaced by the
-     * current run's textures and arrays.
+     * @note Idempotent by early-out, not by regeneration: a second call while
+     *       already initialized returns immediately and keeps the first run's
+     *       textures, arrays, and @p auroraSpritePath. Nothing here reseeds the
+     *       RNG or re-reads the manifest.
      *
      * @param store TextureStore that adopts the generated sky textures; its
      *              UploadAll re-uploads them on a renderer switch.
@@ -271,15 +387,28 @@ public:
      *
      * Pass @c atlasTex = nullptr to revert to per-element textures.
      *
+     * Each offset is the top-left pixel coordinate of that sky texture's copy
+     * inside @p atlasTex. The region size is not passed: it is read back from
+     * the corresponding standalone texture at draw time, so the binding stays
+     * valid if a texture is regenerated at a different size. Two aurora draws
+     * always bind their own texture instead: the beam (it has no atlas slot)
+     * and the ribbon halo (it draws the glow texture standalone even though
+     * the glow has a slot). Both still cost a texture flush with an atlas
+     * bound.
+     *
      * @param atlasTex Shared atlas texture (typically the tile atlas).
-     * @param rayOffset Pixel offset of @ref m_RayTexture within @p atlasTex.
-     * @param starOffset Pixel offset of @ref m_StarTexture.
-     * @param starGlowOffset Pixel offset of @ref m_StarGlowTexture.
-     * @param shootingStarOffset Pixel offset of @ref m_ShootingStarTexture.
-     * @param glowOffset Pixel offset of @ref m_GlowTexture.
-     * @param lightPoolOffset Pixel offset of @ref m_LightPoolTexture.
-     * @param auroraCurtainOffset Pixel offset of @ref m_AuroraCurtainTexture.
-     * @param auroraSmallOffset Pixel offset of @ref m_AuroraSmallTexture.
+     * @param rayOffset Offset of the light-ray texture (@ref m_RayHandle).
+     * @param starOffset Offset of the star point texture (@ref m_StarHandle).
+     * @param starGlowOffset Offset of the star glow (@ref m_StarGlowHandle).
+     * @param shootingStarOffset Offset of the meteor streak
+     *                           (@ref m_ShootingStarHandle).
+     * @param glowOffset Offset of the atmospheric glow (@ref m_GlowHandle).
+     * @param lightPoolOffset Offset of the WorldLight pool
+     *                        (@ref m_LightPoolHandle).
+     * @param auroraCurtainOffset Offset of the aurora curtain
+     *                            (@ref m_AuroraCurtainHandle).
+     * @param auroraSmallOffset Offset of the aurora mote
+     *                          (@ref m_AuroraSmallHandle).
      */
     void SetAtlasBinding(const Texture* atlasTex,
                          glm::vec2 rayOffset,
@@ -292,10 +421,16 @@ public:
                          glm::vec2 auroraSmallOffset);
 
     /**
-     * Accessor for textures so callers can register them with an atlas
-     * packer that copies pixel data into the atlas image at load time.
-     * (GetLightPoolTexture is declared below alongside its original
-     * Game::Render call site.)
+     * @name Sky texture accessors
+     * @brief Expose the generated sky textures for atlas packing.
+     *
+     * Callers register them with an atlas packer that copies pixel data into
+     * the atlas image at load time. @ref GetLightPoolTexture is declared below,
+     * alongside its original Game::Render call site.
+     *
+     * @pre @ref Initialize has been called. Each accessor dereferences the
+     *      stored TextureStore, which is null until then.
+     * @{
      */
     const Texture& GetRayTexture() const { return m_Store->Get(m_RayHandle); }
     const Texture& GetStarTexture() const { return m_Store->Get(m_StarHandle); }
@@ -304,12 +439,19 @@ public:
     const Texture& GetGlowTexture() const { return m_Store->Get(m_GlowHandle); }
     const Texture& GetAuroraCurtainTexture() const { return m_Store->Get(m_AuroraCurtainHandle); }
     const Texture& GetAuroraSmallTexture() const { return m_Store->Get(m_AuroraSmallHandle); }
+    /// @}
 
     /**
-     * @brief Update time-based animations.
+     * @brief Update time-based animations and cache the frame's weather state.
      *
-     * Updates shooting star positions and spawns new ones randomly.
-     * Also advances internal time for twinkle animations.
+     * Caches the weather-resolved aurora fade, celestial fade and meteor rate
+     * that @ref Render gates on, runs the lightning countdown (generating a
+     * fresh bolt on each flash), advances shooting stars and spawns new ones,
+     * and advances internal time for twinkle animations.
+     *
+     * @note Both the meteor spawner and the bolt generator use the viewport
+     *       cached by the previous @ref Render call. Before the first Render
+     *       the spawner is skipped and a bolt would be generated at 1x1.
      *
      * @param deltaTime Frame time in seconds.
      * @param time      TimeManager for current time-of-day state.
@@ -320,10 +462,16 @@ public:
      * @brief Render all sky effects for the current frame.
      *
      * Renders effects in correct order based on current time of day.
-     * Sky elements are positioned via layered distant parallax: each
-     * category subtracts `cameraPos * SKY_PARALLAX_*` from its sky-frame
-     * neutral position, so player movement drifts the sky slowly without
-     * making it appear walkable-past.
+     * Sky elements are world-anchored, not drifted by a parallax fraction.
+     * Two schemes:
+     * - Stars, shooting stars and aurora live in world space and subtract the
+     *   full camera position. Stars and shooting stars wrap to the congruent
+     *   copy of a 3 x 2 viewport tile nearest the camera (see @ref RenderStars).
+     * - Sun and moon travel a band 3 viewports wide, re-anchored to the
+     *   camera's world X in whole band steps (@ref GetLightSourcePosition).
+     *
+     * Both make the body walkable-past on purpose. Full-screen washes (dawn,
+     * atmospheric glow, dew, lightning) ignore the camera entirely.
      *
      * @param renderer     Renderer interface for draw calls.
      * @param time         TimeManager for time-based visibility.
@@ -357,63 +505,9 @@ public:
                        glm::vec4 color,
                        bool additive);
 
-    /**
-     * @brief Render slowly-drifting cloud shadows on the world (multiplicative-style darkening).
-     *
-     * Drawn AFTER world+particle rendering and BEFORE the screen-space sky
-     * overlay, so shadows darken ground tiles + entities but never the sun
-     * rays / stars / atmospheric glow that pierce the sky. Disabled when
-     * `nightFactor` is high (no shadows at night).
-     *
-     * @param renderer    Renderer interface (world projection still active).
-     * @param cameraPos   World-space camera position (top-left).
-     * @param viewSize    Visible world rect in pixels.
-     * @param time        Current time, drives drift along the wind direction.
-     * @param nightFactor 0=day (full intensity), 1=night (disabled).
-     */
-    void RenderCloudShadows(IRenderer& renderer,
-                            glm::vec2 cameraPos,
-                            glm::vec2 viewSize,
-                            float time,
-                            float nightFactor);
-
-    /**
-     * @brief Pure-math helper: world-space cloud shadow position at time `t`.
-     *
-     * Public for test access. Returns the (x, y) world-space position of the
-     * cloud-shadow blob at slot `index` after `t` seconds of drift; the
-     * deterministic per-slot phase is folded into the return value.
-     *
-     * Inlined so tests can link without pulling in the full SkyRenderer.cpp
-     * (and its IRenderer/Texture stack) into the test binary.
-     */
-    static glm::vec2 ComputeCloudShadowPosition(int index, float t, glm::vec2 origin)
-    {
-        constexpr float kCellSize = 480.0f;
-        constexpr float kLoop = 2.0f * kCellSize;
-
-        // Per-slot world-space anchor inside a 2x2 grid.
-        const float gridX = static_cast<float>(index % 2) * kCellSize;
-        const float gridY = static_cast<float>((index / 2) % 2) * kCellSize;
-
-        // Absolute drifted position: keeps drifting linearly in wind direction.
-        const glm::vec2 wind = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
-        const glm::vec2 drift = wind * (ambience::CLOUD_SHADOW_DRIFT_SPEED * t);
-        const glm::vec2 absolute = glm::vec2(gridX, gridY) + drift;
-
-        // Fold to the equivalent position (mod kLoop) closest to `origin`. This
-        // is what keeps shadows visible around the camera even after long drift,
-        // without the discontinuity that a [0, kLoop) wrap creates near zero.
-        // std::remainder(x, p) returns a value in (-p/2, p/2] congruent to x mod p.
-        auto wrapNearest = [kLoop](float a, float ref)
-        { return ref + std::remainder(a - ref, kLoop); };
-
-        return glm::vec2(wrapNearest(absolute.x, origin.x), wrapNearest(absolute.y, origin.y));
-    }
-
 private:
     /**
-     * @name Texture Generation
+     * @name Texture generation
      * @brief Procedural texture creation for sky effects.
      * @{
      */
@@ -450,7 +544,7 @@ private:
     /// @}
 
     /**
-     * @name Object Generation
+     * @name Object generation
      * @brief Populate arrays with randomized sky objects.
      * @{
      */
@@ -490,7 +584,7 @@ private:
     /// @}
 
     /**
-     * @name Shooting Star Management
+     * @name Shooting star management
      * @brief Lifecycle management for meteor effects.
      * @{
      */
@@ -521,7 +615,7 @@ private:
     /// @}
 
     /**
-     * @name Render Functions
+     * @name Render functions
      * @brief Individual effect rendering routines.
      * @{
      */
@@ -532,10 +626,32 @@ private:
      * Renders stars with brightness modulated by twinkle animation
      * and overall visibility from TimeManager.
      *
+     * @par Star-field wrap
+     * Both star arrays live in one fixed world-space tile,
+     * @ref STAR_FIELD_X_PERIODS x @ref STAR_FIELD_Y_PERIODS viewports
+     * (3 x 2). Each star's normalized position scales to that tile, then
+     * `std::remainder(anchor - cameraRef, period)` folds it to the congruent
+     * copy nearest the camera. That gives full world parallax with no
+     * per-region generation pass, and no discontinuity at the origin (which a
+     * plain `[0, period)` wrap would introduce).
+     * @verbatim
+     *   +---------------------------------------------+  star-field tile
+     *   |                                             |  = 3 viewports wide
+     *   |         +-----------+                       |    2 viewports tall
+     *   |  <----  |  camera   |  ---->                |
+     *   |         |  viewport |     stars outside the |
+     *   |         +-----------+     tile wrap back in |
+     *   |            ^     v        along both axes   |
+     *   +---------------------------------------------+
+     *      wrap x mod 3*screenWidth, y mod 2*screenHeight, nearest camera
+     * @endverbatim
+     * @ref RenderShootingStars uses the same tile and the same wrap.
+     *
      * @param renderer     Renderer interface.
      * @param time         TimeManager for star visibility factor.
-     * @param screenWidth  Screen width for position mapping.
-     * @param screenHeight Screen height for position mapping.
+     * @param cameraPos    World-space camera position; the wrap reference.
+     * @param screenWidth  Screen width; one X period of the star-field tile.
+     * @param screenHeight Screen height; one Y period of the star-field tile.
      */
     void RenderStars(IRenderer& renderer,
                      const TimeManager& time,
@@ -561,8 +677,13 @@ private:
     /**
      * @brief Render shimmering aurora bands in the upper sky.
      *
-     * Active when the current weather is AuroraNight. Bands are drawn with
-     * the world projection (no swap), parallax factor SKY_PARALLAX_AURORA.
+     * Called while the cached aurora fade (@ref TimeManager::GetAuroraFade)
+     * exceeds 0.01. That is true for the Aurora weather, for a director
+     * transition ramping into or out of it, and for an aurora sky overlay over
+     * any base weather - it is not a test on the current weather state. Every
+     * layer's alpha is scaled by that fade, which makes a transition ramp
+     * instead of snap. Bands are drawn with the world projection (no swap) and
+     * subtract the full camera position.
      */
     void RenderAurora(IRenderer& renderer,
                       const TimeManager& time,
@@ -590,12 +711,15 @@ private:
      * @brief Render god rays emanating from the sun.
      *
      * Renders warm-colored rays during day. Intensity based on sun arc
-     * (strongest when sun is lower in sky).
+     * (strongest when sun is lower in sky). See @ref LightRay for how each
+     * ray's normalized fields become pixel geometry.
      *
      * @param renderer     Renderer interface.
      * @param time         TimeManager for sun position and intensity.
-     * @param screenWidth  Screen width.
-     * @param screenHeight Screen height.
+     * @param cameraPos    World-space camera position, for the sun's parallax
+     *                     anchor (@ref SKY_PARALLAX_SUN).
+     * @param screenWidth  Screen width; scales the origin band and fan.
+     * @param screenHeight Screen height; scales the ray length.
      */
     void RenderSunRays(IRenderer& renderer,
                        const TimeManager& time,
@@ -606,12 +730,16 @@ private:
     /**
      * @brief Render softer rays from the moon.
      *
-     * Similar to sun rays but cooler color and lower intensity.
+     * Similar to sun rays but cooler color, a narrower 60-degree fan, and
+     * lower intensity, additionally scaled by the moon phase (full moon 1.0,
+     * new moon floored at 0.3).
      *
      * @param renderer     Renderer interface.
-     * @param time         TimeManager for moon position.
-     * @param screenWidth  Screen width.
-     * @param screenHeight Screen height.
+     * @param time         TimeManager for moon position and phase.
+     * @param cameraPos    World-space camera position, for the moon's parallax
+     *                     anchor (@ref SKY_PARALLAX_MOON).
+     * @param screenWidth  Screen width; scales the origin band and fan.
+     * @param screenHeight Screen height; scales the beam length.
      */
     void RenderMoonRays(IRenderer& renderer,
                         const TimeManager& time,
@@ -620,23 +748,26 @@ private:
                         int screenHeight);
 
     /**
-     * Generate a fresh jagged lightning bolt + 0-3 sub-branches into
-     * m_LightningBolt, sized to the cached viewport. Called once per
-     * flash trigger from Update().
+     * @brief Generate a fresh lightning bolt path.
+     *
+     * Writes a jagged main polyline plus 0-3 sub-branches into
+     * @ref m_LightningBolt, sized to the cached viewport. Called once per
+     * flash trigger from @ref Update.
      */
     void GenerateLightningBolt(int screenWidth, int screenHeight);
 
     /**
-     * Draw the previously-generated lightning bolt while m_LightningBoltTimer
-     * is positive. Camera-locked (the bolt sits in screen space; world-anchor
-     * parallax is a possible future polish).
+     * @brief Draw the previously generated lightning bolt.
+     *
+     * Draws while @ref m_LightningBoltTimer is positive. Camera-locked (the
+     * bolt sits in screen space; world anchoring is possible future polish).
      */
     void RenderLightningBolt(IRenderer& renderer, int screenWidth, int screenHeight);
 
     /// @}
 
     /**
-     * @name Morning/Dawn Effects
+     * @name Morning/dawn effects
      * @brief Special effects for sunrise period.
      * @{
      */
@@ -691,19 +822,31 @@ private:
     /// @}
 
     /**
-     * @name Utility Functions
+     * @name Utility functions
      * @{
      */
 
     /**
-     * @brief Calculate screen position of sun or moon.
+     * @brief Calculate camera-relative position of the sun or moon.
      *
-     * Maps the arc value (0-1) to a screen position along a curved path.
+     * The body travels a band 3 viewports wide, anchored to the camera's
+     * current world X rounded down to whole bands, so it is world-anchored
+     * (the player walks past it) yet never scrolls permanently out of reach.
+     * X runs BACKWARDS along the arc (`1 - arc`), so arc 0 is at the right of
+     * the band. Y is sky-relative: 20 px above the camera at the horizon,
+     * rising 40 px at the arc's apex, so vertical camera motion does not drag
+     * the body down.
      *
      * @param arc          Sun/moon arc value (0 = horizon, 0.5 = zenith).
-     * @param screenWidth  Screen width for position calculation.
-     * @param screenHeight Screen height for position calculation.
-     * @return Screen-space position of light source.
+     * @param screenWidth  Screen width; one third of the travel band.
+     * @param screenHeight Unused; kept for call-site symmetry with the other
+     *                     screen-size-taking helpers.
+     * @param cameraPos    World-space camera position (band anchor + parallax
+     *                     subtraction base).
+     * @param parallaxFactor Fraction of camera motion subtracted from the world
+     *                       anchor: 0 = locked to the screen, 1 = locked to the
+     *                       world. Both callers pass 1.0.
+     * @return Position relative to the camera, in pixels.
      */
     glm::vec2 GetLightSourcePosition(float arc,
                                      int screenWidth,
@@ -714,30 +857,37 @@ private:
     /// @}
 
     /**
-     * @name Procedural Textures
+     * @name Procedural textures
      * @brief GPU textures generated at initialization.
      * @{
      */
     /**
-     * Sky textures live in this store (set in Initialize); UploadAll re-uploads
-     * them on a renderer switch, replacing the old IGpuResourceOwner hook.
+     * @brief Store holding every sky texture; set in @ref Initialize.
+     *
+     * Non-owning, and it must outlive this SkyRenderer: every draw and every
+     * texture accessor dereferences it. Its UploadAll re-uploads the sky
+     * textures on a renderer switch.
      */
     TextureStore* m_Store = nullptr;
-    TextureHandle m_RayHandle;            ///< Vertical gradient for light rays
-    TextureHandle m_StarHandle;           ///< Small soft circle for stars
-    TextureHandle m_StarGlowHandle;       ///< Larger glow behind bright stars
-    TextureHandle m_ShootingStarHandle;   ///< Elongated streak for meteors
-    TextureHandle m_GlowHandle;           ///< Large soft glow for atmosphere
-    TextureHandle m_LightPoolHandle;      ///< Soft circle for WorldLight pools
-    TextureHandle m_AuroraCurtainHandle;  ///< Vertical streaked curtain for aurora bands
-    TextureHandle m_AuroraBeamHandle;     ///< Vertical oval ray/beam for aurora beams
-    TextureHandle m_AuroraSmallHandle;    ///< Procedural soft dot for aurora wisps
+    TextureHandle m_RayHandle;            ///< Vertical gradient for light rays.
+    TextureHandle m_StarHandle;           ///< Small soft circle for stars.
+    TextureHandle m_StarGlowHandle;       ///< Larger glow behind bright stars.
+    TextureHandle m_ShootingStarHandle;   ///< Elongated streak for meteors.
+    TextureHandle m_GlowHandle;           ///< Large soft glow for atmosphere.
+    TextureHandle m_LightPoolHandle;      ///< Soft circle for WorldLight pools.
+    TextureHandle m_AuroraCurtainHandle;  ///< Vertical streaked curtain for aurora bands.
+    TextureHandle m_AuroraBeamHandle;     ///< Vertical oval ray/beam for aurora beams.
+    TextureHandle m_AuroraSmallHandle;    ///< Procedural soft dot for aurora wisps.
+    /// @}
 
     /**
-     * Atlas binding: when @ref m_AtlasTexture is non-null, sky draws sample
-     * from the atlas at the per-element pixel offsets recorded below. The
-     * pixel size of each region is read from the corresponding @c m_*Texture
-     * at draw time, so resize-safe.
+     * @name Atlas binding
+     * When @ref m_AtlasTexture is non-null, sky draws sample from the atlas at
+     * the per-element pixel offsets recorded below. Each region's size is read
+     * back from the corresponding standalone texture in @ref m_Store at draw
+     * time, so the binding survives a texture being regenerated at a different
+     * size. Non-owning; the atlas belongs to the caller.
+     * @{
      */
     const Texture* m_AtlasTexture{nullptr};
     glm::vec2 m_RayAtlasOffset{0.0f};
@@ -751,28 +901,28 @@ private:
     /// @}
 
     /**
-     * @name Sky Object Arrays
+     * @name Sky object arrays
      * @brief Collections of sky elements to render.
      * @{
      */
-    std::vector<Star> m_Stars;                       ///< Foreground stars (bright, prominent)
-    std::vector<Star> m_BackgroundStars;             ///< Background stars (dim, distant)
-    std::vector<VisibleStar> m_VisibleStarsScratch;  ///< Per-frame scratch for two-pass star emit
-    std::vector<LightRay> m_SunRays;                 ///< Sun god ray configurations
-    std::vector<LightRay> m_MoonRays;                ///< Moon ray configurations
-    std::vector<ShootingStar> m_ShootingStars;       ///< Active shooting stars
-    std::vector<DewSparkle> m_DewSparkles;           ///< Morning dew sparkle points
+    std::vector<Star> m_Stars;                       ///< Foreground stars (bright, prominent).
+    std::vector<Star> m_BackgroundStars;             ///< Background stars (dim, distant).
+    std::vector<VisibleStar> m_VisibleStarsScratch;  ///< Per-frame scratch for two-pass star emit.
+    std::vector<LightRay> m_SunRays;                 ///< Sun god ray configurations.
+    std::vector<LightRay> m_MoonRays;                ///< Moon ray configurations.
+    std::vector<ShootingStar> m_ShootingStars;       ///< Active shooting stars.
+    std::vector<DewSparkle> m_DewSparkles;           ///< Morning dew sparkle points.
     /// @}
 
     /**
-     * @name Animation State
+     * @name Animation state
      * @brief Time tracking for animations.
      * @{
      */
-    double m_Time;              ///< Accumulated time for twinkle animations (seconds)
-    float m_ShootingStarTimer;  ///< Countdown to next shooting star spawn
-    float m_LastScreenWidth;    ///< Cached screen width for resize detection
-    float m_LastScreenHeight;   ///< Cached screen height for resize detection
+    double m_Time;              ///< Accumulated time for twinkle animations (seconds).
+    float m_ShootingStarTimer;  ///< Countdown to next shooting star spawn.
+    float m_LastScreenWidth;    ///< Cached screen width for resize detection.
+    float m_LastScreenHeight;   ///< Cached screen height for resize detection.
     /// @}
 
     /**
@@ -788,7 +938,9 @@ private:
     float m_MeteorRateMultiplier{1.0f};  ///< Shooting-star spawn rate multiplier.
 
     /**
-     * Procedurally generated lightning bolt path, regenerated each flash.
+     * @struct LightningBolt
+     * @brief Procedurally generated bolt path, regenerated on each flash.
+     *
      * Coordinates are screen-space; the bolt is drawn camera-locked (no
      * parallax) for the brief duration of the strike.
      */
@@ -803,39 +955,57 @@ private:
     /// @}
 
     /**
-     * @name Texture Size Constants
+     * @name Texture size constants
      * @brief Dimensions for procedurally generated textures.
      * @{
      */
-    static constexpr int RAY_TEXTURE_WIDTH = 64;        ///< Ray texture width (narrow)
-    static constexpr int RAY_TEXTURE_HEIGHT = 512;      ///< Ray texture height (tall for length)
-    static constexpr int STAR_TEXTURE_SIZE = 64;        ///< Star point texture size
-    static constexpr int STAR_GLOW_TEXTURE_SIZE = 128;  ///< Star glow texture size
-    static constexpr int GLOW_TEXTURE_SIZE = 256;       ///< Atmospheric glow texture size
+    static constexpr int RAY_TEXTURE_WIDTH = 64;        ///< Ray texture width (narrow).
+    static constexpr int RAY_TEXTURE_HEIGHT = 512;      ///< Ray texture height (tall for length).
+    static constexpr int STAR_TEXTURE_SIZE = 64;        ///< Star point texture size.
+    static constexpr int STAR_GLOW_TEXTURE_SIZE = 128;  ///< Star glow texture size.
+    static constexpr int GLOW_TEXTURE_SIZE = 256;       ///< Atmospheric glow texture size.
     /// @}
 
     /**
-     * @name Rendering Constants
+     * @name Rendering constants
      * @brief Configuration for effect counts and sizes.
      * @{
      */
-    // Star arrays cover a star-field 3 viewports wide x 2 tall (the wrap
-    // window in RenderStars). Counts are scaled up so per-viewport density
-    // stays roughly the same as the original 600/400 single-viewport layout.
-    static constexpr int STAR_COUNT = 1800;             ///< Number of foreground stars
-    static constexpr int BACKGROUND_STAR_COUNT = 1200;  ///< Number of background stars
-    static constexpr int SUN_RAY_COUNT = 3;   ///< Number of sun rays (spread across ~2/3 of screen)
-    static constexpr int MOON_RAY_COUNT = 3;  ///< Number of moon rays (very subtle)
-    static constexpr int DEW_SPARKLE_COUNT = 4;       ///< Number of dew sparkles
-    static constexpr float MAX_RAY_LENGTH = 1200.0f;  ///< Maximum ray length in pixels
-    static constexpr float RAY_WIDTH = 80.0f;         ///< Base ray width in pixels
+    /**
+     * @brief Number of foreground stars.
+     *
+     * Both star arrays cover a star-field 3 viewports wide x 2 tall (the wrap
+     * window in RenderStars), i.e. 6 viewports of area. These totals therefore
+     * work out to 300 foreground / 200 background stars per viewport - HALF the
+     * density of the original 600/400 single-viewport layout, not a
+     * like-for-like scale-up. RenderStars also caps how many are actually
+     * emitted, at `visibility * 0.6` of the foreground array and
+     * `visibility * 0.4` of the background one. That `visibility` is the
+     * locally dimmed value (`GetStarVisibility() * 0.35`), so the real ceilings
+     * at full night are ~21% (~378 stars) and ~14% (~168 stars).
+     */
+    static constexpr int STAR_COUNT = 1800;
+    static constexpr int BACKGROUND_STAR_COUNT = 1200;  ///< Number of background stars.
+    static constexpr int SUN_RAY_COUNT = 3;      ///< Sun ray count; spread over ~2/3 of the screen.
+    static constexpr int MOON_RAY_COUNT = 3;     ///< Number of moon rays (very subtle).
+    static constexpr int DEW_SPARKLE_COUNT = 4;  ///< Number of dew sparkles.
+    /// unused. Nothing in SkyRenderer.cpp reads this; ray length is derived
+    /// from the screen height (see @ref LightRay), so changing it has no effect.
+    static constexpr float MAX_RAY_LENGTH = 1200.0f;
+    /**
+     * @brief Ray-width multiplier, applied on top of a fixed 50 px base in RenderSunRays
+     *        (`50 + LightRay::width * RAY_WIDTH`).
+     *
+     * Moon rays use their own inline 70.0f instead of this constant.
+     */
+    static constexpr float RAY_WIDTH = 80.0f;
     static constexpr float SUN_RAY_SPREAD =
-        120.0f;  ///< Total fan spread angle in degrees (~2/3 screen)
+        120.0f;  ///< Total fan spread angle in degrees (~2/3 screen).
     static constexpr float SUN_BAND_WIDTH =
-        0.35f;  ///< Width of sun origin band (fraction of screen width)
+        0.35f;  ///< Width of sun origin band (fraction of screen width).
 
     /**
-     * @name World Parallax (full world anchoring)
+     * @name World parallax (full world anchoring)
      * @brief Per-element fraction of camera movement applied to sky positions.
      *
      * 0.0 = locked to screen, 1.0 = locked to world. Sky elements are now
@@ -844,18 +1014,24 @@ private:
      * Stars and shooting stars use a wrap-around field (see RenderStars)
      * so they always remain visible in the upper sky regardless of where
      * the camera is.
+     *
+     * @warning Only SKY_PARALLAX_SUN and SKY_PARALLAX_MOON are read, and only
+     *          by @ref GetLightSourcePosition. The star and aurora constants
+     *          are dead: those passes subtract the full camera position
+     *          directly, so editing them changes nothing.
      * @{
      */
-    static constexpr float SKY_PARALLAX_STARS_BG = 1.0f;  ///< Background stars (world)
-    static constexpr float SKY_PARALLAX_STARS_FG = 1.0f;  ///< Foreground stars (world)
-    static constexpr float SKY_PARALLAX_SUN = 1.0f;       ///< Sun + sun rays (world)
-    static constexpr float SKY_PARALLAX_MOON = 1.0f;      ///< Moon + moon rays (world)
-    static constexpr float SKY_PARALLAX_AURORA = 1.0f;    ///< Aurora bands (world)
+    static constexpr float SKY_PARALLAX_STARS_BG = 1.0f;  ///< Unused; see the warning above.
+    static constexpr float SKY_PARALLAX_STARS_FG = 1.0f;  ///< Unused; see the warning above.
+    static constexpr float SKY_PARALLAX_SUN = 1.0f;       ///< Sun + sun rays (world).
+    static constexpr float SKY_PARALLAX_MOON = 1.0f;      ///< Moon + moon rays (world).
+    static constexpr float SKY_PARALLAX_AURORA = 1.0f;    ///< Unused; see the warning above.
 
     /**
-     * Width of the star-field tile (in viewports). Stars wrap around the
-     * camera modulo this period so the whole map gets stars without
-     * requiring a per-tile generation pass.
+     * @brief Width of the star-field tile, in viewports.
+     *
+     * Stars wrap around the camera modulo this period so the whole map gets
+     * stars without a per-tile generation pass.
      */
     static constexpr float STAR_FIELD_X_PERIODS = 3.0f;
     static constexpr float STAR_FIELD_Y_PERIODS = 2.0f;
@@ -871,6 +1047,6 @@ private:
     /// @brief Generate the procedural aurora beam texture (vertical oval ray).
     void GenerateAuroraBeamTexture();
 
-    bool m_Initialized;  ///< True after Initialize() completes successfully
-    std::mt19937 m_Rng;  ///< Shared RNG for all procedural generation
+    bool m_Initialized;  ///< True after Initialize() completes successfully.
+    std::mt19937 m_Rng;  ///< Shared RNG for all procedural generation.
 };
