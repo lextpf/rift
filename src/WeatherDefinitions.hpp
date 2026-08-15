@@ -25,9 +25,9 @@ enum class WeatherState
     Thunderstorm,
     Blizzard,
 
-    // Atmosphere - Fog now merges the former Mist (small thin puffs) with
-    // occasional large fog blobs at an 80/20 ratio. Mist as a separate state
-    // and Overcast/Snow as standalone weathers have been removed.
+    // Atmosphere - Fog is one thinned stream of large soft puffs (uniform
+    // 48-96 px); fogAlphaMultiplier holds per-puff alpha down so the world
+    // stays legible.
     Fog,
     HeatHaze,
     Sandstorm,
@@ -37,8 +37,8 @@ enum class WeatherState
     CherryBlossoms,
     PollenStorm,
 
-    // Special / night
-    AuroraNight,
+    // Special / events
+    Aurora,
     MeteorShower,
     FireflySwarm,
     AshFall,
@@ -64,7 +64,7 @@ struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<Weathe
                                                  "FallingLeaves",
                                                  "CherryBlossoms",
                                                  "PollenStorm",
-                                                 "AuroraNight",
+                                                 "Aurora",
                                                  "MeteorShower",
                                                  "FireflySwarm",
                                                  "AshFall",
@@ -78,9 +78,10 @@ struct EnumTraits<WeatherState> : EnumTraitsBase<WeatherState, EnumTraits<Weathe
 /**
  * @enum WeatherParticleType
  * @brief Identifies which particle effect a weather state spawns.
+ * @ingroup Effects
  *
  * Decoupled from ParticleSystem's internal `ParticleType` enum so that
- * WeatherDefinitions.h can stay renderer-free and unit-testable.
+ * WeatherDefinitions.hpp can stay renderer-free and unit-testable.
  * ParticleSystem translates this to the concrete ParticleType at spawn time.
  */
 enum class WeatherParticleType
@@ -96,18 +97,19 @@ enum class WeatherParticleType
     Ember,         ///< Maps to ParticleType::Ember.
     Sand,          ///< Maps to ParticleType::Sand.
     Firefly,       ///< Maps to ParticleType::Firefly.
-    Wisp,          ///< Maps to ParticleType::Wisp. AuroraNight's sparse aurora-dust layer.
+    Wisp,          ///< Maps to ParticleType::Wisp. Aurora's sparse aurora-dust layer.
     Sunshine,      ///< Maps to ParticleType::Sunshine. Used by GodRays for rainbow-tinted beams.
     Smoke,         ///< Maps to ParticleType::Smoke. Drifting haze layer for AshFall/EmberStorm.
     Zap,           ///< Maps to ParticleType::Zap. Thunderstorm's electric crackle layer.
     Wind,          ///< Maps to ParticleType::Wind. Sandstorm's gust-streak layer.
-    Aurora,        ///< Maps to ParticleType::Aurora. AuroraNight's hand-painted mote layer.
+    Aurora,        ///< Maps to ParticleType::Aurora. Aurora's hand-painted mote layer.
     Constellation  ///< Maps to ParticleType::Constellation. MeteorShower's settling stardust.
 };
 
 /**
  * @enum LightSchedule
  * @brief When a WorldLight emits.
+ * @ingroup World
  *
  * Drives `ComputeLightIntensity(schedule, hour)` to produce a smooth
  * 0-1 envelope around dusk/dawn.
@@ -132,6 +134,7 @@ struct EnumTraits<LightSchedule> : EnumTraitsBase<LightSchedule, EnumTraits<Ligh
 /**
  * @struct WorldLight
  * @brief A point light source anchored to a world position.
+ * @ingroup World
  *
  * Owned by `Tilemap` (serialized in the map JSON). Rendered as an additive
  * soft-circle sprite in `Game::Render`, with intensity driven by
@@ -148,6 +151,7 @@ struct WorldLight
 /**
  * @struct WeatherDefinition
  * @brief Per-weather configuration for ambient, particles, and sky FX.
+ * @ingroup Effects
  *
  * Looked up by `GetWeatherDefinition(state)` - a static table indexed
  * by `std::to_underlying(WeatherState)`. Pure data, no side effects.
@@ -190,9 +194,12 @@ struct WeatherDefinition
     /// Wind intensity 0-1 - affects horizontal drift of leaf/pollen/ash/sand.
     float windIntensity{0.5f};
 
-    /// Optional secondary weather particle that spawns alongside @ref particleType.
-    /// Default `None` means single-type spawning (current behavior). Used by
-    /// Blizzard to layer Fog particles on top of Snow without losing either.
+    /**
+     * @brief Optional secondary weather particle that spawns alongside @ref particleType.
+     *
+     * Default `None` means single-type spawning (current behavior). Used by Blizzard to
+     * layer Fog particles on top of Snow without losing either.
+     */
     WeatherParticleType secondaryParticleType{WeatherParticleType::None};
 
     /// Spawn rate (particles/sec) for the secondary particle. Ignored when
@@ -203,9 +210,13 @@ struct WeatherDefinition
     /// (still subject to global ParticleSystem cap).
     int secondaryMaxWeatherParticles{0};
 
-    /// Multiplier on the Fog particle's render-time base alpha (default 1.0
-    /// = unchanged). Lets fog-bearing weathers soften the fog wall without
-    /// changing density. Read by `ParticleBehavior<ParticleType::Fog>::Update`.
+    /**
+     * @brief Multiplier on the Fog particle's render-time base alpha (default 1.0 =
+     *        unchanged).
+     *
+     * Lets fog-bearing weathers soften the fog wall without changing density. Read by
+     * `ParticleBehavior<ParticleType::Fog>::Update`.
+     */
     float fogAlphaMultiplier{1.0f};
 
     /// Reserved for a future heat-haze post-FX pass; currently unused.
@@ -215,13 +226,18 @@ struct WeatherDefinition
 
 /**
  * @brief Look up the static definition for a weather state.
+ * @ingroup Effects
+ *
  * @param state Any WeatherState value.
- * @return Reference to a static WeatherDefinition (lifetime: program).
+ * @return Reference to a static WeatherDefinition (lifetime: program). An
+ * out-of-range value - a deserialized integer, for example - resolves to the
+ * Clear entry instead of failing.
  */
 const WeatherDefinition& GetWeatherDefinition(WeatherState state);
 
 /**
  * @brief Compute light envelope (0-1) for a schedule at the given hour.
+ * @ingroup World
  *
  * Uses a smoothstep ramp at the dawn and dusk boundaries:
  *  - AlwaysOn   -> 1.0
