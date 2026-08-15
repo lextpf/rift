@@ -8,12 +8,11 @@
 
 #include <glm/glm.hpp>
 
-/// @file WeatherDirectorTests.cpp
-/// @brief Transition lifecycle, retarget continuity, fog hold/decay, reset,
-/// and the disabled-degrade path. All headless.
+// Transition lifecycle, retarget continuity, fog hold/decay, reset,
+// and the disabled-degrade path. All headless.
 namespace
 {
-/// Step the director in fixed frames.
+// Step the director in fixed frames.
 void StepFrames(WeatherDirector& d, TimeManager& t, int frames, float dt = 1.0f / 60.0f)
 {
     for (int i = 0; i < frames; ++i)
@@ -198,7 +197,7 @@ TEST(WeatherDirector, ResetRestoresCalmWindDefaults)
     director.Reset(time);
     EXPECT_FLOAT_EQ(director.GetWindStrength(), 0.5f);
     EXPECT_NEAR(
-        glm::dot(director.GetWindDirection(), glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR)),
+        glm::dot(director.GetWindDirection(), glm::normalize(ambience::WEATHER_WIND_BASE_DIR)),
         1.0f,
         1e-4f);
 }
@@ -281,8 +280,8 @@ TEST(WeatherDirector, SpawnStreamsExposeTransitionEndpoints)
 
 namespace
 {
-/// Step the director with the TimeManager clock ALSO advancing (dt real
-/// seconds -> dt game hours at the 24 s day).
+// Step the director with the TimeManager clock ALSO advancing (dt real
+// seconds -> dt game hours at the 24 s day).
 void StepWithClock(WeatherDirector& d, TimeManager& t, int frames, float dt = 1.0f / 60.0f)
 {
     for (int i = 0; i < frames; ++i)

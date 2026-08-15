@@ -6,12 +6,11 @@
 
 #include <glm/gtc/constants.hpp>
 
-/// @file WeatherBlendTests.cpp
-/// @brief Pure blend math for weather transitions: endpoint identity, per-field
-/// blend rules, lightning frequency-space, and the shared-type cap floor.
+// Pure blend math for weather transitions: endpoint identity, per-field
+// blend rules, lightning frequency-space, and the shared-type cap floor.
 namespace
 {
-/// Field-by-field equality (WeatherDefinition is a plain aggregate).
+// Field-by-field equality (WeatherDefinition is a plain aggregate).
 void ExpectDefinitionEq(const WeatherDefinition& x, const WeatherDefinition& y)
 {
     EXPECT_EQ(x.ambientTintMultiplier, y.ambientTintMultiplier);
@@ -225,11 +224,11 @@ TEST(WeatherBlend, GustStrengthEnvelope)
 }
 
 // Gust direction: normalized, wanders within the configured cone around
-// CLOUD_SHADOW_WIND_DIR, and is continuous.
+// WEATHER_WIND_BASE_DIR, and is continuous.
 TEST(WeatherBlend, GustDirectionWanderCone)
 {
     const glm::vec3 phases = GustPhases(SplitMix64(7));
-    const glm::vec2 base = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+    const glm::vec2 base = glm::normalize(ambience::WEATHER_WIND_BASE_DIR);
     const float maxAngle = glm::radians(ambience::WEATHER_WIND_WANDER_DEG) + 1e-4f;
 
     glm::vec2 prev = GustWindDirection(0.0, phases);
