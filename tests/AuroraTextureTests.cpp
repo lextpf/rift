@@ -78,6 +78,30 @@ TEST(AuroraTextureTests, CurtainEntireBorderFeathersToZero)
     EXPECT_GT(A(px, w, w / 2, h / 2), 60);  // interior stays bright (feather didn't blank it)
 }
 
+TEST(AuroraTextureTests, CurtainHasVisibleCoreAndSoftOuterHalo)
+{
+    const int w = 128, h = 256;
+    auto px = AuroraTextures::BuildCurtainPixels(w, h);
+    const int center = A(px, w, w / 2, h / 2);
+    const int verticalOuter = A(px, w, w / 2, h / 8);
+    const int verticalInner = A(px, w, w / 2, h / 4);
+    const int horizontalOuter = A(px, w, w / 8, h / 2);
+    const int horizontalInner = A(px, w, w / 4, h / 2);
+
+    // The core is clearly visible but translucent, while both broad envelopes
+    // retain a faint tail before the border reaches zero.
+    EXPECT_GT(center, 155);
+    EXPECT_LT(center, 185);
+    EXPECT_GT(verticalOuter, 4);
+    EXPECT_GT(horizontalOuter, 3);
+    EXPECT_LT(verticalOuter, verticalInner);
+    EXPECT_LT(verticalInner, center);
+    EXPECT_LT(horizontalOuter, horizontalInner);
+    EXPECT_LT(horizontalInner, center);
+    EXPECT_LT(verticalOuter, center / 5);
+    EXPECT_LT(horizontalOuter, center / 5);
+}
+
 TEST(AuroraTextureTests, BeamEntireBorderFeathersToZero)
 {
     const int w = 64, h = 256;
@@ -88,4 +112,5 @@ TEST(AuroraTextureTests, BeamEntireBorderFeathersToZero)
     EXPECT_LT(A(px, w, w / 2, 0), 4);       // top-center feathered (was a hard ~15)
     EXPECT_LT(A(px, w, w / 2, h - 1), 4);   // bottom-center feathered
     EXPECT_GT(A(px, w, w / 2, h / 2), 60);  // interior stays bright
+    EXPECT_LT(A(px, w, w / 2, h / 2), 90);  // soft glow, never a dense core
 }
