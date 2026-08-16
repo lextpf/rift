@@ -157,7 +157,7 @@ WeatherDefinition BlendWeatherDefinitions(const WeatherDefinition& a,
 uint64_t SplitMix64(uint64_t x)
 {
     // Standard SplitMix64 finalizer (Steele/Lea/Flood). Deterministic across
-    // platforms; used for gust phases now and forecast rolls in phase 3.
+    // platforms; used for gust phases, front boundaries, and forecast rolls.
     x += 0x9E3779B97F4A7C15ULL;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
@@ -189,7 +189,7 @@ glm::vec2 GustWindDirection(double clockSeconds, const glm::vec3& phases)
     const float twoPi = glm::two_pi<float>();
     const float wander = glm::radians(ambience::WEATHER_WIND_WANDER_DEG) *
                          std::sin(twoPi * t / ambience::WEATHER_WIND_WANDER_PERIOD_S + phases.z);
-    const glm::vec2 base = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+    const glm::vec2 base = glm::normalize(ambience::WEATHER_WIND_BASE_DIR);
     const float c = std::cos(wander);
     const float s = std::sin(wander);
     return glm::normalize(glm::vec2(base.x * c - base.y * s, base.x * s + base.y * c));
@@ -198,8 +198,7 @@ glm::vec2 GustWindDirection(double clockSeconds, const glm::vec3& phases)
 namespace
 {
 // Weighted natural front pool. Clear dominates; harsher weathers are rare.
-// GodRays/EmberStorm/AshFall/HeatHaze stay console-only (maintainer decision
-// 2026-07-02); the three night states arrive as events, not fronts.
+// the three night states arrive as events, not fronts.
 struct FrontWeight
 {
     WeatherState state;
@@ -300,7 +299,7 @@ ForecastEntry ForecastForDay(uint64_t seed, int64_t dayIndex)
         int pick = static_cast<int>(which % static_cast<uint64_t>(auroraW + meteorW + fireflyW));
         if (pick < auroraW)
         {
-            entry.nightEvent = WeatherState::AuroraNight;
+            entry.nightEvent = WeatherState::Aurora;
         }
         else if (pick < auroraW + meteorW)
         {
@@ -313,4 +312,19 @@ ForecastEntry ForecastForDay(uint64_t seed, int64_t dayIndex)
     }
 
     return entry;
+}
+
+float BlendOverlayScalar(float base, float overlay, float blend)
+{
+    return std::lerp(base, std::max(base, overlay), std::clamp(blend, 0.0f, 1.0f));
+}
+
+glm::vec3 BlendOverlayTint(glm::vec3 baseColor, glm::vec3 overlayTint, float amount)
+{
+    return baseColor * glm::mix(glm::vec3(1.0f), overlayTint, std::clamp(amount, 0.0f, 1.0f));
+}
+
+float BlendOverlayAuroraFade(float baseFade, float blend, bool overlayHasAurora)
+{
+    return overlayHasAurora ? std::max(baseFade, std::clamp(blend, 0.0f, 1.0f)) : baseFade;
 }
