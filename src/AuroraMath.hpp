@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 
 /**
- * @brief Pure, renderer-free math for AuroraNight.
+ * @brief Pure, renderer-free math for the Aurora weather effect.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Effects
  *
@@ -72,13 +72,24 @@ inline float TangentAngleDeg(glm::vec2 prev, glm::vec2 next)
  * @brief Travelling brightness hot-spot along a band (Gaussian sweep).
  *
  * A single bright center sweeps along the ribbon over time; @p seed offsets
- * each band's phase so neighbouring bands don't pulse in sync.
+ * each band's phase so neighboring bands don't pulse in sync.
+ *
+ * @f[
+ *   B(s,t) = \exp\left(-\left(\frac{s - \mathrm{frac}(vt+\sigma)}{w}\right)^2\right)
+ * @f]
+ *
+ * with s = @p segNorm, v = @p speed, w = @p width and sigma = @p seed. The
+ * distance s - center is linear, not wrap-aware, so the hot-spot does not cross
+ * the seam: it fades out near segNorm 1 and re-enters at segNorm 0.
+ *
+ * @pre @p width > 0. A width of 0 divides by zero and returns NaN.
  *
  * @param segNorm  Position along the ribbon, in [0,1].
  * @param t        Time (seconds) driving the sweep.
- * @param speed    Rate at which the center travels along the band.
- * @param width    Gaussian half-width of the hot-spot.
- * @param seed     Per-band phase offset so neighbours desync.
+ * @param speed    Center travel rate, in band lengths per second (one full
+ *                 sweep every 1/speed seconds).
+ * @param width    Gaussian 1/e radius of the hot-spot, in band-length units.
+ * @param seed     Per-band phase offset so neighbors desync.
  * @return         Brightness boost in (0,1], peaking at the moving center.
  */
 inline float SweepBoost(float segNorm, float t, float speed, float width, float seed)
