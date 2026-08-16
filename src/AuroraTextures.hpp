@@ -3,7 +3,7 @@
 #include <vector>
 
 /**
- * @brief Pure, renderer-free procedural texture generation for AuroraNight.
+ * @brief Pure, renderer-free procedural texture generation for Aurora weather.
  * @author Alex (https://github.com/lextpf)
  * @ingroup Effects
  *
@@ -16,8 +16,8 @@ namespace AuroraTextures
 /**
  * @brief Build a wave/curtain sheet texture.
  *
- * Gaussian horizontal feather + asymmetric vertical profile (soft top, fuller
- * base) + faint vertical ray striations. Inherently translucent.
+ * Dual-envelope horizontal and vertical feathers (bright core, faint broad
+ * halo) plus subtle ray striations. Inherently translucent.
  *
  * @param width   Texture width in pixels.
  * @param height  Texture height in pixels.
@@ -28,8 +28,10 @@ std::vector<unsigned char> BuildCurtainPixels(int width, int height);
 /**
  * @brief Build a vertical oval beam/ray texture.
  *
- * Gaussian oval cross-section, brightest in the lower third, feathering to
- * nothing at the top with a soft base edge.
+ * Gaussian oval cross-section centered on the texture, so the beam is brightest
+ * at mid-height and feathers to zero at both ends as well as both sides. That
+ * makes it read as a floating, feathered glow rather than a spike rooted to
+ * the band it is drawn over.
  *
  * @param width   Texture width in pixels.
  * @param height  Texture height in pixels.
