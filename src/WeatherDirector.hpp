@@ -14,7 +14,7 @@
  * Game-owned subsystem (by value, like TimeManager). Each frame it advances
  * the active transition, blends the endpoint definitions into m_Effective
  * (stable member storage - consumers hold the pointer across the frame), and
- * publishes the blend through the TimeManager facade. Deliberately NOT an
+ * publishes the blend through the TimeManager facade. Deliberately not an
  * ECS system: no entity data is involved.
  *
  * Phase 1-2 delivered manual transitions (console), fog hold/decay, and wind
@@ -22,8 +22,47 @@
  * weather against the deterministic forecast (WeatherBlend's
  * ForecastForDay/ForecastFrontIndex) and starts a transition on its own when
  * they disagree. A console RequestWeather() arms a manual hold that
- * suspends reconciliation for the rest of the current forecast front; see
- * docs/superpowers/specs/2026-07-02-weather-director-design.md.
+ * suspends reconciliation for the rest of the current forecast front;
+ *
+ * @par Publication state machine
+ * The director has exactly three publication states. Each edge is labelled
+ * with the TimeManager call it makes. The two publishing states (Transition and
+ * FogDecay) re-run Publish() once per frame while they last, so SetWeatherBlend
+ * is re-issued every frame (which is why a retarget capture must be re-applied
+ * every frame - see TimeManager::SetWeatherBlend).
+ *
+ * @htmlonly
+ * <pre class="mermaid">
+ * stateDiagram-v2
+ *     [*] --> Idle
+ *     Idle --> Transition: StartWeatherChange<br/>SetWeatherBlend + SetWeatherFades
+ *     Transition --> Transition: retarget<br/>+ SetWeatherBlendResolvedFrom
+ *     Transition --> Idle: elapsed >= duration, no fog hold<br/>ClearWeatherBlend
+ *     Transition --> FogDecay: elapsed >= duration, fog hold engaged<br/>SetWeatherBlend null,null
+ *     FogDecay --> Idle: decay done<br/>ClearWeatherBlend
+ *     FogDecay --> Transition: StartWeatherChange<br/>seeds from-def with live fog alpha
+ *     Transition --> Idle: hard cut or Reset<br/>SetWeather + ClearWeatherBlend
+ *     FogDecay --> Idle: hard cut or Reset<br/>ClearWeatherBlend
+ * </pre>
+ * @endhtmlonly
+ *
+ * - Idle: nothing published. The TimeManager getters resolve the single
+ *   definition for TimeManager::GetWeather.
+ * - Transition: `m_Active`. Publish blends m_FromDef into the destination
+ *   table def, stores it in m_Effective, and publishes both endpoints plus
+ *   lerped celestial/aurora fades. A retarget (StartWeatherChange while
+ *   active) snapshots the resolved getters as the new from-endpoint and
+ *   re-enters this state rather than restarting from the table.
+ * - FogDecay: entered only when the transition engaged the fog hold, i.e.
+ *   the outgoing weather spawned Fog-type particles and the incoming one does
+ *   not. It publishes `SetWeatherBlend(nullptr, nullptr, 1.0f, &m_Effective)`
+ *   - effective-only mode - so the getters run the plain single-definition
+ *   path while the fog multiplier eases from the held value back to the
+ *   destination's over ambience::WEATHER_FOG_HOLD_DECAY_SECONDS.
+ *
+ * The hard-cut edge fires whenever the director is disabled or the requested
+ * duration is <= 0; it also collapses m_FromState/m_ToState onto the target so
+ * GetTransition never reports a stale pair.
  */
 class WeatherDirector
 {
@@ -42,6 +81,12 @@ public:
      *
      * Call once per frame, only in GameMode::Playing, immediately after
      * TimeManager::Update. Not calling it freezes the transition (Paused).
+     *
+     * @param deltaTime Real frame seconds. Unscaled by `time.scale` and unaffected by
+     *                  `time.freeze`: the transition, fog-decay and gust clocks all run
+     *                  in real seconds.
+     * @param time      Facade the blend is published through, and the source of the
+     *                  game-scaled day and hour used by forecast reconciliation.
      */
     void Update(float deltaTime, TimeManager& time);
 
@@ -52,7 +97,9 @@ public:
      * the forecast front so reconciliation won't stomp it for that front), but only when
      * the director is enabled. Semantics:
      *  - durationSeconds <= 0, or disabled: hard SetWeather, no blend.
-     *  - Already targeting @p target: no-op.
+     *  - Already targeting @p target: no transition is started or retargeted, but the
+     *    manual hold is still armed (when enabled), so reconciliation stays suspended
+     *    for the rest of the current front.
      *  - Mid-transition: retarget from the blended state (resolved channels captured for
      *    a seamless switch); TimeManager::GetWeather() reports @p target immediately.
      */
@@ -64,6 +111,9 @@ public:
      * Call alongside every TimeManager::Initialize() so no stale blend, fog hold, or
      * manual forecast hold survives into the next world. Leaves SetAutoWeather()'s
      * setting and the gust clock untouched (gusts must not re-sync on world loads).
+     * The published gust outputs are still snapped back to calm defaults (base
+     * direction, strength 0.5), so a quit-to-title does not freeze the last gust
+     * instant into the title backdrop; only the clock and phases survive.
      */
     void Reset(TimeManager& time);
 
@@ -112,12 +162,17 @@ public:
      */
     ForecastEntry GetForecast(const TimeManager& time, int64_t dayOffset) const;
 
-    /// Spawn-stream endpoints for ParticleSystem's dual-stream transition
-    /// spawning. outgoing is null when no transition is active.
+    /**
+     * @brief Spawn-stream endpoints for ParticleSystem's four-stream transition
+     *        spawning (outgoing primary/secondary plus incoming primary/secondary).
+     *
+     * Both pointers are null when no transition is active; a caller must check both,
+     * as ParticleSystem does, before taking the transition path.
+     */
     struct SpawnStreams
     {
-        const WeatherDefinition* outgoing{nullptr};  ///< Null when no transition.
-        const WeatherDefinition* incoming{nullptr};  ///< Table def of the target.
+        const WeatherDefinition* outgoing{nullptr};  ///< Outgoing endpoint; null when idle.
+        const WeatherDefinition* incoming{nullptr};  ///< Target's table def; null when idle.
         float weight{0.0f};                          ///< Eased blend weight [0, 1].
     };
 
@@ -128,7 +183,7 @@ public:
     glm::vec2 GetWindDirection() const { return m_WindDir; }
 
     /// Gusted wind strength for the current frame, derived from the effective
-    /// weather def's windIntensity through the Task 1 gust envelope.
+    /// weather def's windIntensity through GustWindStrength (WeatherBlend.hpp).
     float GetWindStrength() const { return m_WindStrength; }
 
 private:
@@ -145,7 +200,7 @@ private:
     void StartWeatherChange(TimeManager& time, WeatherState target, float durationSeconds);
 
     /// Eased [0, 1] progress of the active transition; 1.0 when idle. Shared
-    /// by GetTransition(), GetSpawnStreams(), and Publish() (handoff b).
+    /// by GetTransition(), GetSpawnStreams(), and Publish().
     float Progress() const;
 
     bool m_Enabled{false};  ///< Off until a gameplay world loads.
@@ -162,34 +217,55 @@ private:
     bool m_FogDecayActive{false};  ///< Post-transition decay in progress.
     float m_FogDecayElapsed{0.0f};
 
-    /// Retarget capture: exact resolved from-endpoint for the whole retargeted
-    /// transition. Publish re-applies it every frame (SetWeatherBlend
-    /// invalidates captures on each publication).
-    bool m_UseResolvedFrom{false};
-    ResolvedWeatherChannels m_ResolvedFrom{};
+    /**
+     * @name Retarget capture
+     * @brief Exact resolved from-endpoint for the whole retargeted transition.
+     *
+     * Publish re-applies it every frame (SetWeatherBlend invalidates captures on each
+     * publication).
+     * @{
+     */
+    bool m_UseResolvedFrom{false};             ///< True while a retarget capture is live.
+    ResolvedWeatherChannels m_ResolvedFrom{};  ///< Captured ambient, sky and star channels.
+    /// @}
 
-    /// Fade values at transition start (fresh: from-def bools as 0/1;
-    /// retarget: the currently published fades, so a mid-lerp fade continues
-    /// instead of snapping to the old destination's bool).
-    float m_FromCelestialFade{1.0f};
-    float m_FromAuroraFade{0.0f};
+    /**
+     * @name Fades at transition start
+     * @brief Fresh start captures the from-def bools as 0/1; a retarget captures the
+     *        currently published fades, so a mid-lerp fade continues instead of
+     *        snapping to the old destination's bool.
+     * @{
+     */
+    float m_FromCelestialFade{1.0f};  ///< Sun/moon body fade at transition start.
+    float m_FromAuroraFade{0.0f};     ///< Aurora band fade at transition start.
+    /// @}
 
     double m_Clock{0.0};  ///< Real-seconds accumulator for the gust envelope.
     glm::vec2 m_WindDir{
-        glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR)};  ///< Gusted wind direction (normalized).
+        glm::normalize(ambience::WEATHER_WIND_BASE_DIR)};  ///< Gusted wind direction (normalized).
     float m_WindStrength{0.5f};  ///< Gusted strength; 0.5 = engine-wide base.
 
-    /// Forecast seed for ForecastFrontIndex()/ForecastForDay() rolls (front
-    /// weather + night events). SetForecastSeed() overrides the default and
-    /// recomputes m_GustPhases to match.
+    /**
+     * @brief Forecast seed for ForecastFrontIndex()/ForecastForDay() rolls
+     *        (front weather + night events).
+     *
+     * SetForecastSeed() overrides the default and recomputes m_GustPhases to match.
+     */
     uint64_t m_ForecastSeed{0x9E3779B97F4A7C15ULL};
     bool m_AutoWeather{true};  ///< false = manual sticky (see SetAutoWeather).
 
-    /// Manual hold: armed by RequestWeather() (only when m_Enabled), cleared when the
-    /// forecast front changes or by Reset()/SetAutoWeather(true). Suspends reconciliation
-    /// for the rest of the front the console override was made on.
-    bool m_ManualHoldSet{false};
-    int64_t m_ManualHoldFront{0};
+    /**
+     * @name Manual hold
+     * @brief Armed by RequestWeather() (only when m_Enabled), cleared when the forecast
+     *        front changes or by Reset()/SetAutoWeather(true).
+     *
+     * Suspends reconciliation for the rest of the front the console override was made
+     * on.
+     * @{
+     */
+    bool m_ManualHoldSet{false};   ///< True while the hold suspends reconciliation.
+    int64_t m_ManualHoldFront{0};  ///< Forecast front the console override was made on.
+    /// @}
 
     /// Session-constant gust phase offsets from m_ForecastSeed (recomputed in
     /// SetForecastSeed()); deriving them per-day instead re-rolled the wind at midnight.

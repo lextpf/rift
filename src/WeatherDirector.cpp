@@ -8,14 +8,14 @@
 
 namespace
 {
-// True for the three night-event states (AuroraNight/MeteorShower/
+// True for the three forecast night-event states (Aurora/MeteorShower/
 // FireflySwarm). Used by reconciliation to detect a release edge (event ->
 // front) so the release also gets the event transition duration, matching
 // the engage edge - both feel like the event's boundary, not a slow front
 // crossfade.
 bool IsNightEventState(WeatherState state)
 {
-    return state == WeatherState::AuroraNight || state == WeatherState::MeteorShower ||
+    return state == WeatherState::Aurora || state == WeatherState::MeteorShower ||
            state == WeatherState::FireflySwarm;
 }
 }  // namespace
@@ -23,15 +23,15 @@ bool IsNightEventState(WeatherState state)
 void WeatherDirector::Update(float deltaTime, TimeManager& time)
 {
     // Gust envelope: session-constant phases (from the forecast seed),
-    // continuous across transitions AND day rollovers (only the base blends;
-    // the phases and clock never reset - see m_GustPhases, handoff a).
+    // continuous across transitions and day rollovers (only the base blends;
+    // the phases and clock never reset - see m_GustPhases).
     m_Clock += deltaTime;
     m_WindStrength =
         GustWindStrength(time.GetEffectiveWeatherDefinition().windIntensity, m_Clock, m_GustPhases);
     m_WindDir = GustWindDirection(m_Clock, m_GustPhases);
 
     // Forecast reconciliation (level-based): compute what the forecast wants
-    // RIGHT NOW and request it when it differs from the current target. One
+    // RIGHT now and request it when it differs from the current target. One
     // rule covers boundary crossings, time.set jumps in both directions, and
     // event/front precedence (the event wins during its dusk->dawn window).
     if (m_Enabled && m_AutoWeather)
@@ -144,7 +144,7 @@ void WeatherDirector::StartWeatherChange(TimeManager& time,
         m_FogHoldActive = false;
         m_FogDecayActive = false;
         m_UseResolvedFrom = false;
-        m_FromState = target;  // handoff (c): no stale pair after a hard cut
+        m_FromState = target;  // no stale from/to pair after a hard cut
         m_ToState = target;
         time.SetWeather(target);
         time.ClearWeatherBlend();
@@ -153,7 +153,7 @@ void WeatherDirector::StartWeatherChange(TimeManager& time,
 
     // Retarget: continue from the current blended def, and capture the
     // resolved getter outputs as the exact from-endpoint (sentinel formulas
-    // are not invertible at fractional intensity). Captured BEFORE any state
+    // are not invertible at fractional intensity). Captured before any state
     // changes; Publish re-applies the capture after every publication.
     if (m_Active)
     {
@@ -214,7 +214,7 @@ void WeatherDirector::Reset(TimeManager& time)
     // there - restore the calm defaults so a quit-to-title doesn't freeze
     // the last gust instant into the backdrop. The clock deliberately
     // survives (gusts must not re-sync on world loads).
-    m_WindDir = glm::normalize(ambience::CLOUD_SHADOW_WIND_DIR);
+    m_WindDir = glm::normalize(ambience::WEATHER_WIND_BASE_DIR);
     m_WindStrength = 0.5f;
 }
 
@@ -222,8 +222,8 @@ void WeatherDirector::SetForecastSeed(uint64_t seed)
 {
     m_ForecastSeed = seed;
     // Session-constant gust phases derive from the forecast seed, not the
-    // day count (handoff a) - recompute so a seed change stays consistent
-    // with the freshly-seeded forecast.
+    // day count - recompute so a seed change stays consistent with the
+    // freshly-seeded forecast.
     m_GustPhases = GustPhases(SplitMix64(m_ForecastSeed));
 }
 
