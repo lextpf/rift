@@ -1,6 +1,7 @@
 #include "TimeManager.hpp"
 
 #include "AmbienceConfig.hpp"
+#include "WeatherBlend.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,9 @@ void TimeManager::Initialize()
     m_WeatherIntensity = 1.0f;
     m_Paused = false;
     ClearWeatherBlend();
+    m_OverlayWeather = WeatherState::Clear;
+    m_OverlayActive = false;
+    m_OverlayBlend = 0.0f;
 }
 
 void TimeManager::SetWeatherIntensity(float value)
@@ -31,8 +35,36 @@ void TimeManager::SetWeatherIntensity(float value)
     m_WeatherIntensity = std::clamp(value, 0.0f, 1.0f);
 }
 
+void TimeManager::SetWeatherOverlay(WeatherState state)
+{
+    m_OverlayWeather = state;
+    m_OverlayActive = true;
+}
+
+void TimeManager::ClearWeatherOverlay()
+{
+    // The blend eases to 0 on subsequent weather-effect updates; retain the
+    // state so the fade-out continues to resolve the correct definition.
+    m_OverlayActive = false;
+}
+
+void TimeManager::UpdateWeatherEffects(float deltaTime)
+{
+    // Ease the manual weather overlay in/out (independent of game-time scaling).
+    const float overlayTarget = m_OverlayActive ? 1.0f : 0.0f;
+    const float overlayStep = deltaTime / std::max(0.001f, ambience::WEATHER_TRANSITION_SECONDS);
+    if (m_OverlayBlend < overlayTarget)
+        m_OverlayBlend = std::min(overlayTarget, m_OverlayBlend + overlayStep);
+    else if (m_OverlayBlend > overlayTarget)
+        m_OverlayBlend = std::max(overlayTarget, m_OverlayBlend - overlayStep);
+}
+
 void TimeManager::Update(float deltaTime)
 {
+    // Overlay fades are real-time cosmetic effects. They must keep advancing
+    // when time.freeze pauses the game clock.
+    UpdateWeatherEffects(deltaTime);
+
     if (m_Paused)
         return;
 
@@ -97,7 +129,9 @@ float TimeManager::GetMoonArc() const
     // Moon visible from MOONRISE_TIME (19:00) to MOONSET_TIME (7:00 next day)
     float t = m_CurrentTime;
 
-    // Moon is up from 19:00 to 7:00 (12 hours)
+    // Moon is up from 19:00 to 7:00 (12 hours). The divisor below is a literal
+    // 12.0, not (24 - MOONRISE_TIME) + MOONSET_TIME, so the documented [0, 1]
+    // range holds only while the two constants stay 12 hours apart.
     if (t >= MOONRISE_TIME)
     {
         // Evening portion: 19:00 to 24:00 (5 hours = 0 to 0.417)
@@ -271,8 +305,8 @@ glm::vec3 TimeManager::NaturalSkyColor() const
 
 float TimeManager::SkyDayNightFactor() const
 {
-    // Ramped day/night factor for the sky override (was a binary IsDay()
-    // step; at 24-second days that stepped 3.3x in one frame).
+    // Ramped day/night factor for the sky override. A binary day test would step the sky by
+    // 3.3x in a single frame at the 24-second day length, so the factor ramps instead.
     const float ramp = ambience::WEATHER_SKY_DAYNIGHT_RAMP_HOURS;
     float dayness =
         GetTransitionFactor(m_CurrentTime, SUNRISE_TIME - ramp, SUNRISE_TIME + ramp) *
@@ -360,34 +394,71 @@ float TimeManager::ComputeStarVisibility(const WeatherDefinition& def) const
 
 glm::vec3 TimeManager::GetAmbientColor() const
 {
-    if (HasWeatherBlend())
+    glm::vec3 result = HasWeatherBlend()
+                           ? glm::mix(m_HasResolvedFrom ? m_ResolvedFrom.ambient
+                                                        : ComputeAmbientColor(*m_BlendFrom),
+                                      ComputeAmbientColor(*m_BlendTo),
+                                      m_BlendT)
+                           : ComputeAmbientColor(GetWeatherDefinition(m_Weather));
+    if (m_OverlayBlend > 0.0f)
     {
-        glm::vec3 from =
-            m_HasResolvedFrom ? m_ResolvedFrom.ambient : ComputeAmbientColor(*m_BlendFrom);
-        return glm::mix(from, ComputeAmbientColor(*m_BlendTo), m_BlendT);
+        result = BlendOverlayTint(result,
+                                  GetWeatherDefinition(m_OverlayWeather).ambientTintMultiplier,
+                                  m_OverlayBlend * m_WeatherIntensity);
     }
-    return ComputeAmbientColor(GetWeatherDefinition(m_Weather));
+    // Pull ground lighting toward the night ambient so it isn't noon-bright
+    // under an imposed-night sky (matches ComputeAmbientColor's nightColor).
+    const float night = ImposedNightAmount();
+    if (night > 0.0f)
+    {
+        result = glm::mix(result, glm::vec3(0.30f, 0.30f, 0.45f), night);
+    }
+    return result;
 }
 
 glm::vec3 TimeManager::GetSkyColor() const
 {
-    if (HasWeatherBlend())
+    glm::vec3 result =
+        HasWeatherBlend()
+            ? glm::mix(m_HasResolvedFrom ? m_ResolvedFrom.sky : ComputeSkyColor(*m_BlendFrom),
+                       ComputeSkyColor(*m_BlendTo),
+                       m_BlendT)
+            : ComputeSkyColor(GetWeatherDefinition(m_Weather));
+    // A weather that explicitly raises star visibility above the natural hour
+    // (for example MeteorShower) imposes matching darkness on the sky. Aurora
+    // has no star override, so it leaves the time-of-day sky untouched.
+    const float night = ImposedNightAmount();
+    if (night > 0.0f)
     {
-        glm::vec3 from = m_HasResolvedFrom ? m_ResolvedFrom.sky : ComputeSkyColor(*m_BlendFrom);
-        return glm::mix(from, ComputeSkyColor(*m_BlendTo), m_BlendT);
+        result = glm::mix(result, glm::vec3(0.04f, 0.04f, 0.12f), night);
     }
-    return ComputeSkyColor(GetWeatherDefinition(m_Weather));
+    return result;
+}
+
+float TimeManager::ImposedNightAmount() const
+{
+    // How much darker the active weather config wants the scene than the natural
+    // hour, read straight off the folded star visibility (which already blends
+    // base weather + overlay + any transition). Aurora deliberately follows the
+    // natural value; explicit star events such as MeteorShower may still impose
+    // night during the day.
+    return std::clamp(GetStarVisibility() - NaturalStarVisibility(), 0.0f, 1.0f);
 }
 
 float TimeManager::GetStarVisibility() const
 {
-    if (HasWeatherBlend())
+    float base = HasWeatherBlend()
+                     ? std::lerp(m_HasResolvedFrom ? m_ResolvedFrom.starVisibility
+                                                   : ComputeStarVisibility(*m_BlendFrom),
+                                 ComputeStarVisibility(*m_BlendTo),
+                                 m_BlendT)
+                     : ComputeStarVisibility(GetWeatherDefinition(m_Weather));
+    if (m_OverlayBlend > 0.0f)
     {
-        float from =
-            m_HasResolvedFrom ? m_ResolvedFrom.starVisibility : ComputeStarVisibility(*m_BlendFrom);
-        return std::lerp(from, ComputeStarVisibility(*m_BlendTo), m_BlendT);
+        base = BlendOverlayScalar(
+            base, ComputeStarVisibility(GetWeatherDefinition(m_OverlayWeather)), m_OverlayBlend);
     }
-    return ComputeStarVisibility(GetWeatherDefinition(m_Weather));
+    return base;
 }
 
 float TimeManager::GetNaturalStarVisibility() const
@@ -445,20 +516,37 @@ void TimeManager::SetWeatherFades(float celestialFade, float auroraFade)
 
 float TimeManager::GetCelestialFade() const
 {
-    if (m_CelestialFade >= 0.0f)
-    {
-        return m_CelestialFade;
-    }
-    return GetEffectiveWeatherDefinition().showCelestialBodies ? 1.0f : 0.0f;
+    const float base = (m_CelestialFade >= 0.0f)
+                           ? m_CelestialFade
+                           : (GetEffectiveWeatherDefinition().showCelestialBodies ? 1.0f : 0.0f);
+    // Fade the daytime sun/moon out as a night weather imposes darkness. Zero
+    // imposed night (nothing wants it, or already night) leaves it untouched, so
+    // the real night moon is unaffected.
+    return base * (1.0f - ImposedNightAmount());
 }
 
 float TimeManager::GetAuroraFade() const
 {
-    if (m_AuroraFade >= 0.0f)
+    float base = (m_AuroraFade >= 0.0f)
+                     ? m_AuroraFade
+                     : (GetEffectiveWeatherDefinition().showAurora ? 1.0f : 0.0f);
+    if (m_OverlayBlend > 0.0f)
     {
-        return m_AuroraFade;
+        base = BlendOverlayAuroraFade(
+            base, m_OverlayBlend, GetWeatherDefinition(m_OverlayWeather).showAurora);
     }
-    return GetEffectiveWeatherDefinition().showAurora ? 1.0f : 0.0f;
+    return base;
+}
+
+float TimeManager::GetEffectiveMeteorRate() const
+{
+    float base = GetEffectiveWeatherDefinition().meteorRateMultiplier;
+    if (m_OverlayBlend > 0.0f)
+    {
+        base = BlendOverlayScalar(
+            base, GetWeatherDefinition(m_OverlayWeather).meteorRateMultiplier, m_OverlayBlend);
+    }
+    return base;
 }
 
 void TimeManager::SetTime(float hours)
