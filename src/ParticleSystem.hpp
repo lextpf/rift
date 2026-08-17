@@ -20,14 +20,16 @@ enum class WeatherParticleType;
 /**
  * @enum ParticleType
  * @brief Categories of particle effects with distinct visual behaviors.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
+ * @ingroup Effects
  *
- * Each type has unique spawn, movement, and rendering characteristics.
+ * Each type has unique spawn, movement, and rendering characteristics. The
+ * blend column is `Particle::additive` as set by that type's spawn routine.
  *
  * | Type     | Movement        | Blending | Use Case              |
  * |----------|-----------------|----------|-----------------------|
  * | Firefly  | Drifting, pulse | Additive | Night ambiance        |
- * | Rain     | Fast downward   | Alpha    | Weather               |
+ * | Rain     | Fast downward   | Additive | Weather               |
  * | Snow     | Slow drift down | Additive | Weather               |
  * | Fog      | Slow drift      | Alpha    | Atmosphere            |
  * | Sparkles | Stationary      | Additive | Magic/treasure        |
@@ -37,69 +39,71 @@ enum class WeatherParticleType;
  */
 enum class ParticleType
 {
-    Firefly = 0,         ///< Pulsing yellow-green glow, gentle drift
-    Rain = 1,            ///< Fast falling droplets, slight angle
-    Snow = 2,            ///< Slow falling flakes with side drift
-    Fog = 3,             ///< Large translucent patches, very slow
-    Sparkles = 4,        ///< Brief bright twinkles, stationary
-    Wisp = 5,            ///< Magical spiraling orbs, color variety
-    Lantern = 6,         ///< Warm glow, night-only visibility
-    Sunshine = 7,        ///< Sun rays (day=yellow) / moon beams (night=blue)
-    DriftingLeaf = 8,    ///< Ambient cozy: small green/yellow leaf drifting on wind
-    DustMote = 9,        ///< Ambient cozy: tiny golden mote in sunbeams
-    Pollen = 10,         ///< Ambient cozy: yellow pollen during golden hour
-    CherryBlossom = 11,  ///< Weather: drifting pink petals, gentle spiral
-    Ash = 12,            ///< Weather: gray-white particles, slow fall + flutter
-    Ember = 13,          ///< Weather: orange particles rising upward, additive flicker
-    Sand = 14,           ///< Weather: tan-gold particles, fast horizontal wind
+    Firefly = 0,         ///< Pulsing yellow-green glow, gentle drift.
+    Rain = 1,            ///< Fast falling droplets, slight angle.
+    Snow = 2,            ///< Slow falling flakes with side drift.
+    Fog = 3,             ///< Large translucent patches, very slow.
+    Sparkles = 4,        ///< Brief bright twinkles, stationary.
+    Wisp = 5,            ///< Magical spiraling orbs, color variety.
+    Lantern = 6,         ///< Warm glow, night-only visibility.
+    Sunshine = 7,        ///< Sun rays (day=yellow) / moon beams (night=blue).
+    DriftingLeaf = 8,    ///< Ambient cozy: small green/yellow leaf drifting on wind.
+    DustMote = 9,        ///< Ambient cozy: tiny golden mote in sunbeams.
+    Pollen = 10,         ///< Ambient cozy: yellow pollen during golden hour.
+    CherryBlossom = 11,  ///< Weather: drifting pink petals, gentle spiral.
+    Ash = 12,            ///< Weather: gray-white particles, slow fall + flutter.
+    Ember = 13,          ///< Weather: orange particles rising upward, additive flicker.
+    Sand = 14,           ///< Weather: tan-gold particles, fast horizontal wind.
 
     // Appended types (map JSON stores the underlying int - append only, never
     // reorder the values above).
-    Smoke = 15,          ///< Rising, expanding puffs for chimneys/campfires (wind-bent)
-    Steam = 16,          ///< Fast-rising short-lived white vapor (vents, hot springs)
-    Aurora = 17,         ///< Soft aurora motes drifting on slow ribbons (night skies)
-    Spark = 18,          ///< Energetic darting crackle, brief and bright
-    PixieDust = 19,      ///< Falling glittering trail dust with heavy twinkle
-    Arcane = 20,         ///< Violet glyph motes orbiting their spawn point
-    Enchant = 21,        ///< Rising enchantment glyphs with easing deceleration
-    Runes = 22,          ///< Slow-turning rune sigils with strong glow pulse
-    Hex = 23,            ///< Counter-orbiting witch-magic motes, eerie pulse
-    Curse = 24,          ///< Dark wobbling taint, slow rise, unsettling flicker
-    Void = 25,           ///< Dark matter spiraling inward toward the spawn point
-    Vortex = 26,         ///< Fast circular swirl tightening over lifetime
-    Soul = 27,           ///< Ghostly wisp rising in a slow S-curve wander
-    Fairy = 28,          ///< Darting hover-and-dash glow (quicker than fireflies)
-    Butterfly = 29,      ///< Wandering flappy flight, daylight meadows
-    Bat = 30,            ///< Swooping erratic night flier
-    Bubble = 31,         ///< Buoyant wobbling bubble; converts to its pop strip on expiry
-    Coin = 32,           ///< Spinning coin glint (treasure rooms)
-    Gem = 33,            ///< Floating gem with periodic sparkle glints
-    Confetti = 34,       ///< Celebration popper: rare bursts of tumbling scraps
-    Heart = 35,          ///< Affection emote floating up with a sway
-    Zap = 36,            ///< Electric arc strobe with positional jitter
-    Wind = 37,           ///< Fast horizontal gust streaks riding the wind
-    Zzz = 38,            ///< Sleep emote drifting up in an easing arc
-    Constellation = 39,  ///< Near-stationary star twinkle (night events)
-    Planet = 40,         ///< Very slow drifting celestial body accent
-    Moon = 41,           ///< Stationary crescent accent with soft glow pulse
-    Ink = 42             ///< Dark blot hovering in place, billowing softly
+    Smoke = 15,          ///< Rising, expanding puffs for chimneys/campfires (wind-bent).
+    Steam = 16,          ///< Fast-rising short-lived white vapor (vents, hot springs).
+    Aurora = 17,         ///< Soft aurora motes drifting on slow ribbons (night skies).
+    Spark = 18,          ///< Energetic darting crackle, brief and bright.
+    PixieDust = 19,      ///< Falling glittering trail dust with heavy twinkle.
+    Arcane = 20,         ///< Violet glyph motes orbiting their spawn point.
+    Enchant = 21,        ///< Rising enchantment glyphs with easing deceleration.
+    Runes = 22,          ///< Slow-turning rune sigils with strong glow pulse.
+    Hex = 23,            ///< Counter-orbiting witch-magic motes, eerie pulse.
+    Curse = 24,          ///< Dark wobbling taint, slow rise, unsettling flicker.
+    Void = 25,           ///< Dark matter spiraling inward toward the spawn point.
+    Vortex = 26,         ///< Fast circular swirl tightening over lifetime.
+    Soul = 27,           ///< Ghostly wisp rising in a slow S-curve wander.
+    Fairy = 28,          ///< Darting hover-and-dash glow (quicker than fireflies).
+    Butterfly = 29,      ///< Wandering flappy flight, daylight meadows.
+    Bat = 30,            ///< Swooping erratic night flier.
+    Bubble = 31,         ///< Buoyant wobbling bubble; converts to its pop strip on expiry.
+    Coin = 32,           ///< Spinning coin glint (treasure rooms).
+    Gem = 33,            ///< Floating gem with periodic sparkle glints.
+    Confetti = 34,       ///< Celebration popper: rare bursts of tumbling scraps.
+    Heart = 35,          ///< Affection emote floating up with a sway.
+    Zap = 36,            ///< Electric arc strobe with positional jitter.
+    Wind = 37,           ///< Fast horizontal gust streaks riding the wind.
+    Zzz = 38,            ///< Sleep emote drifting up in an easing arc.
+    Constellation = 39,  ///< Near-stationary star twinkle (night events).
+    Planet = 40,         ///< Very slow drifting celestial body accent.
+    Moon = 41,           ///< Stationary crescent accent with soft glow pulse.
+    Ink = 42,            ///< Dark blot hovering in place, billowing softly.
+    RainSplash = 43,     ///< One-shot 4-frame water splash burst at a rain impact point.
+    SnowSplash = 44      ///< One-shot 4-frame snow-impact puff at a snow landing point.
 };
 
 /// Compile-time reflection for ParticleType.
 template <>
 struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<ParticleType>>
 {
-    static constexpr size_t Count = 43;
+    static constexpr size_t Count = 45;
     static constexpr std::string_view Names[] = {
-        "Firefly",  "Rain",         "Snow",     "Fog",    "Sparkles",      "Wisp",      "Lantern",
-        "Sunshine", "DriftingLeaf", "DustMote", "Pollen", "CherryBlossom", "Ash",       "Ember",
-        "Sand",     "Smoke",        "Steam",    "Aurora", "Spark",         "PixieDust", "Arcane",
-        "Enchant",  "Runes",        "Hex",      "Curse",  "Void",          "Vortex",    "Soul",
-        "Fairy",    "Butterfly",    "Bat",      "Bubble", "Coin",          "Gem",       "Confetti",
-        "Heart",    "Zap",          "Wind",     "Zzz",    "Constellation", "Planet",    "Moon",
-        "Ink"};
+        "Firefly",  "Rain",         "Snow",      "Fog",    "Sparkles",      "Wisp",      "Lantern",
+        "Sunshine", "DriftingLeaf", "DustMote",  "Pollen", "CherryBlossom", "Ash",       "Ember",
+        "Sand",     "Smoke",        "Steam",     "Aurora", "Spark",         "PixieDust", "Arcane",
+        "Enchant",  "Runes",        "Hex",       "Curse",  "Void",          "Vortex",    "Soul",
+        "Fairy",    "Butterfly",    "Bat",       "Bubble", "Coin",          "Gem",       "Confetti",
+        "Heart",    "Zap",          "Wind",      "Zzz",    "Constellation", "Planet",    "Moon",
+        "Ink",      "RainSplash",   "SnowSplash"};
 
-    static_assert(std::to_underlying(ParticleType::Ink) == Count - 1,
+    static_assert(std::to_underlying(ParticleType::SnowSplash) == Count - 1,
                   "Update EnumTraits<ParticleType> when adding new ParticleType values");
     static_assert(std::size(Names) == Count,
                   "EnumTraits<ParticleType>::Names must have one entry per enumerator");
@@ -108,7 +112,8 @@ struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<Partic
 /**
  * @struct Particle
  * @brief Runtime state for a single active particle.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
+ * @ingroup Effects
  *
  * Particles are spawned by zones and updated each frame until their
  * lifetime expires. The `type` field is stored directly to handle
@@ -116,34 +121,63 @@ struct EnumTraits<ParticleType> : EnumTraitsBase<ParticleType, EnumTraits<Partic
  */
 struct Particle
 {
-    glm::vec2 position;        ///< World position (pixels).
-    glm::vec2 velocity;        ///< Movement per second (pixels/s).
-    glm::vec4 color;           ///< RGBA color (alpha may animate).
-    float size;                ///< Sprite size in pixels.
-    float lifetime;            ///< Remaining life (seconds).
-    float maxLifetime;         ///< Original lifetime for fade calculations.
-    float phase;               ///< Random phase offset for oscillation effects.
-    float rotation;            ///< Sprite rotation (degrees).
-    float bakedGroundY{0.0f};  ///< Per-particle ground reference (used by Rain weather for splash
-                               ///< impact); 0 means unset.
-    bool additive;             ///< Use additive blending for glow.
-    bool noProjection;         ///< Render without perspective distortion.
-    int zoneIndex;             ///< Spawning zone index, or -1 for zoneless one-shots/ambient.
-    ParticleType type;         ///< Particle behavior type.
-    uint8_t variant{0};        ///< Sprite variant index (e.g. smoke/smoke2/smoke3), rolled at
-                               ///< spawn by AssignSpawnVariants against the atlas variant count.
+    glm::vec2 position;  ///< World position (pixels).
+
+    /// Movement per second (pixels/s), integrated for every particle in Update.
+    /// Some types overload velocity.x as a scalar instead (CherryBlossom peak
+    /// alpha, DriftingLeaf/Pollen wind sign-flag).
+    glm::vec2 velocity;
+
+    glm::vec4 color;    ///< RGBA color (alpha may animate).
+    float size;         ///< Sprite size in pixels.
+    float lifetime;     ///< Remaining life (seconds).
+    float maxLifetime;  ///< Original lifetime for fade calculations.
+    float phase;        ///< Random phase offset for oscillation effects.
+    float rotation;     ///< Sprite rotation (degrees).
+
+    /// Per-particle ground reference for weather Rain and Snow impact splashes;
+    /// re-based on the camera each frame. 0 means unset.
+    float bakedGroundY{0.0f};
+
+    bool additive;      ///< Use additive blending for glow.
+    bool noProjection;  ///< Render without perspective distortion.
+    /**
+     * @brief Provenance, and the discriminant the per-type ParticleBehavior templates
+     *        branch on.
+     *
+     * Three cases, and both sentinels matter:
+     * - `>= 0`: index into the Tilemap's editor-placed zone list. Only these
+     *   are re-indexed or culled by @ref ParticleSystem::OnZoneRemoved.
+     * - `-1`: zoneless one-shot or global ambient (console `particle.spawn`,
+     *   rain/snow impact splashes, drifting leaves/dust/pollen). Exempt from
+     *   orphan cleanup.
+     * - @ref ParticleSystem::WEATHER_ZONE_INDEX (-2): spawned by the global
+     *   weather emitter. Several behaviors key weather-only effects off this
+     *   (Snow's gust jerk, Rain/Snow camera-rebased ground band, Fog's
+     *   per-weather fogAlphaMultiplier, DriftingLeaf/Pollen player-hitbox
+     *   repulsion, GodRays' rainbow tier on Sunshine). Only these count
+     *   toward the per-type weather caps, and only these are culled when they
+     *   drift far outside the spawn rect.
+     */
+    int zoneIndex;
+    ParticleType type;  ///< Particle behavior type.
+
+    /// Sprite variant index (e.g. smoke/smoke2/smoke3), rolled at spawn by
+    /// AssignSpawnVariants against the atlas variant count.
+    uint8_t variant{0};
 };
 
 /**
  * @struct ParticleZone
  * @brief Rectangular region that spawns particles of a specific type.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
+ * @ingroup Effects
  *
  * Zones are placed in the level editor and stored in the Tilemap.
  * The ParticleSystem holds a pointer to the zone list and spawns
  * particles within visible zones each frame.
  *
- * @par Tile Alignment
+ * @par Tile alignment
  * Zone position and size are in world pixels but typically aligned
  * to tile boundaries for easy placement.
  */
@@ -176,14 +210,14 @@ struct ParticleZone
 /**
  * @class ParticleSystem
  * @brief Manages spawning, updating, and rendering of zone-based particles.
- * @author Alex (https://github.com/lextpf)
+ * @author Fable 5 (https://github.com/claude)
  * @ingroup Effects
  *
  * The particle system provides ambient visual effects through zone-based
  * emitters placed in the level editor. Each zone spawns particles of a
  * specific type within its bounds.
  *
- * @section particle_architecture System Architecture
+ * @par System architecture
  * @htmlonly
  * <pre class="mermaid">
  * flowchart LR
@@ -201,26 +235,63 @@ struct ParticleZone
  * </pre>
  * @endhtmlonly
  *
- * @section particle_types Particle Type Behaviors
- * | Type          | Spawn Rate | Lifetime | Size    | Special Behavior           |
- * |---------------|------------|----------|---------|----------------------------|
- * | Firefly       | 8/s        | 4-9s     | 2-4px   | Pulsing alpha, drift       |
- * | Rain          | 25/s       | 2s       | 10-14px | Fast fall, angled sprite   |
- * | Snow          | 25/s       | 15s      | 1.5-3px | Slow fall, rotation        |
- * | Fog           | 5/s        | 18-30s   | 48-96px | Very slow drift, low alpha |
- * | Sparkles      | 28/s       | 0.5-1s   | 2-4px   | Brief flash, stationary    |
- * | Wisp          | 11/s       | 4-7s     | 2-4px   | Spiral movement, colors    |
- * | Lantern       | 0.5/s      | 10-15s   | 4x zone | Night-only glow            |
- * | Sunshine      | 1.3/s      | 5-9s     | 40-64px | Angled rays, day/night     |
- * | DriftingLeaf  | weather    | varied   | varied  | Wind-blown leaves          |
- * | DustMote      | weather    | varied   | small   | Ambient dust motes         |
- * | Pollen        | weather    | varied   | small   | Slow floating pollen       |
- * | CherryBlossom | weather    | varied   | varied  | Blossom petal drift        |
- * | Ash           | weather    | varied   | small   | Falling ash                |
- * | Ember         | weather    | varied   | small   | Glowing ember drift        |
- * | Sand          | weather    | varied   | small   | Wind-driven sand           |
+ * @par Particle type behaviors
+ * Spawn rate is the zone rate - `ParticleBehavior&lt;T&gt;::SpawnRate`, in
+ * particles per second per zone before the area multiplier. Weather-driven
+ * spawning ignores it entirely and uses `WeatherDefinition::baseSpawnRate`
+ * (scaled by intensity and zoom in ParticleSystem::EffectiveRate); ambient
+ * leaf/dust/pollen spawning uses the `ambience::AMBIENT_*_SPAWN_PER_SEC`
+ * constants instead. Sizes are the base spawn values, before a weather's
+ * `particleSizeScale` multiplies them.
+ * | Type          | Zone rate | Lifetime | Size      | Special Behavior          |
+ * |---------------|-----------|----------|-----------|---------------------------|
+ * | Firefly       | 8/s       | 4-9s     | 3-5px     | Pulsing alpha, drift      |
+ * | Rain          | 25/s      | 2s       | 10-14px   | Fast fall, angled sprite  |
+ * | Snow          | 25/s      | 15s      | 3-5.5px   | Slow fall, rotation       |
+ * | Fog           | 2.5/s     | 12-18s   | 48-96px   | Very slow drift, low alpha|
+ * | Sparkles      | 28/s      | 0.5-1s   | 2-4px     | Brief flash, stationary   |
+ * | Wisp          | 7/s       | 4-7s     | 3-5px     | Spiral movement, colors   |
+ * | Lantern       | 0.5/s     | 10-15s   | 4.5x zone | Night-only glow           |
+ * | Sunshine      | 1.3/s     | 5-9s     | 40-64px   | Angled rays, day/night    |
+ * | DriftingLeaf  | 4/s       | 10-15s   | 4.5-7px   | Wind-blown, player wake   |
+ * | DustMote      | 5.5/s     | 6-10s    | 3-4.5px   | Ambient dust motes        |
+ * | Pollen        | 4/s       | 7-12s    | 3-4.5px   | Slow float, player wake   |
+ * | CherryBlossom | 12/s      | 8-15s    | 1.6-7px   | Petal drift, 3 depth tiers|
+ * | Ash           | 5/s       | 10-20s   | 2-4px     | Falling ash               |
+ * | Ember         | 7/s       | 1.5-3s   | 4-6px     | Rising, additive flicker  |
+ * | Sand          | 25/s      | 0.3-0.8s | 3-6px     | Wind-driven sand          |
  *
- * @section particle_lifecycle Particle Lifecycle
+ * @par Weather spawn streams
+ * ParticleSystem::UpdateWeatherSpawning runs a set of independent streams, each
+ * with its own spawn accumulator so one stream throttling on its cap cannot
+ * stall another. There are six accumulators; the base and transition-incoming
+ * streams deliberately share two of them, so at most six streams are live at
+ * once (four transition + two overlay).
+ * @verbatim
+ *   stream               accumulator                    rate weight  size from
+ *   -------------------  -----------------------------  ------------ ---------
+ *   base primary         m_WeatherSpawnTimer            1            base def
+ *   base secondary       m_WeatherSpawnTimerSecondary   1            base def
+ *     (both only while no transition is published)
+ *
+ *   transition out prim  m_WeatherSpawnTimerOut         1 - weight   outgoing
+ *   transition out sec   m_WeatherSpawnTimerOutSecondary 1 - weight  outgoing
+ *   transition in  prim  m_WeatherSpawnTimer            weight       incoming
+ *   transition in  sec   m_WeatherSpawnTimerSecondary   weight       incoming
+ *
+ *   overlay primary      m_OverlaySpawnTimer            overlayFactor overlay
+ *   overlay secondary    m_OverlaySpawnTimerSecondary   overlayFactor overlay
+ *     (runs even with no base weather at all)
+ * @endverbatim
+ * "size from" is the WeatherDefinition each stream reads `particleSizeScale`
+ * (and its own caps) from - deliberately per-stream, so a cross-fade does not
+ * retune the outgoing weather's particles. The blended effective definition
+ * passed to @ref SetWeatherState still feeds the live-read channels such as
+ * `fogAlphaMultiplier`. During a transition, a type both endpoints spawn is
+ * capped at the MIN of the two endpoint caps (0 = uncapped), because the two
+ * streams share one live population.
+ *
+ * @par Particle lifecycle
  * @htmlonly
  * <pre class="mermaid">
  * stateDiagram-v2
@@ -228,25 +299,29 @@ struct ParticleZone
  *     classDef active fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
  *     classDef dead fill:#4a2020,stroke:#ef4444,color:#e2e8f0
  *
- *     [*] --> Spawned: Zone visible
+ *     [*] --> Spawned: Zone visible / weather / ambient / one-shot
  *     Spawned --> Active: Initialize
  *     Active --> Active: Update position/alpha
+ *     [*] --> Pending: Emitted by another particle's Update (splash/puff/halo)
+ *     Pending --> Active: Merged after the update loop
  *     Active --> Dead: lifetime <= 0
  *     Active --> Dead: Zone deleted
+ *     Active --> Dead: Drifted outside spawn rect (weather only)
  *     Dead --> [*]: Remove from pool
  *
  *     class Spawned spawn
+ *     class Pending spawn
  *     class Active active
  *     class Dead dead
  * </pre>
  * @endhtmlonly
  *
- * @section particle_noprojection No-Projection Particles
+ * @par No-Projection particles
  * Particles in zones marked `noProjection` are rendered without perspective
  * distortion, matching the behavior of no-projection structures. This ensures
  * effects like lantern glows stay aligned with their parent structures.
  *
- * @par Projection Calculation
+ * @par Projection calculation
  * For no-projection particles, the system:
  * 1. Asks `Tilemap::ProjectNoProjectionStructurePoint()` to project particles
  *    covered by a no-projection structure.
@@ -256,25 +331,31 @@ struct ParticleZone
  *    particle point.
  * 4. Renders no-projection and regular particles through separate batches.
  *
- * @section particle_textures Texture System
+ * @par Texture system
  * Each particle type owns one or more sprite variants (e.g. smoke/smoke2/
  * smoke3), packed into a single atlas at initialization. Variant names
  * resolve to on-disk files (opaque GUIDs) through the project manifest's
  * "particles" links; from the linked file, BuildAtlas derives the
- * `<...>_strip.png` sibling (horizontal 4-frame animation strip, sliced into
- * per-frame UVs at draw time) and the single-frame `<...>.png`, preferring
- * the strip. Unlinked or missing assets fall back to a procedural soft
- * circle, and Lantern and Sunshine are fully procedural. Particles roll a
+ * `<...>_strip.png` sibling (horizontal animation strip, sliced into per-frame
+ * UVs at draw time; frame count = width / height, and a width that is not an
+ * exact multiple of the height degrades to one stretched frame) and the
+ * single-frame `<...>.png`, preferring the strip. Unlinked or missing assets
+ * fall back to a procedural soft circle, and Lantern and Sunshine are fully
+ * procedural. Particles roll a
  * random variant at spawn (some types pin the roll and use later variants as
  * runtime states, e.g. Bubble's pop strip). Strip playback either loops on
  * global time (offset per particle) or maps onto the particle's lifetime for
  * one-shots such as bubble pops and Sparkles twinkles.
  *
- * @section particle_performance Performance Notes
- * - Particles are pooled in a single vector (reserved for 500)
+ * @par Performance notes
+ * - Particles are pooled in a single vector, reserved for 1000 at construction
+ *   (sized for heavy weather plus ambient and zone particles); the pool still
+ *   grows past that under a storm
  * - Only zones within camera view (+margin) spawn particles
  * - Per-zone particle cap prevents runaway spawning
  * - Spawn rate scales with zone area (0.5x to 3x multiplier)
+ * - Weather particles that drift far outside the spawn rect are culled, so a
+ *   fast camera move does not leave a wake of stale particles
  *
  * @see ParticleZone, Particle, Tilemap::GetParticleZones()
  */
@@ -295,11 +376,12 @@ public:
      * through the project manifest's "particles" links. Missing links or
      * files fall back to procedural sprites.
      *
-     * @return Always true (individual failures are non-fatal).
-     *
-     * @param store    TextureStore that adopts the built atlas; its UploadAll re-uploads
-     *                 it on a renderer switch (no per-object IGpuResourceOwner hook).
+     * @param store    TextureStore that adopts the built atlas and is retained as a
+     *                 non-owning pointer for this system's lifetime; its UploadAll
+     *                 re-uploads the atlas on a renderer switch, so this system owns no
+     *                 GPU resource itself.
      * @param manifest Project manifest supplying the particle sprite links.
+     * @return Always true (individual failures are non-fatal).
      */
     bool LoadTextures(TextureStore& store, const ProjectManifest& manifest);
 
@@ -310,7 +392,11 @@ public:
     void SetZones(const std::vector<ParticleZone>* zones) { m_Zones = zones; }
 
     /**
-     * @brief Set tile dimensions for no-projection calculations.
+     * @brief Store the tile size.
+     *
+     * Currently unread: the no-projection path projects through
+     * `Tilemap::ProjectNoProjectionStructurePoint` instead.
+     *
      * @param width  Tile width in pixels.
      * @param height Tile height in pixels.
      */
@@ -342,13 +428,26 @@ public:
     void SetNightFactor(float factor) { m_NightFactor = factor; }
 
     /**
+     * @brief Set the scene-darkness factor used only by the impact-splash fade.
+     *
+     * Distinct from @ref SetNightFactor - feed `max(natural star visibility,
+     * weather star visibility)` so precipitation (which forces weather star
+     * visibility to 0) does not read as daytime at night. 0 = day (splashes at
+     * full soft alpha), 1 = night (splashes very faint).
+     */
+    void SetSceneNightFactor(float factor) { m_SceneNightFactor = factor; }
+
+    /**
      * @brief Update all particles and spawn new ones.
      *
      * Performs per-frame updates:
-     * 1. Decrement lifetimes, remove dead particles
-     * 2. Update positions based on velocity and type-specific behavior
-     * 3. Update alpha/color for effects (pulsing, fading)
-     * 4. Spawn new particles in visible zones
+     * 1. Age particles, kill orphans of deleted zones, integrate velocity, cull
+     *    weather particles that drifted outside the spawn rect.
+     * 2. Run the per-type behavior update (position, alpha, color).
+     * 3. Merge deferred mid-update spawns (splashes, puffs, halos), erase the
+     *    dead, rebuild the per-zone counts.
+     * 4. Spawn: global ambient (leaf/dust/pollen), then the weather streams
+     *    (see @ref SetWeatherState), then visible editor zones.
      *
      * @param deltaTime Frame time in seconds.
      * @param cameraPos Camera position for visibility culling.
@@ -365,8 +464,12 @@ public:
      *
      * @param renderer Active renderer.
      * @param cameraPos Camera position for world-to-screen conversion.
-     * @param noProjectionOnly If true, only render no-projection particles.
-     * @param renderAll If true, render all particles regardless of projection flag.
+     * @param noProjectionOnly Selects which class is drawn while @p renderAll is false:
+     *                         true = no-projection particles only, false = regular
+     *                         particles only. Ignored when @p renderAll is true.
+     * @param renderAll When true (the default) both classes draw in one call. The engine
+     *                  passes false and calls Render twice, so the two classes bracket
+     *                  the other draw layers.
      */
     void Render(IRenderer& renderer,
                 glm::vec2 cameraPos,
@@ -396,19 +499,20 @@ public:
      */
     size_t GetLastDrawnCount() const { return m_LastDrawnCount; }
 
-    /**
-     * @brief Remove all active particles.
-     */
+    /// @brief Remove all active particles.
     void Clear() { m_Particles.clear(); }
 
     /**
-     * @brief Spawn a single one-shot particle of @p type at @p worldPos.
+     * @brief Spawn one one-shot emission of @p type at @p worldPos.
      *
      * Bypasses the zone system: builds a 1x1 ad-hoc zone at the requested
      * position and runs the same per-type initializer used by zone spawns,
-     * then tags the resulting particle with @c zoneIndex = -1 so the
-     * orphan-cleanup pass leaves it alone. Intended for the developer
-     * console's `particle.spawn` command.
+     * then tags every particle the type's spawn routine appends with
+     * @c zoneIndex = -1 so the orphan-cleanup pass leaves them alone. One
+     * emission is not always one particle - Confetti bursts 14-20 scraps,
+     * CherryBlossom adds a halo on ~45% of rolls, and Butterfly adds a
+     * companion on 25%. Intended for the developer console's
+     * `particle.spawn` command.
      *
      * @param type     Particle type to spawn.
      * @param worldPos World pixel position for the spawn.
@@ -450,12 +554,14 @@ public:
     void SetWeatherState(const WeatherDefinition* def, float intensity);
 
     /**
-     * @brief Set transition spawn streams. While outgoing is non-null the
-     * weather spawner runs FOUR streams - outgoing primary/secondary at
+     * @brief Set transition spawn streams. While outgoing and incoming are both
+     * non-null - and a base weather is set through @ref SetWeatherState - the
+     * weather spawner runs four streams - outgoing primary/secondary at
      * rate*(1-weight), incoming primary/secondary at rate*weight - each
-     * stream spawning with ITS OWN definition (size scale etc.), while
+     * stream spawning with its own definition (size scale etc.), while
      * SetWeatherState's def keeps feeding the live-read channels (fog
-     * alpha). Null outgoing = normal two-stream spawning.
+     * alpha). Any other combination falls back to normal two-stream spawning,
+     * and no base weather means no base or transition spawning at all.
      *
      * @param outgoing Outgoing endpoint definition, or `nullptr` to disable
      *                 transition spawning. Pointer lifetime contract matches
@@ -467,6 +573,19 @@ public:
     void SetWeatherTransition(const WeatherDefinition* outgoing,
                               const WeatherDefinition* incoming,
                               float weight);
+
+    /**
+     * @brief Set an independent overlay weather whose primary+secondary streams
+     * spawn at full rate ALONGSIDE the base weather (SetWeatherState), past the
+     * two-slot ceiling.
+     *
+     * @param def    Overlay weather definition, or `nullptr` to disable overlay
+     *               spawning. Pointer lifetime contract matches @ref
+     *               SetWeatherState.
+     * @param factor 0-1 scale on the overlay spawn rate (the eased overlay
+     *               blend).
+     */
+    void SetWeatherOverlay(const WeatherDefinition* def, float factor);
 
     /**
      * @brief Set the prevailing wind used by weather particle behaviors.
@@ -489,7 +608,9 @@ public:
      * Used by PollenStorm / FallingLeaves so weather particles can "avoid"
      * the player's 16x32 hitbox (the standard 16x16 hitbox plus the tile
      * directly above the player) when the player is moving. Called once per
-     * frame from Game::Update.
+     * frame from Game::Update. Fog also anchors its ground-to-sky alpha
+     * gradient on this y, so an unset player position pins that gradient near
+     * the world origin.
      *
      * @param pos Bottom-center of the player sprite in world pixels.
      */
@@ -501,6 +622,12 @@ private:
     /**
      * @brief Maintain global ambient particle population (leaves/dust/pollen)
      * independent of editor zones, biased by time of day.
+     *
+     * The `ambience::AMBIENT_PARTICLE_TOTAL_CAP` census counts every leaf, dust
+     * and pollen particle in the pool, zone- and weather-spawned ones included,
+     * so a leaf or pollen weather suppresses ambient spawning until its
+     * population drops.
+     *
      * @param deltaTime Frame time in seconds.
      * @param cameraPos Camera position for spawning rect.
      * @param viewSize Viewport size for spawning rect.
@@ -523,7 +650,9 @@ private:
     /**
      * @brief Scale a weather stream's base spawn rate by intensity and the
      * visible-area (zoom) ratio so density per visible pixel stays roughly
-     * constant as the player zooms in or out.
+     * constant as the player zooms in or out. The ratio is taken against a
+     * 320x180 reference window and clamped to [0.25, 4], so density saturates
+     * beyond those bounds.
      */
     float EffectiveRate(float baseSpawnRate, glm::vec2 viewSize) const;
 
@@ -561,23 +690,27 @@ private:
 
 public:
     /**
-     * Sentinel zoneIndex for weather-spawned particles. Public so the
-     * per-type ParticleBehavior templates (defined at namespace scope in
-     * ParticleSystem.cpp) can discriminate weather-driven particles from
-     * zone/ambient spawns when their Update behavior needs to differ
-     * (e.g. FallingLeaves applying camera-velocity drag).
+     * @brief Sentinel zoneIndex for weather-spawned particles.
+     *
+     * Public so the per-type ParticleBehavior templates (defined at namespace
+     * scope in ParticleSystem.cpp) can discriminate weather-driven particles
+     * from zone/ambient spawns when their Update behavior needs to differ
+     * (e.g. DriftingLeaf/Pollen applying player-hitbox repulsion).
      */
     static constexpr int WEATHER_ZONE_INDEX = -2;
 
 private:
     /**
-     * @name Particle Pool
+     * @name Particle pool
      * @{
      */
 
-    std::vector<Particle> m_Particles;         ///< Active particle pool.
-    std::vector<Particle> m_PendingSpawns;     ///< Mid-update spawns (e.g., Rain splashes), merged
-                                               ///< after the update loop.
+    std::vector<Particle> m_Particles;  ///< Active particle pool.
+
+    /// Mid-update spawns (e.g. Rain splashes), merged into the pool after the
+    /// update loop.
+    std::vector<Particle> m_PendingSpawns;
+
     const std::vector<ParticleZone>* m_Zones;  ///< Zone list (owned by Tilemap).
     const Tilemap* m_Tilemap;                  ///< Tilemap for structure queries.
 
@@ -588,24 +721,27 @@ private:
      * @{
      */
 
-    int m_TileWidth;                           ///< Tile width for projection math.
-    int m_TileHeight;                          ///< Tile height for projection math.
+    int m_TileWidth;                           ///< Stored tile width; currently unused.
+    int m_TileHeight;                          ///< Stored tile height; currently unused.
     size_t m_MaxParticlesPerZone;              ///< Per-zone particle cap.
     float m_Time;                              ///< Elapsed time for oscillation effects.
     float m_NightFactor;                       ///< Day/night factor (0-1) for lanterns.
+    float m_SceneNightFactor{0.0f};            ///< Scene darkness (natural night) for splash fade.
     float m_TimeOfDay = 12.0f;                 ///< Hour in [0, 24] for ambient spawn biasing.
     std::vector<float> m_ZoneSpawnTimers;      ///< Per-zone spawn accumulators.
     std::vector<size_t> m_ZoneParticleCounts;  ///< Per-zone active particle counts.
 
     /**
-     * Per-type ambient spawn timers (only DriftingLeaf, DustMote, Pollen used).
+     * @brief Per-type ambient spawn timers (only DriftingLeaf, DustMote and
+     *        Pollen are used).
+     *
      * Indexed by ParticleType enum value. Sized via EnumTraits to auto-grow
      * when new ParticleType values are added.
      */
     float m_AmbientSpawnTimers[EnumTraits<ParticleType>::Count] = {};
 
     /**
-     * @name Weather Spawning
+     * @name Weather spawning
      * @{
      */
     const WeatherDefinition* m_CurrentWeatherDef{nullptr};  ///< Active weather (or null).
@@ -615,8 +751,13 @@ private:
     glm::vec2 m_WindDir{-1.0f, 0.0f};  ///< Prevailing wind direction (normalized on use).
     float m_WindStrength{0.5f};        ///< Gusted wind strength; 0.5 = calm engine default.
 
+    const WeatherDefinition* m_OverlayWeatherDef{nullptr};  ///< Overlay weather (or null).
+    float m_OverlayFactor{0.0f};                            ///< Overlay spawn-rate scale (0-1).
+    float m_OverlaySpawnTimer{0.0f};                        ///< Overlay primary accumulator.
+    float m_OverlaySpawnTimerSecondary{0.0f};               ///< Overlay secondary accumulator.
+
     /**
-     * @name Transition Spawning
+     * @name Transition spawning
      * While m_TransitionOut is non-null, UpdateWeatherSpawning runs four
      * streams (outgoing + incoming, primary + secondary) instead of the
      * normal two. See SetWeatherTransition.
@@ -631,7 +772,7 @@ private:
     /// @}
 
     /**
-     * @name Camera Tracking
+     * @name Camera tracking
      * Smoothed camera velocity, derived from per-frame deltas in Update(),
      * used to gate weather-particle avoidance behavior to "player is moving".
      * Player position is set per-frame from Game::Update and drives the
@@ -647,7 +788,7 @@ private:
     /// @}
 
     /**
-     * @name Random Number Generation
+     * @name Random number generation
      * @{
      */
 
@@ -657,7 +798,7 @@ private:
     /// @}
 
     /**
-     * @name Texture Atlas
+     * @name Texture atlas
      * @{
      */
 
@@ -698,9 +839,11 @@ private:
     /// are valid; BuildAtlas fills them from the per-type asset list.
     AtlasSlot m_AtlasSlots[EnumTraits<ParticleType>::Count][MAX_PARTICLE_VARIANTS];
 
-    /// Valid variant count per type (always >= 1, even before LoadTextures,
-    /// so spawn-time variant rolls stay in range in texture-less contexts
-    /// such as unit tests).
+    /**
+     * @brief Valid variant count per type (always >= 1, even before LoadTextures, so
+     *        spawn-time variant rolls stay in range in texture-less contexts such as
+     *        unit tests).
+     */
     uint8_t m_VariantCounts[EnumTraits<ParticleType>::Count];
 
     bool m_TexturesLoaded;  ///< Whether LoadTextures() succeeded.
@@ -724,7 +867,7 @@ private:
     /// @}
 
     /**
-     * @name Render Batch Data
+     * @name Render batch data
      * @{
      */
 
