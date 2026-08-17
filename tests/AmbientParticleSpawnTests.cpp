@@ -277,7 +277,10 @@ TEST(ParticleType, EnumLayoutInvariant)
     EXPECT_EQ(static_cast<int>(ParticleType::Sand), 14);
     EXPECT_EQ(static_cast<int>(ParticleType::Smoke), 15);
     EXPECT_EQ(static_cast<int>(ParticleType::Ink), 42);
-    EXPECT_EQ(EnumTraits<ParticleType>::Count, 43u);
+    // RainSplash / SnowSplash are the dedicated impact sprite types, appended after Ink.
+    EXPECT_EQ(static_cast<int>(ParticleType::RainSplash), 43);
+    EXPECT_EQ(static_cast<int>(ParticleType::SnowSplash), 44);
+    EXPECT_EQ(EnumTraits<ParticleType>::Count, 45u);
 }
 
 TEST(ParticleType, AllTypesSpawnAndSurviveUpdate)
