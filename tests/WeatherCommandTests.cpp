@@ -90,6 +90,22 @@ TEST(WeatherCommandTests, TimeWeatherAcceptsCanonicalNamesOnly)
     EXPECT_EQ(time.GetWeather(), WeatherState::Thunderstorm);
 }
 
+TEST(WeatherCommandTests, TimeWeatherUsesAuroraWithoutNightSuffix)
+{
+    TimeManager time;
+    time.Initialize();
+    ConsoleBuffer buf;
+    CommandContext ctx{buf};
+    ctx.time = &time;
+
+    EXPECT_TRUE(Cmd_TimeWeather(ArgPack({"Aurora"}).span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::Aurora);
+
+    time.SetWeather(WeatherState::Clear);
+    EXPECT_FALSE(Cmd_TimeWeather(ArgPack({"AuroraNight"}).span(), ctx));
+    EXPECT_EQ(time.GetWeather(), WeatherState::Clear);
+}
+
 TEST(WeatherCommandTests, TimeWeatherRejectsGarbage)
 {
     TimeManager time;
