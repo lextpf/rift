@@ -6,9 +6,8 @@
 
 #include <glm/glm.hpp>
 
-/// @file TimeManagerBlendTests.cpp
-/// @brief Weather-blend-aware TimeManager getters: natural (weatherless)
-/// channels, the dawn/dusk sky-override ramp, and endpoint-mix blending.
+// Weather-blend-aware TimeManager getters: natural (weatherless)
+// channels, the dawn/dusk sky-override ramp, and endpoint-mix blending.
 
 // GetNaturalStarVisibility ignores the weather override entirely.
 TEST(TimeManagerBlend, NaturalStarVisibilityIgnoresWeatherOverride)
@@ -142,9 +141,13 @@ TEST(TimeManagerBlend, FadesDeriveThenPublishThenClear)
 {
     TimeManager time;
     time.Initialize();
-    time.SetWeather(WeatherState::AuroraNight);
-    EXPECT_FLOAT_EQ(time.GetAuroraFade(), 1.0f);     // showAurora = true
-    EXPECT_FLOAT_EQ(time.GetCelestialFade(), 1.0f);  // showCelestialBodies default
+    // Aurora visibility derives from the weather independently of the natural
+    // clock, while its celestial visibility remains owned by the clock.
+    time.SetTime(12.0f);
+    time.SetWeather(WeatherState::Aurora);
+    EXPECT_FLOAT_EQ(time.GetAuroraFade(), 1.0f);  // showAurora = true
+    EXPECT_FLOAT_EQ(time.GetCelestialFade(),
+                    1.0f);  // showCelestialBodies default, no imposed night
 
     time.SetWeatherFades(0.25f, 0.75f);
     EXPECT_FLOAT_EQ(time.GetCelestialFade(), 0.25f);
