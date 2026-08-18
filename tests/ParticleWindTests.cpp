@@ -5,9 +5,8 @@
 
 #include <glm/glm.hpp>
 
-/// @file ParticleWindTests.cpp
-/// @brief Phase-2 particle coverage: cap accounting, wind plumbing, dual-stream
-/// transition spawning. All headless (no GL context).
+// Phase-2 particle coverage: cap accounting, wind plumbing, dual-stream
+// transition spawning. All headless (no GL context).
 namespace
 {
 int CountType(const ParticleSystem& ps, ParticleType type)
@@ -51,8 +50,8 @@ TEST(ParticleWind, HoistedCapStillBindsExactly)
 
 namespace
 {
-/// Spawn a burst of weather snow at the given wind and return the velocity
-/// ranges of the freshly spawned flakes.
+// Spawn a burst of weather snow at the given wind and return the velocity
+// ranges of the freshly spawned flakes.
 struct VelocityRange
 {
     float minX{1e9f}, maxX{-1e9f}, minY{1e9f}, maxY{-1e9f};
@@ -126,8 +125,8 @@ TEST(ParticleWind, SnowFollowsWindSign)
 
 namespace
 {
-/// Displacement magnitude of a single zone-spawned particle of the given type
-/// after stepping `seconds` at the given wind strength.
+// Displacement magnitude of a single zone-spawned particle of the given type
+// after stepping `seconds` at the given wind strength.
 float DriftDistanceX(ParticleType type, float windStrength, float seconds)
 {
     ParticleSystem ps;
@@ -292,41 +291,26 @@ TEST(ParticleWind, TransitionCrossFadesTypes)
 }
 
 // Per-stream definition: the outgoing stream spawns with ITS OWN size scale,
-// not the destination's. AuroraNight scales wisps to 0.85; Clear's scale is
-// 1.0 - outgoing wisps mid-transition must still come out scaled.
+// not the destination's. Use an exaggerated synthetic scale so the correct
+// and incorrect size ranges cannot overlap; this keeps the test deterministic
+// even when Aurora's deliberately sparse Wisp rate yields few samples.
 TEST(ParticleWind, OutgoingStreamUsesOwnSizeScale)
 {
     ParticleSystem psTransition;
-    psTransition.SetTimeOfDay(0.0f);  // night: wisps are a night weather
-    psTransition.SetNightFactor(1.0f);
+    psTransition.SetTimeOfDay(12.0f);  // Aurora streams are time-of-day independent.
+    psTransition.SetNightFactor(0.0f);
     psTransition.SetWind({-1.0f, 0.0f}, 0.5f);
 
     const glm::vec2 cameraPos{0.0f, 0.0f};
     const glm::vec2 viewSize{640.0f, 480.0f};
-    const WeatherDefinition& aurora = GetWeatherDefinition(WeatherState::AuroraNight);
+    WeatherDefinition aurora = GetWeatherDefinition(WeatherState::Aurora);
     const WeatherDefinition& clear = GetWeatherDefinition(WeatherState::Clear);
-    ASSERT_NE(aurora.particleSizeScale, 1.0f)
-        << "test premise: AuroraNight must have a non-default size scale";
+    aurora.particleSizeScale = 0.25f;
+    aurora.secondaryBaseSpawnRate = 20.0f;
 
-    // Reference: wisp sizes under plain AuroraNight.
-    ParticleSystem psRef;
-    psRef.SetTimeOfDay(0.0f);
-    psRef.SetNightFactor(1.0f);
-    psRef.SetWeatherState(&aurora, 1.0f);
-    psRef.Update(1.0f, cameraPos, viewSize);
-    float refMax = 0.0f;
-    for (const auto& p : psRef.GetParticles())
-    {
-        if (p.type == ParticleType::Wisp)
-        {
-            refMax = std::max(refMax, p.size);
-        }
-    }
-    ASSERT_GT(refMax, 0.0f) << "test vacuous: no reference wisps";
-
-    // Transitioning AuroraNight -> Clear at small w: outgoing wisps must not
-    // exceed the reference max (a destination-def bug would spawn at 1.0/0.85
-    // = ~18% larger).
+    // Transitioning Aurora -> Clear at small w: outgoing wisps have a
+    // base size in [3,5], so the synthetic outgoing scale caps them at 1.25.
+    // A destination-def bug uses Clear's 1.0 scale and starts at size 3.0.
     psTransition.SetWeatherState(&clear, 1.0f);
     psTransition.SetWeatherTransition(&aurora, &clear, 0.1f);
     psTransition.Update(1.0f, cameraPos, viewSize);
@@ -339,8 +323,8 @@ TEST(ParticleWind, OutgoingStreamUsesOwnSizeScale)
         }
     }
     ASSERT_GT(maxSize, 0.0f) << "test vacuous: outgoing stream spawned no wisps";
-    // 5% headroom over sample-max noise; a destination-def bug lands at ~1.176x.
-    EXPECT_LE(maxSize, refMax * 1.05f) << "outgoing stream used the wrong def's size scale";
+    EXPECT_LE(maxSize, 5.0f * aurora.particleSizeScale + 1e-4f)
+        << "outgoing stream used the wrong def's size scale";
 }
 
 // Shared-type cap floor under dual streams: Fog -> Blizzard mid-transition
@@ -376,8 +360,8 @@ TEST(ParticleWind, DualStreamSharedTypeCapFloors)
 
 namespace
 {
-/// Live weather particles of `type` whose position lies in the bottom half of
-/// the viewport anchored at `cameraPos`.
+// Live weather particles of `type` whose position lies in the bottom half of
+// the viewport anchored at `cameraPos`.
 int CountTypeInBottomHalf(const ParticleSystem& ps,
                           ParticleType type,
                           glm::vec2 cameraPos,
