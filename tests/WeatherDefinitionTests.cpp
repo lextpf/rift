@@ -67,11 +67,16 @@ TEST(WeatherDefinitionTests, ThunderstormHasLightning)
     EXPECT_GT(def.maxWeatherParticles, 0);
 }
 
-TEST(WeatherDefinitionTests, AuroraNightShowsAurora)
+TEST(WeatherDefinitionTests, AuroraDoesNotForceNight)
 {
-    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::AuroraNight);
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::Aurora);
     EXPECT_TRUE(def.showAurora);
-    EXPECT_GT(def.starVisibilityOverride, 0.0f);
+    EXPECT_LT(def.starVisibilityOverride, 0.0f);
+    EXPECT_LT(def.skyColorOverride.x, 0.0f);
+    EXPECT_TRUE(def.showCelestialBodies);
+    EXPECT_FLOAT_EQ(def.ambientTintMultiplier.r, 1.0f);
+    EXPECT_FLOAT_EQ(def.ambientTintMultiplier.g, 1.0f);
+    EXPECT_FLOAT_EQ(def.ambientTintMultiplier.b, 1.0f);
 }
 
 TEST(WeatherDefinitionTests, MeteorShowerBoostsMeteorRate)
@@ -191,7 +196,7 @@ TEST(WeatherDefinitionTests, OnlyLayeredWeathersHaveSecondaryParticle)
         auto state = static_cast<WeatherState>(i);
         if (state == WeatherState::Blizzard || state == WeatherState::CherryBlossoms ||
             state == WeatherState::GodRays || state == WeatherState::Thunderstorm ||
-            state == WeatherState::Sandstorm || state == WeatherState::AuroraNight ||
+            state == WeatherState::Sandstorm || state == WeatherState::Aurora ||
             state == WeatherState::AshFall || state == WeatherState::EmberStorm)
         {
             continue;
@@ -243,20 +248,25 @@ TEST(WeatherDefinitionTests, GodRaysHasSunshineAndFogSecondary)
     EXPECT_LT(def.fogAlphaMultiplier, 1.0f);
 }
 
-TEST(WeatherDefinitionTests, AuroraNightHasAuroraPrimaryAndWispSecondary)
+TEST(WeatherDefinitionTests, AuroraHasAuroraPrimaryAndWispSecondary)
 {
     // The primary stream is the dedicated Aurora particle (hand-painted
     // aurora/aurora2/aurora3 mote variants); a sparse Wisp secondary keeps
-    // some spiraling aurora dust beneath the sky ribbons. Rates stay low so
-    // the SkyRenderer ribbons remain the hero element.
-    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::AuroraNight);
+    // some spiraling aurora dust beneath the sky ribbons. Both streams are
+    // deliberately sparse so Aurora can layer over precipitation.
+    const WeatherDefinition& def = GetWeatherDefinition(WeatherState::Aurora);
     EXPECT_TRUE(def.showAurora);
     EXPECT_EQ(def.particleType, WeatherParticleType::Aurora);
     EXPECT_GT(def.baseSpawnRate, 0.0f);
     EXPECT_GT(def.maxWeatherParticles, 0);
+    EXPECT_LE(def.baseSpawnRate, 10.0f);
+    EXPECT_LE(def.maxWeatherParticles, 150);
     EXPECT_EQ(def.secondaryParticleType, WeatherParticleType::Wisp);
     EXPECT_GT(def.secondaryBaseSpawnRate, 0.0f);
     EXPECT_LT(def.secondaryBaseSpawnRate, def.baseSpawnRate);
+    EXPECT_GT(def.secondaryMaxWeatherParticles, 0);
+    EXPECT_LE(def.secondaryBaseSpawnRate, 3.0f);
+    EXPECT_LE(def.secondaryMaxWeatherParticles, 60);
 }
 
 TEST(WeatherDefinitionTests, MergedFogHasNoSecondary)
