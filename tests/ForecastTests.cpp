@@ -6,9 +6,8 @@
 
 #include <set>
 
-/// @file ForecastTests.cpp
-/// @brief Deterministic day-seeded forecast: front partition integrity,
-/// pool membership, night-event gating, and moon-phase weighting.
+// Deterministic day-seeded forecast: front partition integrity,
+// pool membership, night-event gating, and moon-phase weighting.
 
 namespace
 {
@@ -101,7 +100,7 @@ TEST(Forecast, PoolMembership)
                                               WeatherState::CherryBlossoms,
                                               WeatherState::PollenStorm};
     const std::set<WeatherState> eventPool = {
-        WeatherState::AuroraNight, WeatherState::MeteorShower, WeatherState::FireflySwarm};
+        WeatherState::Aurora, WeatherState::MeteorShower, WeatherState::FireflySwarm};
 
     for (int64_t d = 0; d < 2000; ++d)
     {
@@ -140,7 +139,7 @@ TEST(Forecast, MoonPhaseWeighting)
     for (int64_t d = 0; d < 16000; ++d)
     {
         ForecastEntry e = ForecastForDay(kSeed, d);
-        if (!e.hasNightEvent || e.nightEvent != WeatherState::AuroraNight)
+        if (!e.hasNightEvent || e.nightEvent != WeatherState::Aurora)
         {
             continue;
         }
