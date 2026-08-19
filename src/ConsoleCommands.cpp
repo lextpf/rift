@@ -1,3 +1,20 @@
+// ConsoleCommands - the ~100 built-in developer-console commands.
+//
+// Dispatch path:
+//   console input -> ConsoleCommandRegistry lookup (canonical name or alias)
+//                 -> makeContext() rebuilds a CommandContext from live Game state
+//                 -> Cmd_*(args, ctx) -> output text into ConsoleBuffer via ctx.out
+//
+// A CommandContext, and every pointer inside it, is valid only for the handler that
+// received it: it aliases Game-owned state and is rebuilt per invocation.
+//
+// Every command's grammar is duplicated in four places that nothing keeps in sync.
+// Adding or changing a command means updating all four together:
+//   1. the one-line doc brief on the declaration in ConsoleCommands.hpp
+//   2. the handler's own usage/error strings
+//   3. the Register() description in RegisterDefaultCommands (this is what `help` prints)
+//   4. SetArgCompletions at the end of that function, when the value set is small and named
+
 #include "ConsoleCommands.hpp"
 
 #include "AmbienceConfig.hpp"
@@ -49,9 +66,14 @@
 
 namespace
 {
+// Tile size this file assumes for every tile <-> world conversion, matching the 16 that
+// PlayerSystem::SetTilePosition also hardcodes. Tilemap carries the project's real
+// tileWidth/tileHeight (map.size and tileset.info read them), so on a non-16px project
+// every tile coordinate the other commands print or write is wrong. Fix both places together.
 constexpr int CONSOLE_TILE_SIZE = 16;
 
-// Parse a non-negative integer from text. Returns true on success.
+// Parse a decimal integer from text. A leading '-' is accepted, so a caller that needs a
+// non-negative value must range-check the result itself. Returns true on success.
 bool ParseInt(std::string_view text, int& out)
 {
     if (text.empty())
@@ -70,9 +92,10 @@ bool ParseInt(std::string_view text, int& out)
 
 // NPC console commands address NPCs by index in npc.list order. Resolve an
 // index to its entity handle, or ecs::entity{} if out of range (callers
-// test the result with operator bool). The order is stable within one
-// command invocation; idx can shift across npc.spawn / npc.despawn (npc.list
-// warns about this).
+// test the result with operator bool). The order is the registry's dense order and is
+// stable within one command invocation. npc.spawn appends, so existing indices survive
+// it; npc.despawn swap-and-pops, so the last NPC takes the removed slot and every later
+// idx from an earlier npc.list is stale (npc.list prints that warning).
 ecs::entity NpcAtIndex(ecs::registry& world, int idx)
 {
     if (idx < 0)
@@ -87,7 +110,10 @@ ecs::entity NpcAtIndex(ecs::registry& world, int idx)
     return entities[static_cast<std::size_t>(idx)];
 }
 
-// Parse a finite float from text. Accepts optional sign, decimal point.
+// Parse a float from text in from_chars' default general format: optional sign, decimal
+// point and optional exponent (`1e3` parses). The whole string must be consumed. The
+// "inf"/"nan" spellings parse, and are rejected by the finiteness check below, not by
+// the parser.
 bool ParseFloat(std::string_view text, float& out)
 {
     if (text.empty())
@@ -185,9 +211,12 @@ ConsoleCommandRegistry::ArgCompletionProvider FixedArgValues(std::vector<std::st
 // What a routed weather request actually did, so callers echo honestly.
 enum class WeatherRouteResult : std::uint8_t
 {
-    Transitioned,  ///< This request started (or retargeted) a blend.
-    Instant,       ///< Hard cut (seconds <= 0 / director disabled) or bare set.
-    NoChange       ///< Same-target no-op; director state untouched.
+    Transitioned,  // This request started (or retargeted) a blend.
+    Instant,       // Hard cut (seconds <= 0 / director disabled) or bare set.
+    // Same-target no-op: transition pair and published weather unchanged. Director
+    // state is not fully untouched - RequestWeather arms the manual forecast hold
+    // before delegating, so weather.status reports manualHold=yes afterwards.
+    NoChange
 };
 
 // Shared route-or-fallback for the three weather-setting commands
@@ -196,10 +225,10 @@ enum class WeatherRouteResult : std::uint8_t
 // already null-checked ctx.time (RequestWeather and SetWeather both
 // dereference it).
 //
-// Returns what THIS call actually did, derived from a before/after snapshot
+// Returns what this call actually did, derived from a before/after snapshot
 // of the director's transition state. StartWeatherChange's same-target
 // branch is a pure no-op (duration/progress untouched), so a bare post-call
-// IsTransitioning() would attribute an EARLIER in-flight transition to this
+// IsTransitioning() would attribute an earlier in-flight transition to this
 // request and echo a duration that never took effect:
 //  - Transitioned: this request started or retargeted a blend; the caller's
 //    requested seconds are in effect -> echo "(N.Ns)".
@@ -365,7 +394,10 @@ bool Cmd_FlagGet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// time.set <hours 0.0-24.0> - set the time of day.
+// time.set <hours> - set the time of day. The 0.0-24.0 range in the usage string is
+// advisory: any finite value is accepted and TimeManager::SetTime wraps it into [0, 24).
+// The echo below prints the raw argument, so `time.set 30` reports 30.00h while the clock
+// actually reads 6.00h. time.add echoes the post-wrap clock instead.
 bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -391,7 +423,8 @@ bool Cmd_TimeSet(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// time.add <hours> - advance (or rewind, if negative) the time of day.
+// time.add <hours> - advance (or rewind, if negative) the time of day. Crossing midnight
+// moves TimeManager's day count, which shifts the moon phase and the weather forecast.
 bool Cmd_TimeAdd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.time == nullptr)
@@ -441,7 +474,10 @@ bool Cmd_TimeFreeze(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// map.load <filename> - load a map from JSON and place the player at its spawn tile.
+// map.load <filename> - load a map from JSON, replacing all tilemap and NPC state, and
+// move the player to the map's spawn tile. map.save writes the player's character type
+// into the file, but this path reads it and does not apply it: the player keeps the
+// current sprite. Use character.set to change it.
 bool Cmd_MapLoad(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.npcs == nullptr ||
@@ -488,6 +524,8 @@ bool Cmd_StateDump(std::span<const std::string_view> /*args*/, CommandContext& c
     const int tileX = TileMath::TileIndex(pos.x, static_cast<float>(CONSOLE_TILE_SIZE));
     // Standing-tile row (feet nudged up so a boundary-standing player counts as
     // the tile above) - matches dialogue/teleport tile math. See TileMath.
+    // npc.nearest and bookmark.set use the anchor row instead, so mid-stride the
+    // two readouts can differ by one row.
     const int tileY = TileMath::StandingTileRow(pos.y, static_cast<float>(CONSOLE_TILE_SIZE));
 
     const float hours = ctx.time->GetTimeOfDay();
@@ -851,21 +889,106 @@ bool Cmd_FpsCap(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// globe [on|off|toggle] - toggle the camera 3D globe/perspective effect.
-bool Cmd_Globe(std::span<const std::string_view> args, CommandContext& ctx)
+// world3d [on|off|toggle] - render gameplay through the world-space 3D path.
+// Off by default: the flat pipeline and the 3D one coexist while the new look is
+// being evaluated, so this is the switch between them.
+bool Cmd_World3D(std::span<const std::string_view> args, CommandContext& ctx)
 {
-    if (ctx.camera == nullptr)
+    if (ctx.game == nullptr)
     {
-        ctx.out.PrintError("globe: camera unavailable");
+        ctx.out.PrintError("world3d: game unavailable");
         return false;
     }
     bool target = false;
-    if (!ParseToggleArg(args, ctx.camera->Is3DEnabled(), "globe", ctx.out, target))
+    if (!ParseToggleArg(args, ctx.game->IsWorld3DEnabled(), "world3d", ctx.out, target))
     {
         return false;
     }
-    ctx.camera->SetEnable3DEffect(target);
-    ctx.out.Print(std::string("globe: ") + (target ? "ON" : "OFF"));
+    ctx.game->SetWorld3DEnabled(target);
+    ctx.out.Print(std::string("world3d: ") + (target ? "ON" : "OFF"));
+    return true;
+}
+
+// cam.preset <classic|ds|free> - select the camera configuration.
+bool Cmd_CamPreset(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("cam.preset: game unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError("usage: cam.preset <classic|ds|free>");
+        return false;
+    }
+
+    // Accept the names case-insensitively; EnumTraits round-trips the canonical
+    // spelling used by camera.info and config.dump.
+    std::string name(args[0]);
+    if (!name.empty())
+    {
+        name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
+        for (size_t i = 1; i < name.size(); ++i)
+        {
+            name[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
+        }
+    }
+    if (name == "Ds")
+    {
+        name = "DS";
+    }
+
+    const std::optional<cameraRig::Preset> preset = EnumTraits<cameraRig::Preset>::FromString(name);
+    if (!preset.has_value())
+    {
+        ctx.out.PrintError("cam.preset: unknown preset (classic|ds|free)");
+        return false;
+    }
+
+    ctx.game->SetCameraPreset(*preset);
+    ctx.out.Print(std::string("cam.preset: ") +
+                  std::string(EnumTraits<cameraRig::Preset>::ToString(*preset)));
+    return true;
+}
+
+// cam.yaw <degrees> / cam.pitch <degrees> - drive the orbit directly. Both imply
+// the Free preset, since Classic and DS pin their angles.
+bool Cmd_CamYaw(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("cam.yaw: game unavailable");
+        return false;
+    }
+    float degrees = 0.0f;
+    if (args.size() != 1 || !ParseFloat(args[0], degrees))
+    {
+        ctx.out.PrintError("usage: cam.yaw <degrees>");
+        return false;
+    }
+    ctx.game->SetCameraYaw(degrees * rift::PiF / 180.0f);
+    ctx.out.Print("cam.yaw: " + std::to_string(ctx.game->GetCameraYaw() * 180.0f / rift::PiF) +
+                  " deg");
+    return true;
+}
+
+bool Cmd_CamPitch(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.game == nullptr)
+    {
+        ctx.out.PrintError("cam.pitch: game unavailable");
+        return false;
+    }
+    float degrees = 0.0f;
+    if (args.size() != 1 || !ParseFloat(args[0], degrees))
+    {
+        ctx.out.PrintError("usage: cam.pitch <degrees above horizon>");
+        return false;
+    }
+    ctx.game->SetCameraPitch(degrees * rift::PiF / 180.0f);
+    ctx.out.Print("cam.pitch: " + std::to_string(ctx.game->GetCameraPitch() * 180.0f / rift::PiF) +
+                  " deg above horizon");
     return true;
 }
 
@@ -899,68 +1022,6 @@ bool Cmd_TimeNext(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// globe.radius <50.0-500.0> - set the globe sphere radius.
-bool Cmd_GlobeRadius(std::span<const std::string_view> args, CommandContext& ctx)
-{
-    if (ctx.camera == nullptr)
-    {
-        ctx.out.PrintError("globe.radius: camera unavailable");
-        return false;
-    }
-    if (args.size() != 1)
-    {
-        ctx.out.PrintError("globe.radius: usage 'globe.radius <50.0-500.0>'");
-        return false;
-    }
-    float v = 0.0f;
-    if (!ParseFloat(args[0], v))
-    {
-        ctx.out.PrintError("globe.radius: value must be a finite number");
-        return false;
-    }
-    if (v < 50.0f || v > 500.0f)
-    {
-        ctx.out.PrintError("globe.radius: value out of range [50.0, 500.0]");
-        return false;
-    }
-    ctx.camera->GetState().globeSphereRadius = v;
-    char buf[48];
-    std::snprintf(buf, sizeof(buf), "globe.radius: %.2f", static_cast<double>(v));
-    ctx.out.Print(buf);
-    return true;
-}
-
-// globe.tilt <0.0-1.0> - set the globe tilt amount.
-bool Cmd_GlobeTilt(std::span<const std::string_view> args, CommandContext& ctx)
-{
-    if (ctx.camera == nullptr)
-    {
-        ctx.out.PrintError("globe.tilt: camera unavailable");
-        return false;
-    }
-    if (args.size() != 1)
-    {
-        ctx.out.PrintError("globe.tilt: usage 'globe.tilt <0.0-1.0>'");
-        return false;
-    }
-    float v = 0.0f;
-    if (!ParseFloat(args[0], v))
-    {
-        ctx.out.PrintError("globe.tilt: value must be a finite number");
-        return false;
-    }
-    if (v < 0.0f || v > 1.0f)
-    {
-        ctx.out.PrintError("globe.tilt: value out of range [0.0, 1.0]");
-        return false;
-    }
-    ctx.camera->GetState().tilt = v;
-    char buf[48];
-    std::snprintf(buf, sizeof(buf), "globe.tilt: %.2f", static_cast<double>(v));
-    ctx.out.Print(buf);
-    return true;
-}
-
 // postfx [on|off|toggle] - toggle the post-processing effect chain.
 bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -976,41 +1037,6 @@ bool Cmd_PostFX(std::span<const std::string_view> args, CommandContext& ctx)
     }
     *ctx.postFXEnabled = target;
     ctx.out.Print(std::string("postfx: ") + (target ? "ON" : "OFF"));
-    return true;
-}
-
-// globe.intensity <up|down> - step globe radius/tilt together as one intensity knob.
-bool Cmd_GlobeIntensity(std::span<const std::string_view> args, CommandContext& ctx)
-{
-    if (ctx.camera == nullptr)
-    {
-        ctx.out.PrintError("globe.intensity: camera unavailable");
-        return false;
-    }
-    if (args.size() != 1 || (args[0] != "up" && args[0] != "down"))
-    {
-        ctx.out.PrintError("globe.intensity: usage 'globe.intensity <up|down>'");
-        return false;
-    }
-    auto& s = ctx.camera->GetState();
-    // Radius and tilt move in opposite directions, so up/down acts as one intensity knob.
-    if (args[0] == "up")
-    {
-        s.globeSphereRadius = std::min(500.0f, s.globeSphereRadius + 10.0f);
-        s.tilt = std::max(0.0f, s.tilt - 0.05f);
-    }
-    else
-    {
-        s.globeSphereRadius = std::max(50.0f, s.globeSphereRadius - 10.0f);
-        s.tilt = std::min(1.0f, s.tilt + 0.05f);
-    }
-    char buf[64];
-    std::snprintf(buf,
-                  sizeof(buf),
-                  "globe.intensity: radius=%.2f tilt=%.2f",
-                  static_cast<double>(s.globeSphereRadius),
-                  static_cast<double>(s.tilt));
-    ctx.out.Print(buf);
     return true;
 }
 
@@ -1717,6 +1743,43 @@ bool Cmd_TimeWeather(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
+// weather.overlay <name|off> - set or clear the manual sky overlay weather.
+bool Cmd_WeatherOverlay(std::span<const std::string_view> args, CommandContext& ctx)
+{
+    if (ctx.time == nullptr)
+    {
+        ctx.out.PrintError("weather.overlay: time manager unavailable");
+        return false;
+    }
+    if (args.size() != 1)
+    {
+        ctx.out.PrintError(
+            "weather.overlay: usage 'weather.overlay <name|off>' (Tab lists states)");
+        return false;
+    }
+    if (args[0] == "off" || args[0] == "none" || args[0] == "clear")
+    {
+        ctx.time->ClearWeatherOverlay();
+        ctx.out.Print("weather.overlay: cleared");
+        return true;
+    }
+    auto parsed = EnumTraits<WeatherState>::FromString(args[0]);
+    if (!parsed)
+    {
+        ctx.out.PrintError(std::string("weather.overlay: unknown weather state '") +
+                           std::string(args[0]) + "'");
+        return false;
+    }
+    ctx.time->SetWeatherOverlay(*parsed);
+    char line[96];
+    std::snprintf(line,
+                  sizeof(line),
+                  "weather.overlay: %s",
+                  std::string(EnumTraits<WeatherState>::ToString(*parsed)).c_str());
+    ctx.out.Print(line);
+    return true;
+}
+
 // weather.intensity <0.0-1.0> - set weather effect intensity.
 bool Cmd_WeatherIntensity(std::span<const std::string_view> args, CommandContext& ctx)
 {
@@ -1945,6 +2008,16 @@ bool Cmd_WeatherStatus(std::span<const std::string_view> args, CommandContext& c
                   static_cast<double>(wind.y),
                   static_cast<double>(ctx.weatherDirector->GetWindStrength()));
     ctx.out.Print(line);
+
+    if (ctx.time->HasWeatherOverlay())
+    {
+        std::snprintf(
+            line,
+            sizeof(line),
+            "  overlay: %s",
+            std::string(EnumTraits<WeatherState>::ToString(ctx.time->GetWeatherOverlay())).c_str());
+        ctx.out.Print(line);
+    }
     return true;
 }
 
@@ -1974,6 +2047,12 @@ bool Cmd_WeatherWind(std::span<const std::string_view> args, CommandContext& ctx
 }
 
 // light.add <x> <y> [r g b] [radius] [schedule] - add a world light, report its index.
+// x/y are WORLD PIXELS, not tiles, unlike every other coordinate-taking command here.
+// r/g/b are normalized floats around [0, 1] and are not clamped, so 8-bit values like
+// 255 200 100 produce a wildly over-bright light. radius is in world pixels.
+// The optional groups are positional and nested (radius needs r g b, schedule needs
+// radius), which is what the 2/5/6/7 arg forms below enforce. Omitted groups keep the
+// WorldLight defaults: color (1.0, 0.85, 0.55), radius 64, schedule NightOnly.
 bool Cmd_LightAdd(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -2374,7 +2453,8 @@ bool Cmd_CameraFollow(std::span<const std::string_view> args, CommandContext& ct
     return true;
 }
 
-// camera.info - print camera pos, zoom, tilt, 3D/freecam/follow flags, follow target.
+// camera.info - print camera position, zoom, freecam/follow flags, and the follow target.
+// CameraState carries no tilt and no 3D field; the orbit angles come from cam.yaw/cam.pitch.
 bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.camera == nullptr)
@@ -2391,13 +2471,11 @@ bool Cmd_CameraInfo(std::span<const std::string_view> args, CommandContext& ctx)
     char line[192];
     std::snprintf(line,
                   sizeof(line),
-                  "camera.info: pos=(%.1f, %.1f) zoom=%.3f tilt=%.2f globe3D=%s freecam=%s "
+                  "camera.info: pos=(%.1f, %.1f) zoom=%.3f freecam=%s "
                   "follow=%s target=(%.1f, %.1f)",
                   static_cast<double>(s.position.x),
                   static_cast<double>(s.position.y),
                   static_cast<double>(s.zoom),
-                  static_cast<double>(s.tilt),
-                  s.enable3DEffect ? "ON" : "OFF",
                   s.freeMode ? "ON" : "OFF",
                   s.hasFollowTarget ? "ON" : "OFF",
                   static_cast<double>(s.followTarget.x),
@@ -2759,14 +2837,16 @@ bool Cmd_TileInfo(std::span<const std::string_view> args, CommandContext& ctx)
         {
             continue;
         }
+        const std::string stanceName{
+            EnumTraits<TileStance>::ToString(ctx.tilemap->GetLayerStance(tx, ty, L))};
         char line[224];
         std::snprintf(line,
                       sizeof(line),
-                      "  L%zu id=%d rot=%.0f flags=[%s%s%s%s%s] struct=%d anim=%d",
+                      "  L%zu id=%d rot=%.0f stance=%s flags=[%s%s%s%s] struct=%d anim=%d",
                       L,
                       id,
                       static_cast<double>(ctx.tilemap->GetLayerRotation(tx, ty, L)),
-                      ctx.tilemap->GetLayerNoProjection(tx, ty, L) ? "noProj," : "",
+                      stanceName.c_str(),
                       ctx.tilemap->GetLayerFlipX(tx, ty, L) ? "flipX," : "",
                       ctx.tilemap->GetLayerFlipY(tx, ty, L) ? "flipY," : "",
                       ctx.tilemap->GetLayerYSortPlus(tx, ty, L) ? "ySort+," : "",
@@ -2995,6 +3075,11 @@ bool Cmd_AnimList(std::span<const std::string_view> args, CommandContext& ctx)
 
 namespace
 {
+// Shared by struct.goto / zone.goto / light.goto / npc.goto. CameraState::position is the
+// viewport's top-left corner and worldPos is assigned straight into it, with no half-view-size
+// subtraction, so the target lands at the corner of the view rather than its middle. This also
+// forces free mode and drops the follow target: after any goto the camera stays detached from
+// the player until `camera.follow on`.
 void CameraSnapTo(CameraController& cam, glm::vec2 worldPos)
 {
     CameraState& s = cam.GetState();
@@ -3078,7 +3163,8 @@ bool Cmd_StructInfo(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// struct.goto <id> - snap the free camera to a structure's anchor midpoint.
+// struct.goto <id> - move the camera's top-left corner to a structure's anchor midpoint
+// (enters free mode; see CameraSnapTo).
 bool Cmd_StructGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -3155,7 +3241,8 @@ bool Cmd_ZoneList(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// zone.goto <idx> - snap the free camera to a particle zone's center.
+// zone.goto <idx> - move the camera's top-left corner to a particle zone's center
+// (enters free mode; see CameraSnapTo).
 bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -3193,7 +3280,8 @@ bool Cmd_ZoneGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// light.goto <idx> - snap the free camera to a world light's position.
+// light.goto <idx> - move the camera's top-left corner to a world light's position
+// (enters free mode; see CameraSnapTo).
 bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr || ctx.camera == nullptr)
@@ -3230,7 +3318,9 @@ bool Cmd_LightGoto(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// nav.path <fx> <fy> <tx> <ty> - A* pathfind and print length plus waypoint chain.
+// nav.path <fx> <fy> <tx> <ty> - BFS shortest path on the navigation grid; print the length
+// plus the waypoint chain (first 32 shown). Pathfinding tests navigation only and ignores
+// collision, so a reported path may cross tiles no NPC can patrol.
 bool Cmd_NavPath(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.tilemap == nullptr)
@@ -3381,7 +3471,8 @@ bool Cmd_NpcPath(std::span<const std::string_view> args, CommandContext& ctx)
     return true;
 }
 
-// npc.goto <idx> - snap the free camera to an NPC's world position.
+// npc.goto <idx> - move the camera's top-left corner to an NPC's world position
+// (enters free mode; see CameraSnapTo).
 bool Cmd_NpcGoto(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.npcs == nullptr || ctx.camera == nullptr)
@@ -3434,6 +3525,8 @@ bool Cmd_NpcNearest(std::span<const std::string_view> args, CommandContext& ctx)
         return false;
     }
     // Players use bottom-center anchoring (mirrors Tilemap::WorldToTileCoord).
+    // player.pos, state.dump and map.save report the standing row instead
+    // (TileMath::StandingTileRow), so mid-stride the two can differ by one row.
     glm::vec2 ppos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
     int ptx = TileMath::TileIndex(ppos.x, static_cast<float>(CONSOLE_TILE_SIZE));
     int pty = TileMath::AnchorTileRow(ppos.y, static_cast<float>(CONSOLE_TILE_SIZE));
@@ -3638,8 +3731,12 @@ bool Cmd_MemStats(std::span<const std::string_view> args, CommandContext& ctx)
     if (ctx.tilemap != nullptr)
     {
         const std::size_t cells = ctx.tilemap->MapCellCount();
-        // Approximation: per cell, the per-tile fields total ~24 bytes
-        // (int id + float rot + 5 bools + int struct + int anim).
+        // Rough approximation, not the real layout. It charges one int (tile id),
+        // one float (rotation), five bools and two more ints (structureId,
+        // animationMap) per cell per layer, for 21 bytes. TileLayer actually holds
+        // three ints, one float, four bools and two uint8 enums (stance,
+        // elevationRole), and the bools sit in a bit-packed std::vector<bool>, so
+        // this over-charges the flags and omits the enums entirely.
         const std::size_t perCellBytes =
             sizeof(int) + sizeof(float) + sizeof(bool) * 5 + sizeof(int) + sizeof(int);
         tilemapBytes = ctx.tilemap->GetLayerCount() * cells * perCellBytes;
@@ -3700,7 +3797,7 @@ bool Cmd_EcsValidate(std::span<const std::string_view> args, CommandContext& ctx
     return false;
 }
 
-// config.dump - emit current time/globe/editor/postfx toggles as replayable console commands.
+// config.dump - emit current time/weather/editor/postfx toggles as replayable console commands.
 bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (!args.empty())
@@ -3742,17 +3839,6 @@ bool Cmd_ConfigDump(std::span<const std::string_view> args, CommandContext& ctx)
             ctx.out.Print(line);
         }
     }
-    if (ctx.camera != nullptr)
-    {
-        const CameraState& s = ctx.camera->GetState();
-        std::snprintf(line, sizeof(line), "globe %s", s.enable3DEffect ? "on" : "off");
-        ctx.out.Print(line);
-        std::snprintf(
-            line, sizeof(line), "globe.radius %.0f", static_cast<double>(s.globeSphereRadius));
-        ctx.out.Print(line);
-        std::snprintf(line, sizeof(line), "globe.tilt %.3f", static_cast<double>(s.tilt));
-        ctx.out.Print(line);
-    }
     if (ctx.editor != nullptr)
     {
         std::snprintf(line, sizeof(line), "editor %s", ctx.editor->IsActive() ? "on" : "off");
@@ -3787,8 +3873,10 @@ bool Cmd_BookmarkSet(std::span<const std::string_view> args,
         ctx.out.PrintError("bookmark.set: usage 'bookmark.set <name>'");
         return false;
     }
-    // Players use bottom-center anchoring: m_Position.y is the feet edge, so
+    // Players use bottom-center anchoring: `Transform::position.y` is the feet edge, so
     // recover the tile by subtracting half a tile (mirrors Tilemap::WorldToTileCoord).
+    // player.pos, state.dump and map.save report the standing row instead
+    // (TileMath::StandingTileRow), so mid-stride the two can differ by one row.
     glm::vec2 pos = ctx.npcs->get<Transform>(ctx.playerEntity).position;
     glm::ivec2 tile{TileMath::TileIndex(pos.x, static_cast<float>(CONSOLE_TILE_SIZE)),
                     TileMath::AnchorTileRow(pos.y, static_cast<float>(CONSOLE_TILE_SIZE))};
@@ -3871,6 +3959,9 @@ bool Cmd_BookmarkList(std::span<const std::string_view> args,
     return true;
 }
 
+// Description convention: start with the argument grammar, never with the command name.
+// Cmd_Help already prints "  <name> (<aliases>) - <description>", so a name-prefixed
+// description prints the name twice.
 void Console::RegisterDefaultCommands()
 {
     auto makeContext = [this]() -> CommandContext
@@ -3918,7 +4009,7 @@ void Console::RegisterDefaultCommands()
                         {"cls"});
 
     m_Registry.Register("teleport",
-                        "teleport <tx> <ty> - move player to tile coord",
+                        "<tx> <ty> - move player to tile coord",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3927,7 +4018,7 @@ void Console::RegisterDefaultCommands()
                         {"tp"});
 
     m_Registry.Register("flag.set",
-                        "flag.set <name> <value> - set a game state flag",
+                        "<name> <value> - set a game state flag",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3935,7 +4026,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("flag.get",
-                        "flag.get <name> - print a game state flag",
+                        "<name> - print a game state flag",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3943,7 +4034,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("time.set",
-                        "time.set <hours> - set in-game time (0.0-24.0)",
+                        "<hours> - set in-game time (any value, wrapped into 0.0-24.0)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3952,7 +4043,7 @@ void Console::RegisterDefaultCommands()
                         {"ts"});
 
     m_Registry.Register("time.add",
-                        "time.add <hours> - offset time of day (signed, wraps 0..24)",
+                        "<hours> - offset time of day (signed, wraps 0..24)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3969,7 +4060,7 @@ void Console::RegisterDefaultCommands()
                         {"tm.freeze", "tfz"});
 
     m_Registry.Register("map.load",
-                        "map.load <filename> - switch maps",
+                        "<filename> - switch maps",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3977,7 +4068,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("state.dump",
-                        "state.dump - print player tile, time, NPC count, quests",
+                        "print player tile, time, NPC count, quests",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -3985,7 +4076,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("noclip",
-                        "noclip [on|off] - toggle player tile/NPC collision",
+                        "[on|off] - toggle player tile/NPC collision",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4083,12 +4174,38 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_FpsCap(args, ctx);
                         });
 
-    m_Registry.Register("globe",
-                        "[on|off|toggle] - toggle 3D globe perspective",
+    m_Registry.Register("world3d",
+                        "[on|off|toggle] - render the world through the 3D camera path",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
-                            (void)Cmd_Globe(args, ctx);
+                            (void)Cmd_World3D(args, ctx);
+                        });
+
+    m_Registry.Register("cam.preset",
+                        "<classic|ds|free> - select the 3D camera preset",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CamPreset(args, ctx);
+                        });
+
+    m_Registry.Register("cam.yaw",
+                        "<degrees> - orbit the 3D camera horizontally (forces the free "
+                        "preset; wrapped to (-180, 180])",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CamYaw(args, ctx);
+                        });
+
+    m_Registry.Register("cam.pitch",
+                        "<degrees> - 3D camera elevation above the horizon (forces the free "
+                        "preset; clamped above the horizon)",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_CamPitch(args, ctx);
                         });
 
     m_Registry.Register("time.next",
@@ -4100,32 +4217,41 @@ void Console::RegisterDefaultCommands()
                         },
                         {"tm.next", "tn"});
 
-    m_Registry.Register("globe.radius",
-                        "<50.0-500.0> - set 3D globe radius",
+    m_Registry.Register("move.accel",
+                        "[px/s^2] - player acceleration rate (momentum ramp-up)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
-                            (void)Cmd_GlobeRadius(args, ctx);
+                            (void)Cmd_MoveAccel(args, ctx);
                         },
-                        {"glb.r", "globe.r", "gr"});
+                        {"maccel"});
 
-    m_Registry.Register("globe.tilt",
-                        "<0.0-1.0> - set 3D camera tilt",
+    m_Registry.Register("move.decel",
+                        "[px/s^2] - player deceleration rate (momentum ramp-down)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
-                            (void)Cmd_GlobeTilt(args, ctx);
+                            (void)Cmd_MoveDecel(args, ctx);
                         },
-                        {"glb.t", "globe.t", "gt"});
+                        {"mdecel"});
 
-    m_Registry.Register("globe.intensity",
-                        "<up|down> - step globe radius+tilt together",
+    m_Registry.Register("move.lookahead",
+                        "[px] - camera look-ahead distance in travel direction",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
-                            (void)Cmd_GlobeIntensity(args, ctx);
+                            (void)Cmd_MoveLookahead(args, ctx);
                         },
-                        {"glb.i", "globe.i", "gi"});
+                        {"mlook", "lookahead"});
+
+    m_Registry.Register("move.dump",
+                        "print current accel/decel/look-ahead values",
+                        [makeContext](auto args, Console&)
+                        {
+                            CommandContext ctx = makeContext();
+                            (void)Cmd_MoveDump(args, ctx);
+                        },
+                        {"mdump"});
 
     m_Registry.Register("postfx",
                         "[on|off|toggle] - master toggle for bloom/grading/vignette/grain",
@@ -4171,42 +4297,6 @@ void Console::RegisterDefaultCommands()
                             (void)Cmd_PlayerRun(args, ctx);
                         });
 
-    m_Registry.Register("move.accel",
-                        "[px/s^2] - player acceleration rate (momentum ramp-up)",
-                        [makeContext](auto args, Console&)
-                        {
-                            CommandContext ctx = makeContext();
-                            (void)Cmd_MoveAccel(args, ctx);
-                        },
-                        {"maccel"});
-
-    m_Registry.Register("move.decel",
-                        "[px/s^2] - player deceleration rate (momentum ramp-down)",
-                        [makeContext](auto args, Console&)
-                        {
-                            CommandContext ctx = makeContext();
-                            (void)Cmd_MoveDecel(args, ctx);
-                        },
-                        {"mdecel"});
-
-    m_Registry.Register("move.lookahead",
-                        "[px] - camera look-ahead distance in travel direction",
-                        [makeContext](auto args, Console&)
-                        {
-                            CommandContext ctx = makeContext();
-                            (void)Cmd_MoveLookahead(args, ctx);
-                        },
-                        {"mlook", "lookahead"});
-
-    m_Registry.Register("move.dump",
-                        "print current accel/decel/look-ahead values",
-                        [makeContext](auto args, Console&)
-                        {
-                            CommandContext ctx = makeContext();
-                            (void)Cmd_MoveDump(args, ctx);
-                        },
-                        {"mdump"});
-
     m_Registry.Register("npc.list",
                         "list NPCs (idx, name, type, tile, AI state)",
                         [makeContext](auto args, Console&)
@@ -4217,7 +4307,7 @@ void Console::RegisterDefaultCommands()
                         {"npcs"});
 
     m_Registry.Register("npc.tp",
-                        "<idx> <tx> <ty> - teleport NPC by vector index",
+                        "<idx> <tx> <ty> - teleport NPC by npc.list index",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4310,7 +4400,7 @@ void Console::RegisterDefaultCommands()
 
     m_Registry.Register(
         "time.weather",
-        "<name> [seconds] - set weather, blended (0 = instant; Tab lists names)",
+        "<name> [seconds] - set weather, blended (default 10s, 0 = instant; Tab lists names)",
         [makeContext](auto args, Console&)
         {
             CommandContext ctx = makeContext();
@@ -4328,6 +4418,27 @@ void Console::RegisterDefaultCommands()
             return out;
         });
 
+    m_Registry.Register(
+        "weather.overlay",
+        "<name|off> - set/clear the manual sky overlay weather (Tab lists names)",
+        [makeContext](auto args, Console&)
+        {
+            CommandContext ctx = makeContext();
+            (void)Cmd_WeatherOverlay(args, ctx);
+        },
+        {},
+        [](std::size_t argIndex) -> std::vector<std::string>
+        {
+            if (argIndex != 0)
+                return {};
+            std::vector<std::string> out;
+            out.reserve(EnumTraits<WeatherState>::Count + 1);
+            for (auto name : EnumTraits<WeatherState>::Names)
+                out.emplace_back(name);
+            out.emplace_back("off");
+            return out;
+        });
+
     m_Registry.Register("weather.intensity",
                         "<0.0-1.0> - set weather density/effect strength",
                         [makeContext](auto args, Console&)
@@ -4337,7 +4448,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("weather.next",
-                        "[seconds] - cycle to next weather state (0 = instant)",
+                        "[seconds] - cycle to next weather state (default 10s, 0 = instant)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4345,7 +4456,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("weather.random",
-                        "[seconds] - set a random weather state (0 = instant)",
+                        "[seconds] - set a random weather state (default 10s, 0 = instant)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4386,7 +4497,8 @@ void Console::RegisterDefaultCommands()
 
     m_Registry.Register(
         "light.add",
-        "<x> <y> [r g b] [radius] [schedule] - place a WorldLight",
+        "<x> <y> [r g b] [radius] [schedule] - place a WorldLight (x/y and radius in world "
+        "pixels; r g b normalized 0-1)",
         [makeContext](auto args, Console&)
         {
             CommandContext ctx = makeContext();
@@ -4506,7 +4618,7 @@ void Console::RegisterDefaultCommands()
                         });
 
     m_Registry.Register("camera.info",
-                        "dump camera state (pos, zoom, freecam, follow, tilt)",
+                        "dump camera state (pos, zoom, freecam, follow, target)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4573,7 +4685,7 @@ void Console::RegisterDefaultCommands()
                         {"ll"});
 
     m_Registry.Register("tile.info",
-                        "tile.info <tx> <ty> - inspect a tile across all layers",
+                        "<tx> <ty> - inspect a tile across all layers",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4582,7 +4694,7 @@ void Console::RegisterDefaultCommands()
                         {"ti"});
 
     m_Registry.Register("tile.find",
-                        "tile.find <tileID> [layer] - find tiles by ID",
+                        "<tileID> [layer] - find tiles by ID",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4627,7 +4739,7 @@ void Console::RegisterDefaultCommands()
                         {"sl"});
 
     m_Registry.Register("struct.info",
-                        "struct.info <id> - structure detail",
+                        "<id> - structure detail",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4636,7 +4748,7 @@ void Console::RegisterDefaultCommands()
                         {"si"});
 
     m_Registry.Register("struct.goto",
-                        "struct.goto <id> - snap camera to structure",
+                        "<id> - move camera to a structure (enters free mode)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4654,7 +4766,7 @@ void Console::RegisterDefaultCommands()
                         {"zl"});
 
     m_Registry.Register("zone.goto",
-                        "zone.goto <idx> - snap camera to zone center",
+                        "<idx> - move camera to a particle zone (enters free mode)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4663,7 +4775,7 @@ void Console::RegisterDefaultCommands()
                         {"zg"});
 
     m_Registry.Register("light.goto",
-                        "light.goto <idx> - snap camera to a world light",
+                        "<idx> - move camera to a world light (enters free mode)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4672,7 +4784,7 @@ void Console::RegisterDefaultCommands()
                         {"lg"});
 
     m_Registry.Register("nav.path",
-                        "nav.path <fx> <fy> <tx> <ty> - BFS shortest path on nav grid",
+                        "<fx> <fy> <tx> <ty> - BFS shortest path on nav grid",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4681,7 +4793,7 @@ void Console::RegisterDefaultCommands()
                         {"np"});
 
     m_Registry.Register("nav.reachable",
-                        "nav.reachable <tx> <ty> - count nav-reachable tiles + bounds",
+                        "<tx> <ty> - count nav-reachable tiles + bounds",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4690,7 +4802,7 @@ void Console::RegisterDefaultCommands()
                         {"nr"});
 
     m_Registry.Register("npc.path",
-                        "npc.path <idx> - print an NPC's patrol waypoints",
+                        "<idx> - print an NPC's patrol waypoints",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4699,7 +4811,7 @@ void Console::RegisterDefaultCommands()
                         {"npa"});
 
     m_Registry.Register("npc.goto",
-                        "npc.goto <idx> - snap camera to an NPC",
+                        "<idx> - move camera to an NPC (enters free mode)",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4726,7 +4838,7 @@ void Console::RegisterDefaultCommands()
                         {"ql"});
 
     m_Registry.Register("quest.give",
-                        "quest.give <name> [description...] - accept a quest",
+                        "<name> [description...] - accept a quest",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4735,7 +4847,7 @@ void Console::RegisterDefaultCommands()
                         {"qg"});
 
     m_Registry.Register("quest.complete",
-                        "quest.complete <name> - mark quest complete",
+                        "<name> - mark quest complete",
                         [makeContext](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4789,7 +4901,7 @@ void Console::RegisterDefaultCommands()
                         {"cd"});
 
     m_Registry.Register("bookmark.set",
-                        "bookmark.set <name> - save player's current tile",
+                        "<name> - save player's current tile",
                         [makeContext, this](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4798,7 +4910,7 @@ void Console::RegisterDefaultCommands()
                         {"bs"});
 
     m_Registry.Register("bookmark.tp",
-                        "bookmark.tp <name> - teleport to a saved bookmark",
+                        "<name> - teleport to a saved bookmark",
                         [makeContext, this](auto args, Console&)
                         {
                             CommandContext ctx = makeContext();
@@ -4820,6 +4932,9 @@ void Console::RegisterDefaultCommands()
     // visible in one place. Numeric args (coords, indices, ranges) and
     // open-ended args (map paths, brand-new flag/quest names) are intentionally
     // omitted: a dropdown only helps when the choices are few and named.
+    //
+    // Known gaps, not design: `world3d` and `noclip` are on/off/toggle-shaped and
+    // `cam.preset` takes classic|ds|free, yet none of the three is wired up below.
     const auto toggleCompletions = FixedArgValues({"on", "off", "toggle"});
 
     const auto characterCompletions = [](std::size_t argIndex) -> std::vector<std::string>
@@ -4905,7 +5020,6 @@ void Console::RegisterDefaultCommands()
                                   "particles",
                                   "debug.overlays",
                                   "fps.cap",
-                                  "globe",
                                   "postfx",
                                   "player.bicycle",
                                   "player.run",
@@ -4917,7 +5031,6 @@ void Console::RegisterDefaultCommands()
     m_Registry.SetArgCompletions("weather.auto", FixedArgValues({"on", "off"}));
     m_Registry.SetArgCompletions("renderer.set", FixedArgValues({"opengl", "vulkan"}));
     m_Registry.SetArgCompletions("renderer.trace", FixedArgValues({"on", "off", "dump", "clear"}));
-    m_Registry.SetArgCompletions("globe.intensity", FixedArgValues({"up", "down"}));
     m_Registry.SetArgCompletions("character.set", characterCompletions);
     m_Registry.SetArgCompletions("npc.freeze", npcFreezeCompletions);
     m_Registry.SetArgCompletions("flag.get", flagNameCompletions);
