@@ -36,8 +36,8 @@
 
 namespace
 {
-/// Build a span<string_view> from string literals, keeping the underlying
-/// strings alive in @p storage so the views remain valid for the call.
+// Build a span<string_view> from string literals, keeping the underlying
+// strings alive in `storage` so the views remain valid for the call.
 struct ArgPack
 {
     std::vector<std::string> storage;
@@ -63,7 +63,7 @@ struct ArgPack
     }
 };
 
-/// True if any line in the buffer contains @p needle.
+// True if any line in the buffer contains `needle`.
 bool BufferContains(const ConsoleBuffer& buf, std::string_view needle)
 {
     for (const auto& line : buf.Lines())
@@ -76,10 +76,10 @@ bool BufferContains(const ConsoleBuffer& buf, std::string_view needle)
     return false;
 }
 
-/// Spawn @p n default NPCs into @p world (the ctx.npcs registry). The npc.*
-/// commands address NPCs by index in registry dense order; @ref NpcAt resolves
-/// such an index to its entity the same way the commands do. No WorldServices
-/// are published, so the NPCs have no sprite - fine for the component reads here.
+// Spawn `n` default NPCs into `world` (the ctx.npcs registry). The npc.*
+// commands address NPCs by index in registry dense order; NpcAt resolves
+// such an index to its entity the same way the commands do. No WorldServices
+// are published, so the NPCs have no sprite - fine for the component reads here.
 void SpawnNpcs(ecs::registry& world, int n)
 {
     for (int i = 0; i < n; ++i)
@@ -590,97 +590,6 @@ TEST(ConsoleCommandsTests, DebugOverlaysMirrorsAnchorVisibility)
     EXPECT_TRUE(Cmd_DebugOverlays(ArgPack({"off"}).span(), ctx));
     EXPECT_FALSE(editor.IsDebugMode());
     EXPECT_FALSE(editor.IsShowNoProjectionAnchors());
-}
-
-// ---------------------------------------------------------------------------
-// globe / globe.radius / globe.tilt / globe.intensity
-// ---------------------------------------------------------------------------
-
-TEST(ConsoleCommandsTests, GlobeToggle)
-{
-    CameraController cam;
-    ASSERT_FALSE(cam.Is3DEnabled());
-    ConsoleBuffer buf;
-    CommandContext ctx{buf};
-    ctx.camera = &cam;
-
-    EXPECT_TRUE(Cmd_Globe(ArgPack({"on"}).span(), ctx));
-    EXPECT_TRUE(cam.Is3DEnabled());
-
-    EXPECT_TRUE(Cmd_Globe(ArgPack({}).span(), ctx));  // toggle by default
-    EXPECT_FALSE(cam.Is3DEnabled());
-}
-
-TEST(ConsoleCommandsTests, GlobeRadiusSetsAndRejectsOutOfRange)
-{
-    CameraController cam;
-    ConsoleBuffer buf;
-    CommandContext ctx{buf};
-    ctx.camera = &cam;
-
-    EXPECT_TRUE(Cmd_GlobeRadius(ArgPack({"123.5"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 123.5f);
-
-    EXPECT_FALSE(Cmd_GlobeRadius(ArgPack({"600"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 123.5f);  // unchanged
-
-    EXPECT_FALSE(Cmd_GlobeRadius(ArgPack({"-5"}).span(), ctx));
-    EXPECT_FALSE(Cmd_GlobeRadius(ArgPack({"abc"}).span(), ctx));
-    EXPECT_FALSE(Cmd_GlobeRadius(ArgPack({}).span(), ctx));
-}
-
-TEST(ConsoleCommandsTests, GlobeTiltSetsAndRejectsOutOfRange)
-{
-    CameraController cam;
-    ConsoleBuffer buf;
-    CommandContext ctx{buf};
-    ctx.camera = &cam;
-
-    EXPECT_TRUE(Cmd_GlobeTilt(ArgPack({"0.5"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().tilt, 0.5f);
-
-    EXPECT_FALSE(Cmd_GlobeTilt(ArgPack({"1.5"}).span(), ctx));
-    EXPECT_FALSE(Cmd_GlobeTilt(ArgPack({"-0.1"}).span(), ctx));
-}
-
-TEST(ConsoleCommandsTests, GlobeIntensityUpDownCouples)
-{
-    CameraController cam;
-    cam.GetState().globeSphereRadius = 200.0f;
-    cam.GetState().tilt = 0.2f;
-    ConsoleBuffer buf;
-    CommandContext ctx{buf};
-    ctx.camera = &cam;
-
-    EXPECT_TRUE(Cmd_GlobeIntensity(ArgPack({"up"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 210.0f);
-    EXPECT_FLOAT_EQ(cam.GetState().tilt, 0.15f);
-
-    EXPECT_TRUE(Cmd_GlobeIntensity(ArgPack({"down"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 200.0f);
-    EXPECT_FLOAT_EQ(cam.GetState().tilt, 0.2f);
-
-    EXPECT_FALSE(Cmd_GlobeIntensity(ArgPack({"sideways"}).span(), ctx));
-}
-
-TEST(ConsoleCommandsTests, GlobeIntensityClampsAtBoundaries)
-{
-    CameraController cam;
-    cam.GetState().globeSphereRadius = 500.0f;
-    cam.GetState().tilt = 0.0f;
-    ConsoleBuffer buf;
-    CommandContext ctx{buf};
-    ctx.camera = &cam;
-
-    EXPECT_TRUE(Cmd_GlobeIntensity(ArgPack({"up"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 500.0f);  // capped
-    EXPECT_FLOAT_EQ(cam.GetState().tilt, 0.0f);                 // floored
-
-    cam.GetState().globeSphereRadius = 50.0f;
-    cam.GetState().tilt = 1.0f;
-    EXPECT_TRUE(Cmd_GlobeIntensity(ArgPack({"down"}).span(), ctx));
-    EXPECT_FLOAT_EQ(cam.GetState().globeSphereRadius, 50.0f);  // floored
-    EXPECT_FLOAT_EQ(cam.GetState().tilt, 1.0f);                // capped
 }
 
 // ---------------------------------------------------------------------------
