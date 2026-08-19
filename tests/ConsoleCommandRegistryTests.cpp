@@ -91,12 +91,12 @@ TEST(ConsoleCommandRegistryTests, MatchPrefixIsCaseInsensitive)
 TEST(ConsoleCommandRegistryTests, AliasResolvesToSameCommand)
 {
     ConsoleCommandRegistry r;
-    r.Register("globe.intensity", "step radius+tilt", NoOp(), {"glb.i", "globe.i", "gi"});
+    r.Register("gizmo.intensity", "step radius+tilt", NoOp(), {"glb.i", "gizmo.i", "gi"});
 
-    const auto* canonical = r.Lookup("globe.intensity");
+    const auto* canonical = r.Lookup("gizmo.intensity");
     ASSERT_NE(canonical, nullptr);
     EXPECT_EQ(r.Lookup("glb.i"), canonical);
-    EXPECT_EQ(r.Lookup("globe.i"), canonical);
+    EXPECT_EQ(r.Lookup("gizmo.i"), canonical);
     EXPECT_EQ(r.Lookup("gi"), canonical);
     EXPECT_EQ(r.Lookup("nope"), nullptr);
     ASSERT_EQ(canonical->aliases.size(), 3u);
@@ -105,12 +105,12 @@ TEST(ConsoleCommandRegistryTests, AliasResolvesToSameCommand)
 TEST(ConsoleCommandRegistryTests, MatchPrefixIncludesAliases)
 {
     ConsoleCommandRegistry r;
-    r.Register("globe.intensity", "", NoOp(), {"glb.i", "globe.i", "gi"});
-    r.Register("globe.radius", "", NoOp(), {"glb.r", "globe.r", "gr"});
+    r.Register("gizmo.intensity", "", NoOp(), {"glb.i", "gizmo.i", "gi"});
+    r.Register("gizmo.radius", "", NoOp(), {"glb.r", "gizmo.r", "gr"});
 
     // All canonical + alias names starting with 'g':
-    //   globe.intensity, globe.radius (canonical x2)
-    //   globe.i, gi, globe.r, gr (aliases x4)
+    //   gizmo.intensity, gizmo.radius (canonical x2)
+    //   gizmo.i, gi, gizmo.r, gr (aliases x4)
     //   glb.i, glb.r (aliases x2)
     EXPECT_EQ(r.MatchPrefix("g").size(), 8u);
 
