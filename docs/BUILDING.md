@@ -32,24 +32,48 @@ Both rendering backends are always built into the binary:
 - **Vulkan** - Always included (required); CMake fails configuration if the Vulkan SDK is missing
 - **FreeType** - Included if FreeType library is found (optional; text rendering disabled when missing)
 
-The graphics backend (OpenGL/Vulkan) is selected at runtime via F1, not build time.
+The graphics backend is chosen at runtime, not at build time: `startupRenderer` in
+`rift.project.json` picks the boot backend, and `renderer.set opengl|vulkan` in the developer
+console (`F12`) swaps it live.
 
 ## Windows
 
 ### Quick Build (Batch Script)
 
+Set `VCPKG_ROOT` to your vcpkg checkout first. `build.bat` configures through
+`cmake --preset default`, whose preset chain is conditional on `VCPKG_ROOT` being non-empty; with
+the variable unset the preset is disabled and the configure step fails immediately. The
+dependencies declared in `vcpkg.json` (glm, glfw3, freetype, gtest) are then installed by vcpkg
+manifest mode during configure.
+
 We provide a batch script for one-click building:
 
 ```cmd
+:: Full pipeline
 .\build.bat
+
+:: Same pipeline without the blocking static-analysis step
+.\build.bat --skip-tidy
+
+:: Usage
+.\build.bat --help
 ```
 
-This script automatically:
-1. Builds both Debug and Release configurations
-2. Compiles shaders to SPIR-V (the Vulkan SDK is required for the build)
-3. Copies assets to build directories
-4. Copies save files from project root to build directories
-5. Generates Doxygen documentation (if Doxygen is installed)
+The script runs five steps in order and stops at the first failure:
+
+1. **clang-format** - rewrites every `src/*.cpp|hpp|h|c` file in place. This edits your working
+   tree; commit or stash first if you want to see the formatting as a separate change.
+2. **CMake configure** - `cmake --preset default` (Visual Studio 17 2022 generator, vcpkg manifest
+   install into `build/`).
+3. **clang-tidy** - static analysis over every `src/*.cpp` and `tests/*.cpp`, one file at a time,
+   against a `compile_commands.json` produced by the `build-cdb` Ninja sidecar. This step is
+   blocking: any diagnostic aborts the pipeline. Skip it with `--skip-tidy`.
+4. **Build** - Debug then Release of target `rift`. Shader-to-SPIR-V compilation, the asset and
+   shader copy, the `rift.project.json` copy and the `rift.save*.json` copy all run as part of this
+   step, driven by CMake rather than by the script.
+5. **Doxygen** - HTML documentation, if Doxygen is installed.
+
+Steps 1 and 3 are skipped with a notice when `clang-format` or `clang-tidy` is not on `PATH`.
 
 ### Manual Build (Command Line)
 
@@ -106,15 +130,22 @@ flowchart LR
 
 The `build.bat` script compiles shaders via `glslangValidator` (installed with the Vulkan SDK, which is required).
 
-**Manual compilation:**
+**Manual compilation** - these are the four the build itself runs. `-DUSE_VULKAN` is part of the
+command; SPIR-V compiled without it will not match the build's:
+
 ```cmd
-glslangValidator -V shaders/Geometry.vert -o shaders/Geometry.vert.spv
-glslangValidator -V shaders/Geometry.frag -o shaders/Geometry.frag.spv
-glslangValidator -V shaders/text.vert -o shaders/text.vert.spv
-glslangValidator -V shaders/text.frag -o shaders/text.frag.spv
+glslangValidator -V -DUSE_VULKAN shaders/Geometry.vert -o shaders/Geometry.vert.spv
+glslangValidator -V -DUSE_VULKAN shaders/Geometry.frag -o shaders/Geometry.frag.spv
+glslangValidator -V -DUSE_VULKAN shaders/Geometry3D.vert -o shaders/Geometry3D.vert.spv
+glslangValidator -V -DUSE_VULKAN shaders/Geometry3D.frag -o shaders/Geometry3D.frag.spv
 ```
 
+`Geometry.*` is the screen-space 2D pair; `Geometry3D.*` is the world-space MVP path.
+
 Ensure `glslangValidator` is in your PATH (installed with Vulkan SDK).
+
+`.spv` files are build artifacts and are gitignored on purpose. A stale one keeps an old Vulkan
+shader alive with no error: delete it when the Vulkan output disagrees with the GLSL source.
 
 ## Build Configurations
 
@@ -142,27 +173,46 @@ cmake --build . --config Debug
 cmake --build . --config Release
 ```
 
+## Tests
+
+`BUILD_TESTS` defaults to `ON`, and the `rift_tests` target is configured into the same `build/`
+tree as the game. A plain `cmake --build build --config Release` therefore builds the tests too,
+and a test compile error fails a build you may think is game-only. Add `--target rift` to restrict
+a build to the game.
+
+```cmd
+:: Configure, build rift_tests, run every test
+.\test.bat
+
+:: Or drive the pieces directly
+cmake --build build --config Release --target rift_tests
+ctest --test-dir build -C Release --output-on-failure
+```
+
 ## Build Output Structure
 
 After a successful build:
 
 ```
 build/
-|-- Debug/            (or Release/)
-|   |-- rift.exe      # Main executable
-|   |-- assets/       # Game assets (copied)
-|   |   |-- sprites/
-|   |   |-- fonts/
-|   |   +-- maps/
-|   +-- shaders/      # Shader files (copied)
+|-- Debug/                  (or Release/)
+|   |-- rift.exe            # Main executable
+|   |-- rift_tests.exe      # Test binary (BUILD_TESTS=ON)
+|   |-- rift.project.json   # Manifest, copied from the repo root
+|   |-- rift.save*.json     # Save/map files, copied from the repo root if present
+|   |-- assets/             # Copied verbatim from assets/; its layout is whatever
+|   |                       # the manifest paths point at
+|   +-- shaders/            # GLSL sources plus their compiled .spv siblings
 +-- ...
 ```
+
+`assets/` is not part of the repository, so the copy step produces nothing when it is absent.
 
 ## Troubleshooting
 
 ### Dependency Errors
 
-If CMake reports missing dependencies (GLFW, GLM, GLAD, stb_image), see the [Setup Guide - Troubleshooting](SETUP.md#troubleshooting) section for solutions.
+If CMake reports missing dependencies (GLFW, GLM, GLAD, stb_image, nlohmann/json, ecs), see the [Setup Guide - Troubleshooting](SETUP.md#troubleshooting) section for solutions. All six are hard `FATAL_ERROR` checks; `setup.ps1` provisions them.
 
 ### Vulkan Errors
 
