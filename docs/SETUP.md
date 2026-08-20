@@ -11,7 +11,7 @@ graph LR
     classDef optional fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
 
     subgraph Required["Required Tools"]
-        CMake["CMake 3.10+"]:::required
+        CMake["CMake 3.21+"]:::required
         Git["Git"]:::required
         Compiler["C++23 Compiler"]:::required
     end
@@ -21,6 +21,8 @@ graph LR
         GLM["GLM"]:::required
         GLAD["GLAD"]:::required
         STB["stb_image"]:::required
+        JSON["nlohmann/json"]:::required
+        ECS["ecs.hpp"]:::required
     end
 
     subgraph RequiredSDK["Required SDK"]
@@ -37,7 +39,9 @@ graph LR
 
 ### CMake
 
-**Version:** 3.10 or higher
+**Version:** 3.21 or higher. `CMakePresets.json` requires 3.21, and `build.bat` and `test.bat` both
+configure through `cmake --preset default`. `CMakeLists.txt` on its own still declares 3.10, so a
+preset-free `cmake ..` works with older CMake, but that path is not the supported one.
 
 | Platform      | Installation                                                               |
 |---------------|----------------------------------------------------------------------------|
@@ -60,14 +64,20 @@ The project requires C++23 support.
 
 ### Dependency Overview
 
-| Library    | Purpose                         | Required         |
-|------------|---------------------------------|------------------|
-| GLFW       | Window creation, input handling | Yes              |
-| GLM        | Mathematics (vectors, matrices) | Yes              |
-| GLAD       | OpenGL function loading         | Yes (for OpenGL) |
-| stb_image  | Image file loading              | Yes              |
-| FreeType   | Font rendering                  | Optional         |
-| Vulkan SDK | Vulkan graphics API             | Yes              |
+| Library       | Purpose                                                 | Required         |
+|---------------|---------------------------------------------------------|------------------|
+| GLFW          | Window creation, input handling                         | Yes              |
+| GLM           | Mathematics (vectors, matrices)                         | Yes              |
+| GLAD          | OpenGL function loading                                 | Yes (for OpenGL) |
+| stb_image     | Image file loading                                      | Yes              |
+| nlohmann/json | JSON parsing for maps, saves and the project manifest   | Yes              |
+| ecs           | Single-header ECS (lextpf/ecs), included as `<ecs.hpp>` | Yes              |
+| FreeType      | Font rendering                                          | Optional         |
+| Vulkan SDK    | Vulkan graphics API                                     | Yes              |
+
+CMake raises a `FATAL_ERROR` for each of the six required libraries it cannot resolve, whether from
+vcpkg or from `external/`. FreeType is the only optional one: without it the build succeeds but
+`USE_FREETYPE` stays undefined and text rendering is disabled.
 
 ### Automatic Setup (Windows)
 
@@ -79,9 +89,16 @@ We provide a PowerShell script to automatically download and configure dependenc
 ```
 
 This script will:
-1. Clone GLFW into `external/glfw/`
-2. Download stb_image.h into `external/stb/`
-3. Check for GLM and GLAD (provides instructions if missing)
+1. Clone GLFW into `external/glfw/` (or `git pull` it when already present)
+2. Clone GLM into `external/glm/` (or `git pull` it when already present)
+3. Download `nlohmann/json.hpp` into `external/nlohmann/`
+4. Download `ecs.hpp` (lextpf/ecs) into `external/ecs/`
+5. Report GLAD and stb_image as already present - both are committed to the repository
+6. Report the status of the Vulkan SDK (required), vcpkg and Doxygen
+
+You also need `VCPKG_ROOT` set to your vcpkg checkout before building: the `default` CMake preset
+is conditional on it, and `cmake --preset default` fails without it. vcpkg manifest mode then
+installs `vcpkg.json`'s dependencies (glm, glfw3, freetype, gtest) during configure.
 
 ### Manual Setup
 
@@ -109,6 +126,10 @@ external/
 |   +-- glm/
 |       |-- glm.hpp
 |       +-- ...
+|-- nlohmann/
+|   +-- json.hpp
+|-- ecs/
+|   +-- ecs.hpp
 +-- stb/
     +-- stb_image.h
 ```
@@ -134,39 +155,28 @@ git clone https://github.com/g-truc/glm.git external/glm
 1. Download from [GitHub Releases](https://github.com/g-truc/glm/releases)
 2. Extract so headers are at `external/glm/glm/glm.hpp`
 
-#### GLAD (OpenGL Loader)
-
-GLAD must be generated for your specific OpenGL version:
-
-1. Go to [GLAD Generator](https://glad.dav1d.de/)
-2. Configure:
-   - **Language:** C/C++
-   - **Specification:** OpenGL
-   - **API gl:** Version 4.6
-   - **Profile:** Core
-   - **Options:** Check "Generate a loader"
-3. Click **Generate**
-4. Download the zip file
-5. Extract contents to `external/glad/`:
-   ```
-   external/glad/
-   |-- include/
-   |   |-- glad/
-   |   |   +-- glad.h
-   |   +-- KHR/
-   |       +-- khrplatform.h
-   +-- src/
-       +-- glad.c
-   ```
-
-#### stb_image
-
-Download the single-header library using PowerShell:
+#### nlohmann/json
 
 ```powershell
-mkdir external\stb -Force
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" -OutFile "external\stb\stb_image.h"
+mkdir external\nlohmann -Force
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp" -OutFile "external\nlohmann\json.hpp" -UseBasicParsing
 ```
+
+#### ecs
+
+```powershell
+mkdir external\ecs -Force
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lextpf/ecs/main/src/ecs.hpp" -OutFile "external\ecs\ecs.hpp" -UseBasicParsing
+```
+
+#### GLAD and stb_image
+
+Both ship in the repository (`external/glad/`, `external/stb/`). Nothing to do.
+
+Regenerate GLAD only if you deliberately target a different OpenGL version: generate at
+[glad.dav1d.de](https://glad.dav1d.de/) for C/C++, OpenGL, gl 4.6, Core profile, "Generate a
+loader", and extract over `external/glad/`. Doing this without a reason replaces working in-repo
+files with a mismatched configuration.
 
 ## Required: Vulkan SDK
 
@@ -187,10 +197,12 @@ For text rendering support:
 
 ### Windows
 
-FreeType is bundled or can be installed via vcpkg:
-```cmd
-vcpkg install freetype:x64-windows
-```
+FreeType is declared in `vcpkg.json` and installed automatically by vcpkg manifest mode when
+`cmake --preset default` configures with `VCPKG_ROOT` set. No manual `vcpkg install` step is
+needed, and there is no bundled copy under `external/`.
+
+Without FreeType the build still succeeds: CMake warns, leaves `USE_FREETYPE` undefined, and text
+rendering is disabled.
 
 ## Verifying Setup
 
@@ -226,15 +238,20 @@ CMake cannot find GLM. Solutions:
 
 ### "glad.h not found"
 
-GLAD was not properly set up:
-1. Regenerate GLAD at [glad.dav1d.de](https://glad.dav1d.de/)
-2. Ensure files are in `external/glad/include/glad/glad.h`
-3. Ensure `external/glad/src/glad.c` exists
+GLAD is committed to the repository, so this means the files were deleted or the checkout is
+incomplete:
+1. Ensure `external/glad/include/glad/glad.h` exists
+2. Ensure `external/glad/src/glad.c` exists
+3. Restore them from the repository rather than regenerating
 
 ### "stb_image.h not found"
 
-1. Download stb_image.h manually
-2. Place it in `external/stb/stb_image.h`
+stb_image is committed to the repository. Restore `external/stb/stb_image.h` from the checkout.
+
+### "nlohmann/json not found" or "ecs not found"
+
+Both are downloaded by `setup.ps1` and are hard CMake errors when absent. Re-run `.\setup.ps1`, or
+fetch `external/nlohmann/json.hpp` and `external/ecs/ecs.hpp` manually as shown above.
 
 ### Vulkan Validation Layers Missing
 
@@ -257,7 +274,8 @@ After setting up dependencies:
 ### Windows
 
 - Use **x64 Native Tools Command Prompt** for command-line builds
-- Visual Studio 2019+ recommended for IDE development
+- Visual Studio 2022 (17.x) required: the `default` preset pins the Visual Studio 17 2022 generator
+  and the project is C++23
 - PowerShell execution policy may need adjustment for scripts:
   ```powershell
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
