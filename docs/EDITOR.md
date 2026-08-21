@@ -1,6 +1,6 @@
 # Using the Level Editor
 
-Rift includes a built-in level editor that mutates the active `Tilemap` in real time. Open it with `E` while in-game; the tile picker opens automatically and editor input takes over from gameplay (player movement, dialogue, etc. are suppressed while the editor is active).
+Rift includes a built-in level editor that mutates the active `Tilemap` in real time. Open the developer console with `F12` and run `ed` (alias of `editor`); the tile picker opens automatically and editor input takes over from gameplay (player movement, dialogue, etc. are suppressed while the editor is active).
 
 ## Mode Table
 
@@ -11,26 +11,40 @@ Only one sub-mode is active at a time. Each mode is selected by hotkey:
 |   T | Tile Picker        | Select tile / multi-tile region  | -                            |
 |   M | Navigation Edit    | -                                | Toggle walkability (drag)    |
 |   N | NPC Placement      | Place / remove NPC               | -                            |
-|   B | No-Projection Edit | Set no-projection flag (flood)   | Clear flag (flood)           |
+|   B | Stance Edit        | Paint selected stance (flood)    | Reset to Flat (flood)        |
 |   G | Structure Edit     | Anchor + flood assign structure  | Clear structure assignment   |
-|   H | Elevation Edit     | Paint elevation value            | Clear elevation              |
+|   H | Elevation Edit     | Paint height + role              | Clear height + role          |
 |   J | Particle Zone Edit | Drag to create zone              | Remove zone                  |
 |   K | Animation Edit     | Apply animation to tile          | Remove animation             |
 |   Y | Y-Sort-Plus Edit   | Set Y-sort-plus flag             | Clear Y-sort-plus flag       |
 |   O | Y-Sort-Minus Edit  | Set Y-sort-minus flag            | Clear Y-sort-minus flag      |
 |   - | Default            | Place selected tile (drag)       | Toggle collision (drag)      |
 
+Every mode key except `T` is a toggle: pressing the active mode's own key again returns to Default.
+Each mode change first calls `ClearAllEditModes()`, which discards the previous mode's transient
+state - structure anchors and anchor step, collected animation frames, and the flood flag. `T` is
+different: it only shows or hides the tile picker overlay and leaves the current sub-mode alone.
+
 Mode-specific notes:
 
 - **Tile Picker (T)** - Drag to select a multi-tile region; placement stamps the whole region per click.
 - **Navigation (M)** - Drag-paint walkability. Clearing a tile that an NPC is standing on removes that NPC; the snapshot is captured by the undo stack so `Ctrl+Z` brings the NPC back.
 - **NPC Placement (N)** - Single-click toggles. Placement only succeeds on walkable (navmesh) tiles. The NPC's dialogue tree is randomly assigned at placement time.
-- **No-Projection (B)** - Single click sets the flag on the current layer. Shift+click flood-fills the connected component. Right-click clears the flag on **all 10 layers** for the clicked tile (or flood across one layer).
-- **Structure (G)** - Two-step workflow: Ctrl+click for left anchor, Ctrl+click again for right anchor (creates the structure). Then Shift+click flood-fills the connected component, stamping `noProjection` and assigning the new structure id. Right-click clears the structure assignment.
-- **Elevation (H)** - Drag-paints the current elevation value. Right-click clears to 0.
+- **Stance (B)** - Paints the per-tile `TileStance` that decides whether a tile's artwork lies on the ground or stands up, and if it stands, whether it turns toward the camera. `,` / `.` cycle the stance being painted (`Prop` -> `Wall` -> `Structure`); `Flat` is not in the cycle because right-click is how a cell is cleared. Single click paints one tile, Shift+click flood-fills the connected component, right-click resets to `Flat`. **Both buttons act on the current layer only.**
+  - `Flat` - ground artwork: grass, paths, water, decals. Lies on the ground plane and draws depth-free, so it never occludes an actor.
+  - `Prop` - a pole: lantern, bush, signpost. One tile tall on its own row, always turns to face the camera, never welds to a neighbour.
+  - `Wall` - a surface: fence panel, hedge, low retaining wall. One tile tall on its own row, locked to the grid. A north-south run of these stays parallel instead of fanning open like venetian blinds.
+  - `Structure` - one tile of a multi-tile-tall body: house facade, bridge railing, cliff face. Anchored on the run's base row and lifted; a one-tile-wide body still turns, a wider one is grid-locked to hold its footprint.
+- **Structure (G)** - Two-step workflow: Ctrl+click for left anchor, Ctrl+click again for right anchor (creates the structure). Then Shift+click flood-fills the connected component, stamping `TileStance::Structure` and assigning the new structure id. Right-click clears the structure assignment.
+- **Elevation (H)** - Paints two things that belong together: the per-**cell** height in pixels (scroll to change, steps of 2, clamped to [-32, +32]) and the per-**layer** `ElevationRole` that decides whether *this* layer's artwork rises to it. `,` / `.` cycle the role; `Ground` is not in the cycle because right-click is the clear action. Both writes commit as one undo entry.
+  - `Ground` - artwork stays on the ground plane whatever the cell's height says. This is what keeps water painted under a bridge from rising with the deck.
+  - `Raised` - artwork sits flat at the cell's height (deck, plateau).
+  - `Ramp` - artwork slopes, its edges derived from the same layer's neighbours along the cell's elevation axis. A ramp meets a `Raised` deck at the deck's exact height and bare ground at 0.
+
+  Height alone changes nothing visually - it drives collision and walkability as it always has. Only a role makes a layer rise. Note `MAX_STEP_HEIGHT` is 8: if you raise a deck, keep consecutive ramp steps within 8 or the player cannot climb it.
 - **Particle Zone (J)** - Drag-release defines a rectangular zone. Right-click removes the zone under the cursor.
 - **Animation (K)** - In the tile picker, click to add frames to the active sequence; press Enter to finalize the animation definition. Then click on map tiles to apply. Right-click removes the animation from a tile.
-- **Y-Sort-Plus (Y) / Y-Sort-Minus (O)** - Per-layer flags. Single click for one tile, Shift+click for flood-fill, right-click to clear.
+- **Y-Sort-Plus (Y) / Y-Sort-Minus (O)** - Per-layer flags. Single click for one tile, Shift+click for flood-fill, right-click to clear. These affect **draw order only** and have no bearing on whether a tile stands up - that is the `B` mode stance. (An earlier 3D rule did infer uprightness from them, which stood flat decals on their edge; see `src/TileStance.hpp`.)
 - **Default** - Tile placement (left-click drag) and collision toggle (right-click drag).
 
 ## Persistent HUD
@@ -54,7 +68,7 @@ What's tracked:
 
 - Tile placement (single, drag-paint, multi-tile region)
 - Collision toggle (single, drag-paint)
-- Elevation (paint, right-click clear)
+- Elevation (paint, right-click clear) - `ElevationSetCmd` for height, `SetElevationRolesCmd` for the per-layer role, bundled as one `CompositeCmd` when a click changes both
 - Navigation (drag-paint, with displaced-NPC restore)
 - NPC placement / removal
 - No-projection / Y-sort-plus / Y-sort-minus flags (single, flood-fill, multi-layer right-click clear)
@@ -73,8 +87,12 @@ What's *not* tracked:
 | Key            | Action |
 |----------------|--------|
 | `Ctrl+drag`    | Define a rectangular tile-region selection on the map. Works in any mode except Structure (which uses Ctrl-click for anchor placement). Press `Esc` to clear an active selection. |
-| `Ctrl+C`       | Copy the selected region into the clipboard. Captures all 10 layers (tile id, rotation, no-projection, structure id, y-sort flags, animation id) plus collision, navigation, and elevation per tile. |
+| `Ctrl+C`       | Copy the selected region into the clipboard. Captures 10 layers (tile id, rotation, `flipX`, `flipY`, stance, structure id, y-sort flags, animation id, elevation role) plus collision, navigation, and elevation per tile. |
 | `Ctrl+V`       | Paste the clipboard at the cursor (top-left of paste). Out-of-bounds tiles are skipped; the paste is undoable as a single command. |
+
+The clipboard holds exactly 10 layers (`ClipboardCell::LAYER_COUNT`), while the tilemap layer stack
+is dynamic. On a map with more layers, layers 10 and above are neither copied from the source nor
+overwritten at the destination.
 
 NPCs, particle zones, and structures are not included in the clipboard. NPC copy would require texture re-load and dialogue-tree replication; structures and particle zones use vector-index identity that doesn't transfer cleanly across maps. These are deferred follow-ups; for now, copy-paste covers tile data and per-tile flags only.
 
@@ -92,10 +110,10 @@ If no manifest is found, the default path remains `rift.save.json`.
 
 | Key            | Action |
 |----------------|--------|
-| `1`-`0`        | Switch to layer 1-10 for tile placement, no-projection, y-sort, etc. |
-| `R`            | Rotate the selected tile (or multi-tile selection) by 90 degrees. |
-| `F`            | Toggle brush `flipX` (the upcoming stamp paints mirrored around the vertical axis) AND reflect the active selection along X. Selection target is the Ctrl+drag rectangle if active, else the tile under the cursor on the current layer (toggles per-tile `flipX` and negates rotation). Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
-| `Shift+F`      | Toggle brush `flipY` AND reflect the active selection along Y. Same selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
+| `1`-`0`        | Switch to layer 1-10 for tile placement, stance, y-sort, etc. |
+| `R`            | Requires the tile picker closed (`T`), which the editor opens on activation. Rotate the brush by 90 degrees (affects the next stamp, 1x1 included) AND rotate the tile under the cursor on the current layer. Same dual contract as `F`. The tile edit goes through `PlaceTilesCmd` so `Ctrl+Z` reverts it; an empty cell is left alone rather than reported as rotated. |
+| `F`            | Requires the tile picker closed (`T`). Toggle brush `flipX` (the upcoming stamp paints mirrored around the vertical axis) AND reflect the active selection along X. Selection target is the Ctrl+drag rectangle if active, else the tile under the cursor on the current layer (toggles per-tile `flipX` and negates rotation). Reserved for `noProjection` toggle while in particle-zone mode (`J`). |
+| `Shift+F`      | Toggle brush `flipY` AND reflect the active selection along Y. Same gate and selection contract as `F`; toggles per-tile `flipY` and negates rotation. |
 | Arrow keys     | Pan the camera (or the tile picker when it's open). |
 | `Shift+arrows` | Fast-pan (2.5x speed). |
 | `Esc`          | Cancel the current operation (anchor placement, selection, animation frames). |
@@ -106,7 +124,7 @@ Reflection caveat: when reflecting a region that overlaps a no-projection struct
 
 ## Architecture Notes
 
-`Editor` is decoupled from `Game` via `EditorContext` (`src/Editor.hpp:45-65`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.hpp` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
+`Editor` is decoupled from `Game` via `EditorContext` (see `struct EditorContext` in `src/Editor.hpp`), a struct of references built fresh every frame in `Game::MakeEditorContext()`. Editor never includes `Game.hpp` and never stores the context - reference members dangle if held across frames. This is why `EditorCommand` subclasses capture concrete tile coordinates / IDs / values rather than pointers into the context.
 
 `UndoRedoStack` (`src/UndoRedoStack.hpp`) holds two deques of `std::unique_ptr<EditorCommand>`. New commands push to the undo stack and clear the redo stack; capacity overflow drops the oldest entry from the front. Stroke accumulators in `src/EditorStrokeAccumulators.hpp` batch per-frame mutations during a drag-paint into a single composite command at mouse-up.
 
