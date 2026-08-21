@@ -15,32 +15,41 @@ graph LR
     SR["SkyRenderer"]:::renderer
 
     subgraph Outputs["Visual Outputs"]
-        Ambient["Ambient Light Color"]:::output
-        Sky["Sky Background"]:::output
-        Sun["Sun Position/Color"]:::output
-        Moon["Moon Position/Phase"]:::output
-        Stars["Star Visibility"]:::output
-        Rays["Light Rays"]:::output
+        Ambient["Ambient light color<br/>(sprite tint)"]:::output
+        Sky["Sky clear color"]:::output
+        Lights["World light pools"]:::output
+        Post["PostFX grading"]:::output
+        Stars["Stars + shooting stars"]:::output
+        Rays["Sun / moon rays"]:::output
+        Atmos["Dawn glow + aurora"]:::output
     end
 
     TM --> |time queries| SR
     TM --> Ambient
-    SR --> Sky
-    SR --> Sun
-    SR --> Moon
+    TM --> Sky
+    TM --> Lights
+    TM --> Post
     SR --> Stars
     SR --> Rays
+    SR --> Atmos
 </pre>
 \endhtmlonly
+
+`TimeManager` owns the clock and every resolved lighting value; `SkyRenderer` owns the sky
+artwork and reads the manager once per frame. There is no sun or moon body sprite - the sun and
+moon exist only as their ray fans.
 
 ## Time Model
 
 Time is represented as a floating-point value from 0.0 to 24.0 (hours):
 
 ```
- 0.0 -------- 6.0 -------- 12.0 -------- 18.0 -------- 24.0
-Midnight    Sunrise       Noon         Sunset       Midnight
+ 0.0 ------- 6.0 --------- 13.0 -------- 20.0 ------ 24.0
+Midnight   Sunrise      Solar noon      Sunset     Midnight
 ```
+
+Sunrise and sunset are `SUNRISE_TIME` 6:00 and `SUNSET_TIME` 20:00, a 14-hour day. Solar noon is
+the midpoint of that arc, 13:00 - not clock noon.
 
 ### Time Periods
 
@@ -95,11 +104,14 @@ Default configuration:
 
 At the default setting, 1 real second = 1 game hour.
 
+`SetDayDuration()` has no production call site (only tests use it), and `Initialize()` resets
+`m_DayDuration` back to 24 s, so any caller must apply it **after** initialization.
+
 ## Celestial Bodies
 
 ### Sun Arc
 
-The sun's position along its arc (0 at sunrise, 0.5 at noon, 1 at sunset):
+The sun's position along its arc (0 at sunrise, 0.5 at solar noon, 1 at sunset):
 
 $$
 sunArc = \frac{time - sunrise}{sunset - sunrise} = \frac{time - 6.0}{20.0 - 6.0}
@@ -109,20 +121,28 @@ Returns -1 when the sun is below the horizon (before 6:00 or after 20:00).
 
 **Sun Position Calculation:**
 
-The sun moves along a parabolic arc across the top of the screen:
+`SkyRenderer::GetLightSourcePosition` places the sun and the moon on the same parabolic arc.
+X travels across a band three viewports wide, anchored to the camera's current band so the body
+is always reachable but still world-anchored; Y is measured from the camera top and does not
+descend with vertical camera motion:
 
 $$
-x_{sun} = screenWidth \times (1 - sunArc)
+x_{world} = bandLeft + (1 - arc) \times 3 W, \quad
+bandLeft = \left\lfloor \frac{camera_x}{3W} \right\rfloor 3W - \tfrac{3W}{2}
 $$
 $$
-y_{sun} = baseY - arcHeight \times (1 - (2 \times sunArc - 1)^2)
+y_{world} = camera_y + 20 - 40 \times \left(1 - (2 \times arc - 1)^2\right)
 $$
 
-This creates a smooth arc: low at sunrise/sunset, highest at noon.
+Where $W$ is the viewport width in world pixels. Both components then subtract
+$camera \times parallax$; `SKY_PARALLAX_SUN` and `SKY_PARALLAX_MOON` are both 1.0, so the result
+is simply the camera-relative position. The arc term is 0 at rise and set and 1 at the midpoint,
+so the body is lowest at the horizon and highest at solar noon. X decreases as `arc` grows: the
+body travels right to left.
 
 ### Moon Arc
 
-Similar to the sun but offset by approximately 12 hours:
+Similar to the sun but offset by 12 hours:
 
 - Moonrise: 19:00
 - Moonset: 07:00
@@ -130,11 +150,16 @@ Similar to the sun but offset by approximately 12 hours:
 
 $$
 moonArc = \begin{cases}
-\frac{time - 19.0}{24.0 - 19.0 + 7.0} & \text{if } time \geq 19.0 \\\\
-\frac{time + 24.0 - 19.0}{12.0} & \text{if } time < 7.0 \\\\
+\frac{time - 19.0}{12.0} & \text{if } time \geq 19.0 \\\\
+\frac{time + 24.0 - 19.0}{12.0} & \text{if } time \leq 7.0 \\\\
 -1 & \text{otherwise}
 \end{cases}
 $$
+
+The divisor is a literal `12.0`, not `(24 - MOONRISE_TIME) + MOONSET_TIME`. The documented
+$[0, 1]$ range therefore holds only while `MOONRISE_TIME` and `MOONSET_TIME` stay exactly 12
+hours apart; moving either constant pushes the result out of range. Arc 0.5 is 01:00, the moon's
+highest point - not clock midnight.
 
 ### Moon Phases
 
@@ -165,21 +190,26 @@ $$
 moonPhase = dayCount \mod 8
 $$
 
-| Phase | Name            | Brightness Factor |
-|-------|-----------------|-------------------|
-| 0     | New Moon        | 0.0 (invisible)   |
-| 1     | Waxing Crescent | 0.25              |
-| 2     | First Quarter   | 0.5               |
-| 3     | Waxing Gibbous  | 0.75              |
-| 4     | Full Moon       | 1.0 (brightest)   |
-| 5     | Waning Gibbous  | 0.75              |
-| 6     | Last Quarter    | 0.5               |
-| 7     | Waning Crescent | 0.25              |
+`SkyRenderer::RenderMoonRays` turns the phase index into a brightness factor, floored at 0.3 so
+a new moon still reads as present rather than vanishing:
 
-The phase affects:
-- Moon texture rendering
-- Moonlight intensity
-- Moon ray brightness
+$$
+phaseFactor = \max\left(0.3,\ 1 - \frac{|phase - 4|}{4}\right)
+$$
+
+| Phase | Name            | Raw factor | Applied factor |
+|-------|-----------------|------------|----------------|
+| 0     | New Moon        | 0.0        | 0.3 (floored)  |
+| 1     | Waxing Crescent | 0.25       | 0.3 (floored)  |
+| 2     | First Quarter   | 0.5        | 0.5            |
+| 3     | Waxing Gibbous  | 0.75       | 0.75           |
+| 4     | Full Moon       | 1.0        | 1.0 (brightest)|
+| 5     | Waning Gibbous  | 0.75       | 0.75           |
+| 6     | Last Quarter    | 0.5        | 0.5            |
+| 7     | Waning Crescent | 0.25       | 0.3 (floored)  |
+
+Moon-ray brightness is the phase's only visual consumer: there is no moon body sprite and no
+separate moonlight term. `time.status` also prints the phase index.
 
 ## Ambient Lighting
 
@@ -187,16 +217,24 @@ The phase affects:
 
 Ambient light color smoothly interpolates between key times:
 
-| Time  | RGB                | Description      |
-|-------|--------------------|------------------|
-| 00:00 | (0.30, 0.30, 0.45) | Deep night blue  |
-| 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn |
-| 05:00 | (0.85, 0.75, 0.70) | Dawn warm light starts |
-| 07:00 | (0.95, 0.93, 0.90) | Morning warm white |
-| 10:00 | (1.00, 1.00, 0.98) | Midday neutral daylight |
-| 18:00 | (0.95, 0.90, 0.82) | Afternoon to dusk warmth |
-| 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange |
-| 22:00 | (0.50, 0.50, 0.65) | Evening blue |
+| Time  | RGB                | Description                     |
+|-------|--------------------|---------------------------------|
+| 00:00 | (0.30, 0.30, 0.45) | Deep night blue                 |
+| 04:00 | (0.35, 0.35, 0.50) | Late-night pre-dawn             |
+| 05:00 | (0.85, 0.75, 0.70) | Dawn warm light starts          |
+| 07:00 | (0.90, 0.88, 0.85) | Morning warm white              |
+| 10:00 | (0.93, 0.93, 0.91) | Midday peak, just below white   |
+| 18:00 | (0.90, 0.85, 0.78) | Afternoon warm yellow           |
+| 20:00 | (0.75, 0.60, 0.55) | Dusk muted orange               |
+| 22:00 | (0.50, 0.50, 0.65) | Evening blue                    |
+
+The midday anchor holds flat from 10:00 to 16:00; the ramp toward the 18:00 afternoon anchor only
+starts at 16:00. Daylight anchors sit deliberately below white: ambient is an unclamped multiply
+on albedo with no scene tonemap, so a white midday made noon as bright as the source art allowed.
+
+These are the time-of-day values only. `GetAmbientColor()` folds the weather tint, any active
+weather transition, the manual overlay, and imposed night on top - see
+[Weather System](#weather-system).
 
 **Interpolation:**
 
@@ -214,35 +252,49 @@ $$
 
 ### Application to Sprites
 
-The ambient color multiplies all sprite colors:
+`IRenderer::SetAmbientColor` publishes the color; the sprite path of the fragment shader
+multiplies it into every sampled texel:
 
 ```glsl
-// In fragment shader
-FragColor = texColor * spriteColor * vec4(ambientColor, 1.0);
+// shaders/Geometry.frag, textured sprite mode (useColorOnly == 0)
+FragColor = vec4(spriteColor * ambientColor * texColor.rgb, spriteAlpha * texColor.a);
 ```
 
-This tints the entire world based on time of day.
+Only that mode applies the tint. The per-vertex-color modes used by the OpenGL rect, particle and
+text batches ignore `ambientColor`, and both the sky pass and the UI passes reset the ambient to
+white so they are not tinted by the time of day.
 
 ## Sky Rendering
 
 ### Star Visibility
 
-Stars fade in at dusk and fade out at dawn:
+Two values exist and they are not interchangeable.
+
+`GetNaturalStarVisibility()` is the clock-only fade - in at dusk, out at dawn:
 
 $$
-starVisibility = \begin{cases}
-0.0 & \text{if weather is overcast} \\\\
+natural = \begin{cases}
 \frac{time - 18.0}{2.0} & \text{if } 18.0 \leq time < 20.0 \\\\
-1.0 & \text{if } time < 5.0 \text{ or } time \geq 20.0 \\\\
+1.0 & \text{if } time \geq 20.0 \text{ or } time < 5.0 \\\\
 1.0 - \frac{time - 5.0}{2.0} & \text{if } 5.0 \leq time < 7.0 \\\\
 0.0 & \text{otherwise}
 \end{cases}
 $$
 
+`GetStarVisibility()` is the resolved value every renderer gate actually reads. It starts from
+`natural`, then blends toward the weather's `starVisibilityOverride` (when that field is
+non-negative) by the weather intensity, lerps the endpoints of any active weather transition, and
+folds in the manual overlay's own resolved value by the overlay blend. It can therefore read 1.0
+at noon under a meteor shower, or 0.0 at midnight under heavy precipitation.
+
+Use the natural value only where a consumer must follow the clock rather than the storm; its one
+production caller is the particle scene-night factor, which takes
+`max(natural, GetStarVisibility())`.
+
 \htmlonly
 <pre class="mermaid">
 graph LR
-    subgraph Visibility["Star Visibility over Time"]
+    subgraph Visibility["Natural star visibility over time (weather excluded)"]
         T0["0:00<br/>100%"] --> T5["5:00<br/>100%"]
         T5 --> T7["7:00<br/>0%"]
         T7 --> T18["18:00<br/>0%"]
@@ -267,7 +319,7 @@ $$
 
 ### Light Rays (God Rays)
 
-Sun and moon emit volumetric light rays:
+The sun and the moon each emit a fan of `SUN_RAY_COUNT` / `MOON_RAY_COUNT` rays (3 each):
 
 \htmlonly
 <pre class="mermaid">
@@ -275,27 +327,26 @@ graph LR
     classDef source fill:#f39c12,stroke:#e67e22,color:#1a1a2e
     classDef ray fill:#f9e076,stroke:#f4d03f,color:#1a1a2e
 
-    Sun["Sun/Moon"]:::source
+    Sun["Sun / Moon"]:::source
 
     R1["Ray 1"]:::ray
     R2["Ray 2"]:::ray
     R3["Ray 3"]:::ray
-    R4["Ray 4"]:::ray
-    R5["Ray 5"]:::ray
 
     Sun --> R1
     Sun --> R2
     Sun --> R3
-    Sun --> R4
-    Sun --> R5
 </pre>
 \endhtmlonly
 
 **Ray Properties:**
-- Originate from the sun/moon position
-- Fan out at different angles (spread pattern)
-- Animate with fade in/out cycles
-- Intensity varies with light source position
+- Originate from the sun/moon position returned by `GetLightSourcePosition`
+- Fan out across roughly two thirds of the screen, mostly straight down
+- Animate on staggered per-ray cycles of $base + 3.5\phi$ seconds, with $base$ 15 for sun rays and
+  20 for moon rays and $\phi \in [0, 2\pi)$ drawn per ray
+- Sun-ray intensity peaks at the golden hour and fades to zero below `sunArc` 0.1 and above 0.9
+- Both fans are gated by `GetCelestialFade()`, so weather can hide them; moon rays additionally
+  require star visibility above 0.3
 
 **Sun Ray Color:**
 
@@ -322,25 +373,55 @@ stateDiagram-v2
 \endhtmlonly
 
 **Properties:**
-- Spawn/update only while `starVisibility > 0.3` in clear weather
-- Random spawn position along top/sides of screen
-- Travel at random angles (mostly downward)
-- Leave a fading trail
+- Spawn and update only while the resolved `GetStarVisibility()` exceeds 0.3. The gate is
+  darkness, not a specific weather - any weather that raises star visibility opens it.
+- The base spawn interval drifts slowly between 2 s and 6 s and is divided by
+  `GetEffectiveMeteorRate()`, so a meteor shower (multiplier 12) collapses it to about 0.33 s and
+  raises the concurrent cap from 2 to $1.5 \times multiplier$.
+- Spawn position is inside the star-field tile (3 viewports wide, 2 tall): 60% near its top edge,
+  otherwise near its right edge, so streaks do not all leave from the same screen edge.
+- Travel diagonally down and to the left, leaving a fading trail. A meteor shower lengthens,
+  brightens and speeds up each streak.
 
 ## Weather System
 
-Weather modifies time-of-day lighting:
+Weather modifies time-of-day lighting through a `WeatherDefinition` table, one row per
+`WeatherState` (17 states: `Clear`, precipitation, atmosphere, floral and event weathers). There
+is no separate "overcast" state - a dim, starless sky is what a heavy precipitation row produces.
 
-| Weather  | Sun/Moon | Stars           | Ambient |
-|----------|----------|-----------------|---------|
-| Clear    | Visible  | Visible (night) | Normal  |
-| Overcast | Hidden   | Hidden          | Dimmed  |
+The fields that touch lighting:
 
-**Overcast Ambient Modifier:**
+| Field                    | Effect                                                                 |
+|--------------------------|------------------------------------------------------------------------|
+| `ambientTintMultiplier`  | Multiplied into the time-of-day ambient, mixed in by weather intensity  |
+| `skyColorOverride`       | Replaces the natural sky when its x component is >= 0 (a negative x is the "no override" sentinel), scaled by a day/night ramp and mixed in by intensity |
+| `starVisibilityOverride` | When >= 0, pulls star visibility toward it by intensity                 |
+| `showCelestialBodies`    | Gates the sun/moon ray fans (via `GetCelestialFade()`)                 |
+| `showAurora`             | Gates the aurora bands (via `GetAuroraFade()`)                         |
+| `meteorRateMultiplier`   | Scales shooting-star spawn rate                                        |
+
+Examples: `HeavyRain` tints ambient to (0.65, 0.68, 0.80), overrides the sky, forces star
+visibility to 0 and hides the celestial bodies. `MeteorShower` forces star visibility to **1.0**
+and multiplies the meteor rate by 12. `Aurora` overrides nothing at all - it only sets
+`showAurora`, so the clock stays authoritative and the effect works at any hour.
+
+`SetWeatherIntensity()` scales every mix above (and particle density); it does **not** affect the
+boolean flags.
+
+### Imposed Night
+
+A weather that raises star visibility above the natural hour drags the rest of the scene toward
+night by the difference:
 
 $$
-ambientColor_{overcast} = ambientColor \times 0.7
+imposedNight = \operatorname{clamp}\big(GetStarVisibility() - natural,\ 0,\ 1\big)
 $$
+
+By that amount, `GetAmbientColor()` mixes toward the night ambient (0.30, 0.30, 0.45),
+`GetSkyColor()` mixes toward the night sky (0.04, 0.04, 0.12), and `GetCelestialFade()` is scaled
+by $(1 - imposedNight)$ so the daytime sun fades out. This is what lets a midday meteor shower
+look like night. At night the term is 0, so the real night moon is untouched. Aurora has no star
+override and therefore never imposes night.
 
 ## Usage Examples
 
@@ -392,31 +473,48 @@ time.SetPaused(true);
 
 ## Debug Controls
 
-| Key | Action                    |
-|-----|---------------------------|
-| F5  | Cycle to next time period |
-| F6  | Advance time by 0.5 hours |
+No function key except F12 is bound. Every time control is a developer-console command; open the
+console with F12 and run `help` for the full catalog.
+
+| Command                | Aliases      | Action                                            |
+|------------------------|--------------|---------------------------------------------------|
+| `time.next`            | `tn`         | Advance to the next time-of-day preset            |
+| `time.add <hours>`     | -            | Offset the clock by a signed amount, wrapping 0-24 |
+| `time.set <hours>`     | `ts`         | Set the clock; any value is wrapped into 0.0-24.0 |
+| `time.scale <mult>`    | -            | Scale time progression (1.0 = normal)             |
+| `time.freeze`          | `tm.freeze`, `tfz` | Pause and resume the day/night cycle        |
+| `time.status`          | -            | Print time, period, weather, day count, moon phase |
 
 ## Integration with Other Systems
 
 ### SkyRenderer
 
 `SkyRenderer` queries `TimeManager` every frame for:
-- Sun/moon arc positions
-- Star visibility factor
-- Dawn intensity
-- Ambient colors
+- `GetSunArc()` / `GetMoonArc()` - ray fan positions
+- `GetStarVisibility()` - stars, shooting stars, atmospheric glow and the moon-ray gate
+- `GetDawnIntensity()` - dawn gradient and horizon glow
+- `GetMoonPhase()` - moon-ray brightness
+- `GetSunColor()` / `GetSkyColor()` - ray and aurora tinting
+- `GetCelestialFade()`, `GetAuroraFade()`, `GetEffectiveMeteorRate()` and the effective weather
+  definition - cached once per frame in `SkyRenderer::Update`
+
+`GetTimePeriod()` is deliberately unused there: every gate is continuous, and a discrete period
+would snap.
 
 ### Particle System
 
-Certain particle effects (fireflies) only spawn during specific time periods:
-- Fireflies: Evening, Night, Late Night
+No particle type is gated on a `TimePeriod`. The coupling is a single scalar,
+`SetSceneNightFactor(max(GetNaturalStarVisibility(), GetStarVisibility()))`, which behaviors use
+to darken or brighten themselves; the `max` keeps a night storm that forces star visibility to 0
+reading as night. Which particles spawn is a weather question, not a time question - it comes
+from `GetEffectiveWeatherDefinition()`.
 
-### NPC Behavior
+### World Lights and Post-Processing
 
-NPCs can have time-based schedules:
-- Shopkeepers work during day
-- Guards patrol at night
+World light pools are scaled by `ComputeLightIntensity(light.schedule, hour) *
+GetStarVisibility()` and skipped entirely below 0.01, so a storm dims them along with the sky.
+The post-FX composite receives `PostFXParams::timeOfDay` and `nightFactor` (also
+`GetStarVisibility()`), which drive the per-time-of-day lift/gamma/gain grading split.
 
 ## See Also
 
