@@ -4,7 +4,7 @@ This document describes the coordinate systems, transformations, and rendering t
 
 ## Coordinate System
 
-Rift uses a **top-left origin, Y-down** coordinate system measured in pixels
+Rift uses a **top-left origin, Y-down** coordinate system measured in pixels.
 
 This matches typical 2D game and UI conventions where:
 - Origin $ (0, 0) $ is at the **top-left** corner
@@ -13,7 +13,10 @@ This matches typical 2D game and UI conventions where:
 
 ## Coordinate Spaces
 
-The rendering pipeline transforms vertices through several coordinate spaces:
+The flat 2.5D pipeline transforms vertices through several coordinate spaces. Everything up to
+clip space happens on the CPU: the renderer builds each quad's four corners in view space and
+writes them into a batch buffer, so the only matrix the 2D vertex shader applies is the
+projection.
 
 \htmlonly
 <pre class="mermaid">
@@ -22,42 +25,49 @@ flowchart LR
   classDef transform fill:#134e3a,stroke:#10b981,color:#e2e8f0
   classDef auto fill:#4a2020,stroke:#ef4444,color:#e2e8f0
 
-  subgraph CPU ["Game Code CPU"]
-    World["World Space (pixels)"]:::space
+  subgraph CPU ["Game code + renderer CPU"]
+    World["World Space (world px)"]:::space
     Camera["-camera"]:::transform
-    View["View Space (pixels)"]:::space
+    View["View Space (world px)"]:::space
+    Local["Quad corners (0,0)..(sx,sy)"]:::space
+    Model["Corner transform S, R about c, T(p)"]:::transform
+    Batch["Batch vertices (view space)"]:::space
   end
 
   subgraph Shader ["Vertex Shader"]
-    Local["Local Space [0,1] (x, y)"]:::space
-    Model["Model Matrix ST(-c)RT(c)T(p)"]:::transform
-    Proj["Projection ortho()"]:::transform
+    Proj["projection (scene or UI ortho)"]:::transform
     Clip["Clip Space [-w,w] (x, y, z, w)"]:::space
   end
 
   subgraph GPU ["Automatic GPU"]
     WDiv["/w"]:::auto
     NDC["NDC [-1,1] (x, y, z)"]:::space
-    Viewport["glViewport"]:::auto
+    Viewport["viewport transform"]:::auto
     Screen["Screen Space [0,W]x[0,H] px"]:::space
   end
 
   World --> Camera --> View
-  Local --> Model
+  Local --> Model --> Batch
   View -.->|"position"| Model
-  Model --> Proj --> Clip
+  Batch --> Proj --> Clip
   Clip --> WDiv --> NDC --> Viewport --> Screen
 </pre>
 \endhtmlonly
 
 **Legend:** 🟦 Coordinate spaces - 🟩 Transforms we implement - 🟥 GPU fixed-function
 
+The 2D shader still declares a `model` uniform, but every batched path leaves it at identity;
+only the Vulkan glyph path pushes a non-identity model matrix. The world-space 3D path
+(`DrawQuad3D`) skips this chain entirely - see [World-Space 3D Path](#world-space-3d-path).
+
 ### World Space
 
-Absolute pixel coordinates in the game world. A tile at grid position $(tx, ty)$ has world coordinates:
+Absolute pixel coordinates in the game world. Tile width and height are per-map data
+(`Tilemap::GetTileWidth()` / `GetTileHeight()`) and are independent of each other, so a tile at
+grid position $(tx, ty)$ has world coordinates:
 
 $$
-\vec{p}_{world} = (tx \times tileSize, ty \times tileSize)
+\vec{p}_{world} = (tx \times tileWidth, ty \times tileHeight)
 $$
 
 ### View/Camera Space
@@ -78,32 +88,37 @@ $\vec{p}_{camera}$ is the world coordinate of the **top-left corner** of the vis
 - $Values < 0$ = off-screen to the left/top
 - $Values > viewSize$ = off-screen to the right/bottom
 
-**With zoom:**
+**Pixel scale and zoom:**
 
-Zoom changes how much of the world fits on screen:
+Screen pixels are not world pixels. `Game::PIXEL_SCALE` (5) is the integer upscale factor for the
+pixel art, and camera zoom divides on top of it, so the visible world extent is:
 
-|                   | Zoom=1           | Zoom=2          |
-|-------------------|------------------|-----------------|
-| **Screen size**   | 1920x1080 px     | 1920x1080 px    |
-| **Visible world** | 320x180 world px | 160x90 world px |
+$$
+\vec{s}_{view} = \frac{\vec{s}_{screen}}{PIXEL\_SCALE \times zoom}
+$$
+
+That is `viewScaling::VisibleWorldSizeZoomed()`, the single source of truth shared by the ortho
+projection, `IRenderer::SetViewSize()` and every culling test.
+
+|                   | Zoom=1            | Zoom=2            |
+|-------------------|-------------------|-------------------|
+| **Screen size**   | 1920x1080 px      | 1920x1080 px      |
+| **Visible world** | 384x216 world px  | 192x108 world px  |
 
 **How zoom works - we change the projection matrix:**
 
-$$
-visibleWidth = \frac{baseWidth}{zoom}
-$$
-
 ```cpp
 // Zoom is applied by changing ortho() parameters
-glm::mat4 P = glm::ortho(0.0f, visibleWidth, visibleHeight, 0.0f, -1, 1);
+// (CameraController::GetOrthoProjection, called from Game::Render)
+glm::mat4 P = glm::ortho(0.0f, visibleWidth, visibleHeight, 0.0f, -1.0f, 1.0f);
 ```
 
-| Zoom | ortho()            | Effect                                           |
+| Zoom | ortho() right edge | Effect                                           |
 |------|--------------------|--------------------------------------------------|
-| 1.0  | 320                | View coord $320 \rightarrow NDC +1$ (right edge) |
-| 2.0  | 160                | View coord $160 \rightarrow NDC +1$ (right edge) |
+| 1.0  | 384                | View coord $384 \rightarrow NDC +1$ (right edge) |
+| 2.0  | 192                | View coord $192 \rightarrow NDC +1$ (right edge) |
 
-At zoom=2, the projection maps a **smaller** view range to the **same** NDC range $[-1,+1]$. This makes everything appear larger - a 16px sprite that was $\frac{16}{320} = 5\%$ of screen width is now $\frac{16}{160} = 10\%$.
+At zoom=2, the projection maps a **smaller** view range to the **same** NDC range $[-1,+1]$. This makes everything appear larger - a 16px sprite that was $\frac{16}{384} \approx 4.2\%$ of screen width is now $\frac{16}{192} \approx 8.3\%$.
 
 **Why CPU-side:**
 
@@ -122,23 +137,28 @@ renderer.DrawSprite(texture, viewPos, size, rotation);
 
 ### Local/Object Space
 
-For sprites, the vertex buffer contains a **unit quad**:
+The vertex buffer holds no shared unit quad. Each draw builds four local corners sized to the
+sprite, with the origin at the sprite's top-left:
 
 $$
-\vec{p}_{local} = (u, v), \quad u, v \in [0, 1]
+\vec{p}_{local} \in \{(0,0),\ (s_x,0),\ (s_x,s_y),\ (0,s_y)\}
 $$
 
-With vertices at $(0,0)$, $(1,0)$, $(0,1)$, $(1,1)$.
+The renderer rotates those corners about the sprite center, adds the view-space position, and
+pushes the result as six vertices (see [Batch Structure](#batch-structure)). Local space
+therefore never reaches the GPU.
 
 ### Clip Space
 
-After the vertex shader applies projection and model matrices:
+The 2D vertex shader applies only the projection, because the batch vertices are already in view
+space:
 
 $$
-\vec{p}_{clip} = P \cdot M \cdot \vec{p}_{local}^h
+\vec{p}_{clip} = P \cdot \vec{p}_{view}^h
 $$
 
-Where $\vec{p}_{local}^h = (u, v, 0, 1)^T$ is the homogeneous local position.
+Where $\vec{p}_{view}^h = (x, y, 0, 1)^T$ is the homogeneous view-space position. $z$ is 0 for
+every 2D sprite: the flat path binds no depth buffer and relies on submission order for layering.
 
 ### Normalized Device Coordinates (NDC)
 
@@ -163,9 +183,11 @@ $$
 
 ## Transformation Matrices
 
-### Model Matrix
+### Sprite Corner Transform
 
-The model matrix transforms the unit quad to view-space pixels with position, scale, and rotation:
+The corner transform maps the unit quad to view-space pixels with position, scale, and rotation.
+It runs on the CPU - `DrawSpriteRegion` builds the corners and `IRenderer::RotateCorners` rotates
+them - but the matrix below is the exact composition it performs:
 
 $$
 M = T(\vec{p}) \cdot T(\vec{c}) \cdot R_z(\theta) \cdot T(-\vec{c}) \cdot S(\vec{s})
@@ -175,7 +197,8 @@ Where:
 - $\vec{p} = (p_x, p_y)$ - sprite position in view pixels
 - $\vec{s} = (s_x, s_y)$ - sprite size in pixels
 - $\vec{c} = \frac{1}{2}\vec{s}$ - sprite center (rotation pivot)
-- $\theta$ - rotation angle in radians
+- $\theta$ - rotation angle in radians; the `IRenderer` methods take **degrees** and convert.
+  Positive $\theta$ turns clockwise on screen, because Y points down.
 
 This sequence:
 1. **S** - Scale the unit quad to sprite size
@@ -306,7 +329,11 @@ $$
 
 ### Orthographic Projection Matrix
 
-Maps view pixels $[0, w] \times [0, h]$ to NDC $[-1, 1] \times [-1, 1]$ while preserving Y-down:
+Maps view pixels $[0, w] \times [0, h]$ to NDC $[-1, 1] \times [-1, 1]$ while preserving Y-down.
+A frame installs two of these through `SetProjection`: the **scene ortho**, whose extent is the
+zoomed world view, and - after the post-FX composite - the **UI ortho**, measured in screen
+pixels. Each `SetProjection` call drains every pending batch, so it is also a hard painter-order
+barrier.
 
 $$
 P = \begin{pmatrix}
@@ -334,14 +361,15 @@ $$
 
 ### Complete Vertex Transform
 
-The full transformation in the vertex shader:
+The full transformation is split: the CPU applies $M$ when it builds the batch vertices, the
+vertex shader applies $P$.
 
 $$
-\vec{p}_{clip} = P \cdot M \cdot \vec{p}_{local}^h
+\vec{p}_{clip} = P \cdot \underbrace{M \cdot \vec{p}_{local}^h}_{\text{CPU, per corner}}
 $$
 
 ```glsl
-// Vertex shader
+// shaders/Geometry.vert - model is identity for every batched path
 gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
 ```
 
@@ -375,9 +403,11 @@ This is applied during UV calculation so sprite sheets work correctly regardless
 | API    | Raw API convention | Rift sampling convention |
 |--------|--------------------|--------------------------|
 | OpenGL | Texture origin is bottom-left | `flipY=true` maps top-left image pixels to top-left sprites |
-| Vulkan | Runtime viewport and UV handling are explicit | Uses the same `flipY=true` convention as OpenGL for texture compatibility |
+| Vulkan | UV origin is top-left, but tilesets are pre-flipped at load | Keeps the same `flipY=true` convention so one call site feeds both backends |
 
-Rift abstracts this via `IRenderer::RequiresYFlip()`.
+Both backends return `true` from `IRenderer::RequiresYFlip()`, so `flipY` is effectively always
+true in engine code. It is distinct from `tileFlipX` / `tileFlipY`, which mirror the sampled
+source region per tile and are applied before rotation.
 
 ### Vulkan Texture Uploads
 
@@ -439,152 +469,61 @@ sequenceDiagram
 
 ### Batch Structure
 
-Each sprite adds **6 vertices** (2 triangles) to the batch - vertices are duplicated rather than using indices:
+Each sprite adds **6 vertices** (2 triangles) to the batch - corners 0 (TL) and 2 (BR) are
+duplicated rather than using an index buffer:
 
 ```cpp
 struct BatchVertex {
-    float x, y;    // View-space position
+    float x, y;    // View-space position (camera already subtracted)
     float u, v;    // UV coordinates
 };
 
-// Two triangles per quad (6 vertices, corners 0 and 2 duplicated)
+// Two triangles per quad, counter-clockwise (corners 0 and 2 duplicated)
 //  0 -------- 1
-//  | \\\\       |
-//  |   \\\\     |  Triangle 1: 0-2-3
-//  |     \\\\   |  Triangle 2: 0-1-2
-//  |       \\\\ |
+//  | \        |
+//  |   \      |  Triangle 1: 0-2-3
+//  |     \    |  Triangle 2: 0-1-2
+//  |       \  |
 //  3 -------- 2
 ```
 
-The batch is flushed when:
-1. The batch buffer is full (vertices)
-2. Texture changes
-3. OpenGL blend mode changes for rect/particle batches
-4. Frame ends
+The OpenGL backend keeps four independent 2D batches plus the world-space 3D batch. They differ
+in vertex format and in what ends them early:
 
-## Perspective Effects
+| Batch     | Vertex format          | Own flush trigger                |
+|-----------|------------------------|----------------------------------|
+| Sprites   | position + UV          | Texture change                   |
+| Rects     | position + UV + RGBA   | Blend-mode change                |
+| Particles | position + UV + RGBA   | Texture or blend-mode change     |
+| Text      | position + UV + RGBA   | Atlas change, quad budget        |
+| 3D quads  | scene position + UV + RGBA | Texture, blend or depth mode |
 
-Rift supports pseudo-3D projection modes that transform the flat orthographic view into curved, depth-aware scenes.
+`MAX_BATCH_SPRITES` (10000 quads) caps the sprite, rect, particle and 3D buffers; text has its
+own `MAX_TEXT_QUADS` budget and does not flush per `DrawText` call.
 
-\htmlonly
-<pre class="mermaid">
-graph LR
-    subgraph Modes["Projection Modes"]
-        M1["Orthographic<br/>(flat, default)"]
-        M2["Globe<br/>(barrel distortion)"]
-        M3["Vanishing Point<br/>(horizon scaling)"]
-        M4["Fisheye<br/>(combined)"]
-    end
+Beyond its own trigger, a batch is also drained by:
+1. A full buffer, or a switch to a different batch type.
+2. `SetProjection` and `EndFrame` - these drain every batch, 2D and 3D.
+3. `SetAmbientColor` (sprite batch), `SetViewProjection` (3D batch), `DrawQuad3D` (sprite, rect
+   and particle batches first).
+4. `BeginScene` / `EndSceneApplyPostFX` - every batch except text, so text queued inside the
+   scene pass reaches the swapchain after the composite and is never graded.
 
-    M1 --> |"SetGlobePerspective"| M2
-    M1 --> |"SetVanishingPointPerspective"| M3
-    M1 --> |"SetFisheyePerspective"| M4
-    M2 --> M4
-    M3 --> M4
-</pre>
-\endhtmlonly
+Cross-type drains are asymmetric. The drain matrix in `OpenGLRenderer.hpp` is the authority on
+which call pairs preserve painter order.
 
-### Globe Projection
+## Upright Tiles
 
-Maps screen coordinates onto a sphere surface, creating a curved-world effect where edges bend inward.
+Some tiles (buildings, signs) represent objects that stand up rather than lying flat on
+the ground. These carry `TileStance::Structure` (see `src/TileStance.hpp`). In the flat
+2D pipeline they are drawn exactly like any other tile - the stance changes only their
+draw ORDER, never their geometry. The `world3d` orbit-camera path is where a stance
+becomes real geometry, turning the tile into an upright billboard.
 
-**Sphere Mapping:**
-
-For each vertex at position $(x, y)$ relative to screen center $(c_x, c_y)$:
-
-$$
-\begin{aligned}
-\Delta x &= x - c_x \\\\
-\Delta y &= y - c_y
-\end{aligned}
-$$
-
-The globe transformation maps linear distance to arc length on a sphere of radius $R$:
-
-$$
-\begin{aligned}
-x' &= c_x + R \sin\left(\frac{\Delta x}{R}\right) \\\\
-y' &= c_y + R \sin\left(\frac{\Delta y}{R}\right)
-\end{aligned}
-$$
-
-### Vanishing Point Projection
-
-Simulates depth by scaling objects based on their Y position, making distant objects (near horizon) smaller.
-
-**Depth Normalization:**
-
-Given horizon line at $y_h$ and screen height $H$, compute normalized depth:
-
-$$
-d = \text{clamp}\left(\frac{y - y_h}{H - y_h}, 0, 1\right)
-$$
-
-Where:
-- $d = 0$ at the horizon ($y = y_h$)
-- $d = 1$ at screen bottom ($y = H$)
-
-**Scale Factor:**
-
-The scale interpolates from $s_h$ (horizon scale) at the horizon to $1.0$ at screen bottom:
-
-$$
-s(y) = s_h + (1 - s_h) \cdot d
-$$
-
-Typical value: $s_h = 0.6$ means objects at horizon are 60% normal size.
-
-**Coordinate Transform:**
-
-Each vertex is scaled toward the vanishing point $(v_x, y_h)$:
-
-$$
-\begin{aligned}
-x' &= v_x + (x - v_x) \cdot s(y) \\
-y' &= y_h + (y - y_h) \cdot s(y)
-\end{aligned}
-$$
-
-The vanishing point $v_x$ is typically at screen center: $v_x = c_x$.
-
-**Visual Effect:**
-
-$$
-\begin{array}{|c|c|c|}
-\text{Screen Position} & d & \text{Scale} \\\\
-\text{Horizon } (y = y_h) & 0 & 0.6 \\\\
-\text{Middle } (y = \frac{y_h + H}{2}) & 0.5 & 0.8 \\\\
-\text{Bottom } (y = H) & 1.0 & 1.0 \\\\
-\end{array}
-$$
-
-### Fisheye Mode
-
-Applies both globe and vanishing point transformations in sequence:
-
-$$
-\vec{p}' = T_{vanishing}(T_{globe}(\vec{p}))
-$$
-
-### Projection Parameters
-
-| Parameter     | Symbol | Typical Value | Effect                      |
-|---------------|--------|---------------|-----------------------------|
-| Sphere Radius | $R$    | 800-1200      | Larger = less curvature     |
-| Horizon Y     | $y_h$  | 0-100         | Distance from top of screen |
-| Horizon Scale | $s_h$  | 0.5-0.8       | Smaller = more depth        |
-| View Width    | $w$    | Screen width  | For center calculation      |
-| View Height   | $H$    | Screen height | For depth calculation       |
-
-### No-Projection Tiles
-
-Some tiles (buildings, signs) should remain upright rather than following the perspective distortion. These are marked as "no-projection" and rendered with:
-
-```cpp
-renderer->SuspendPerspective(true);
-// Draw upright tiles
-renderer->SuspendPerspective(false);
-```
+`stance` is a per-map-cell, per-layer field replacing the old `noProjection` boolean. The flat
+pipeline only distinguishes `Structure` from everything else; the remaining stances (`Prop`,
+`Wall`) are 3D concepts and read as ordinary flat artwork here. Maps written before the field
+existed are migrated once, at load - see `Tilemap::LoadMapFromJSON`.
 
 ## Alpha Blending
 
@@ -615,12 +554,24 @@ $$
 C_{out} = C_{src} \times \alpha_{src} + C_{dst}
 $$
 
-Enabled via `DrawSpriteAlpha(..., additive=true)` on OpenGL. Vulkan currently ignores the
-`additive` flag until it has a second additive-blend pipeline.
+Enabled via the `additive` flag on `DrawSpriteAlpha`, `DrawSpriteAtlas` and `DrawColoredRect`.
+OpenGL honours it; the Vulkan 2D path ignores it until it has a second additive-blend pipeline.
+`DrawQuad3D` is unaffected: it takes an explicit `renderModes::BlendMode`, and Vulkan pre-builds
+one pipeline per blend/depth combination, so additive world geometry works on both backends.
 
 ## Render Order
 
-Rift renders in a specific order for correct depth:
+`Game::Render()` selects one of three self-contained paths and never mixes them:
+
+| Path            | Entry point         | When                                   |
+|-----------------|---------------------|----------------------------------------|
+| Title screen    | `RenderTitleFrame`  | `GameMode::Title`                      |
+| World-space 3D  | `RenderFrame3D`     | `world3d` console toggle is on         |
+| Flat 2.5D       | rest of `Render()`  | default gameplay path                  |
+
+The flat path renders in this order for correct depth. `BeginFrame()` then `BeginScene()` run
+first, so steps 1-10 accumulate in the offscreen scene target; `EndSceneApplyPostFX()` ends that
+target, and every pass after it draws straight to the swapchain.
 
 \htmlonly
 <pre class="mermaid">
@@ -628,51 +579,149 @@ flowchart LR
     subgraph Background
         A1["1. Clear (sky color)"]
         A2["2. Background layers"]
-        A3["3. No-projection background"]
+        A3["3. Upright background tiles"]
     end
 
-    subgraph YSorted["Y-Sorted Pass"]
-        B1["4. Tiles + NPCs + Player<br/>(interleaved by Y)"]
+    subgraph YSorted["World Depth Pass"]
+        B1["4. Authored baseline + structure-local support constraints<br/>(atomic characters)"]
     end
 
     subgraph Foreground
-        C1["5. No-projection foreground"]
-        C2["6. No-projection particles"]
+        C1["5. Upright foreground tiles"]
+        C2["6. Upright-tile particles"]
         C3["7. Foreground layers"]
-        C4["8. Regular particles"]
+        C4["8. World particles"]
     end
 
-    subgraph Sky
-        D1["9. Sky/ambient overlay"]
+    subgraph Sky["Lights and Sky"]
+        D1["9. World light pools (additive)"]
+        D2["10. Sky / ambient overlay"]
     end
 
-    subgraph UI
-        E1["10. Editor/UI overlays"]
-        E2["11. Debug overlays & anchors"]
+    subgraph Post["Composite"]
+        E1["11. EndSceneApplyPostFX"]
     end
 
-    Background --> YSorted --> Foreground --> Sky --> UI
+    subgraph UI["Swapchain, ungraded"]
+        F1["12. Editor / UI overlays"]
+        F2["13. Dialogue, debug HUD, console"]
+    end
+
+    Background --> YSorted --> Foreground --> Sky --> Post --> UI
 </pre>
 \endhtmlonly
 
-### Y-Sorting Algorithm
+Steps 3 and 5 are the upright (`TileStance::Structure`) tiles, drawn by
+`Tilemap::RenderBackgroundLayersNoProjection` / `RenderForegroundLayersNoProjection`. Step 9 only
+contributes once `TimeManager::GetStarVisibility()` exceeds 0.01, and each light is further
+scaled by `ComputeLightIntensity(schedule, hour)`.
 
-Entities and Y-sorted tiles are collected into a single list and sorted by Y coordinate:
+### World Depth Algorithm
+
+Explicit Y-sort tiles, elevated object/foreground tiles, and characters are collected into one
+list. The first pass preserves the map's authored roles:
+
+```text
+Background → Y-sorted actors/tiles → Foreground
+```
+
+Inside a phase, authored painter depth remains:
+
+$$
+depth = anchorY
+$$
+
+Elevation is intentionally **not** a global depth offset. Plane relationships
+are added by the local structure constraints below; folding elevation into
+every Y-sort comparison would make ramp and railing art cover unrelated actors
+standing beside the structure.
 
 ```cpp
-struct RenderItem {
-    enum Type { TILE, NPC, PLAYER } type;
-    float sortY;
-    // ... data
+struct Drawable {
+    DrawablePhase phase;   // authored background / Y-sort / foreground role
+    int surfaceRegionId;   // connected elevation footprint, or -1
+    SupportSurface supportSurface; // actor topology; ignored for tiles
+    float sortY;           // authored depth key; smaller sorts further back
+    float supportHeight;   // metadata for the local support relationship
+    bool isYSortMinus;     // tile occlusion flag; false for entities
+    std::uint8_t tieBias;  // equal-depth order: tile (4), NPC (3), player (1)
+    DrawableClass cls;
 };
-
-std::sort(items.begin(), items.end(), [](const auto& a, const auto& b) {
-    const float epsilon = 1.0f;
-    if (std::abs(a.sortY - b.sortY) > epsilon)
-        return a.sortY < b.sortY;  // Lower Y renders first (behind)
-    return a.type > b.type;        // Tiebreaker: entities behind tiles
-});
 ```
+
+The elevation map is flood-filled into connected runtime region IDs. Explicit Y-sort artwork
+inherits a region through its connected Y-sort component or authored structure ID, allowing
+railings and visual overhangs outside the walkable cells to stay associated with the bridge.
+
+After baseline sorting, a stable topological pass adds only these local constraints:
+
+```text
+ground actor inside region → every tile of that region          (walking underneath)
+background surface tile → elevated actor in the same region     (walking on the deck)
+authored Y-sort tile ↔ elevated actor in the same region         (railings)
+```
+
+An actor beside the ramp has no elevation-region ID, so none of these constraints applies.
+`ySortPlus` and `ySortMinus` always retain their authored Y-sorted phase—even when the artwork is
+stored on a foreground layer—and therefore keep the same tie/anchor behavior the map author set.
+The same railings are explicitly evaluated against deck actors and are forced above a ground actor
+only while that actor is actually under the bridge footprint.
+
+Each character contributes one atomic queue item. The current player/NPC renderer still submits
+two sprite regions, but both submissions execute consecutively from that item. No tile can be
+inserted between feet, body, hair, hats, equipment, or a future taller sprite; sprite dimensions
+are not part of the sorting contract.
+
+The ground and ground-detail layers stay in the fixed background pass. On a non-zero elevation
+cell, object and foreground artwork is automatically promoted out of its fixed pass and into the
+world depth queue, preventing double rendering while retaining the layer's original phase.
+
+## Post-Processing
+
+`BeginScene()` redirects the scene into an offscreen target; `EndSceneApplyPostFX(params)`
+composites it into the swapchain. Everything drawn afterwards - editor, dialogue, debug HUD,
+console - bypasses the chain and stays sharp and ungrained.
+
+On OpenGL the composite runs an HSV-saturation bright pass over the scene texture, builds and
+additively upsamples a bloom mip chain, then draws a full-screen triangle that applies, in order
+(`shaders/PostFXComposite.frag`):
+
+1. Scene sample with radial chromatic aberration (3 fetches).
+2. Chroma-only bloom add - luma-orthogonal, so it tints without brightening.
+3. Lift/gamma/gain grading, split per time of day.
+4. Saturation pump.
+5. Vignette + edge desaturation (elliptical smoothstep from screen center).
+6. Film grain (luminance-modulated, 2x2 pixel tiles).
+7. Soft-shoulder tonemap.
+
+`PostFXParams::postFXEnabled` is the master gate; when it is 0 the shader returns the raw scene
+texel. The console command is `postfx [on|off|toggle]`.
+
+`PostFXComposite.frag` is OpenGL-only: it is not in CMake's `SHADER_SOURCES`, is never compiled
+to SPIR-V, and its default-block uniforms are illegal in Vulkan GLSL. On Vulkan both
+`BeginScene()` and `EndSceneApplyPostFX()` are no-ops - the scene has already rendered to the
+swapchain, so every field of `params` is ignored and the frame ships without bloom or grading.
+
+## World-Space 3D Path
+
+The `world3d` console toggle switches `Game::Render()` to `RenderFrame3D()`, an in-progress
+world-space orbit camera. It is not the default path and does not replace the flat pipeline; both
+are compiled in and the flat path is untouched while the toggle is off.
+
+The 3D path does not use the 2D primitives at all. `CameraRig` builds one `projection * view`
+matrix, published through `SetViewProjection()`, and every piece of scene geometry - ground
+tiles, upright billboards, characters, particles, light pools - is submitted through
+`DrawQuad3D()` as four scene-space corners. Unlike every other draw method, `DrawQuad3D` does
+**not** take camera-pre-subtracted coordinates: the matrix does that work. Depth is a real depth
+buffer, selected per quad by `renderModes::DepthMode`, instead of submission order, and
+`Frustum` planes extracted from the same matrix cull off-screen geometry.
+
+`shaders/Geometry3D.vert` / `.frag` back this path; `Geometry.vert` / `.frag` stay in use for the
+flat world and for all screen-space UI, which must never be projected.
+
+Tile stance becomes real geometry here: `TileStance::Prop` turns to face the camera,
+`TileStance::Wall` and `TileStance::Structure` stay locked to the grid as upright surfaces (see
+[Upright Tiles](#upright-tiles)).
 
 ## Particle System Mathematics
 
@@ -700,10 +749,16 @@ $$
 \alpha_{out} = \min\left(1, \frac{t}{t_{out}}\right)
 $$
 
+$t_{in}$ is an absolute number of seconds per type (0.15 s for rain, 0.5 s for fireflies, 4 s for
+fog), while $t_{out}$ is usually a fraction of $t_{max}$ (0.3 for fireflies, 0.4 for fog).
+
 Combined fade envelope:
 $$
 \alpha_{fade} = \alpha_{in} \cdot \alpha_{out}
 $$
+
+Each behavior multiplies this envelope by its own animation term and a per-type base alpha, so
+$\alpha_{fade}$ is a ceiling, not the final alpha.
 
 ### Motion Equations
 
@@ -726,49 +781,68 @@ $$
 
 Where:
 - $A_x, A_y$ = drift amplitude (pixels/second)
-- $\omega_x, \omega_y$ = angular frequency
+- $\omega_x, \omega_y$ = angular frequency (radians/second)
 - $k$ = phase multiplier for Y (creates varied paths)
+
+Fireflies use $A_x = 10$, $A_y = 8$, $\omega_x = 2$, $\omega_y = 1.5$, $k = 1.3$. The drift is
+added on top of the Euler step above, not instead of it.
 
 ### Alpha Animation
 
 **Pulsing Glow (Fireflies):**
 
-Sinusoidal pulse between $\alpha_{min}$ and $\alpha_{max}$:
+A unit sine pulse on global time, scaled by the fade envelope and the type's base alpha (0.7):
 $$
-\alpha_{pulse} = \frac{\alpha_{max} + \alpha_{min}}{2} + \frac{\alpha_{max} - \alpha_{min}}{2} \cdot \sin(\omega t + \phi)
+\alpha_{pulse} = \tfrac{1}{2} + \tfrac{1}{2}\sin(\omega t + \phi), \quad \omega = 4
+$$
+$$
+\alpha = \alpha_{pulse} \cdot \alpha_{fade} \cdot 0.7
 $$
 
-**Sparkle Flash:**
+Per-particle $\phi$ keeps a swarm out of lockstep.
 
-Binary flash in first 15% of lifetime:
+**Sparkle Twinkle:**
+
+Sparkles use a fast attack and a quadratic decay over life progress $\ell$, which reads as a
+twinkle instead of a strobe:
 $$
-\alpha = \begin{cases}
-1 & \text{if } \ell < 0.15 \\\\
-0 & \text{otherwise}
-\end{cases}
+\alpha = \min\left(1, \frac{\ell}{0.12}\right) \cdot (1 - \ell)^2 \cdot 0.85
 $$
 
 ### Rotation
 
-Angular velocity $\overset{\cdot}{\theta}$ varies by particle phase:
+Angular velocity $\overset{\cdot}{\theta}$ is in **degrees per second** and varies by particle
+phase:
 $$
 \overset{\cdot}{\theta} = \omega_{base} + \frac{\phi}{2\pi} \cdot \omega_{range}
 $$
 
-Direction alternates based on phase:
+Fireflies use $\omega_{base} = 20$, $\omega_{range} = 40$ (20-60 deg/s); drifting leaves use
+$30$ and $60$ (30-90 deg/s).
+
+Direction alternates on the same phase value, so roughly half of each population spins the other
+way:
 $$
 \overset{\cdot}{\theta}' = \begin{cases}
-+\overset{\cdot}{\theta} & \text{if } \phi \mod 2 < 1 \\\\
--\overset{\cdot}{\theta} & \text{otherwise}
+-\overset{\cdot}{\theta} & \text{if } \phi \bmod 2 < 1 \\\\
++\overset{\cdot}{\theta} & \text{otherwise}
 \end{cases}
 $$
 
 ### Particle Rendering Order
 
-Particles are rendered after foreground tiles but before sky effects:
+`ParticleSystem::Render` is called twice per frame: once for the particles that ride upright
+tiles (step 6 of the render order) and once for world particles (step 8), both before the light
+pools and the sky.
+
+Within each call, the visible particles are partitioned - not sorted - by blend mode, so relative
+order inside a group is the spawn order:
 
 1. Non-additive particles (fog, rain) - standard alpha blending
 2. Additive particles (fireflies, sparkles, wisps) - glow blending
+
+Upright-tile particles are never viewport-culled, because they are projected onto the structure
+mesh underneath them. World particles are culled against the view rect with a size-based pad.
 
 ## Renderer Architecture
 
@@ -783,12 +857,23 @@ classDiagram
         +Shutdown()
         +BeginFrame()
         +EndFrame()
+        +BeginScene()
+        +EndSceneApplyPostFX(params)
         +DrawSprite()
         +DrawSpriteRegion()
         +DrawSpriteAlpha()
+        +DrawSpriteAtlas()
         +DrawColoredRect()
+        +DrawQuad3D()
+        +DrawText()
         +SetProjection()
+        +SetViewProjection()
+        +SetViewport()
+        +Clear()
+        +UploadTexture()
+        +SetAmbientColor()
         +RequiresYFlip() bool
+        +GetBackendInfo() RendererInfo
     }
 
     class OpenGLRenderer {
@@ -835,12 +920,27 @@ renderer->DrawColoredRect(position, size, color);
 ```
 
 `RendererFactory.hpp` provides free helper functions that create the appropriate backend based on
-configuration or availability:
+configuration or availability. `api` is taken by reference so the factory can report the backend
+it actually created after a fallback:
 
 ```cpp
 RendererAPI api = RendererAPI::OpenGL;
 std::unique_ptr<IRenderer> renderer = CreateRenderer(api, window);
 ```
+
+Both backends are always compiled in - Vulkan is a hard `find_package(Vulkan REQUIRED)` - so
+there is no build configuration in which one of them is absent.
+
+Two constraints follow from that design:
+
+- **Override sets must stay identical.** Adding, removing or re-signing a pure virtual in
+  `IRenderer.hpp` requires the matching edit in `RendererMacros.hpp`.
+  `RIFT_DECLARE_COMMON_RENDERER_METHODS` is what keeps both backends byte-identical, so the two
+  files are always edited together.
+- **Nothing may cache an `IRenderer*`.** The `renderer.set opengl|vulkan` console command
+  destroys and recreates the GLFW window **and** the renderer, after which `TextureStore`
+  re-uploads every texture. Any pointer, reference or texture handle captured before the switch
+  dangles; take the renderer by reference per call instead.
 
 ## See Also
 
