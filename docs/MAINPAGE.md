@@ -4,7 +4,9 @@
 
 ## Overview
 
-Rift is a 2.5D RPG game written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan 1.0), a complete day/night cycle with atmospheric effects, tile-based collision, NPC patrol routing, and a built-in level editor.
+Rift is a 2.5D RPG game written in C++ featuring dual graphics backends (OpenGL 4.6 and Vulkan), a complete day/night cycle with atmospheric effects, tile-based collision, NPC patrol routing, and a built-in level editor.
+
+Two Vulkan version numbers appear in this documentation and they mean different things. The build needs the Vulkan 1.4 SDK (`find_package(Vulkan REQUIRED)`), but the backend requests instance `apiVersion` 1.0 and enables only `VK_KHR_SWAPCHAIN`, so any Vulkan 1.0+ device can run it. See @ref VulkanRenderer for the exact feature set.
 
 \htmlonly
 <pre class="mermaid">
@@ -50,7 +52,7 @@ flowchart LR
 
 ## Rendering
 
-Rift uses a **top-left origin, Y-down** coordinate system. Press **F1** to switch between OpenGL and Vulkan at runtime.
+Rift uses a **top-left origin, Y-down** coordinate system. Run `renderer.set opengl|vulkan` in the developer console (`F12`) to switch backends at runtime.
 
 @see [Rendering Pipeline](RENDERING.md) for coordinate transforms, sprite batching, and shader architecture.
 
@@ -77,8 +79,13 @@ Complete day/night cycle with 8 time periods, sun/moon arcs, star visibility, an
 ```powershell
 .\setup.ps1             # Download dependencies
 .\build.bat             # Build the project
-.\build\Debug\rift.exe  # Run
+.\run.bat               # Run (Release, repo-root CWD, manifest/assets/shaders preflight)
 ```
+
+`run.bat` starts the Release build with the repository root as the working directory. Launching the
+executable directly also works, because the build copies `rift.project.json`, `assets/` and
+`shaders/` next to it - but the game resolves all three against the working directory, so the
+directory you start it from decides which configuration it picks up.
 
 @see [Setup Guide](SETUP.md) for dependency installation.
 @see [Building Guide](BUILDING.md) for platform-specific instructions.
@@ -87,23 +94,26 @@ Complete day/night cycle with 8 time periods, sun/moon arcs, star visibility, an
 
 ## API Reference {#api}
 
-### Core Classes
+### Core Types and Systems
 
-| Class                   | Responsibility                                            |
-|-------------------------|-----------------------------------------------------------|
-| @ref Game               | Main loop orchestration, input handling, state management |
-| @ref IRenderer          | Abstract rendering interface (OpenGL/Vulkan)              |
-| @ref OpenGLRenderer     | OpenGL 4.6 backend implementation                         |
-| @ref VulkanRenderer     | Vulkan 1.0 backend implementation                         |
-| @ref Tilemap            | Tile storage, collision map, navigation map               |
-| @ref TimeManager        | Day/night cycle, ambient lighting                         |
-| @ref SkyRenderer        | Stars, sun, moon, atmospheric effects                     |
-| @ref PlayerCharacter    | Player entity, movement, animation                        |
-| @ref NonPlayerCharacter | NPC behavior, patrol routes, dialogue                     |
-| @ref PatrolRoute        | NPC patrol path generation and traversal                  |
-| @ref DialogueManager    | Branching conversation system                             |
-| @ref GameStateManager   | Game flags, quest state, persistence                      |
-| @ref ParticleSystem     | Visual effects (fireflies, dust, etc.)                    |
+| Symbol                    | Responsibility                                            |
+|---------------------------|-----------------------------------------------------------|
+| @ref Game                 | Main loop orchestration, input handling, state management |
+| @ref IRenderer            | Abstract rendering interface (OpenGL/Vulkan)              |
+| @ref OpenGLRenderer       | OpenGL 4.6 backend implementation                         |
+| @ref VulkanRenderer       | Vulkan 1.0 backend implementation                         |
+| @ref Tilemap              | Tile storage, collision map, navigation map               |
+| @ref TimeManager          | Day/night cycle, ambient lighting                         |
+| @ref SkyRenderer          | Stars, sun, moon, atmospheric effects                     |
+| @ref PlayerSystem         | Player appearance, character switching, per-frame update  |
+| @ref PlayerMovementSystem | Stateless player movement, facing, and stop logic         |
+| @ref NpcAiSystem          | NPC patrol and idle AI over route components              |
+| @ref EntityStore          | Entity spawn, snapshot, reposition, despawn, query        |
+| @ref WorldServices        | Non-owning shared services published into `globals()`     |
+| @ref PatrolRoute          | NPC patrol path generation and traversal                  |
+| @ref DialogueManager      | Branching conversation system                             |
+| @ref GameStateManager     | Game flags, quest state, persistence                      |
+| @ref ParticleSystem       | Visual effects (fireflies, dust, etc.)                    |
 
 ### Key Interfaces
 
@@ -118,9 +128,10 @@ class IRenderer {
 
 // World Queries
 class Tilemap {
-    bool GetCollision(int x, int y) const;
+    bool GetTileCollision(int x, int y) const;
     bool GetNavigation(int x, int y) const;
-    int GetTileID(int x, int y, int layer) const;
+    int GetLayerTile(int x, int y, size_t layer) const;
+    size_t GetLayerCount() const;  // the layer stack is dynamic; never hard-code it
 };
 
 // Pathfinding
