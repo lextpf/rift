@@ -8,7 +8,7 @@
 ![Genre](https://img.shields.io/badge/Genre-RPG-0891B2.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yIDVDMiAzLjM0MzE1IDMuMzQzMTUgMiA1IDJIMTlDMjAuNjU2OSAyIDIyIDMuMzQzMTUgMjIgNVYxOUMyMiAyMC42NTY5IDIwLjY1NjkgMjIgMTkgMjJINUMzLjM0MzE1IDIyIDIgMjAuNjU2OSAyIDE5VjVaTTQgMTlWMTJIMTJWMjBINUM0LjQ0NzcyIDIwIDQgMTkuNTUyMyA0IDE5Wk0yMCAxMkgxMlY0SDE5QzE5LjU1MjMgNCAyMCA0LjQ0NzcyIDIwIDVWMTJaIiBmaWxsPSIjZmZmZmZmIj48L3BhdGg+IDwvZz48L3N2Zz4=)
 ![Game](https://img.shields.io/badge/%20-2.5D_Game-7C3AED.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjIwMHB4IiB3aWR0aD0iMjAwcHgiIHZlcnNpb249IjEuMSIgaWQ9Il94MzJfIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHN0eWxlIHR5cGU9InRleHQvY3NzIj4gLnN0MHtmaWxsOiNmZmZmZmY7fSA8L3N0eWxlPiA8Zz4gPHBhdGggY2xhc3M9InN0MCIgZD0iTTUxMC40NDEsMzIyLjg5NGwtMjkuNzYtMTI2LjU2Yy0xNS4wNzMtNTYuMjUyLTY2LjA0Ny05NS4zNjMtMTI0LjI4Ni05NS4zNjNIMTU1LjYwNCBjLTU4LjIzOSwwLTEwOS4yMTIsMzkuMTEtMTI0LjI4NSw5NS4zNjNsLTI5Ljc2LDEyNi41NmMtNy42MTgsMzYuMzAzLDEzLjM0LDcyLjUyNCw0OC42MjYsODQuMDAxbDEuNzQsMC41NTggYzMyLjY1OCwxMC42MzIsNjguMjg4LTMuMDcsODUuNDI5LTMyLjgzMWwyNS44OTQtMzguMjg5YzYuNTAyLTExLjI4OCwxOC41MzgtMTguMjUsMzEuNTUtMTguMjVoMTIyLjQwNiBjMTMuMDEyLDAsMjUuMDQ4LDYuOTYyLDMxLjU0OSwxOC4yNWwyNS44OTQsMzguMjg5YzE3LjE0MiwyOS43NjEsNTIuNzc5LDQzLjQ2Myw4NS40MzgsMzIuODMxbDEuNzMyLTAuNTU4IEM0OTcuMSwzOTUuNDE4LDUxOC4wNiwzNTkuMTk3LDUxMC40NDEsMzIyLjg5NHogTTE5MS4wNDYsMjM4LjA4MWgtNDEuNjg5djQxLjY5NmgtMzYuMjk1di00MS42OTZINzEuMzczdi0zNi4yNzloNDEuNjg5di00MS42OCBoMzYuMjk1djQxLjY4aDQxLjY4OVYyMzguMDgxeiBNMzc0LjcyOCwxNTEuNDM2YzEyLjYyNiwwLDIyLjg0NywxMC4yMjEsMjIuODQ3LDIyLjg0OGMwLDEyLjYxLTEwLjIyMSwyMi44MzEtMjIuODQ3LDIyLjgzMSBjLTEyLjYxLDAtMjIuODMxLTEwLjIyMS0yMi44MzEtMjIuODMxQzM1MS44OTcsMTYxLjY1NiwzNjIuMTE4LDE1MS40MzYsMzc0LjcyOCwxNTEuNDM2eiBNMzI5LjA0OSwyNDIuODAxIGMtMTIuNjEsMC0yMi44MzktMTAuMjMtMjIuODM5LTIyLjg1NmMwLTEyLjYwMiwxMC4yMjktMjIuODMxLDIyLjgzOS0yMi44MzFjMTIuNjE4LDAsMjIuODM5LDEwLjIyOSwyMi44MzksMjIuODMxIEMzNTEuODg5LDIzMi41NzIsMzQxLjY2OCwyNDIuODAxLDMyOS4wNDksMjQyLjgwMXogTTM3NC43MjgsMjg4LjQ3MWMtMTIuNjEsMC0yMi44MzEtMTAuMjIxLTIyLjgzMS0yMi44MzEgYzAtMTIuNjI3LDEwLjIyMS0yMi44NDgsMjIuODMxLTIyLjg0OGMxMi42MjYsMCwyMi44NDcsMTAuMjIxLDIyLjg0NywyMi44NDhDMzk3LjU3NSwyNzguMjUsMzg3LjM1NCwyODguNDcxLDM3NC43MjgsMjg4LjQ3MXogTTQyMC40MDYsMjQyLjgwMWMtMTIuNjEsMC0yMi44MzItMTAuMjMtMjIuODMyLTIyLjg1NmMwLTEyLjYwMiwxMC4yMjItMjIuODMxLDIyLjgzMi0yMi44MzEgYzEyLjYxOCwwLDIyLjg0NywxMC4yMjksMjIuODQ3LDIyLjgzMUM0NDMuMjUzLDIzMi41NzIsNDMzLjAyNCwyNDIuODAxLDQyMC40MDYsMjQyLjgwMXoiPjwvcGF0aD4gPC9nPiA8L2c+PC9zdmc+)
 ![Windows](https://img.shields.io/badge/Platform-Win-0078D6.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjAgMjAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjZmZmZmZmIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9nPjxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHRpdGxlPndpbmRvd3MgWyNmZmZmZmZdPC90aXRsZT4gPGRlc2M+Q3JlYXRlZCB3aXRoIFNrZXRjaC48L2Rlc2M+IDxkZWZzPiA8L2RlZnM+IDxnIGlkPSJQYWdlLTEiIHN0cm9rZT0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIxIiBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPiA8ZyBpZD0iRHJpYmJibGUtTGlnaHQtUHJldmlldyIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTYwLjAwMDAwMCwgLTc0MzkuMDAwMDAwKSIgZmlsbD0iI2ZmZmZmZiI+IDxnIGlkPSJpY29ucyIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNTYuMDAwMDAwLCAxNjAuMDAwMDAwKSI+IDxwYXRoIGQ9Ik0xMy4xNDU4NjQ3LDcyODkuNDM0MjYgQzEzLjE1MDg3NzIsNzI5MS40MzMxNiAxMy4xNTY4OTIyLDcyOTQuODI5MjkgMTMuMTYxOTA0OCw3Mjk3LjQ2ODg0IEMxNi43NzU5Mzk4LDcyOTcuOTU3NTcgMjAuMzg5OTc0OSw3Mjk4LjQ2MTMgMjMuOTk3OTk1LDcyOTkgQzIzLjk5Nzk5NSw3Mjk1Ljg0ODczIDI0LjAwMjAwNSw3MjkyLjcxMTQ2IDIzLjk5Nzk5NSw3Mjg5LjcxMzExIEMyMC4zODA5NTI0LDcyODkuNzEzMTEgMTYuNzY0OTEyMyw3Mjg5LjQzNDI2IDEzLjE0NTg2NDcsNzI4OS40MzQyNiBNNCw3Mjg5LjQzNTI2IEw0LDcyOTYuMjIxNTMgQzYuNzI1ODE0NTQsNzI5Ni41ODkzMyA5LjQ1MTYyOTA3LDcyOTYuOTQxMTMgMTIuMTcyNDMxMSw3Mjk3LjM0MjkxIEMxMi4xNzc0NDM2LDcyOTQuNzE3MzYgMTIuMTcwNDI2MSw3MjkyLjA5MDggMTIuMTcwNDI2MSw3Mjg5LjQ2NTI0IEM5LjQ0NjYxNjU0LDcyODkuNDcwMjQgNi43MjM4MDk1Miw3Mjg5LjQyNjI3IDQsNzI4OS40MzUyNiBNNCw3MjgxLjg0MzQ0IEw0LDcyODguNjEwNzEgQzYuNzI1ODE0NTQsNzI4OC42MTc3MSA5LjQ1MTYyOTA3LDcyODguNTc2NzMgMTIuMTc3NDQzNiw3Mjg4LjU3OTczIEMxMi4xNzU0Mzg2LDcyODUuOTYwMTcgMTIuMTc1NDM4Niw3MjgzLjM0MzYxIDEyLjE3MjQzMTEsNzI4MC43MjQwNSBDOS40NDQ2MTE1Myw3MjgxLjA2NDg2IDYuNzE2NzkxOTgsNzI4MS40MjU2NyA0LDcyODEuODQzNDQgTTI0LDcyODguNDcxNzkgQzIwLjM4Nzk2OTksNzI4OC40ODU3OCAxNi43NzU5Mzk4LDcyODguNTQwNzUgMTMuMTYxOTA0OCw3Mjg4LjU1MTc1IEMxMy4xNTk4OTk3LDcyODUuODg5MjEgMTMuMTU5ODk5Nyw3MjgzLjIyOTY3IDEzLjE2MTkwNDgsNzI4MC41NjkxNCBDMTYuNzY4OTIyMyw3MjgwLjAxODQ0IDIwLjM4Mzk1OTksNzI3OS41MDA3MiAyMy45OTc5OTUsNzI3OSBDMjQsNzI4Mi4xNTgyNiAyMy45OTc5OTUsNzI4NS4zMTM1MyAyNCw3Mjg4LjQ3MTc5IiBpZD0id2luZG93cy1bI2ZmZmZmZl0iPiA8L3BhdGg+IDwvZz4gPC9nPiA8L2c+IDwvZz48L3N2Zz4=)
-![CMake](https://img.shields.io/badge/CMake-3.10%2B-c0392b?style=flat&logo=cmake&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.21%2B-c0392b?style=flat&logo=cmake&logoColor=white)
 ![OpenGL](https://img.shields.io/badge/OpenGL-v4.6-orange?style=flat&logo=opengl&logoColor=white)
 ![Vulkan](https://img.shields.io/badge/Vulkan-v1.4-red?style=flat&logo=vulkan&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-475569.svg?logo=data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjZmZmZmZmIiB3aWR0aD0iMTY0cHgiIGhlaWdodD0iMTY0cHgiIHZpZXdCb3g9IjAgMCA1MTIuMDAgNTEyLjAwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIwLjAwNTEyIj48ZyBpZD0iU1ZHUmVwb19iZ0NhcnJpZXIiIHN0cm9rZS13aWR0aD0iMCI+PC9nPjxnIGlkPSJTVkdSZXBvX3RyYWNlckNhcnJpZXIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlPSIjQ0NDQ0NDIiBzdHJva2Utd2lkdGg9IjMuMDcyIj48L2c+PGcgaWQ9IlNWR1JlcG9faWNvbkNhcnJpZXIiPjxwYXRoIGQ9Ik0yNTYgOEMxMTkuMDMzIDggOCAxMTkuMDMzIDggMjU2czExMS4wMzMgMjQ4IDI0OCAyNDggMjQ4LTExMS4wMzMgMjQ4LTI0OFMzOTIuOTY3IDggMjU2IDh6bTExNy4xMzQgMzQ2Ljc1M2MtMS41OTIgMS44NjctMzkuNzc2IDQ1LjczMS0xMDkuODUxIDQ1LjczMS04NC42OTIgMC0xNDQuNDg0LTYzLjI2LTE0NC40ODQtMTQ1LjU2NyAwLTgxLjMwMyA2Mi4wMDQtMTQzLjQwMSAxNDMuNzYyLTE0My40MDEgNjYuOTU3IDAgMTAxLjk2NSAzNy4zMTUgMTAzLjQyMiAzOC45MDRhMTIgMTIgMCAwIDEgMS4yMzggMTQuNjIzbC0yMi4zOCAzNC42NTVjLTQuMDQ5IDYuMjY3LTEyLjc3NCA3LjM1MS0xOC4yMzQgMi4yOTUtLjIzMy0uMjE0LTI2LjUyOS0yMy44OC02MS44OC0yMy44OC00Ni4xMTYgMC03My45MTYgMzMuNTc1LTczLjkxNiA3Ni4wODIgMCAzOS42MDIgMjUuNTE0IDc5LjY5MiA3NC4yNzcgNzkuNjkyIDM4LjY5NyAwIDY1LjI4LTI4LjMzOCA2NS41NDQtMjguNjI1IDUuMTMyLTUuNTY1IDE0LjA1OS01LjAzMyAxOC41MDggMS4wNTNsMjQuNTQ3IDMzLjU3MmExMi4wMDEgMTIuMDAxIDAgMCAxLS41NTMgMTQuODY2eiI+PC9wYXRoPjwvZz48L3N2Zz4=)
@@ -63,6 +63,8 @@
  * ============================================================================================== */
 ```
 
+## Project Structure
+
 ```
 rift/
 |-- src/                               # Engine source (flat; grouped by subsystem)
@@ -71,7 +73,7 @@ rift/
 |   |-- GameMode.hpp                   # Title / Playing / Paused top-level mode
 |   |-- WorldServices.hpp              # Non-owning service pointers in the ECS globals
 |   |-- Version.hpp                    # 4-part version string, parsed by CMake
-|   |-- DoxygenGroups.hpp              # Doxygen @defgroup declarations
+|   |-- DoxygenGroups.hpp              # The only file with @addtogroup; elsewhere use @ingroup
 |   |-- IRenderer.*                    # Renderer strategy interface
 |   |-- OpenGLRenderer.*               # OpenGL 4.6 backend (batching, bloom, PostFX)
 |   |-- VulkanRenderer.*               # Vulkan 1.4 backend (partials: Buffers/Helpers)
@@ -84,24 +86,33 @@ rift/
 |   |-- CharacterRender.*              # Shared character sprite draw
 |   |-- PlayerRender.*                 # Player sprite draw over components
 |   |-- NpcRender.*                    # NPC sprite draw over components
-|   |-- PerspectiveTransform.hpp       # Globe / vanishing-point projection
-|   |-- PerspectiveTransformFloat.hpp  # Float-precision perspective transform
 |   |-- PostFXParams.hpp               # Bloom / grading / vignette / grain params
 |   |-- DrawTracer.*                   # Per-frame draw-call tracing
 |   |-- ViewScaling.hpp                # Resolution / view scaling helpers
+|   |-- RenderModes.hpp                # Flat 2.5D vs world-space 3D path selector
+|   |-- CameraRig.*                    # Orbit camera rig behind the `world3d` toggle
+|   |-- CameraFacing.hpp               # Camera basis the 3D path faces sprites with
+|   |-- Billboard.hpp                  # Camera-facing quad build for sprites
+|   |-- Frustum.hpp                    # View-frustum planes + cull tests
+|   |-- SceneMath.hpp                  # World <-> scene space math for the 3D path
 |   |-- Texture.*                      # Texture resource (upload, bind)
 |   |-- TextureHandle.hpp              # Lightweight texture handle
 |   |-- TextureStore.*                 # Owns textures; re-uploads on backend switch
 |   |-- ProceduralTexture.hpp          # CPU-generated texture helpers
 |   |-- AuroraTextures.*               # Generated aurora ribbon textures
 |   |-- AuroraMath.hpp                 # Aurora curve / noise math
-|   |-- Tilemap.*                      # 10 tile layers + elevation + lights; sparse JSON
+|   |-- Tilemap.*                      # Dynamic layer stack (10 default) + elevation; sparse JSON
 |   |-- CollisionMap.hpp               # Player-blocking bit grid
 |   |-- NavigationMap.hpp              # NPC-walkability bit grid
 |   |-- BoolGrid.hpp                   # Backing bit grid for both maps
 |   |-- CollisionGeometry.hpp          # Feet-anchored AABB collision geometry
 |   |-- CollisionSystem.*              # Stateless AABB collision over Hitbox
 |   |-- TileMath.hpp                   # Shared tile / feet-AABB coord helpers
+|   |-- TileStance.hpp                 # Per-tile stance: Flat / Prop / Wall / Structure
+|   |-- TileRole.hpp                   # Maps an authored stance to render behavior
+|   |-- ElevationRole.hpp              # Per-layer participation in a cell's elevation
+|   |-- SupportSurface.hpp             # Support surface (Ground / Elevation) + state
+|   |-- SurfaceSystem.*                # Ground vs elevation support resolution
 |   |-- DefaultedVector.hpp            # Sparse vector defaulting unset cells
 |   |-- ColumnProxy.hpp                # Column view into the tile grid
 |   |-- Pathfinding.*                  # A* over the navigation map
@@ -171,6 +182,7 @@ rift/
 |   +-- MathUtils.hpp                  # Shared math helpers
 |-- shaders/                           # GLSL 450 (compiled to *.spv at build; gitignored)
 |   |-- Geometry.vert/frag             # Forward pass: sprites, tiles, particles
+|   |-- Geometry3D.vert/frag           # World-space 3D path: depth-tested geometry
 |   |-- FullscreenTriangle.vert        # Fullscreen VS for post-processing
 |   |-- BloomPrefilter.frag            # Bloom: bright-pass prefilter
 |   |-- BloomDownsample.frag           # Bloom: mip downsample
@@ -196,13 +208,17 @@ rift/
 |-- Doxyfile.in                        # Doxygen API-docs template
 |-- setup.ps1                          # One-time dependency fetch
 |-- build.bat                          # Full pipeline: format -> tidy -> build -> docs
-+-- test.bat                           # Configure + build + run tests
+|-- test.bat                           # Configure + build + run tests
++-- run.bat                            # Runs build\Release\rift.exe from the repo root
 ```
 
 ## Features
 
 ### Dual Rendering Backend
-Switch between **OpenGL 4.6** and **Vulkan 1.4** at runtime with a single keypress (**F1**).
+Switch between **OpenGL** and **Vulkan** at runtime. Press **F12** to open the console, then run
+`renderer.set opengl` or `renderer.set vulkan`. The startup backend comes from `startupRenderer` in
+`rift.project.json`. A switch destroys and recreates the window and the renderer, then re-uploads
+every texture.
 
 > [!WARNING]
 > **Vulkan** is **work-in-progress**. Runtime switching can cause missing textures or visual glitches. **OpenGL is recommended** for now.
@@ -225,7 +241,14 @@ graph LR
     classDef day   fill:#f39c12,stroke:#7a3e00,stroke-width:2.5px,color:#ffffff,font-weight:900
     classDef dusk  fill:#c0392b,stroke:#ff9a9a,stroke-width:2.5px,color:#ffffff,font-weight:800
 
-    N["Night 🌙✨"]:::night --> D["Dawn 🌅🕊️"]:::dawn --> M["Morning ☀️🌿"]:::day --> A["Afternoon 🌞🕶️"]:::day --> DU["Dusk 🌇🔥"]:::dusk --> E["Evening 🌃🌟"]:::night --> N
+    N["Night 🌙✨<br/>22:00-04:00"]:::night --> LN["LateNight 🌑<br/>04:00-05:00"]:::night
+    LN --> D["Dawn 🌅🕊️<br/>05:00-07:00"]:::dawn
+    D --> M["Morning ☀️🌿<br/>07:00-10:00"]:::day
+    M --> MD["Midday 🌞<br/>10:00-16:00"]:::day
+    MD --> A["Afternoon 🌤️🕶️<br/>16:00-18:00"]:::day
+    A --> DU["Dusk 🌇🔥<br/>18:00-20:00"]:::dusk
+    DU --> E["Evening 🌃🌟<br/>20:00-22:00"]:::night
+    E --> N
 ```
 
 - **Sun and moon god rays** with arc-based positioning
@@ -233,7 +256,10 @@ graph LR
 - **Smooth color transitions** between time periods
 
 ### Multi-Layer Tilemap System
-Efficient tile-based world rendering with 8 configurable layers:
+Efficient tile-based world rendering. The default stack is ten layers - five drawn before the actors,
+five after - but the count is data-driven: a loaded map may carry any number, and
+`Tilemap::GetLayerCount()` is the only authority. In the editor, keys `1`-`9` and `0` select layers
+1-10.
 
 ```mermaid
 ---
@@ -249,14 +275,16 @@ flowchart LR
   classDef fg fill:#134e3a,stroke:#10b981,stroke-width:2.5px,color:#e2e8f0,font-weight:800
   classDef ob fill:#4a3520,stroke:#f59e0b,stroke-width:2.5px,color:#e2e8f0,font-weight:800
   classDef gr fill:#1e3a5f,stroke:#3b82f6,stroke-width:2.5px,color:#e2e8f0,font-weight:800
+  classDef act fill:#3a1f2e,stroke:#f43f5e,stroke-width:2.5px,color:#e2e8f0,font-weight:800
 
-  O["7-6 Overlay 🌦️✨<br/>UI - Weather 🧭"]:::ov
-  F["5-4 Foreground 🧍‍♂️⚔️<br/>Front of Entities 👑"]:::fg
-  B["3-2 Objects 🏠🪨🌲<br/>Buildings - Rocks - Trees 🧱"]:::ob
-  G["1 Detail 🍃🛤️🪴<br/>Grass - Paths - Deco 🎨"]:::gr
-  T["0 Ground 🗺️🟫<br/>Base Terrain 🌍"]:::gr
+  O["9-7 Overlay 1-3 🌦️✨<br/>Weather - Canopy 🧭<br/>keys 0 9 8"]:::ov
+  F["6-5 Foreground 1-2 🧍‍♂️⚔️<br/>Tree Tops - Eaves 👑<br/>keys 7 6"]:::fg
+  P["Player and NPCs 🧍‍♂️<br/>Y-sorted actors"]:::act
+  B["4-2 Objects 1-3 🏠🪨🌲<br/>Buildings - Rocks - Trees 🧱<br/>keys 5 4 3"]:::ob
+  G["1 Ground Detail 🍃🛤️🪴<br/>Grass - Paths - Deco 🎨<br/>key 2"]:::gr
+  T["0 Ground 🗺️🟫<br/>Base Terrain 🌍<br/>key 1"]:::gr
 
-  O --> F --> B --> G --> T
+  O --> F --> P --> B --> G --> T
 
 ```
 
@@ -280,26 +308,23 @@ flowchart LR
   subgraph Pipeline["Rendering Pipeline 🎨"]
     B["Sprite Batching 📦<br/>Draw Call Optimization 🚀"]:::batch
     Y["Y-Sorting 🧭<br/>Depth Ordering 🪜"]:::sort
-    P["Perspective 👁️‍🗨️<br/>World Curvature 🌍"]:::proj
-    N["No-Projection 🏗️<br/>Upright Structures 🧱"]:::proj
+    N["Upright Tiles 🏗️<br/>Buildings & Signs 🧱"]:::proj
     FX["Particles ✨<br/>Zone Spawning 🌪️"]:::fx
   end
 
   B --> Y
-  Y --> P
   Y --> N
-  P --> FX
   N --> FX
 ```
 
 - **Sprite batching** groups draw calls for optimal GPU efficiency
 - **Y-sorting** ensures correct depth ordering of entities and tiles
-- **Perspective projection** adds world curvature and vanishing point effects
-- **No-projection tiles** keep buildings and signs upright
+- **Upright tiles** mark buildings and signs so they stand up in the 3D camera path
 - **Particle systems** spawn effects within defined zones
 
 ### In-Game Level Editor
-Press **E** to toggle a full-featured editor:
+Open the console with **F12** and run `ed` to toggle a full-featured editor (the tile picker opens
+with it). Every edit goes through an undoable command, so `Ctrl+Z` / `Ctrl+Y` reverse any mistake:
 - Tile placement with multi-tile selection and rotation
 - Collision and navigation map painting
 - Tile elevation for height variation
@@ -342,15 +367,26 @@ graph LR
         Navigation[NavigationMap]:::world
     end
 
-    subgraph Entities["Entities"]
-        Player[PlayerCharacter]:::entity
-        NPC[NonPlayerCharacter]:::entity
+    subgraph Entities["ECS"]
+        Registry[("ecs::registry m_World")]:::entity
+        Components["Components<br/>Transform - Motor - Hitbox<br/>Facing - Appearance - Patrol"]:::entity
+        Systems["Stateless systems<br/>PlayerSystem - NpcAiSystem<br/>MotionSystem - CollisionSystem"]:::entity
+        Services["WorldServices<br/>non-owning pointers in globals()"]:::entity
     end
 
     Game --> Rendering
     Game --> World
-    Game --> Entities
+    Game --> Registry
+    Game -->|calls per frame| Systems
+    Registry --> Components
+    Registry --> Services
+    Systems -->|read / write| Components
+    Systems -->|reach shared state| Services
 ```
+
+`Game` is the composition root: it owns the window, the renderer, the tilemap, and every subsystem
+by value. There are no `PlayerCharacter` or `NonPlayerCharacter` classes - an entity is a set of
+plain-struct components, and behavior lives in free functions that take the registry.
 
 ## Technology Stack
 
@@ -362,14 +398,17 @@ graph LR
 | Math           | GLM                     |
 | Image Loading  | stb_image               |
 | Font Rendering | FreeType 2              |
-| Build System   | CMake 3.10+             |
+| Build System   | CMake 3.21+             |
 
 ## Quick Start
 
 ### Prerequisites
-- CMake 3.10+
+- CMake 3.21+ (required by `CMakePresets.json`, which `build.bat` uses; the bare `CMakeLists.txt`
+  floor is 3.10)
 - C++23 compatible compiler (MSVC 2022+)
-- OpenGL 4.6 compatible GPU (or Vulkan 1.4 capable)
+- Vulkan SDK - a hard dependency, both backends are always compiled in
+- OpenGL 4.6 compatible GPU, or any Vulkan 1.0+ device (the Vulkan backend requests instance API
+  version 1.0)
 
 ### Windows
 
@@ -393,24 +432,46 @@ cd rift
 
 ## Controls
 
+Gameplay is WASD plus a handful of modifier keys. Everything else - the editor, renderer switching,
+debug overlays, time and weather - is a developer-console command.
+
 <details>
 
 <summary>General Keybinds</summary>
 
+<h3>Developer Console</h3>
+
+**F12** opens and closes the console. `help` lists all ~100 commands; most take `on`, `off` or
+`toggle`. The everyday ones:
+
+| Command                                  | Action                                                  |
+|------------------------------------------|---------------------------------------------------------|
+| `help`                                   | List every registered command and its aliases           |
+| `ed`                                     | Toggle the level editor (`editor`)                      |
+| `renderer.set <opengl\|vulkan>`          | Switch backend at runtime (`rndr.set`, `gfx`)           |
+| `debug.overlays`                         | Collision / navigation / anchor overlays (`dbg`)        |
+| `debug.info`                             | FPS and coordinate HUD (`fps`)                          |
+| `time.set <hours>` / `time.next`         | Set the clock (`ts`) / step to the next period (`tn`)   |
+| `weather.next [seconds]`                 | Blend to the next weather state                         |
+| `world3d`                                | Render through the world-space 3D camera path           |
+| `teleport <tx> <ty>`                     | Move the player to a tile coordinate (`tp`)             |
+| `noclip`                                 | Disable player tile/NPC collision (`nc`)                |
+| `character.next`                         | Cycle the player character (`cn`)                       |
+| `appearance.copy` / `appearance.restore` | Mimic the nearest NPC's look, then undo it              |
+
 <h3>Gameplay</h3>
 
-| Key         | Action                           |
-|-------------|----------------------------------|
-| W/A/S/D     | Move player (8-directional)      |
-| Shift       | Run (1.5x speed)                 |
-| B           | Toggle bicycle mode (2.0x speed) |
-| F           | Talk to NPC when facing          |
-| X           | Copy/restore NPC appearance      |
-| C           | Cycle characters                 |
-| Ctrl+Scroll | Zoom camera                      |
-| Arrow Keys  | Pan camera                       |
-| Z           | Reset zoom to 1.0x               |
-| Space       | Free camera mode                 |
+| Key         | Action                                    |
+|-------------|-------------------------------------------|
+| W/A/S/D     | Move player (8-directional)               |
+| Shift       | Run while held (1.75x base speed)         |
+| B           | Toggle bicycle mode (2.25x base speed)    |
+| F           | Talk to NPC when facing                   |
+| Ctrl+Scroll | Zoom camera                               |
+| Arrow Keys  | Pan camera                                |
+| Z           | Reset zoom to 1.0x                        |
+| Space       | Free camera mode                          |
+| X           | Toggle corner-cut blocking on the tile under the cursor; needs `debug.overlays` on |
 
 <h3>Dialogue</h3>
 
@@ -422,49 +483,69 @@ cd rift
 
 <h3>Movement Modes</h3>
 
-| Mode    | Speed    | Collision              |
-|---------|----------|------------------------|
-| Walking | 100 px/s | Strict (full hitbox)   |
-| Running | 150 px/s | Relaxed (center point) |
-| Bicycle | 200 px/s | Relaxed (center point) |
+The modes are mutually exclusive and resolve bicycle > run > walk. The console `player.speed`
+multiplier is applied on top of whichever mode is active.
+
+| Mode    | Multiplier | Speed      |
+|---------|------------|------------|
+| Walking | 1.0x       | 50 px/s    |
+| Running | 1.75x      | 87.5 px/s  |
+| Bicycle | 2.25x      | 112.5 px/s |
+
+Mode changes speed and sprite sheet only. Collision is identical in every mode: one feet-anchored
+AABB, and `CollisionSystem` never reads the mode flags.
 
 <h3>Editor</h3>
 
-| Key          | Action                             |
-|--------------|------------------------------------|
-| E            | Toggle editor mode                 |
-| 1-8          | Select tilemap layer               |
-| T            | Toggle tile picker                 |
-| R            | Rotate selection 90 deg            |
-| Delete       | Remove tile at cursor              |
-| S            | Save map to JSON                   |
-| L            | Load map from JSON                 |
-| M            | Toggle navigation editing          |
-| N            | Toggle NPC placement               |
-| H            | Toggle elevation editing           |
-| B            | Toggle billboard projection        |
-| Y            | Toggle Y-sort editing              |
-| J            | Toggle particle zone editing       |
-| K            | Toggle animated tile editing       |
-| X            | Toggle corner cut blocking on tile |
-| , / .        | Cycle types (NPC/particle/anim)    |
-| Left Click   | Place tile/NPC/zone                |
-| Right Click  | Toggle collision/navigation        |
-| Arrows       | Pan tile picker                    |
-| Shift+Arrows | Pan tile picker (fast)             |
-| Scroll       | Pan tile picker                    |
-| Ctrl+Scroll  | Zoom                               |
+Run `ed` in the console to open the editor. Only one sub-mode is active at a time; pressing its key
+again returns to the default place/collision mode.
+
+| Key             | Action                                                          |
+|-----------------|-----------------------------------------------------------------|
+| 1-9, 0          | Select tile layer 1-10                                          |
+| T               | Toggle tile picker                                              |
+| M               | Navigation (walkability) editing                                |
+| N               | NPC placement                                                   |
+| B               | Stance editing (Flat / Prop / Wall / Structure)                  |
+| G               | Structure editing (multi-tile bodies)                           |
+| H               | Elevation editing                                               |
+| J               | Particle zone editing                                           |
+| K               | Animated tile editing                                           |
+| Y               | Y-sort-plus editing                                             |
+| O               | Y-sort-minus editing                                            |
+| R               | Rotate brush and the tile under the cursor 90 deg               |
+| F / Shift+F     | Flip the brush and reflect the selection on X / Y               |
+| S               | Save the map to the `defaultMap` path                           |
+| L               | Reload the map, discarding undo history                         |
+| Delete          | Remove tiles under the cursor (drag)                            |
+| , / .           | Cycle the type the active mode paints                           |
+| Ctrl+Z / Ctrl+Y | Undo / redo                                                     |
+| Ctrl+drag       | Select a rectangular tile region                                |
+| Ctrl+C / Ctrl+V | Copy / paste the selected region (all layers, collision, nav)   |
+| Esc             | Cancel the pending selection, anchor, or animation              |
+| Left Click      | Place tile/NPC/zone                                             |
+| Right Click     | Toggle collision/navigation                                     |
+| Arrows          | Pan camera, or the tile picker while it is open                 |
+| Shift+Arrows    | Pan fast                                                        |
+| Scroll          | Pan tile picker                                                 |
+| Ctrl+Scroll     | Zoom                                                            |
 
 <h3>Debug and Visual</h3>
 
-| Key     | Action                                                 |
-|---------|--------------------------------------------------------|
-| F1      | Switch renderer (OpenGL/Vulkan)                        |
-| F2      | Toggle debug overlays (collision, navigation, anchors) |
-| F3      | Toggle FPS/position display                            |
-| F4      | Toggle 3D globe effect                                 |
-| F5      | Cycle time of day (day/evening/night/morning)          |
-| Up/Down | Adjust 3D globe intensity                              |
+No function key except **F12** is bound. Every debug and visual toggle is a console command:
+
+| Command                          | Action                                                       |
+|----------------------------------|--------------------------------------------------------------|
+| `renderer.set <opengl\|vulkan>`  | Switch renderer at runtime                                   |
+| `debug.overlays`                 | Collision, navigation and anchor overlays                    |
+| `debug.info`                     | FPS and player-coordinate HUD                                |
+| `renderer.trace`                 | Per-frame draw-call tracing                                  |
+| `particles`                      | All particle rendering (weather, zones, ambient)             |
+| `fps.cap`                        | Cap the frame rate at 500, or run uncapped                   |
+| `time.set <hours>` / `time.next` | Set the clock, or step to the next time-of-day period        |
+| `time.freeze`                    | Pause and resume the day/night cycle                         |
+| `weather.next [seconds]`         | Blend to the next weather state                              |
+| `world3d`, `cam.preset`          | World-space 3D camera path and its preset                    |
 
 </details>
 
@@ -521,11 +602,15 @@ graph LR
 # Install Doxygen
 # Windows: choco install doxygen
 
-# Generate documentation
-doxygen Doxyfile
+# The repository holds only Doxyfile.in; CMake configures it into build\Doxyfile
+cmake --preset default
+doxygen build\Doxyfile
 
 # Open docs/html/index.html in your browser
 ```
+
+`build.bat` runs this as its final step, so a full build leaves the API docs up to date whenever
+Doxygen is on `PATH`.
 
 ### File Formats
 
@@ -542,7 +627,7 @@ Contributions are welcome! Please read the [Contributing Guidelines](CONTRIBUTIN
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. ~~Run tests and~~ ensure the build passes
+4. Run `.\test.bat` (or `ctest --test-dir build -C Release`) and ensure the build passes
 5. Commit with descriptive messages
 6. Push to your fork and open a Pull Request
 
