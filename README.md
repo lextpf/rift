@@ -63,8 +63,6 @@
  * ============================================================================================== */
 ```
 
-## Project Structure
-
 ```
 rift/
 |-- src/                               # Engine source (flat; grouped by subsystem)
