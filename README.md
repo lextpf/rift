@@ -353,25 +353,25 @@ graph LR
     classDef world fill:#134e3a,stroke:#10b981,color:#e2e8f0
     classDef entity fill:#4a3520,stroke:#f59e0b,color:#e2e8f0
 
-    Game((Game)):::core
+    Game(("Game 🎮")):::core
 
-    subgraph Rendering["Rendering"]
-        IRenderer[IRenderer]:::render
-        OpenGL[OpenGLRenderer]:::render
-        Vulkan[VulkanRenderer]:::render
+    subgraph Rendering["Rendering 🎨"]
+        IRenderer["IRenderer 🔌"]:::render
+        OpenGL["OpenGLRenderer 🟢"]:::render
+        Vulkan["VulkanRenderer 🔺"]:::render
     end
 
-    subgraph World["World"]
-        Tilemap[Tilemap]:::world
-        Collision[CollisionMap]:::world
-        Navigation[NavigationMap]:::world
+    subgraph World["World 🌍"]
+        Tilemap["Tilemap 🗺️"]:::world
+        Collision["CollisionMap 🚧"]:::world
+        Navigation["NavigationMap 🧭"]:::world
     end
 
-    subgraph Entities["ECS"]
-        Registry[("ecs::registry m_World")]:::entity
-        Components["Components<br/>Transform - Motor - Hitbox<br/>Facing - Appearance - Patrol"]:::entity
-        Systems["Stateless systems<br/>PlayerSystem - NpcAiSystem<br/>MotionSystem - CollisionSystem"]:::entity
-        Services["WorldServices<br/>non-owning pointers in globals()"]:::entity
+    subgraph Entities["ECS 🧩"]
+        Registry[("ecs::registry m_World 🗃️")]:::entity
+        Components["Components 📦<br/>Transform - Motor - Hitbox 📐<br/>Facing - Appearance - Patrol 🎭"]:::entity
+        Systems["Stateless systems ⚙️<br/>PlayerSystem - NpcAiSystem 🧍‍♂️<br/>MotionSystem - CollisionSystem 🏃‍♂️"]:::entity
+        Services["WorldServices 🔗<br/>non-owning pointers in globals() 🌐"]:::entity
     end
 
     Game --> Rendering
