@@ -23,7 +23,7 @@
 //    ----------------------------------------------------------------------
 //
 //      Repository:   https://github.com/lextpf/rift
-//      License:      MIT
+//      License:      GPL
 
 #include "Game.hpp"
 #include "Logger.hpp"
