@@ -295,7 +295,7 @@ bool Cmd_Teleport(std::span<const std::string_view> args, CommandContext& ctx)
     }
     int tx = 0;
     int ty = 0;
-    if (!ParseInt(args[0], tx) || !ParseInt(args[1], ty))
+    if (!ParseInt(args[0], tx) || !ParseInt(args[1], ty) || tx < 0 || ty < 0)
     {
         ctx.out.PrintError("teleport: tile coords must be non-negative integers");
         return false;

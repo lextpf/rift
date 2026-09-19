@@ -162,6 +162,17 @@ TEST(ConsoleCommandsTests, TeleportRejectsBadArgs)
         ArgPack args({"foo", "bar"});
         EXPECT_FALSE(Cmd_Teleport(args.span(), ctx));
     }
+
+    {
+        ArgPack args({"-1", "3"});
+        EXPECT_FALSE(Cmd_Teleport(args.span(), ctx));
+    }
+
+    {
+        ArgPack args({"3", "-1"});
+        EXPECT_FALSE(Cmd_Teleport(args.span(), ctx));
+    }
+
     EXPECT_EQ(world.get<Transform>(player).position, before);
 }
 
