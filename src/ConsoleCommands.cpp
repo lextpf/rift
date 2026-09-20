@@ -2262,8 +2262,10 @@ bool Cmd_ParticleKillAll(std::span<const std::string_view> args, CommandContext&
         ctx.out.PrintError("particle.kill_all: usage 'particle.kill_all'");
         return false;
     }
+
+    const std::size_t count = ctx.particles->GetParticles().size();
     ctx.particles->Clear();
-    ctx.out.Print("particle.kill_all: cleared");
+    ctx.out.Print("particle.kill_all: removed " + std::to_string(count) + " particle(s)");
     return true;
 }
 
