@@ -1860,8 +1860,8 @@ bool Cmd_WeatherAuto(std::span<const std::string_view> args, CommandContext& ctx
     return true;
 }
 
-// weather.status - Current weather, active transition (from->to + progress%),
-// auto/manual-hold flags, and the wind readout.
+// weather.status - Current weather and intensity, active transition
+// (from->to + progress%), auto/manual-hold flags, and the wind readout.
 bool Cmd_WeatherStatus(std::span<const std::string_view> args, CommandContext& ctx)
 {
     if (ctx.weatherDirector == nullptr || ctx.time == nullptr)
@@ -1877,8 +1877,9 @@ bool Cmd_WeatherStatus(std::span<const std::string_view> args, CommandContext& c
     char line[160];
     std::snprintf(line,
                   sizeof(line),
-                  "weather.status: %s",
-                  std::string(EnumTraits<WeatherState>::ToString(ctx.time->GetWeather())).c_str());
+                  "weather.status: %s intensity=%.2f",
+                  std::string(EnumTraits<WeatherState>::ToString(ctx.time->GetWeather())).c_str(),
+                  static_cast<double>(ctx.time->GetWeatherIntensity()));
     ctx.out.Print(line);
 
     if (ctx.weatherDirector->IsTransitioning())
